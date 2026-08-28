@@ -340,7 +340,7 @@ impl Stream {
             ),
         };
 
-        crate::data::gpu::compute::ComputePass::new(
+        crate::data::gpu::compute::ComputePass::execute(
             context,
             pipeline.as_ref().clone(),
             parameters,

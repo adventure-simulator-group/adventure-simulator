@@ -4,6 +4,7 @@
 //! Tactical positions and ticks remain transient; only committed hit outcomes
 //! cross into these rows.
 
+use adventuresim_core::physiology::BodyRegion;
 use adventuresim_core::prelude::*;
 use adventuresim_core::strategic_time::MINUTES_PER_DAY;
 #[cfg(test)]
@@ -26,17 +27,6 @@ pub const STITCH_HEALING_BONUS_PER_LEVEL: f32 = 0.006;
 pub const RETAINED_PROJECTILE_HEALING_MULTIPLIER: f32 = 0.60;
 pub const FRACTURE_SINGLE_HIT_THRESHOLD: f32 = 0.18;
 pub const STANDING_INFECTION_CHECK_EXPOSURE: f32 = 0.05;
-#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
-pub enum LimbRegion {
-    LeftArm,
-    RightArm,
-    LeftLeg,
-    RightLeg,
-    Chest,
-    Stomach,
-    Head,
-}
-
 #[derive(Clone, Debug)]
 #[table(accessor = treatment_action_receipt)]
 pub struct TreatmentActionReceipt {
@@ -45,7 +35,7 @@ pub struct TreatmentActionReceipt {
     pub action_id: String,
     pub actor_id: u64,
     pub patient_id: u64,
-    pub limb: LimbRegion,
+    pub limb: BodyRegion,
     pub procedure: String,
     pub projectile_id: Option<u64>,
     pub use_soap: bool,
@@ -61,13 +51,16 @@ enum TreatmentReceiptDisposition {
     Collision,
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 fn treatment_receipt_disposition(
     existing: Option<&TreatmentActionReceipt>,
     action_id: &str,
     actor_id: u64,
     patient_id: u64,
-    limb: LimbRegion,
+    limb: BodyRegion,
     procedure: &str,
     projectile_id: Option<u64>,
     use_soap: bool,
@@ -94,43 +87,6 @@ fn treatment_receipt_disposition(
     }
 }
 
-impl LimbRegion {
-    pub const ALL: [Self; 7] = [
-        Self::LeftArm,
-        Self::RightArm,
-        Self::LeftLeg,
-        Self::RightLeg,
-        Self::Chest,
-        Self::Stomach,
-        Self::Head,
-    ];
-
-    pub fn parse(value: &str) -> Option<Self> {
-        Some(match value {
-            "left-arm" => Self::LeftArm,
-            "right-arm" => Self::RightArm,
-            "left-leg" => Self::LeftLeg,
-            "right-leg" => Self::RightLeg,
-            "chest" => Self::Chest,
-            "stomach" => Self::Stomach,
-            "head" => Self::Head,
-            _ => return None,
-        })
-    }
-
-    pub const fn slug(self) -> &'static str {
-        match self {
-            Self::LeftArm => "left-arm",
-            Self::RightArm => "right-arm",
-            Self::LeftLeg => "left-leg",
-            Self::RightLeg => "right-leg",
-            Self::Chest => "chest",
-            Self::Stomach => "stomach",
-            Self::Head => "head",
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
 pub enum ProjectileKind {
     Arrowhead,
@@ -144,7 +100,7 @@ pub struct LimbInjury {
     pub id: String,
     #[index(btree)]
     pub character_id: u64,
-    pub limb: LimbRegion,
+    pub limb: BodyRegion,
     pub cut_damage: f32,
     pub bruise_damage: f32,
     /// Cold injury is durable tissue damage, independent of impact trauma.
@@ -173,7 +129,7 @@ pub struct RetainedProjectile {
     pub id: u64,
     #[index(btree)]
     pub character_id: u64,
-    pub limb: LimbRegion,
+    pub limb: BodyRegion,
     pub kind: ProjectileKind,
     /// Extraction is deliberately uncapped. Future ammunition definitions can
     /// multiply this value (for example, a barbed-arrow modifier).
@@ -181,11 +137,11 @@ pub struct RetainedProjectile {
     pub source_damage: f32,
 }
 
-fn injury_id(character_id: u64, limb: LimbRegion) -> String {
+fn injury_id(character_id: u64, limb: BodyRegion) -> String {
     format!("{character_id}:{}", limb.slug())
 }
 
-fn blank_injury(character_id: u64, limb: LimbRegion) -> LimbInjury {
+fn blank_injury(character_id: u64, limb: BodyRegion) -> LimbInjury {
     LimbInjury {
         id: injury_id(character_id, limb),
         character_id,
@@ -205,34 +161,47 @@ fn blank_injury(character_id: u64, limb: LimbRegion) -> LimbInjury {
     }
 }
 
+pub(crate) fn initialize_character_injuries(ctx: &ReducerContext, character_id: u64) {
+    for limb in BodyRegion::ALL {
+        ctx.db
+            .limb_injury()
+            .insert(blank_injury(character_id, limb));
+    }
+}
+
+pub(crate) fn reset_character_injuries(ctx: &ReducerContext, character_id: u64) {
+    for limb in BodyRegion::ALL {
+        ctx.db
+            .limb_injury()
+            .id()
+            .update(blank_injury(character_id, limb));
+    }
+}
+
 fn projected_damage(injury: &LimbInjury) -> f32 {
     (injury.cut_damage + injury.bruise_damage.max(injury.fracture_damage) + injury.frostbite_damage)
         .clamp(0.0, 1.0)
 }
 
-pub fn injury_for(ctx: &ReducerContext, character_id: u64, limb: LimbRegion) -> LimbInjury {
+pub fn injury_for(ctx: &ReducerContext, character_id: u64, limb: BodyRegion) -> LimbInjury {
     let key = injury_id(character_id, limb);
     ctx.db
         .limb_injury()
         .id()
         .find(key)
         .filter(|row| row.character_id == character_id && row.limb == limb)
-        .unwrap_or_else(|| blank_injury(character_id, limb))
+        .expect("character injury rows must be initialized at character creation")
 }
 
 fn store_injury(ctx: &ReducerContext, injury: LimbInjury) {
-    if ctx.db.limb_injury().id().find(injury.id.clone()).is_some() {
-        ctx.db.limb_injury().id().update(injury);
-    } else {
-        ctx.db.limb_injury().insert(injury);
-    }
+    ctx.db.limb_injury().id().update(injury);
 }
 
 /// Idempotently seed a real untreated cut for an authored field patient.
 pub(crate) fn seed_field_cut(
     ctx: &ReducerContext,
     character_id: u64,
-    limb: LimbRegion,
+    limb: BodyRegion,
     damage: f32,
     origin_minute: u64,
 ) {
@@ -244,67 +213,19 @@ pub(crate) fn seed_field_cut(
     }
 }
 
-fn health_mut(limbs: &mut CharacterLimbs, limb: LimbRegion) -> &mut f32 {
+fn health_mut(limbs: &mut CharacterLimbs, limb: BodyRegion) -> &mut f32 {
     match limb {
-        LimbRegion::LeftArm => &mut limbs.left_arm_health,
-        LimbRegion::RightArm => &mut limbs.right_arm_health,
-        LimbRegion::LeftLeg => &mut limbs.left_leg_health,
-        LimbRegion::RightLeg => &mut limbs.right_leg_health,
-        LimbRegion::Chest => &mut limbs.chest_health,
-        LimbRegion::Stomach => &mut limbs.stomach_health,
-        LimbRegion::Head => &mut limbs.head_health,
+        BodyRegion::LeftArm => &mut limbs.left_arm_health,
+        BodyRegion::RightArm => &mut limbs.right_arm_health,
+        BodyRegion::LeftLeg => &mut limbs.left_leg_health,
+        BodyRegion::RightLeg => &mut limbs.right_leg_health,
+        BodyRegion::Chest => &mut limbs.chest_health,
+        BodyRegion::Abdomen => &mut limbs.stomach_health,
+        BodyRegion::Head => &mut limbs.head_health,
     }
 }
 
-fn limb_health(limbs: &CharacterLimbs, limb: LimbRegion) -> f32 {
-    match limb {
-        LimbRegion::LeftArm => limbs.left_arm_health,
-        LimbRegion::RightArm => limbs.right_arm_health,
-        LimbRegion::LeftLeg => limbs.left_leg_health,
-        LimbRegion::RightLeg => limbs.right_leg_health,
-        LimbRegion::Chest => limbs.chest_health,
-        LimbRegion::Stomach => limbs.stomach_health,
-        LimbRegion::Head => limbs.head_health,
-    }
-}
-
-/// Idempotently adopts legacy limb-health deficits before injury rows become
-/// authoritative. Any unclassified deficit is conservatively recorded as
-/// bruising; an incoming hit can therefore never heal old damage.
-pub fn backfill_character_injuries(ctx: &ReducerContext, character_id: u64) {
-    let Some(limbs) = ctx.db.character_limbs().character_id().find(character_id) else {
-        return;
-    };
-    for limb in LimbRegion::ALL {
-        let mut injury = injury_for(ctx, character_id, limb);
-        let legacy_deficit = (1.0 - limb_health(&limbs, limb)).clamp(0.0, 1.0);
-        let classified = projected_damage(&injury);
-        if legacy_deficit > classified {
-            injury.bruise_damage += legacy_deficit - classified;
-        }
-        if injury.splint_owner_id.is_some() && injury.splint_inventory_item_id.is_none() {
-            injury.splint_inventory_item_id =
-                crate::add_inventory_item(ctx, character_id, "splint", 1);
-        }
-        store_injury(ctx, injury);
-    }
-}
-
-#[reducer]
-pub fn upgrade_manual_surgery(ctx: &ReducerContext) {
-    crate::item::upsert_surgery_items(ctx);
-    let character_ids: Vec<_> = ctx
-        .db
-        .character_limbs()
-        .iter()
-        .map(|row| row.character_id)
-        .collect();
-    for character_id in character_ids {
-        backfill_character_injuries(ctx, character_id);
-    }
-}
-
-fn refresh_limb_projection(ctx: &ReducerContext, character_id: u64, limb: LimbRegion) {
+fn refresh_limb_projection(ctx: &ReducerContext, character_id: u64, limb: BodyRegion) {
     let Some(mut limbs) = ctx.db.character_limbs().character_id().find(character_id) else {
         return;
     };
@@ -317,7 +238,7 @@ fn refresh_all_limb_projections(ctx: &ReducerContext, character_id: u64) {
     let Some(mut limbs) = ctx.db.character_limbs().character_id().find(character_id) else {
         return;
     };
-    for limb in LimbRegion::ALL {
+    for limb in BodyRegion::ALL {
         let injury = injury_for(ctx, character_id, limb);
         *health_mut(&mut limbs, limb) = (1.0 - projected_damage(&injury)).clamp(0.0, 1.0);
     }
@@ -330,7 +251,7 @@ fn refresh_all_limb_projections(ctx: &ReducerContext, character_id: u64) {
 pub fn commit_hit_injury(
     ctx: &ReducerContext,
     character_id: u64,
-    limb: LimbRegion,
+    limb: BodyRegion,
     cut_damage: f32,
     blunt_damage: f32,
     projectile: Option<ProjectileKind>,
@@ -351,13 +272,12 @@ pub fn commit_hit_injury(
 pub(crate) fn commit_aggregated_hit_injury(
     ctx: &ReducerContext,
     character_id: u64,
-    limb: LimbRegion,
+    limb: BodyRegion,
     cut_damage: f32,
     blunt_damage: f32,
     max_single_hit_blunt_damage: f32,
     projectile: Option<ProjectileKind>,
 ) -> Result<(), String> {
-    backfill_character_injuries(ctx, character_id);
     let mut injury = injury_for(ctx, character_id, limb);
     injury.cut_damage += cut_damage.max(0.0);
     injury.bruise_damage += blunt_damage.max(0.0);
@@ -378,7 +298,7 @@ pub(crate) fn commit_aggregated_hit_injury(
         crate::filth::deposit_now(
             ctx,
             character_id,
-            crate::filth::FilthSubstance::Blood,
+            adventuresim_core::filth::FilthSubstance::Blood,
             Some(character_id),
             (cut_damage * 50.0).ceil().clamp(1.0, 20.0) as u16,
         )?;
@@ -409,16 +329,15 @@ pub(crate) fn commit_aggregated_hit_injury(
 pub fn commit_frostbite_injury(
     ctx: &ReducerContext,
     character_id: u64,
-    limb: LimbRegion,
+    limb: BodyRegion,
     damage: f32,
 ) -> Result<(), String> {
     if !matches!(
         limb,
-        LimbRegion::LeftArm | LimbRegion::RightArm | LimbRegion::LeftLeg | LimbRegion::RightLeg
+        BodyRegion::LeftArm | BodyRegion::RightArm | BodyRegion::LeftLeg | BodyRegion::RightLeg
     ) {
         return Err("Frostbite must target a peripheral limb".to_string());
     }
-    backfill_character_injuries(ctx, character_id);
     let mut injury = injury_for(ctx, character_id, limb);
     injury.frostbite_damage = (injury.frostbite_damage + damage.max(0.0)).clamp(0.0, 1.0);
     store_injury(ctx, injury);
@@ -434,7 +353,7 @@ pub fn projectile_extraction_dc(hit_damage: f32, random_depth: f32) -> f32 {
     adventuresim_core::surgery::projectile_extraction_dc(hit_damage, random_depth)
 }
 
-fn has_projectile(ctx: &ReducerContext, character_id: u64, limb: LimbRegion) -> bool {
+fn has_projectile(ctx: &ReducerContext, character_id: u64, limb: BodyRegion) -> bool {
     ctx.db
         .retained_projectile()
         .character_id()
@@ -442,60 +361,42 @@ fn has_projectile(ctx: &ReducerContext, character_id: u64, limb: LimbRegion) -> 
         .any(|projectile| projectile.limb == limb)
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct InjuryRecoveryMinutes(u64);
+
+impl InjuryRecoveryMinutes {
+    pub(crate) const NONE: Self = Self(0);
+
+    pub(crate) const fn new(minutes: u64) -> Self {
+        Self(minutes)
+    }
+
+    const fn get(self) -> u64 {
+        self.0
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct InjuryPreview {
+    pub elapsed: u64,
+    pub terminal: bool,
+}
+
 #[derive(Clone, Copy, Debug)]
-pub struct InjurySettlement {
+pub(crate) struct InjurySettlement {
     pub elapsed: u64,
     pub alive: bool,
 }
 
-pub fn preview_elapsed_for_injuries(
+/// Side-effect-free preview of the first injury terminal boundary in an
+/// interval. Recovery is explicit because only restorative minutes offset
+/// blood loss and heal wounds.
+pub(crate) fn preview_injury_boundary(
     ctx: &ReducerContext,
     character_id: u64,
     requested: u64,
-    allow_recovery: bool,
-) -> Result<u64, String> {
-    preview_elapsed_for_injuries_with_rest_minutes(
-        ctx,
-        character_id,
-        requested,
-        if allow_recovery { requested } else { 0 },
-    )
-}
-
-pub fn preview_elapsed_for_injuries_with_rest_minutes(
-    ctx: &ReducerContext,
-    character_id: u64,
-    requested: u64,
-    recovery_minutes: u64,
-) -> Result<u64, String> {
-    crate::condition::apply_blood_loss(ctx, character_id, 0.0)?;
-    preview_injury_boundary_with_rest_minutes(ctx, character_id, requested, recovery_minutes)
-        .map(|preview| preview.0)
-}
-
-/// Side-effect-free injury terminal preview. The boolean preserves a blood
-/// terminal reached exactly at the requested endpoint, where elapsed alone is
-/// indistinguishable from ordinary completion.
-pub fn preview_injury_terminal_boundary(
-    ctx: &ReducerContext,
-    character_id: u64,
-    requested: u64,
-    allow_recovery: bool,
-) -> Result<(u64, bool), String> {
-    preview_injury_boundary_with_rest_minutes(
-        ctx,
-        character_id,
-        requested,
-        if allow_recovery { requested } else { 0 },
-    )
-}
-
-fn preview_injury_boundary_with_rest_minutes(
-    ctx: &ReducerContext,
-    character_id: u64,
-    requested: u64,
-    recovery_minutes: u64,
-) -> Result<(u64, bool), String> {
+    recovery: InjuryRecoveryMinutes,
+) -> Result<InjuryPreview, String> {
     let blood = ctx
         .db
         .character_condition()
@@ -508,7 +409,7 @@ fn preview_injury_boundary_with_rest_minutes(
                 1.0
             }
         });
-    let cuts = LimbRegion::ALL
+    let cuts = BodyRegion::ALL
         .into_iter()
         .map(|limb| {
             let injury = injury_for(ctx, character_id, limb);
@@ -523,34 +424,24 @@ fn preview_injury_boundary_with_rest_minutes(
         blood,
         &cuts,
         requested,
-        crate::condition::BLOOD_RECOVERY_FRACTION_PER_DAY * recovery_minutes.min(requested) as f32
+        adventuresim_core::morale::BLOOD_RECOVERY_FRACTION_PER_DAY
+            * recovery.get().min(requested) as f32
             / requested.max(1) as f32,
     );
-    Ok((interval.elapsed, interval.terminal))
+    Ok(InjuryPreview {
+        elapsed: interval.elapsed,
+        terminal: interval.terminal,
+    })
 }
 
 /// Advance authoritative wounds for one personal-clock interval. This is the
 /// sole writer of injury-backed limb health and the sole rest-time blood
 /// recovery path, so projections cannot drift from durable wound state.
-pub fn settle_injuries(
+pub(crate) fn settle_injuries(
     ctx: &ReducerContext,
     character_id: u64,
     elapsed: u64,
-    allow_healing: bool,
-) -> Result<InjurySettlement, String> {
-    settle_injuries_with_rest_minutes(
-        ctx,
-        character_id,
-        elapsed,
-        if allow_healing { elapsed } else { 0 },
-    )
-}
-
-pub fn settle_injuries_with_rest_minutes(
-    ctx: &ReducerContext,
-    character_id: u64,
-    elapsed: u64,
-    healing_minutes: u64,
+    recovery: InjuryRecoveryMinutes,
 ) -> Result<InjurySettlement, String> {
     if elapsed == 0 {
         return Ok(InjurySettlement {
@@ -558,7 +449,6 @@ pub fn settle_injuries_with_rest_minutes(
             alive: true,
         });
     }
-    backfill_character_injuries(ctx, character_id);
     crate::condition::apply_blood_loss(ctx, character_id, 0.0)?;
     let starting_blood = ctx
         .db
@@ -572,7 +462,7 @@ pub fn settle_injuries_with_rest_minutes(
                 1.0
             }
         });
-    let mut injuries = LimbRegion::ALL.map(|limb| injury_for(ctx, character_id, limb));
+    let mut injuries = BodyRegion::ALL.map(|limb| injury_for(ctx, character_id, limb));
     let open_cuts = injuries
         .iter()
         .map(|injury| {
@@ -587,11 +477,12 @@ pub fn settle_injuries_with_rest_minutes(
         starting_blood,
         &open_cuts,
         elapsed,
-        crate::condition::BLOOD_RECOVERY_FRACTION_PER_DAY * healing_minutes.min(elapsed) as f32
+        adventuresim_core::morale::BLOOD_RECOVERY_FRACTION_PER_DAY
+            * recovery.get().min(elapsed) as f32
             / elapsed.max(1) as f32,
     );
     let elapsed_days = interval.elapsed as f32 / MINUTES_PER_DAY as f32;
-    let healing_days = healing_minutes.min(interval.elapsed) as f32 / MINUTES_PER_DAY as f32;
+    let healing_days = recovery.get().min(interval.elapsed) as f32 / MINUTES_PER_DAY as f32;
     let physiology = if healing_days > 0.0 {
         crate::time::party_physiology_check(ctx, character_id)?
     } else {
@@ -602,7 +493,7 @@ pub fn settle_injuries_with_rest_minutes(
     } else {
         0.0
     };
-    for (index, limb) in LimbRegion::ALL.into_iter().enumerate() {
+    for (index, limb) in BodyRegion::ALL.into_iter().enumerate() {
         let injury = &mut injuries[index];
         let starting_cut = injury.cut_damage;
         let mut exposure = interval.cut_days[index];
@@ -679,7 +570,7 @@ pub fn convalescence_minutes(
 ) -> u64 {
     let natural = crate::time::health_recovered_per_day(physiology_check);
     let mut days = 0.0_f32;
-    for limb in LimbRegion::ALL {
+    for limb in BodyRegion::ALL {
         let injury = injury_for(ctx, character_id, limb);
         let projectile = if has_projectile(ctx, character_id, limb) {
             RETAINED_PROJECTILE_HEALING_MULTIPLIER
@@ -983,8 +874,8 @@ fn align_and_advance(
             true,
             &disease_plan,
         )?;
-        let injury = preview_elapsed_for_injuries(ctx, *id, limit, true)?;
-        Ok::<u64, String>(limit.min(disease).min(injury))
+        let injury = preview_injury_boundary(ctx, *id, limit, InjuryRecoveryMinutes::new(limit))?;
+        Ok::<u64, String>(limit.min(disease).min(injury.elapsed))
     })?;
     let mut completed = safe_duration == duration;
     for id in participants {
@@ -1006,6 +897,10 @@ fn duration_minutes(procedure: &str, skill: f32, dc: f32) -> u64 {
 /// reducers remain authoritative over requirements, clocks, consumption, and
 /// hidden infection rolls.
 #[reducer]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the reducer ABI exposes each independently validated treatment field"
+)]
 pub fn treat_limb(
     ctx: &ReducerContext,
     actor_id: u64,
@@ -1022,7 +917,7 @@ pub fn treat_limb(
     if action_id.is_empty() || action_id.len() > 160 {
         return Err("Treatment action ID is invalid".into());
     }
-    let limb = LimbRegion::parse(&limb_slug).ok_or("Unknown limb")?;
+    let limb = BodyRegion::parse_slug(&limb_slug).ok_or("Unknown limb")?;
     let contextual_claim = match (&context_ref, expected_membership_revision) {
         (None, None) => None,
         (Some(contact_ref), Some(expected_membership_revision))
@@ -1126,10 +1021,10 @@ pub fn treat_limb(
         .db
         .inventory_item()
         .character_and_item_id()
-        .filter((actor_id, crate::filth::SOAP_ITEM_ID))
+        .filter((actor_id, adventuresim_core::item_references::SOFT_SOAP_ID))
         .any(|row| {
-            crate::inventory_amount::personal_amount(ctx, row.id).unwrap_or(0)
-                >= crate::filth::SOAP_MILLIUNITS_PER_CLEANSING_POINT
+            crate::inventory_amount::personal_fraction(ctx, row.id).unwrap_or_default()
+                >= crate::filth::SOAP_FRACTION_PER_CLEANSING_POINT
         });
     if use_soap && (!soap_applicable || !soap_available) {
         return Err("The selected procedure cannot use an available unit of soap".into());
@@ -1164,10 +1059,10 @@ pub fn treat_limb(
             .db
             .inventory_item()
             .character_and_item_id()
-            .filter((actor_id, crate::filth::SOAP_ITEM_ID))
+            .filter((actor_id, adventuresim_core::item_references::SOFT_SOAP_ID))
             .find(|row| {
-                crate::inventory_amount::personal_amount(ctx, row.id).unwrap_or(0)
-                    >= crate::filth::SOAP_MILLIUNITS_PER_CLEANSING_POINT
+                crate::inventory_amount::personal_fraction(ctx, row.id).unwrap_or_default()
+                    >= crate::filth::SOAP_FRACTION_PER_CLEANSING_POINT
             })
             .ok_or("Selected soap is no longer available")?;
         crate::filth::consume_personal_soap_points(ctx, soap.id, 1)?;
@@ -1238,7 +1133,7 @@ pub fn treat_limb(
         crate::filth::deposit_now(
             ctx,
             actor_id,
-            crate::filth::FilthSubstance::Blood,
+            adventuresim_core::filth::FilthSubstance::Blood,
             Some(patient_id),
             exposure,
         )?;
@@ -1278,7 +1173,7 @@ mod tests {
 
     #[test]
     fn treatment_authorization_precedes_mutation_and_is_revalidated() {
-        let source = include_str!("surgery.rs");
+        let source = crate::production_source(include_str!("surgery.rs"));
         let reducer = source
             .split("pub fn treat_limb")
             .nth(1)
@@ -1294,7 +1189,12 @@ mod tests {
 
     #[test]
     fn treatment_receipts_bind_exact_requests_and_retries() {
-        let source = include_str!("surgery.rs");
+        let source = crate::production_source(include_str!("surgery.rs"));
+        let binding = source
+            .split("fn treatment_receipt_disposition")
+            .nth(1)
+            .and_then(|tail| tail.split("impl BodyRegion").next())
+            .expect("treatment receipt binding");
         let reducer = source
             .split("pub fn treat_limb")
             .nth(1)
@@ -1307,10 +1207,11 @@ mod tests {
             "existing.projectile_id == projectile_id",
             "existing.use_soap == use_soap",
         ] {
-            assert!(reducer.contains(coordinate), "missing {coordinate}");
+            assert!(binding.contains(coordinate), "missing {coordinate}");
         }
         assert!(reducer.contains("Conflicting treatment retry"));
-        assert!(reducer.contains("treatment_action_receipt().insert"));
+        assert!(reducer.contains("treatment_action_receipt()"));
+        assert!(reducer.contains(".insert(TreatmentActionReceipt"));
         let interrupted = reducer
             .split("if !align_and_advance")
             .nth(1)
@@ -1326,7 +1227,7 @@ mod tests {
             action_id: "token-a".into(),
             actor_id: 7,
             patient_id: 8,
-            limb: LimbRegion::RightLeg,
+            limb: BodyRegion::RightLeg,
             procedure: "bandage".into(),
             projectile_id: None,
             use_soap: true,
@@ -1340,7 +1241,7 @@ mod tests {
                 token,
                 7,
                 8,
-                LimbRegion::RightLeg,
+                BodyRegion::RightLeg,
                 "bandage",
                 None,
                 soap,
@@ -1377,7 +1278,7 @@ mod tests {
 
     #[test]
     fn frostbite_is_distinct_additive_tissue_damage() {
-        let mut injury = blank_injury(7, LimbRegion::LeftArm);
+        let mut injury = blank_injury(7, BodyRegion::LeftArm);
         injury.bruise_damage = 0.1;
         injury.frostbite_damage = 0.2;
         assert!((projected_damage(&injury) - 0.3).abs() < 0.0001);
@@ -1412,18 +1313,18 @@ mod tests {
     #[test]
     fn limb_keys_do_not_wrap_or_alias() {
         assert_ne!(
-            injury_id(0, LimbRegion::LeftArm),
-            injury_id(1_u64 << 61, LimbRegion::LeftArm)
+            injury_id(0, BodyRegion::LeftArm),
+            injury_id(1_u64 << 61, BodyRegion::LeftArm)
         );
         assert_ne!(
-            injury_id(42, LimbRegion::LeftArm),
-            injury_id(42, LimbRegion::RightArm)
+            injury_id(42, BodyRegion::LeftArm),
+            injury_id(42, BodyRegion::RightArm)
         );
     }
 
     #[test]
     fn fracture_severity_does_not_duplicate_hit_damage() {
-        let mut injury = blank_injury(1, LimbRegion::LeftLeg);
+        let mut injury = blank_injury(1, BodyRegion::LeftLeg);
         injury.cut_damage = 0.12;
         injury.bruise_damage = 0.38;
         injury.fracture_damage = fracture_from_single_hit(0.38);
@@ -1458,16 +1359,15 @@ mod tests {
 
     #[test]
     fn injury_terminal_preview_is_side_effect_free() {
-        let source = include_str!("surgery.rs");
+        let source = crate::production_source(include_str!("surgery.rs"));
         let preview = source
-            .split("fn preview_injury_boundary_with_rest_minutes")
+            .split("pub(crate) fn preview_injury_boundary")
             .nth(1)
             .and_then(|tail| tail.split("/// Advance authoritative wounds").next())
             .expect("injury terminal preview");
         for forbidden in [
             "apply_blood_loss",
             "initialize_character_condition",
-            "backfill_character_injuries",
             "store_injury",
             ".insert(",
             ".update(",
@@ -1480,26 +1380,51 @@ mod tests {
     }
 
     #[test]
-    fn legacy_elapsed_previews_retain_committing_blood_normalization() {
-        let source = include_str!("surgery.rs");
-        let wrappers = source
-            .split("pub fn preview_elapsed_for_injuries")
+    fn injury_interval_api_has_one_explicit_recovery_path() {
+        let source = crate::production_source(include_str!("surgery.rs"));
+        let preview = source
+            .split("pub(crate) fn preview_injury_boundary")
             .nth(1)
-            .and_then(|tail| {
-                tail.split("/// Side-effect-free injury terminal preview")
-                    .next()
-            })
-            .expect("legacy injury preview wrappers");
-        assert!(wrappers.contains("preview_elapsed_for_injuries_with_rest_minutes"));
-        assert!(wrappers.contains("crate::condition::apply_blood_loss"));
+            .and_then(|tail| tail.split("/// Advance authoritative wounds").next())
+            .expect("canonical injury preview");
+        assert!(preview.contains("recovery: InjuryRecoveryMinutes"));
+        assert!(preview.contains("Result<InjuryPreview, String>"));
+
+        let settlement = source
+            .split("pub(crate) fn settle_injuries")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn convalescence_minutes").next())
+            .expect("canonical injury settlement");
+        assert!(settlement.contains("recovery: InjuryRecoveryMinutes"));
+        assert!(!settlement.contains("allow_healing"));
 
         let preparation = include_str!("food.rs")
             .split("fn preparation_terminal_minute")
             .nth(1)
             .and_then(|tail| tail.split("fn next_preparation_attempt_generation").next())
             .expect("preparation terminal preview");
-        assert!(preparation.contains("preview_injury_terminal_boundary"));
-        assert!(!preparation.contains("preview_elapsed_for_injuries"));
+        assert!(preparation.contains("preview_injury_boundary"));
+        assert!(preparation.contains("InjuryRecoveryMinutes::new(duration)"));
+    }
+
+    #[test]
+    fn current_injury_rows_are_created_once_then_updated() {
+        let source = crate::production_source(include_str!("surgery.rs"));
+        let initializer = source
+            .split("pub(crate) fn initialize_character_injuries")
+            .nth(1)
+            .and_then(|tail| tail.split("pub(crate) fn reset_character_injuries").next())
+            .expect("injury row initializer");
+        assert!(initializer.contains(".insert(blank_injury(character_id, limb))"));
+
+        let lookup_and_store = source
+            .split("pub fn injury_for")
+            .nth(1)
+            .and_then(|tail| tail.split("/// Idempotently seed").next())
+            .expect("injury lookup and store");
+        assert!(lookup_and_store.contains("initialized at character creation"));
+        assert!(!lookup_and_store.contains("unwrap_or_else"));
+        assert!(!lookup_and_store.contains(".insert("));
     }
 
     #[test]

@@ -3,6 +3,7 @@ const path = require("node:path");
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const vm = require("node:vm");
+const strategicCalendar = require("./strategic-calendar-fixture.cjs");
 
 const root = path.join(__dirname, "..");
 
@@ -10,7 +11,7 @@ test("all strategic clock script references use the accessible clock cache key",
   const layout = fs.readFileSync(path.join(root, "src", "templates", "layout.rs"), "utf8");
   const references = [...layout.matchAll(/\/static\/strategic-time\.js\?v=([^\"]+)/g)]
     .map((match) => match[1]);
-  assert.deepEqual(references, ["accessible-clock-1", "accessible-clock-1"]);
+  assert.deepEqual(references, ["accessible-clock-2", "accessible-clock-2"]);
 });
 
 test("strategic clock refresh keeps visible and accessible character time synchronized", async () => {
@@ -33,6 +34,7 @@ test("strategic clock refresh keeps visible and accessible character time synchr
     addEventListener(type, listener) { listeners.set(type, listener); },
   };
   const window = {
+    strategicCalendar,
     queueStrategicInitialLoad: (load) => Promise.resolve().then(load),
     strategicBackgroundFetch: async () => ({
       json: async () => responses.shift(),

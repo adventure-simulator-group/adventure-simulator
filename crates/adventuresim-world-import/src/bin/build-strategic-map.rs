@@ -78,8 +78,7 @@ struct SourceFile {
     name: String,
     sha256: String,
     url: String,
-    #[serde(default)]
-    size: Option<u64>,
+    size: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -113,6 +112,11 @@ struct Package {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 struct WaterPolygon {
     rings: Vec<Vec<Point>>,
+}
+
+struct CultivatedLand {
+    polygons: Vec<Vec<Vec<[f64; 2]>>>,
+    source_sha256: String,
 }
 
 #[derive(Serialize)]
@@ -271,8 +275,10 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
             .then_with(|| point_order(&a.points, &b.points))
     });
     package.routing_roads.sort_by(|a, b| point_order(a, b));
-    let (cultivated, cultivation_source_sha256) =
-        cultivated_land(&args.hyde_dir, &base, &package, &world)?;
+    let CultivatedLand {
+        polygons: cultivated,
+        source_sha256: cultivation_source_sha256,
+    } = cultivated_land(&args.hyde_dir, &base, &package, &world)?;
     package.cultivated = cultivated
         .iter()
         .map(|rings| WaterPolygon {
@@ -436,7 +442,7 @@ fn cultivated_land(
     terrain: &adventuresim_terrain::TerrainPack,
     package: &Package,
     world: &CompiledWorld,
-) -> Result<(Vec<Vec<Vec<[f64; 2]>>>, String), Box<dyn std::error::Error>> {
+) -> Result<CultivatedLand, Box<dyn std::error::Error>> {
     use adventuresim_world_import::{
         cultivation::{
             CultivationCandidate, CultivationCell, HydeCropQuota, MetricSegment,
@@ -648,7 +654,10 @@ fn cultivated_land(
             Ok(vec![ring])
         })
         .collect::<Result<Vec<_>, adventuresim_world_import::Error>>()?;
-    Ok((polygons, source_sha256))
+    Ok(CultivatedLand {
+        polygons,
+        source_sha256,
+    })
 }
 
 fn write_data_license(outputs: &[&Path]) -> std::io::Result<()> {
@@ -707,7 +716,7 @@ fn build(root: &Path, layers: MapRasterLayers) -> Result<Package, Box<dyn std::e
             .find(|entry| entry.name == name)
             .ok_or("source manifest is incomplete")?;
         let bytes = fs::read(root.join(name))?;
-        if entry.size.is_some_and(|size| size != bytes.len() as u64) {
+        if entry.size != bytes.len() as u64 {
             return Err(format!("{name} does not match its initialized size").into());
         }
         let actual = format!("{:x}", Sha256::digest(&bytes));
@@ -785,11 +794,7 @@ fn build(root: &Path, layers: MapRasterLayers) -> Result<Package, Box<dyn std::e
         url: VIABUNDUS_DOI,
         license: "CC-BY-SA-4.0",
         files_sha256: identities,
-        verification_status: if manifest.files.iter().all(|entry| entry.size.is_some()) {
-            "verified"
-        } else {
-            "legacy-release-blocked-missing-sizes"
-        },
+        verification_status: "verified",
     };
     let package = Package {
         schema: PACKAGE_SCHEMA,

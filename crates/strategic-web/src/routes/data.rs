@@ -199,7 +199,6 @@ mod tests {
             name: format!("character-{id}"),
             xp: 0,
             level: 1,
-            gold: 0,
             current_settlement_id: None,
             current_case_site_id: None,
             party_id: None,

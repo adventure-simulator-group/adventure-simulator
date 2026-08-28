@@ -5,9 +5,12 @@ use super::{
     PublicQuestTrace, PublicTraceEvent, Termination, TerminationErrorCode, WitnessAvailability,
     WitnessReferral,
 };
-use adventuresim_core::quest_generation::{
-    self as qg, Circumstance, GeneratedActionOutput, GeneratedCase, GeneratedDestinationStage,
-    RouteClass, TemplateFamily, WitnessCandidate, WitnessDemographic,
+use adventuresim_core::{
+    investigation::DestinationKnowledgeStage,
+    quest_generation::{
+        self as qg, Circumstance, GeneratedActionOutput, GeneratedCase, RouteClass, TemplateFamily,
+        WitnessCandidate, WitnessDemographic,
+    },
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -317,7 +320,7 @@ impl InvestigationEnvironment {
                                 })
                                 .map(|site| site.safe_label.clone())
                                 .unwrap_or_else(|| action.safe_summary.clone());
-                            let resolution = if *stage == GeneratedDestinationStage::Exact {
+                            let resolution = if *stage == DestinationKnowledgeStage::ExactBelieved {
                                 if let Some(id) = site_id {
                                     self.exact_sites.insert(id.0.clone());
                                 }
@@ -760,7 +763,7 @@ impl InvestigationEnvironment {
                     matches!(
                         output,
                         GeneratedActionOutput::Destination {
-                            stage: GeneratedDestinationStage::Exact,
+                            stage: DestinationKnowledgeStage::ExactBelieved,
                             site_id: Some(site_id),
                         } if site_id == &outbreak.physical_source_site
                     )
@@ -1088,7 +1091,7 @@ mod tests {
                 command: None,
                 bluff: None,
             },
-            destination_stage: "textual".into(),
+            destination_stage: DestinationKnowledgeStage::Textual,
             site_id: None,
             corrects_proposition_id: None,
             referred_witness_ids: vec![],

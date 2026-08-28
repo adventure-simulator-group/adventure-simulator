@@ -4,8 +4,9 @@ use bevy::{
     mesh::{Indices, PrimitiveTopology},
     prelude::Mesh,
 };
+use fabelgeist_determinism::splitmix64;
 
-use crate::presentation::{splitmix64, unit_hash};
+use crate::presentation::unit_hash;
 
 use super::{TreeBranchSegment, WoodyPlantForm, WoodyPlantParameters, branch_frame};
 
@@ -782,7 +783,7 @@ mod tests {
                 mesh.indices()
                     .expect("flat cards are indexed")
                     .iter()
-                    .all(|index| (index as usize) < mesh.count_vertices())
+                    .all(|index| index < mesh.count_vertices())
             );
             retained_count += retained.len();
         }

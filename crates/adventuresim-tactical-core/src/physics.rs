@@ -30,6 +30,26 @@ pub enum MovementPace {
     Sprint,
 }
 
+type MovementControllerQuery<'world, 'state> = Query<
+    'world,
+    'state,
+    (
+        Entity,
+        &'static AccumulatedInput,
+        &'static mut CharacterController,
+        &'static CharacterControllerState,
+        &'static mut LinearVelocity,
+        Option<&'static mut Mass>,
+        Option<&'static CharacterLook>,
+        Option<&'static SkeletonState>,
+        Option<&'static MovementPace>,
+        Option<&'static mut QuickstepPush>,
+        Option<&'static MeleeLungeMovement>,
+        &'static Transform,
+        Has<QuickstepMismatchLogged>,
+    ),
+>;
+
 pub const TACTICAL_WALK_SPEED_METRES_PER_SECOND: f32 = 1.7;
 pub const BREATH_PER_METRE_PER_SECOND: f32 = 0.0034;
 pub const TACTICAL_BREATH_RESPONSE_SCALE: f32 = 5.0;
@@ -550,21 +570,7 @@ impl Plugin for AdventureSimulatorPhysicsPlugin {
 fn apply_character_motor(
     time: Res<Time<Fixed>>,
     mut commands: Commands,
-    mut controllers: Query<(
-        Entity,
-        &AccumulatedInput,
-        &mut CharacterController,
-        &CharacterControllerState,
-        &mut LinearVelocity,
-        Option<&mut Mass>,
-        Option<&CharacterLook>,
-        Option<&SkeletonState>,
-        Option<&MovementPace>,
-        Option<&mut QuickstepPush>,
-        Option<&MeleeLungeMovement>,
-        &Transform,
-        Has<QuickstepMismatchLogged>,
-    )>,
+    mut controllers: MovementControllerQuery<'_, '_>,
     viewer: TacticalPlayerViewer,
     dimensions: Query<&CharacterDimensions>,
     combat_config: Res<crate::combat_config::TacticalCombatConfig>,
@@ -962,11 +968,13 @@ fn apply_character_motor(
             approach_ground_velocity(
                 horizontal,
                 target,
-                drive_force / mass_kg,
-                braking_force / mass_kg,
-                lateral_acceleration,
-                traction_acceleration,
-                turn_radius,
+                GroundVelocityLimits {
+                    drive_acceleration: drive_force / mass_kg,
+                    braking_acceleration: braking_force / mass_kg,
+                    lateral_acceleration,
+                    traction_acceleration,
+                    turn_radius,
+                },
                 time.delta_secs(),
             )
         } else {
@@ -1075,16 +1083,28 @@ fn cut_lateral_acceleration(
     sustained_acceleration.lerp(traction_acceleration, lateral_demand * plant_skill)
 }
 
-fn approach_ground_velocity(
-    current: Vec2,
-    target: Vec2,
+#[derive(Debug, Clone, Copy)]
+struct GroundVelocityLimits {
     drive_acceleration: f32,
     braking_acceleration: f32,
     lateral_acceleration: f32,
     traction_acceleration: f32,
     turn_radius: f32,
+}
+
+fn approach_ground_velocity(
+    current: Vec2,
+    target: Vec2,
+    limits: GroundVelocityLimits,
     delta_seconds: f32,
 ) -> Vec2 {
+    let GroundVelocityLimits {
+        drive_acceleration,
+        braking_acceleration,
+        lateral_acceleration,
+        traction_acceleration,
+        turn_radius,
+    } = limits;
     if current == target || delta_seconds <= 0.0 {
         return current;
     }
@@ -1194,11 +1214,13 @@ mod tests {
                 velocity = approach_ground_velocity(
                     velocity,
                     Vec2::X * run_speed,
-                    drive_acceleration,
-                    braking_acceleration,
-                    traction_acceleration,
-                    traction_acceleration,
-                    motor.reference_sprint_turn_radius_metres,
+                    GroundVelocityLimits {
+                        drive_acceleration,
+                        braking_acceleration,
+                        lateral_acceleration: traction_acceleration,
+                        traction_acceleration,
+                        turn_radius: motor.reference_sprint_turn_radius_metres,
+                    },
                     dt,
                 );
                 displacement += velocity.x * dt;
@@ -1376,13 +1398,25 @@ mod tests {
             normal2: Vec3::NEG_Y,
             collision_distance: 0.0,
         };
-        let mut config = crate::combat_config::TacticalCombatConfig::default();
-        config.movement.speeds_metres_per_second.run = speed;
+        let defaults = crate::combat_config::TacticalCombatConfig::default();
+        let movement = crate::combat_config::TacticalMovementConfig {
+            speeds_metres_per_second: crate::combat_config::MovementSpeedsConfig {
+                run: speed,
+                ..defaults.movement.speeds_metres_per_second.clone()
+            },
+            ..defaults.movement.clone()
+        };
+        let config = crate::combat_config::TacticalCombatConfig {
+            movement,
+            ..defaults
+        };
         let motor = &config.movement.motor;
         let turn_radius = ordinary_turn_radius(speed, agility_sprint_turn_radius(agility, motor));
-        let mut attributes = crate::player::Attributes::default();
-        attributes.left_leg_agility = agility;
-        attributes.right_leg_agility = agility;
+        let attributes = crate::player::Attributes {
+            left_leg_agility: agility,
+            right_leg_agility: agility,
+            ..default()
+        };
         let mut world = World::new();
         let entity = world
             .spawn((
@@ -1503,46 +1537,28 @@ mod tests {
         let speed = REFERENCE_SPRINT_SPEED_METRES_PER_SECOND;
         let delta_seconds = 1.0 / LOCOMOTION_SAMPLE_HZ;
         let braking_acceleration = 9.0;
+        let limits = GroundVelocityLimits {
+            drive_acceleration: 9.0,
+            braking_acceleration,
+            lateral_acceleration: 6.0,
+            traction_acceleration: 9.0,
+            turn_radius: 3.0,
+        };
         let mut stopped = Vec2::X * speed;
         for _ in 0..128 {
-            stopped = approach_ground_velocity(
-                stopped,
-                Vec2::ZERO,
-                9.0,
-                braking_acceleration,
-                6.0,
-                9.0,
-                3.0,
-                delta_seconds,
-            );
+            stopped = approach_ground_velocity(stopped, Vec2::ZERO, limits, delta_seconds);
         }
         assert_eq!(stopped, Vec2::ZERO);
 
-        let first_reversal_tick = approach_ground_velocity(
-            Vec2::X * speed,
-            Vec2::Y,
-            9.0,
-            braking_acceleration,
-            6.0,
-            9.0,
-            3.0,
-            delta_seconds,
-        );
+        let first_reversal_tick =
+            approach_ground_velocity(Vec2::X * speed, Vec2::Y, limits, delta_seconds);
         assert!(
             first_reversal_tick.y > 0.0,
             "a right-angle input should steer"
         );
 
-        let exact_reversal_tick = approach_ground_velocity(
-            Vec2::X * speed,
-            Vec2::NEG_X * speed,
-            9.0,
-            braking_acceleration,
-            6.0,
-            9.0,
-            3.0,
-            delta_seconds,
-        );
+        let exact_reversal_tick =
+            approach_ground_velocity(Vec2::X * speed, Vec2::NEG_X * speed, limits, delta_seconds);
         assert!(exact_reversal_tick.x > 0.0 && exact_reversal_tick.x < speed);
         assert_eq!(exact_reversal_tick.y, 0.0);
     }

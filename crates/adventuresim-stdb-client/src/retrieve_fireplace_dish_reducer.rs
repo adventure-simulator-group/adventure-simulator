@@ -9,7 +9,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub(super) struct RetrieveFireplaceDishArgs {
     pub character_id: u64,
     pub fireplace_fixture_id: String,
-    pub inventory_scope: String,
+    pub container_object_id: Option<u64>,
 }
 
 impl From<RetrieveFireplaceDishArgs> for super::Reducer {
@@ -17,7 +17,7 @@ impl From<RetrieveFireplaceDishArgs> for super::Reducer {
         Self::RetrieveFireplaceDish {
             character_id: args.character_id,
             fireplace_fixture_id: args.fireplace_fixture_id,
-            inventory_scope: args.inventory_scope,
+            container_object_id: args.container_object_id,
         }
     }
 }
@@ -41,12 +41,12 @@ pub trait retrieve_fireplace_dish {
         &self,
         character_id: u64,
         fireplace_fixture_id: String,
-        inventory_scope: String,
+        container_object_id: Option<u64>,
     ) -> __sdk::Result<()> {
         self.retrieve_fireplace_dish_then(
             character_id,
             fireplace_fixture_id,
-            inventory_scope,
+            container_object_id,
             |_, _| {},
         )
     }
@@ -61,7 +61,7 @@ pub trait retrieve_fireplace_dish {
         &self,
         character_id: u64,
         fireplace_fixture_id: String,
-        inventory_scope: String,
+        container_object_id: Option<u64>,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -76,7 +76,7 @@ impl retrieve_fireplace_dish for super::RemoteReducers {
         &self,
         character_id: u64,
         fireplace_fixture_id: String,
-        inventory_scope: String,
+        container_object_id: Option<u64>,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -88,7 +88,7 @@ impl retrieve_fireplace_dish for super::RemoteReducers {
             RetrieveFireplaceDishArgs {
                 character_id,
                 fireplace_fixture_id,
-                inventory_scope,
+                container_object_id,
             },
             callback,
         )

@@ -1,5 +1,12 @@
 (() => {
-  const DAY_MINUTES = 1440;
+  const calendar = typeof window === "undefined"
+    ? globalThis.strategicCalendar
+    : window.strategicCalendar;
+  const {
+    minutesPerDay: DAY_MINUTES,
+    daysPerYear: MAX_REST_DAYS,
+  } = calendar;
+  const MAX_REST_MINUTES = MAX_REST_DAYS * DAY_MINUTES;
 
   function normalizeMinute(value) {
     return ((Math.round(Number(value)) % DAY_MINUTES) + DAY_MINUTES) % DAY_MINUTES;
@@ -115,7 +122,7 @@
       duration.inputMode = hours ? "text" : "numeric";
       duration.pattern = hours ? "[0-9]+:[0-5][0-9]" : "";
       duration.min = hours ? "" : "1";
-      duration.max = hours ? "" : "365";
+      duration.max = hours ? "" : String(MAX_REST_DAYS);
       duration.step = hours ? "" : "1";
       control.querySelector("[data-rest-unit-label]").textContent = hours ? "hours" : "days";
       if (hours) {
@@ -164,12 +171,12 @@
         const value = Number(duration.value);
         daysValue = Math.round(value);
         exact.value = "";
-        submit.disabled = !Number.isFinite(value) || value < 1 || value > 365 || value !== daysValue;
+        submit.disabled = !Number.isFinite(value) || value < 1 || value > MAX_REST_DAYS || value !== daysValue;
         return;
       }
       const durationMinutes = parseDuration(duration.value);
       if (characterMinutes === null || durationMinutes === null
-        || durationMinutes < minimumMinutes || durationMinutes > 365 * DAY_MINUTES) {
+        || durationMinutes < minimumMinutes || durationMinutes > MAX_REST_MINUTES) {
         exact.value = "";
         submit.disabled = true;
         return;
@@ -194,7 +201,7 @@
       dirty.add(control);
       if (selectedUnit() === "hours") {
         const current = parseDuration(duration.value) ?? minimumMinutes;
-        const next = Math.min(365 * DAY_MINUTES, Math.max(minimumMinutes, current + Number(button.dataset.restStep) * 60));
+        const next = Math.min(MAX_REST_MINUTES, Math.max(minimumMinutes, current + Number(button.dataset.restStep) * 60));
         duration.value = formatDuration(next);
       } else {
         duration.value = String(Number(duration.value || duration.min) + Number(button.dataset.restStep));

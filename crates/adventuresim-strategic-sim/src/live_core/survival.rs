@@ -9,19 +9,19 @@ fn bounded_grams(weight_kg: f32) -> u64 {
 fn public_encumbrance_remaining_bps(load_kg: f32, capacity_kg: f32) -> u32 {
     (adventuresim_core::equipment::encumbrance_remaining_multiplier(load_kg, capacity_kg)
         .clamp(0.0, 1.0)
-        * 10_000.0)
-        .round() as u32
+        * f32::from(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE))
+    .round() as u32
 }
 
 fn survival_equipment_ready(
-    condition_status: &str,
+    condition_status: DomainIncapacitationStatus,
     wetness_bps: u16,
     thermal_strain: i32,
     ranged: bool,
     ammunition: u32,
     encumbrance_remaining_bps: u32,
 ) -> bool {
-    condition_status == "ready"
+    condition_status == DomainIncapacitationStatus::Ready
         && wetness_bps <= MAX_DEPARTURE_WETNESS_BPS
         && thermal_strain.unsigned_abs() <= MAX_DEPARTURE_ABS_THERMAL_STRAIN
         && (!ranged || ammunition >= RANGED_AMMUNITION_FLOOR)
@@ -77,7 +77,36 @@ impl LiveRunner {
             .sum()
     }
 
-    fn public_object_root_matches(&self, object_id: u64, kind: &str, owner: &str) -> bool {
+    fn public_inventory_location_matches_custody(
+        location: &InventoryLocation,
+        custody: &OperationalCustody,
+    ) -> bool {
+        match (location, custody) {
+            (
+                InventoryLocation::Personal(location),
+                OperationalCustody::Character(character_id),
+            ) => location.character_id == character_id.get(),
+            (InventoryLocation::Party(location), OperationalCustody::Party(party_id)) => {
+                location.party_id == party_id.as_str()
+            }
+            _ => false,
+        }
+    }
+
+    fn public_inventory_location_matches_row(
+        location: &InventoryLocation,
+        custody: &OperationalCustody,
+        row_id: u64,
+    ) -> bool {
+        Self::public_inventory_location_matches_custody(location, custody)
+            && match location {
+                InventoryLocation::Personal(location) => location.row_id == row_id,
+                InventoryLocation::Party(location) => location.row_id == row_id,
+                InventoryLocation::Fireplace(_) | InventoryLocation::Repair(_) => false,
+            }
+    }
+
+    fn public_object_root_matches(&self, object_id: u64, custody: &OperationalCustody) -> bool {
         let mut cursor = object_id;
         let mut visited = HashSet::new();
         for _ in 0..=adventuresim_core::inventory_containers::MAX_CONTAINER_DEPTH {
@@ -93,7 +122,7 @@ impl LiveRunner {
             else {
                 return false;
             };
-            if object.location_kind != kind || object.location_owner != owner {
+            if !Self::public_inventory_location_matches_custody(&object.location, custody) {
                 return false;
             }
             let parent = self
@@ -111,83 +140,72 @@ impl LiveRunner {
         false
     }
 
-    fn public_row_is_carried(&self, kind: &str, owner: &str, row_id: u64) -> bool {
+    fn public_row_is_carried(&self, custody: &OperationalCustody, row_id: u64) -> bool {
         let objects = self
             .connection
             .db
             .inventory_object()
             .iter()
-            .filter(|object| object.location_kind == kind && object.inventory_row_id == row_id)
+            .filter(|object| {
+                Self::public_inventory_location_matches_row(&object.location, custody, row_id)
+            })
             .collect::<Vec<_>>();
         match objects.as_slice() {
-            [] => true,
-            [object] => self.public_object_root_matches(object.id, kind, owner),
-            _ => false,
+            [object] => self.public_object_root_matches(object.id, custody),
+            [] | [_, _, ..] => false,
         }
     }
 
     fn public_measured_stack_weight_kg(
         &self,
-        kind: &str,
+        scope: CarriedInventoryScope,
         row_id: u64,
         item_id: &str,
         quantity: u32,
     ) -> f32 {
-        let remaining = match kind {
-            "personal" => self
+        let remaining = match scope {
+            CarriedInventoryScope::Personal => self
                 .connection
                 .db
                 .inventory_item_amount()
                 .iter()
                 .find(|amount| amount.inventory_item_id == row_id)
-                .map(|amount| amount.remaining_milliunits),
-            "party" => self
+                .map(|amount| amount.remaining_fraction_micros),
+            CarriedInventoryScope::Party => self
                 .connection
                 .db
                 .party_item_amount()
                 .iter()
                 .find(|amount| amount.party_inventory_item_id == row_id)
-                .map(|amount| amount.remaining_milliunits),
-            _ => None,
+                .map(|amount| amount.remaining_fraction_micros),
         };
         self.item_definition(item_id).map_or(0.0, |item| {
             item.weight.max(0.0) * public_effective_inventory_quantity(quantity, remaining)
         })
     }
 
-    fn public_contained_water_ml(&self, kind: &str, owner: &str) -> f32 {
+    fn public_contained_water_ml(&self, custody: &OperationalCustody) -> f32 {
         self.connection
             .db
             .container_liquid()
             .iter()
             .filter(|liquid| liquid.liquid_item_id == "water")
-            .filter(|liquid| {
-                self.public_object_root_matches(liquid.container_object_id, kind, owner)
-            })
+            .filter(|liquid| self.public_object_root_matches(liquid.container_object_id, custody))
             .map(|liquid| liquid.water_ml as f32)
             .sum()
     }
 
     fn public_personal_load_kg(&self, character_id: u64) -> f32 {
-        let water_weight = self
-            .connection
-            .db
-            .backend_character_needs()
-            .iter()
-            .find(|row| row.character_id == character_id)
-            .map_or(0.0, |row| row.carried_water_ml.max(0.0) / 1_000.0);
+        let Ok(custody) = OperationalCustody::character(character_id) else {
+            return f32::INFINITY;
+        };
         let inventory_weight = self
             .connection
             .db
             .inventory_item()
             .iter()
             .filter(|row| {
-                row.character_id == character_id
-                    && self.public_row_is_carried(
-                        "personal",
-                        &character_id.to_string(),
-                        row.id,
-                    )
+                row.character_id == character_id && self.public_row_is_carried(&custody, row.id)
             })
             .map(|row| {
                 self.connection
@@ -198,7 +216,7 @@ impl LiveRunner {
                     .map_or_else(
                         || {
                             self.public_measured_stack_weight_kg(
-                                "personal",
+                                CarriedInventoryScope::Personal,
                                 row.id,
                                 &row.item_id,
                                 row.quantity,
@@ -208,13 +226,12 @@ impl LiveRunner {
                     )
             })
             .sum::<f32>();
-        // Match StrategicEquipment::load: encumbrance is carried inventory
-        // plus carried water. A character's own body mass is combat data, not
-        // cargo, and including it creates a false overweight feedback loop
-        // when a staggered condition temporarily halves carrying capacity.
-        water_weight
-            + inventory_weight
-            + self.public_contained_water_ml("personal", &character_id.to_string()) / 1_000.0
+        // Match StrategicEquipment::load: encumbrance is carried inventory,
+        // including the water physically held by carried containers. A
+        // character's own body mass is combat data, not cargo, and including
+        // it creates a false overweight feedback loop when a staggered
+        // condition temporarily halves carrying capacity.
+        inventory_weight + self.public_contained_water_ml(&custody) / 1_000.0
     }
 
     fn public_character_capacity_kg(&self, character_id: u64) -> f32 {
@@ -242,10 +259,10 @@ impl LiveRunner {
             .backend_character_strategic_conditions()
             .iter()
             .find(|row| row.character_id == character_id)
-            .map_or(0.0, |row| match row.status.as_str() {
-                "ready" => 1.0,
-                "staggered" => 0.5,
-                _ => 0.0,
+            .map_or(0.0, |row| match domain_incapacitation_status(row.status) {
+                DomainIncapacitationStatus::Ready => 1.0,
+                DomainIncapacitationStatus::Staggered => 0.5,
+                DomainIncapacitationStatus::Incapacitated => 0.0,
             });
         let adjusted_leg_strength = (attributes.left_leg_strength
             * limbs.left_leg_health.clamp(0.0, 1.0)
@@ -256,19 +273,21 @@ impl LiveRunner {
     }
 
     fn public_party_load_and_capacity(&self, party_id: &str) -> (f32, f32, u32) {
+        let Ok(party_custody) = OperationalCustody::party(party_id.to_owned()) else {
+            return (f32::INFINITY, 0.0, 0);
+        };
         let living_ids = self.living_party_member_ids(party_id);
         let personal_load = living_ids
             .iter()
             .map(|id| self.public_personal_load_kg(*id))
             .sum::<f32>();
-        let pooled_load = self
+        let party_inventory_load = self
             .connection
             .db
             .party_inventory_item()
             .iter()
             .filter(|row| {
-                row.party_id == party_id
-                    && self.public_row_is_carried("party", party_id, row.id)
+                row.party_id == party_id && self.public_row_is_carried(&party_custody, row.id)
             })
             .map(|row| {
                 self.connection
@@ -279,7 +298,7 @@ impl LiveRunner {
                     .map_or_else(
                         || {
                             self.public_measured_stack_weight_kg(
-                                "party",
+                                CarriedInventoryScope::Party,
                                 row.id,
                                 &row.item_id,
                                 row.quantity,
@@ -294,8 +313,8 @@ impl LiveRunner {
             .map(|id| self.public_character_capacity_kg(*id))
             .sum::<f32>();
         let load = personal_load
-            + pooled_load
-            + self.public_contained_water_ml("party", party_id) / 1_000.0;
+            + party_inventory_load
+            + self.public_contained_water_ml(&party_custody) / 1_000.0;
         (
             load,
             capacity,
@@ -342,7 +361,7 @@ impl LiveRunner {
             carry_capacity_kg,
             encumbrance_remaining_bps,
             equipment_ready: survival_equipment_ready(
-                &condition.status,
+                domain_incapacitation_status(condition.status),
                 condition.wetness_bps,
                 condition.thermal_strain,
                 capability.ranged,
@@ -631,10 +650,7 @@ impl LiveRunner {
         Ok(true)
     }
 
-    fn tent_provider_unavailable_bivouac(
-        &mut self,
-        event_agent: u32,
-    ) -> DepartureReadiness {
+    fn tent_provider_unavailable_bivouac(&mut self, event_agent: u32) -> DepartureReadiness {
         self.metrics.tent_provider_unavailable_bivouac_departures = self
             .metrics
             .tent_provider_unavailable_bivouac_departures
@@ -941,7 +957,10 @@ impl LiveRunner {
                 .copied()
                 .collect::<HashSet<_>>()
                 .len();
-            layers.extend(std::iter::repeat_n((item.padding, item.coverage), protected_regions));
+            layers.extend(std::iter::repeat_n(
+                (item.padding, item.coverage),
+                protected_regions,
+            ));
         }
         Some(adventuresim_core::survival::insulation_from_layers(layers))
     }
@@ -965,17 +984,11 @@ impl LiveRunner {
                 .settlement()
                 .iter()
                 .find(|row| row.id == origin_id)
-                .map(|row| {
-                    (
-                        PublicRoutePoint {
-                            latitude_microdegrees: (row.coord_y * 1_000_000.0).round() as i32,
-                            longitude_microdegrees: (row.coord_x * 1_000_000.0).round() as i32,
-                            // Straight-line case-site route authority currently
-                            // samples both endpoints at zero elevation.
-                            elevation_m: 0,
-                        },
-                        row.source_node_id.is_some(),
-                    )
+                .and_then(|row| {
+                    // Straight-line case-site route authority currently
+                    // samples both endpoints at zero elevation.
+                    PublicRoutePoint::from_degrees(row.coord_y, row.coord_x, 0)
+                        .map(|point| (point, row.source_node_id.is_some()))
                 }),
             (None, Some(origin_id)) => self
                 .connection
@@ -986,25 +999,18 @@ impl LiveRunner {
                     row.owner_character_id == pin.owner_character_id
                         && row.case_site_id == origin_id.value
                 })
-                .map(|row| {
-                    (
-                        PublicRoutePoint {
-                            latitude_microdegrees: row.latitude_e_7 / 10,
-                            longitude_microdegrees: row.longitude_e_7 / 10,
-                            elevation_m: 0,
-                        },
-                        row.coordinates_are_geographic,
-                    )
+                .and_then(|row| {
+                    PublicRoutePoint::from_e7(row.latitude_e_7, row.longitude_e_7, 0)
+                        .map(|point| (point, row.coordinates_are_geographic))
                 }),
             _ => None,
         };
         let Some((origin, origin_geographic)) = origin else {
             return DepartureReadiness::Deferred("route_weather_projection_unavailable");
         };
-        let destination = PublicRoutePoint {
-            latitude_microdegrees: pin.latitude_e_7 / 10,
-            longitude_microdegrees: pin.longitude_e_7 / 10,
-            elevation_m: 0,
+        let Some(destination) = PublicRoutePoint::from_e7(pin.latitude_e_7, pin.longitude_e_7, 0)
+        else {
+            return DepartureReadiness::Deferred("route_weather_projection_unavailable");
         };
         if origin_geographic != pin.coordinates_are_geographic {
             return DepartureReadiness::Deferred("route_weather_projection_unavailable");
@@ -1073,14 +1079,6 @@ impl LiveRunner {
                 },
             });
         }
-        let camp_policy = match party.camp_duration_mode {
-            CampDurationMode::Auto => adventuresim_core::strategic_time::CampDurationPolicy::Auto,
-            CampDurationMode::Fixed => {
-                adventuresim_core::strategic_time::CampDurationPolicy::FixedMinutes(
-                    party.fixed_camp_minutes,
-                )
-            }
-        };
         let mut projected_actions = self
             .connection
             .db
@@ -1155,7 +1153,6 @@ impl LiveRunner {
                                         movement_minutes,
                                         candidate_walking_minutes,
                                         candidate_travel_at_night,
-                                        camp_policy,
                                         &candidate_itinerary_members,
                                     )
                                 else {
@@ -1197,7 +1194,6 @@ impl LiveRunner {
                                         movement_minutes,
                                         candidate_walking_minutes,
                                         candidate_travel_at_night,
-                                        camp_policy,
                                         &candidate_return_members,
                                     )
                                 else {
@@ -1249,15 +1245,21 @@ impl LiveRunner {
                                             adventuresim_core::survival::SurvivalState::default()
                                         };
                                         let Some(thermal_safe) = projected_round_trip_thermal_safe(
-                                            candidate_start,
-                                            &candidate_outbound,
-                                            &candidate_return,
-                                            action_minutes,
-                                            origin,
-                                            destination,
-                                            starting_state,
-                                            insulation_bps,
-                                            has_tent,
+                                            RoundTripThermalProjection {
+                                                starting_minute: candidate_start,
+                                                outbound_itinerary: &candidate_outbound,
+                                                return_itinerary: &candidate_return,
+                                                action_minutes,
+                                                route: PublicRoundTripRoute {
+                                                    origin,
+                                                    destination,
+                                                },
+                                                traveler: PublicThermalTraveler {
+                                                    starting_state,
+                                                    insulation_bps,
+                                                    has_tent,
+                                                },
+                                            },
                                         ) else {
                                             projection_available = false;
                                             return false;
@@ -1319,7 +1321,7 @@ impl LiveRunner {
                                         adventuresim_core::strategic_time::common_fatigue_clear_minutes(
                                             &arrival_members,
                                         );
-                                    if (1..=1_440).contains(&recovery_minutes) {
+                                    if (1..=MINUTES_PER_DAY).contains(&recovery_minutes) {
                                         let recovered_members = arrival_members
                                             .iter()
                                             .map(|member| {
@@ -1359,7 +1361,6 @@ impl LiveRunner {
                                                 movement_minutes,
                                                 candidate_walking_minutes,
                                                 candidate_travel_at_night,
-                                                camp_policy,
                                                 &recovered_return_members,
                                             )
                                             && !recovered_return.truncated
@@ -1390,20 +1391,29 @@ impl LiveRunner {
                                                         recovered_members[member_index].calories_used;
                                                     let thermal_safe =
                                                         projected_recovery_round_trip_thermal_safe(
-                                                            candidate_start,
-                                                            &candidate_outbound,
-                                                            recovery_minutes,
-                                                            &recovered_return,
-                                                            action_minutes,
-                                                            origin,
-                                                            destination,
-                                                            adventuresim_core::survival::SurvivalState {
-                                                                wetness_bps: condition.wetness_bps,
-                                                                thermal_strain: condition.thermal_strain,
-                                                                frostbite_progress_minutes: 0,
+                                                            RoundTripThermalProjection {
+                                                                starting_minute: candidate_start,
+                                                                outbound_itinerary:
+                                                                    &candidate_outbound,
+                                                                return_itinerary:
+                                                                    &recovered_return,
+                                                                action_minutes,
+                                                                route: PublicRoundTripRoute {
+                                                                    origin,
+                                                                    destination,
+                                                                },
+                                                                traveler: PublicThermalTraveler {
+                                                                    starting_state:
+                                                                        adventuresim_core::survival::SurvivalState {
+                                                                            wetness_bps: condition.wetness_bps,
+                                                                            thermal_strain: condition.thermal_strain,
+                                                                            frostbite_progress_minutes: 0,
+                                                                        },
+                                                                    insulation_bps,
+                                                                    has_tent,
+                                                                },
                                                             },
-                                                            insulation_bps,
-                                                            has_tent,
+                                                            recovery_minutes,
                                                         )
                                                         .unwrap_or(false);
                                                     projected_itinerary_survivable(
@@ -1505,12 +1515,13 @@ impl LiveRunner {
                         .find(|settlement| settlement.id == id)
                         .map(|settlement| settlement.economy.clone())
                 });
-                let public_clothing_storefront = settlement_economy.as_ref().is_some_and(|economy| {
-                    public_storefront_available(
-                        economy,
-                        adventuresim_core::settlement_economy::Storefront::Clothing,
-                    )
-                });
+                let public_clothing_storefront =
+                    settlement_economy.as_ref().is_some_and(|economy| {
+                        public_storefront_available(
+                            economy,
+                            adventuresim_core::settlement_economy::Storefront::Clothing,
+                        )
+                    });
                 let public_armor_storefront = settlement_economy.as_ref().is_some_and(|economy| {
                     public_storefront_available(
                         economy,
@@ -1534,7 +1545,7 @@ impl LiveRunner {
                     ),
                 );
                 if reason == "route_fatigue_recovery_required"
-                    && (60..=1_440).contains(&recovery_minutes)
+                    && (60..=MINUTES_PER_DAY).contains(&recovery_minutes)
                 {
                     return DepartureReadiness::WaitForSafeDeparture {
                         reason,
@@ -1573,9 +1584,9 @@ impl LiveRunner {
                     case_site_recovery_minutes: selected_plan.case_site_recovery_minutes,
                 }
             } else {
-                let wait_minutes = selected_plan.departure_wait_minutes.min(1_440);
+                let wait_minutes = selected_plan.departure_wait_minutes.min(MINUTES_PER_DAY);
                 DepartureReadiness::WaitForSafeDeparture {
-                    reason: if selected_plan.departure_wait_minutes > 1_440 {
+                    reason: if selected_plan.departure_wait_minutes > MINUTES_PER_DAY {
                         "wait_toward_safe_public_route_window"
                     } else {
                         "safe_public_route_window"
@@ -1600,7 +1611,6 @@ impl LiveRunner {
             movement_minutes,
             planned_walking_minutes,
             planned_travel_at_night,
-            camp_policy,
             &itinerary_members,
         ) else {
             return DepartureReadiness::Deferred("route_weather_projection_unavailable");
@@ -1630,7 +1640,6 @@ impl LiveRunner {
             movement_minutes,
             planned_walking_minutes,
             planned_travel_at_night,
-            camp_policy,
             &return_members,
         ) else {
             return DepartureReadiness::Deferred("route_weather_projection_unavailable");
@@ -1658,7 +1667,6 @@ impl LiveRunner {
                 movement_minutes,
                 planned_walking_minutes,
                 planned_travel_at_night,
-                camp_policy,
                 &itinerary_members,
             )?;
             if outbound.truncated || outbound.member_final_fatigue.len() != itinerary_members.len()
@@ -1687,7 +1695,6 @@ impl LiveRunner {
                 movement_minutes,
                 planned_walking_minutes,
                 planned_travel_at_night,
-                camp_policy,
                 &members,
             )?;
             if returned.truncated {
@@ -1733,17 +1740,23 @@ impl LiveRunner {
                 thermal_strain: condition.thermal_strain,
                 frostbite_progress_minutes: 0,
             };
-            let Some(member_immediate_thermal_safe) = projected_round_trip_thermal_safe(
-                starting_minute,
-                &itinerary,
-                &return_itinerary,
-                action_minutes,
-                origin,
-                destination,
-                starting_state,
-                insulation_bps,
-                has_tent,
-            ) else {
+            let Some(member_immediate_thermal_safe) =
+                projected_round_trip_thermal_safe(RoundTripThermalProjection {
+                    starting_minute,
+                    outbound_itinerary: &itinerary,
+                    return_itinerary: &return_itinerary,
+                    action_minutes,
+                    route: PublicRoundTripRoute {
+                        origin,
+                        destination,
+                    },
+                    traveler: PublicThermalTraveler {
+                        starting_state,
+                        insulation_bps,
+                        has_tent,
+                    },
+                })
+            else {
                 return DepartureReadiness::Deferred("route_weather_projection_unavailable");
             };
             let nonfatigue_incapacitation = (condition.incapacitation - condition.fatigue).max(0.0);
@@ -1778,18 +1791,23 @@ impl LiveRunner {
                     fatigue_capacity,
                 );
             if let Some((_, delayed_start, delayed_outbound, delayed_return)) = &delayed_forecast {
-                let delayed_thermal_safe = projected_round_trip_thermal_safe(
-                    *delayed_start,
-                    delayed_outbound,
-                    delayed_return,
-                    action_minutes,
-                    origin,
-                    destination,
-                    starting_state,
-                    insulation_bps,
-                    has_tent,
-                )
-                .unwrap_or(false);
+                let delayed_thermal_safe =
+                    projected_round_trip_thermal_safe(RoundTripThermalProjection {
+                        starting_minute: *delayed_start,
+                        outbound_itinerary: delayed_outbound,
+                        return_itinerary: delayed_return,
+                        action_minutes,
+                        route: PublicRoundTripRoute {
+                            origin,
+                            destination,
+                        },
+                        traveler: PublicThermalTraveler {
+                            starting_state,
+                            insulation_bps,
+                            has_tent,
+                        },
+                    })
+                    .unwrap_or(false);
                 let Some(&delayed_outbound_fatigue) =
                     delayed_outbound.member_final_fatigue.get(member_index)
                 else {
@@ -1914,10 +1932,9 @@ impl LiveRunner {
         else {
             return false;
         };
-        let location = PublicRoutePoint {
-            latitude_microdegrees: pin.latitude_e_7 / 10,
-            longitude_microdegrees: pin.longitude_e_7 / 10,
-            elevation_m: 0,
+        let Some(location) = PublicRoutePoint::from_e7(pin.latitude_e_7, pin.longitude_e_7, 0)
+        else {
+            return false;
         };
         let member_ids = self.living_party_member_ids(party_id);
         if member_ids.is_empty() {
@@ -1980,10 +1997,8 @@ impl LiveRunner {
         else {
             return false;
         };
-        let site = PublicRoutePoint {
-            latitude_microdegrees: pin.latitude_e_7 / 10,
-            longitude_microdegrees: pin.longitude_e_7 / 10,
-            elevation_m: 0,
+        let Some(site) = PublicRoutePoint::from_e7(pin.latitude_e_7, pin.longitude_e_7, 0) else {
+            return false;
         };
         member_ids.into_iter().all(|character_id| {
             if self
@@ -2054,16 +2069,14 @@ impl LiveRunner {
         else {
             return OnSiteActionDecision::Hold;
         };
-        let origin = PublicRoutePoint {
-            latitude_microdegrees: (origin_row.coord_y * 1_000_000.0).round() as i32,
-            longitude_microdegrees: (origin_row.coord_x * 1_000_000.0).round() as i32,
-            // Match the authoritative straight-line route weather model.
-            elevation_m: 0,
+        // Match the authoritative straight-line route weather model.
+        let Some(origin) =
+            PublicRoutePoint::from_degrees(origin_row.coord_y, origin_row.coord_x, 0)
+        else {
+            return OnSiteActionDecision::Hold;
         };
-        let site = PublicRoutePoint {
-            latitude_microdegrees: pin.latitude_e_7 / 10,
-            longitude_microdegrees: pin.longitude_e_7 / 10,
-            elevation_m: 0,
+        let Some(site) = PublicRoutePoint::from_e7(pin.latitude_e_7, pin.longitude_e_7, 0) else {
+            return OnSiteActionDecision::Hold;
         };
         if origin_row.source_node_id.is_some() != pin.coordinates_are_geographic {
             return OnSiteActionDecision::Hold;
@@ -2090,9 +2103,6 @@ impl LiveRunner {
         else {
             return OnSiteActionDecision::Hold;
         };
-        let camp_policy = adventuresim_core::strategic_time::CampDurationPolicy::FixedMinutes(
-            party.fixed_camp_minutes,
-        );
         let has_tent = self.party_item_quantity(party_id, PARTY_TENT_ITEM_ID) > 0;
         let recovery_members = member_ids
             .iter()
@@ -2140,7 +2150,7 @@ impl LiveRunner {
         };
         let recovery_minutes =
             adventuresim_core::strategic_time::common_fatigue_clear_minutes(&recovery_members);
-        let bounded_recovery = (1..=1_440).contains(&recovery_minutes);
+        let bounded_recovery = (1..=MINUTES_PER_DAY).contains(&recovery_minutes);
         let mut action_return_safe = true;
         let mut rest_action_return_safe = bounded_recovery;
         let mut return_now_safe = true;
@@ -2213,7 +2223,6 @@ impl LiveRunner {
                 movement_minutes,
                 party.walking_minutes_per_day,
                 party.travel_at_night,
-                camp_policy,
                 &member(stats.calories_used),
             ) else {
                 return OnSiteActionDecision::Hold;
@@ -2225,14 +2234,14 @@ impl LiveRunner {
                 movement_minutes,
                 party.walking_minutes_per_day,
                 party.travel_at_night,
-                camp_policy,
                 &member(action_calories),
             ) else {
                 return OnSiteActionDecision::Hold;
             };
             let nonfatigue_incapacitation = (condition.incapacitation - condition.fatigue).max(0.0);
-            let actor_ready_before_action =
-                character_id != pin.owner_character_id || condition.status == "ready";
+            let actor_ready_before_action = character_id != pin.owner_character_id
+                || domain_incapacitation_status(condition.status)
+                    == DomainIncapacitationStatus::Ready;
             let action_survivable = projected_action_survivable(
                 nonfatigue_incapacitation,
                 action_calories,
@@ -2303,7 +2312,6 @@ impl LiveRunner {
                     movement_minutes,
                     party.walking_minutes_per_day,
                     party.travel_at_night,
-                    camp_policy,
                     &member(recovered_action_calories),
                 ) else {
                     return OnSiteActionDecision::Hold;

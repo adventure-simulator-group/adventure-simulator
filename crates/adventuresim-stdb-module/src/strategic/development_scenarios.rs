@@ -125,12 +125,7 @@ pub(crate) fn register_development_scenario(
         primary_character_id,
         entry_route: entry_route.into(),
     };
-    if let Some(existing) = ctx
-        .db
-        .development_scenario()
-        .slug()
-        .find(slug.to_owned())
-    {
+    if let Some(existing) = ctx.db.development_scenario().slug().find(slug.to_owned()) {
         if existing.primary_character_id != primary_character_id {
             return Err("Development scenario slug conflicts with another primary".into());
         }
@@ -209,18 +204,19 @@ fn ensure_scenario_settlement(ctx: &ReducerContext, id: &str, name: &str) -> Res
 
 pub(crate) fn ensure_foraging_demo_settlement(ctx: &ReducerContext) -> Result<(), String> {
     const ID: &str = "dev-scenario-foraging";
-    let (mut settlement, exists) = if let Some(existing) = ctx.db.settlement().id().find(ID.to_owned()) {
-        (existing, true)
-    } else {
-        (
-            ctx.db
-                .settlement()
-                .id()
-                .find("riverdale".to_owned())
-                .ok_or("Foraging demo settlement template is missing")?,
-            false,
-        )
-    };
+    let (mut settlement, exists) =
+        if let Some(existing) = ctx.db.settlement().id().find(ID.to_owned()) {
+            (existing, true)
+        } else {
+            (
+                ctx.db
+                    .settlement()
+                    .id()
+                    .find("riverdale".to_owned())
+                    .ok_or("Foraging demo settlement template is missing")?,
+                false,
+            )
+        };
     // Empirically sampled from the pinned final terrain pack: uncultivated
     // deep woods with no crossing or wetland fraction.
     settlement.id = ID.into();
@@ -282,11 +278,11 @@ fn ensure_recurring_threat_provisions(
         .ok_or("Recurring-threat scenario character has no party")?;
     for (item_id, target_quantity) in [
         (
-            adventuresim_core::provisioning::STANDARD_TRAVEL_RATION_ID,
+            adventuresim_core::item_references::STANDARD_TRAVEL_RATION_ID,
             RECURRING_THREAT_RATIONS,
         ),
         (
-            adventuresim_core::provisioning::STANDARD_WATERSKIN_ID,
+            adventuresim_core::item_references::STANDARD_WATERSKIN_ID,
             RECURRING_THREAT_WATERSKINS,
         ),
         (
@@ -331,12 +327,12 @@ fn ensure_recurring_threat_offer_awareness(
 /// feature states against distinct primary characters.
 /// The five puzzle scenarios materialized by the development gallery, in the
 /// order they occupy the flat gallery-item index.
-const GALLERY_PUZZLE_KINDS: [ErrantryPuzzleKind; 5] = [
-    ErrantryPuzzleKind::OrderedSigils,
-    ErrantryPuzzleKind::TruthfulWitnesses,
-    ErrantryPuzzleKind::RuneTransformation,
-    ErrantryPuzzleKind::LogicGrid,
-    ErrantryPuzzleKind::ResourceAllocation,
+const GALLERY_PUZZLE_KINDS: [PuzzleKind; 5] = [
+    PuzzleKind::OrderedSigils,
+    PuzzleKind::TruthfulWitnesses,
+    PuzzleKind::RuneTransformation,
+    PuzzleKind::LogicGrid,
+    PuzzleKind::ResourceAllocation,
 ];
 /// Flat gallery-item indices 0..GALLERY_PUZZLE_BASE are the fixed scenarios
 /// (static block, autopsy, outbreak, threat); the puzzles follow, then the
@@ -442,16 +438,16 @@ pub(crate) fn materialize_gallery_item(ctx: &ReducerContext, index: usize) -> Re
         i if i < GALLERY_ROAD_BASE => {
             let offset = i - GALLERY_PUZZLE_BASE;
             let kind = GALLERY_PUZZLE_KINDS[offset];
-            let slug = format!("puzzle-{}", kind.core().slug());
+            let slug = format!("puzzle-{}", kind.slug());
             let character_id = 9_999_999_999_999_950 - offset as u64;
-            ensure_scenario_character(ctx, character_id, &format!("{} Puzzle Tester", kind.core().slug()))?;
+            ensure_scenario_character(ctx, character_id, &format!("{} Puzzle Tester", kind.slug()))?;
             let materialized = materialize_order_errantry(
                 ctx,
                 character_id,
                 None,
                 ErrantryLaunch::DirectDemoCamp(kind),
             )?;
-            register_development_scenario(ctx, &slug, "Puzzles", &format!("{} puzzle", kind.core().slug().replace('-', " ")), "Solve this puzzle from its ordinary journey-camp entry state.", character_id, "/camp")?;
+            register_development_scenario(ctx, &slug, "Puzzles", &format!("{} puzzle", kind.slug().replace('-', " ")), "Solve this puzzle from its ordinary journey-camp entry state.", character_id, "/camp")?;
             register_development_subject(ctx, &slug, "case", &materialized.case_id)?;
         }
         i => {
@@ -470,7 +466,7 @@ pub(crate) fn materialize_gallery_item(ctx: &ReducerContext, index: usize) -> Re
                 .map_or_else(|| definition.id.replace(['-', '_'], " "), |speaker| format!("Encounter with {}", speaker.name));
             register_development_scenario(ctx, &scenario_slug, "Road encounters", &label, "Play this compiled encounter through its ordinary journey-camp presentation.", character_id, "/camp")?;
             register_development_subject(ctx, &scenario_slug, "road_encounter", &occurrence_id)?;
-        }
+    }
     }
     Ok(true)
 }
@@ -479,8 +475,17 @@ pub(crate) fn materialize_gallery_item(ctx: &ReducerContext, index: usize) -> Re
 /// once after every gallery item has been materialized.
 pub(crate) fn validate_gallery_postcondition(ctx: &ReducerContext) -> Result<(), String> {
     for scenario in ctx.db.development_scenario().iter() {
-        if ctx.db.character().id().find(scenario.primary_character_id).is_none() {
-            return Err(format!("Scenario {} has no primary character", scenario.slug));
+        if ctx
+            .db
+            .character()
+            .id()
+            .find(scenario.primary_character_id)
+            .is_none()
+        {
+            return Err(format!(
+                "Scenario {} has no primary character",
+                scenario.slug
+            ));
         }
     }
     Ok(())
@@ -572,9 +577,8 @@ pub fn backend_development_quests(ctx: &ViewContext) -> Vec<BackendDevelopmentQu
             .problem_id()
             .find(problem.id.clone())
             .map_or_else(|| "Not publicly described".into(), |row| row.public_summary);
-        let supports_incident_action = !scenario_slug.is_empty()
-            && problem.recurring_hostile
-            && problem.resolved_at.is_none();
+        let supports_incident_action =
+            !scenario_slug.is_empty() && problem.recurring_hostile && problem.resolved_at.is_none();
         rows.push(BackendDevelopmentQuest {
             scenario_slug,
             quest_kind: "generated problem".into(),
@@ -649,11 +653,16 @@ pub fn backend_development_quests(ctx: &ViewContext) -> Vec<BackendDevelopmentQu
             subject_id: challenge.id,
             canonical_case_id: challenge.case_id,
             title: challenge.catalog_id,
-            status: if challenge.open { "open".into() } else { "resolved".into() },
+            status: if challenge.open {
+                "open".into()
+            } else {
+                "resolved".into()
+            },
             incident_count: 0,
             public_awareness_bps: 0,
             supports_incident_action: false,
-            player_safe_summary: "Catalog-authored encounter bound to this scenario's ordinary journey camp.".into(),
+            player_safe_summary:
+                "Catalog-authored encounter bound to this scenario's ordinary journey camp.".into(),
         });
     }
     rows.sort_by(|left, right| {
@@ -694,7 +703,9 @@ pub fn trigger_development_scenario_incident(
         .development_scenario_subject()
         .scenario_slug()
         .filter(&scenario_slug)
-        .any(|subject| subject.subject_kind == "generated_problem" && subject.subject_id == problem_id);
+        .any(|subject| {
+            subject.subject_kind == "generated_problem" && subject.subject_id == problem_id
+        });
     if !registered {
         return Err("Generated problem is not a subject of this development scenario".into());
     }
@@ -717,7 +728,7 @@ pub fn trigger_development_scenario_incident(
 mod development_scenario_source_tests {
     #[test]
     fn scenario_projection_is_bounded_gateway_only_and_metadata_only() {
-        let source = include_str!("development_scenarios.rs");
+        let source = crate::production_source(include_str!("development_scenarios.rs"));
         assert!(source.contains("!strategic_view_is_gateway(ctx)"));
         assert!(source.contains("MAX_SUBJECT_INPUTS"));
         assert!(source.contains("MAX_KIND_INPUTS"));
@@ -731,14 +742,26 @@ mod development_scenario_source_tests {
 
     #[test]
     fn mutable_scenarios_bind_exact_stable_subjects() {
-        let source = include_str!("development_scenarios.rs");
+        let source = crate::production_source(include_str!("development_scenarios.rs"));
         assert!(source.contains("dev-scenario-outbreak"));
         assert!(source.contains("dev-scenario-recurring-threat"));
         assert!(source.contains("let outbreak_problem_id = seed_outbreak_demo"));
         assert!(source.contains("let threat_problem_id = materialize_preferred_generated_fixture"));
         assert_eq!(source.matches("discover_development_problem(").count(), 2);
-        assert!(source.contains("&outbreak_problem_id,\n        \"quest-outbreak\""));
-        assert!(source.contains("&threat_problem_id,\n        \"quest-recurring-threat\""));
+        let outbreak_discovery = source
+            .split("discover_development_problem(")
+            .nth(1)
+            .and_then(|tail| tail.split(")?;").next())
+            .unwrap();
+        assert!(outbreak_discovery.contains("&outbreak_problem_id"));
+        assert!(outbreak_discovery.contains("\"quest-outbreak\""));
+        let threat_discovery = source
+            .split("discover_development_problem(")
+            .nth(2)
+            .and_then(|tail| tail.split(")?;").next())
+            .unwrap();
+        assert!(threat_discovery.contains("&threat_problem_id"));
+        assert!(threat_discovery.contains("\"quest-recurring-threat\""));
         assert!(source.contains("\"Discovered outbreak\""));
         assert!(source.contains("\"Combat, withdrawal, or surrender\""));
         assert!(source.contains("ensure_recurring_threat_provisions(ctx, THREAT_ID)"));

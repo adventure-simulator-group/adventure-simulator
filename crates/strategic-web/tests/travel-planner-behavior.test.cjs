@@ -4,6 +4,7 @@ const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
 const { readRustModuleSource } = require("./rust-module-source.cjs");
+const strategicCalendar = require("./strategic-calendar-fixture.cjs");
 
 const root = path.join(__dirname, "..");
 const plannerPath = path.join(root, "static", "travel-planner.js");
@@ -12,9 +13,9 @@ const plannerHelpers = () => {
   let source = fs.readFileSync(plannerPath, "utf8");
   source = source.replace(
     "  initializeTravelPlanner();",
-    "  globalThis.__planner = { parseSegments, parseTerrain, terrainPieces, position, turnaroundElapsed, moonName, moonGeometry, calendarDate, provisionQuantities, fatigueBand, splitFatigueSegment, fatigueAtElapsed, timePeriodAt, formatClock, stepRangeValue };",
+    "  globalThis.__planner = { DAY, DAYS_PER_YEAR, parseSegments, parseTerrain, terrainPieces, position, turnaroundElapsed, moonName, moonGeometry, calendarDate, provisionQuantities, fatigueBand, splitFatigueSegment, fatigueAtElapsed, timePeriodAt, formatClock, stepRangeValue };",
   );
-  const context = { document: { addEventListener() {} } };
+  const context = { document: { addEventListener() {} }, strategicCalendar };
   vm.runInNewContext(source, context);
   return context.__planner;
 };
@@ -150,9 +151,9 @@ test("party provisioning reads and updates the active inventory pane", () => {
 test("calendar labels preserve the canonical Monday-first week and 365-day year", () => {
   const helpers = plannerHelpers();
   assert.deepEqual({ ...helpers.calendarDate(0) }, { weekday: "Monday", day: 1, month: "January", isSunday: false });
-  assert.deepEqual({ ...helpers.calendarDate(6 * 1440) }, { weekday: "Sunday", day: 7, month: "January", isSunday: true });
-  assert.deepEqual({ ...helpers.calendarDate(31 * 1440) }, { weekday: "Thursday", day: 1, month: "February", isSunday: false });
-  assert.deepEqual({ ...helpers.calendarDate(364 * 1440) }, { weekday: "Monday", day: 31, month: "December", isSunday: false });
+  assert.deepEqual({ ...helpers.calendarDate(6 * helpers.DAY) }, { weekday: "Sunday", day: 7, month: "January", isSunday: true });
+  assert.deepEqual({ ...helpers.calendarDate(31 * helpers.DAY) }, { weekday: "Thursday", day: 1, month: "February", isSunday: false });
+  assert.deepEqual({ ...helpers.calendarDate((helpers.DAYS_PER_YEAR - 1) * helpers.DAY) }, { weekday: "Monday", day: 31, month: "December", isSunday: false });
 });
 
 test("planner source covers midnight chronology, hidden fatigue detail, config bounds, and live remount", () => {
@@ -230,17 +231,18 @@ test("camp renderer coalesces contiguous actual and forecast portions before der
   assert.match(template, /let kind = if actual && forecast \{\s*"m"/);
 });
 
-test("authoritative travel guards stale sync, bounded legacy vectors, and terminal provision use", () => {
+test("authoritative travel guards stale sync, bounded itineraries, and terminal provision use", () => {
   const strategic = readRustModuleSource(path.join(root, "..", "adventuresim-stdb-module", "src", "strategic", "mod.rs"));
   const time = fs.readFileSync(path.join(root, "..", "adventuresim-stdb-module", "src", "time.rs"), "utf8");
   assert.match(strategic, /synchronize_party_departure_time[\s\S]+revalidate_party_after_departure_sync/);
   assert.match(strategic, /pending_incident[\s\S]+departure_snapshot_allows_travel/);
-  assert.match(strategic, /stops\.len\(\) >= MAX_ITINERARY_SEGMENTS/);
+  assert.match(strategic, /camps\.len\(\) >= MAX_ITINERARY_SEGMENTS/);
   assert.doesNotMatch(time, /advance_personal_camp_time/);
   const partyNeeds = time.indexOf("apply_elapsed_needs(ctx, member_id, member_elapsed)?;");
   const partyTerminal = time.indexOf("if terminal.is_some()", partyNeeds);
   assert.ok(partyNeeds >= 0 && partyNeeds < partyTerminal, "party camp consumes needs before terminal return");
-  assert.match(strategic, /plan_version == 0[\s\S]+reconstruct_legacy_journey_coordinates/);
+  assert.doesNotMatch(strategic, /plan_version|reconstruct_legacy_journey_coordinates/);
+  assert.match(strategic, /total_movement_minutes[\s\S]+completed_movement_minutes/);
   assert.match(
     strategic,
     /prepare_party_waterskins\(ctx, &party_id, departing_settlement\)[\s\S]+\.find\(&party_id\)[\s\S]+let proposed_leg_minutes/,
@@ -248,8 +250,8 @@ test("authoritative travel guards stale sync, bounded legacy vectors, and termin
   );
   assert.match(
     strategic,
-    /prepare_party_waterskins\([\s\S]+departing_settlement[\s\S]+party = Some\([\s\S]+\.find\(&current_party\.id\)/,
-    "settlement departure reloads the party after preparing shared waterskins",
+    /prepare_party_waterskins\([\s\S]+departing_settlement[\s\S]+let party_id = current_party\.id\.clone\(\)[\s\S]+advance_party_movement_until_encounter[\s\S]+party = Some\([\s\S]+\.find\(&party_id\)/,
+    "settlement departure reloads the party after movement before writing camp state",
   );
 });
 

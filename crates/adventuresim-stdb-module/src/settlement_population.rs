@@ -13,6 +13,7 @@ use adventuresim_core::strategic_place::{SettlementVenueKind, StrategicPlaceId};
 use adventuresim_core::strategic_presence::{
     DailyPresenceWindow, PresenceFrontier, ScheduledStrategicPresence, StrategicPresence,
 };
+use adventuresim_core::strategic_time::MINUTES_PER_DAY;
 use serde::{Deserialize, Serialize};
 use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, table, view};
 use std::collections::BTreeSet;
@@ -359,6 +360,10 @@ fn resident_character_id(seed: &str) -> u64 {
     population::stable_hash(seed) | (1u64 << 63)
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "resident creation keeps its authored identity inputs explicit"
+)]
 fn insert_resident(
     ctx: &ReducerContext,
     settlement_id: &str,
@@ -382,6 +387,10 @@ fn insert_resident(
     )
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "seeded resident creation keeps its authored identity inputs explicit"
+)]
 fn insert_resident_with_seed(
     ctx: &ReducerContext,
     seed: String,
@@ -575,7 +584,7 @@ fn insert_resident_with_seed(
         Schedule::Day => (360, 1200),
         Schedule::Evening => (720, 1380),
         Schedule::Early => (240, 960),
-        Schedule::Provider => (0, 1440),
+        Schedule::Provider => (0, MINUTES_PER_DAY as u16),
     };
     ctx.db
         .settlement_resident_presence()
@@ -793,8 +802,9 @@ pub fn npc_strategic_presence_at(
     .ok()
 }
 
-/// Compatibility projection for consumers that only need schedule duration.
-/// It deliberately does not fabricate a typed observer frontier.
+/// Remaining contiguous availability at an authoritative historical minute,
+/// including outbreak suppression. This duration query does not need an
+/// observer-scoped presence value.
 pub fn npc_presence_remaining_minutes_at(
     ctx: &ReducerContext,
     presence: &SettlementResidentPresence,
@@ -845,28 +855,6 @@ mod tests {
         assert_eq!(overview, square);
         assert_ne!(overview, inn);
         assert!(canonical_npc_place("lubeck", "unknown-route-value").is_none());
-    }
-
-    #[allow(dead_code)] // Shared fixture retained for tests compiled outside the module target.
-    fn settlement_resident_profile() -> SettlementResidentProfile {
-        SettlementResidentProfile {
-            character_id: 42,
-            projection_id: 42,
-            home_settlement_id: "settlement:test".into(),
-            height: "average height".into(),
-            build: "sturdy".into(),
-            hair: "braided brown hair".into(),
-            facial_hair: "none visible".into(),
-            complexion: "weathered".into(),
-            visible_features: "a scar over one eyebrow".into(),
-            clothing: "a wool coat".into(),
-            profession: "merchant".into(),
-            household: "market household".into(),
-            local_role: "market steward".into(),
-            service_id: "merchants".into(),
-            organization_id: String::new(),
-            conversation_id: "service-professions".into(),
-        }
     }
 
     fn presence(start_minute: u16, end_minute: u16) -> SettlementResidentPresence {
@@ -934,7 +922,7 @@ mod tests {
 
     #[test]
     fn backend_settlement_resident_view_is_an_explicit_fail_closed_projection() {
-        let source = include_str!("settlement_population.rs");
+        let source = crate::production_source(include_str!("settlement_population.rs"));
         let row = source
             .split("pub struct BackendSettlementResident {")
             .nth(1)
@@ -985,7 +973,7 @@ mod tests {
 
     #[test]
     fn every_authored_chapter_seeds_one_bound_persistent_representative() {
-        let source = include_str!("settlement_population.rs");
+        let source = crate::production_source(include_str!("settlement_population.rs"));
         let ensure = source
             .split("pub fn ensure_settlement_population")
             .nth(1)
@@ -996,13 +984,18 @@ mod tests {
         assert!(ensure.contains("representative.organization_id = organization.id.clone()"));
         assert!(ensure.contains("\"organization-representative\""));
         assert!(ensure.contains("organization_representative_id"));
-        assert!(source.contains("id = format!(\"npc:{settlement_id}:{location}:{ordinal}\")"));
+        assert!(
+            source
+                .contains("let seed = format!(\"resident:{settlement_id}:{location}:{ordinal}\")")
+        );
+        assert!(ensure.contains("insert_resident_with_seed("));
+        assert!(ensure.contains("resident:organization-representative:{settlement_id}"));
         assert!(ensure.contains("physical_location == chapter.location_id.as_str()"));
     }
 
     #[test]
     fn authoritative_presence_reconstructs_historical_outbreak_state_without_mutation() {
-        let source = include_str!("settlement_population.rs");
+        let source = crate::production_source(include_str!("settlement_population.rs"));
         let typed_projection = source
             .split("pub fn npc_strategic_presence_at")
             .nth(1)

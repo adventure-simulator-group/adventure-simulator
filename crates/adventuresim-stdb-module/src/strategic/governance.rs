@@ -418,9 +418,9 @@ pub(crate) fn teardown_all_dead_strategic_party(
     Ok(())
 }
 
-/// Lazily backfills standing votes and discards stale legacy succession rows.
-/// This is intentionally safe to call after every membership or life-state
-/// transition, preserving non-destructive compatibility with existing parties.
+/// Reconcile leadership after a current membership or life-state transition.
+/// Invalid ballots are discarded before the living membership elects its
+/// leader.
 pub(crate) fn normalize_and_elect_party_leader(
     ctx: &ReducerContext,
     party_id: &str,
@@ -460,15 +460,9 @@ pub(crate) fn normalize_and_elect_party_leader(
             ctx.db.party_leader_vote().id().delete(&vote.id);
         }
     }
-    if living_set.contains(&party.leader_id) {
-        for voter_id in &living {
-            let id = format!("{party_id}:{voter_id}");
-            if ctx.db.party_leader_vote().id().find(&id).is_none() {
-                // New and legacy members begin by supporting the incumbent.
-                put_leader_vote(ctx, party_id, *voter_id, party.leader_id);
-            }
-        }
-    } else if let [sole_survivor] = living.as_slice() {
+    if !living_set.contains(&party.leader_id)
+        && let [sole_survivor] = living.as_slice()
+    {
         // Ensure a sole survivor can complete succession without deadlocking.
         put_leader_vote(ctx, party_id, *sole_survivor, *sole_survivor);
     }
@@ -487,9 +481,9 @@ pub(crate) fn normalize_and_elect_party_leader(
         &ballots,
     ) {
         party.leader_id = next;
-        party.is_solo = living.len() == 1;
-        ctx.db.party_authority().id().update(party);
     }
+    party.is_solo = living.len() == 1;
+    ctx.db.party_authority().id().update(party);
     Ok(())
 }
 
@@ -527,14 +521,11 @@ pub(crate) fn create_solo_party_for_character(
             camp_fatigue_percent: 50,
             walking_minutes_per_day: DEFAULT_WALKING_MINUTES_PER_DAY,
             travel_at_night: false,
-            journey_start_minute_of_day: 8 * 60,
+            journey_start_minute_of_day: DEFAULT_JOURNEY_START_MINUTE_OF_DAY,
             wilderness_canonical_anchor_minute: None,
             wilderness_elapsed_minutes: 0,
-            camp_duration_mode: CampDurationMode::Auto,
-            fixed_camp_minutes: 0,
             camp_destination: None,
             camp_remaining_minutes: 0,
-            pooled_water_ml: 0.0,
             physiology_target: 0.0,
             command_target: 0.0,
             religion_target: 0.0,
@@ -598,7 +589,11 @@ pub(crate) fn delete_temporary_character_party(
         .filter(party_id)
         .collect::<Vec<_>>()
     {
-        if crate::inventory_container::delete_carried_object_for_row(ctx, "party", row.id)? {
+        if crate::inventory_container::delete_carried_object_for_row(
+            ctx,
+            adventuresim_core::physical_object::CarriedInventoryScope::Party,
+            row.id,
+        )? {
             continue;
         }
         if let Some(condition) = ctx
@@ -644,18 +639,6 @@ pub(crate) fn delete_temporary_character_party(
     {
         ctx.db
             .party_journey_route_authority()
-            .party_id()
-            .delete(&party_key);
-    }
-    if ctx
-        .db
-        .party_journey_itinerary()
-        .party_id()
-        .find(&party_key)
-        .is_some()
-    {
-        ctx.db
-            .party_journey_itinerary()
             .party_id()
             .delete(&party_key);
     }
@@ -783,28 +766,12 @@ pub(crate) fn attach_seeded_party_member(
 }
 
 #[reducer]
-pub fn backfill_solo_parties(ctx: &ReducerContext) -> Result<(), String> {
-    let ids: Vec<_> = ctx
-        .db
-        .character()
-        .iter()
-        .filter(|c| c.party_id.is_none())
-        .map(|c| c.id)
-        .collect();
-    for id in ids {
-        create_solo_party_for_character(ctx, id)?;
-    }
-    Ok(())
-}
-
-#[reducer]
 pub fn create_recruitment_role(
     ctx: &ReducerContext,
     leader_id: u64,
     name: String,
     quantity: u32,
     requirements: RecruitmentRequirements,
-    weapon_precision: f32,
     save_role: bool,
 ) -> Result<(), String> {
     require_strategic_character_authority(ctx, leader_id)?;
@@ -812,8 +779,9 @@ pub fn create_recruitment_role(
     if quantity == 0 || quantity > 8 {
         return Err("Role quantity must be between 1 and 8".into());
     }
-    if !(0.0..=adventuresim_core::capability::WEAPON_PRECISION_RAPIER).contains(&weapon_precision)
-        || (weapon_precision * 2.0).fract() != 0.0
+    if !(0.0..=adventuresim_core::capability::WEAPON_PRECISION_RAPIER)
+        .contains(&requirements.weapon_precision)
+        || (requirements.weapon_precision * 2.0).fract() != 0.0
     {
         return Err("Weapon precision must use a 0.5 step between 0 and 2".into());
     }
@@ -859,7 +827,6 @@ pub fn create_recruitment_role(
             name: role_name.clone(),
             requirements,
             quantity,
-            weapon_precision,
         });
     if save_role {
         if name.trim().is_empty() {
@@ -872,7 +839,6 @@ pub fn create_recruitment_role(
                 owner_character_id: leader_id,
                 name: role_name,
                 requirements,
-                weapon_precision,
             });
     }
     Ok(())
@@ -886,14 +852,13 @@ pub fn update_recruitment_role(
     name: String,
     quantity: u32,
     requirements: RecruitmentRequirements,
-    weapon_precision: f32,
 ) -> Result<(), String> {
     require_strategic_character_authority(ctx, leader_id)?;
     crate::character::require_living_character(ctx, leader_id)?;
     if quantity > 8 {
         return Err("Role quantity must be between 0 and 8".into());
     }
-    validate_recruitment_requirements(requirements, weapon_precision)?;
+    validate_recruitment_requirements(requirements)?;
     let leader = ctx
         .db
         .character()
@@ -931,7 +896,6 @@ pub fn update_recruitment_role(
     role.name = role_name.clone();
     role.quantity = quantity;
     role.requirements = requirements;
-    role.weapon_precision = weapon_precision;
     ctx.db.party_recruitment_role().id().update(role);
     for mut member in ctx
         .db
@@ -1013,7 +977,6 @@ pub fn save_recruitment_role(
     owner_id: u64,
     name: String,
     requirements: RecruitmentRequirements,
-    weapon_precision: f32,
 ) -> Result<(), String> {
     require_strategic_character_authority(ctx, owner_id)?;
     crate::character::require_living_character(ctx, owner_id)?;
@@ -1024,7 +987,7 @@ pub fn save_recruitment_role(
     if name.is_empty() {
         return Err("Saved roles must have a name".into());
     }
-    validate_recruitment_requirements(requirements, weapon_precision)?;
+    validate_recruitment_requirements(requirements)?;
     ctx.db
         .saved_recruitment_role()
         .insert(SavedRecruitmentRole {
@@ -1032,7 +995,6 @@ pub fn save_recruitment_role(
             owner_character_id: owner_id,
             name: name.to_string(),
             requirements,
-            weapon_precision,
         });
     Ok(())
 }
@@ -1064,12 +1026,10 @@ pub fn rename_saved_recruitment_role(
     Ok(())
 }
 
-fn validate_recruitment_requirements(
-    requirements: RecruitmentRequirements,
-    weapon_precision: f32,
-) -> Result<(), String> {
-    if !(0.0..=adventuresim_core::capability::WEAPON_PRECISION_RAPIER).contains(&weapon_precision)
-        || (weapon_precision * 2.0).fract() != 0.0
+fn validate_recruitment_requirements(requirements: RecruitmentRequirements) -> Result<(), String> {
+    if !(0.0..=adventuresim_core::capability::WEAPON_PRECISION_RAPIER)
+        .contains(&requirements.weapon_precision)
+        || (requirements.weapon_precision * 2.0).fract() != 0.0
     {
         return Err("Weapon precision must use a 0.5 step between 0 and 2".into());
     }
@@ -1154,7 +1114,6 @@ fn role_requirements(
     role: &PartyRecruitmentRole,
 ) -> adventuresim_core::capability::RoleRequirements {
     let mut requirements = adventuresim_core::capability::RoleRequirements::from(role.requirements);
-    requirements.weapon_precision = requirements.weapon_precision.max(role.weapon_precision);
     requirements.physiology = 0;
     requirements.surgery = 0;
     requirements.command = 0;
@@ -1420,7 +1379,6 @@ pub fn request_general_party_join(
                     name: "Unassigned".into(),
                     requirements: RecruitmentRequirements::default(),
                     quantity: 0,
-                    weapon_precision: 0.0,
                 })
         });
     request_to_join_party(ctx, character_id, role.id)
@@ -1501,15 +1459,16 @@ pub fn accept_party_join_request(
         .collect::<Vec<_>>()
     {
         if item_is_durable(ctx, &entry.item_id) {
-            if let Some(object) =
-                crate::inventory_container::object_for_row(ctx, "party", entry.id)?
-            {
-                crate::inventory_container::rehome_subtree(
-                    ctx,
-                    object.id,
-                    "party",
-                    &request.party_id,
-                )?;
+            if let Some(object) = crate::inventory_container::object_for_row(
+                ctx,
+                adventuresim_core::physical_object::CarriedInventoryScope::Party,
+                entry.id,
+            )? {
+                let destination = adventuresim_core::physical_object::OperationalCustody::party(
+                    request.party_id.clone(),
+                )
+                .map_err(|error| error.to_string())?;
+                crate::inventory_container::rehome_subtree(ctx, object.id, &destination)?;
             } else {
                 entry.party_id = request.party_id.clone();
                 ctx.db.party_inventory_item().id().update(entry);

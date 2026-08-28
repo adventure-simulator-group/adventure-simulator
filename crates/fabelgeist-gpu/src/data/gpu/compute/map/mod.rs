@@ -1,7 +1,7 @@
 use crate::data::gpu::resource::GpuResource;
 use crate::prelude::*;
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct MapSignature {
@@ -17,30 +17,17 @@ pub struct MapSignature {
 
 use crate::data::gpu::compute::ResourceDescriptor;
 
-#[derive(Clone, Debug)]
-pub struct MapDefinition {
-    pub code: String,
-    pub cache: Arc<
-        RwLock<
-            HashMap<
-                (
-                    Option<ResourceDescriptor>,
-                    ResourceDescriptor,
-                    Vec<(String, ResourceDescriptor)>,
-                ),
-                Arc<(ComputePipeline, u64, u64)>,
-            >,
-        >,
-    >,
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct MapPipelineKey {
+    input: Option<ResourceDescriptor>,
+    output: ResourceDescriptor,
+    secondary: OrderedResourceDescriptors,
 }
 
-impl Default for MapDefinition {
-    fn default() -> Self {
-        Self {
-            code: String::new(),
-            cache: Arc::new(RwLock::new(HashMap::new())),
-        }
-    }
+#[derive(Clone, Debug, Default)]
+pub struct MapDefinition {
+    pub code: String,
+    cache: ComputePipelineCache<MapPipelineKey, (ComputePipeline, u64, u64)>,
 }
 
 impl PartialEq for MapDefinition {
@@ -55,7 +42,7 @@ impl MapDefinition {
         let _ = Self::parse_signature(&code)?;
         Ok(Self {
             code,
-            cache: Arc::new(RwLock::new(HashMap::new())),
+            cache: ComputePipelineCache::default(),
         })
     }
 
@@ -418,12 +405,11 @@ impl MapDefinition {
         output_res: ResourceDescriptor,
         secondary_resources: &HashMap<String, ResourceDescriptor>,
     ) -> Result<Arc<(ComputePipeline, u64, u64)>> {
-        let mut sec_res_sorted: Vec<(String, ResourceDescriptor)> = secondary_resources
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-        sec_res_sorted.sort_by(|a, b| a.0.cmp(&b.0));
-        let key = (input_res.clone(), output_res.clone(), sec_res_sorted);
+        let key = MapPipelineKey {
+            input: input_res.clone(),
+            output: output_res.clone(),
+            secondary: secondary_resources.into(),
+        };
 
         {
             let cache = self.cache.read().unwrap();
@@ -557,7 +543,7 @@ impl Map {
             ),
         };
 
-        crate::data::gpu::compute::ComputePass::new(
+        crate::data::gpu::compute::ComputePass::execute(
             context,
             pipeline.clone(),
             parameters,

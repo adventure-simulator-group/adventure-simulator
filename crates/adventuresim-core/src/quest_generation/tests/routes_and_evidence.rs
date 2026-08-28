@@ -497,7 +497,7 @@ fn action_graph_validation_rejects_missing_stranded_and_unreachable_exact_routes
                     matches!(
                         output,
                         GeneratedActionOutput::Destination {
-                            stage: GeneratedDestinationStage::Exact,
+                            stage: DestinationKnowledgeStage::ExactBelieved,
                             ..
                         }
                     )
@@ -529,7 +529,7 @@ fn action_graph_validation_rejects_missing_stranded_and_unreachable_exact_routes
                     matches!(
                         output,
                         GeneratedActionOutput::Destination {
-                            stage: GeneratedDestinationStage::Exact,
+                            stage: DestinationKnowledgeStage::ExactBelieved,
                             ..
                         }
                     )
@@ -566,7 +566,7 @@ fn action_graph_validation_rejects_missing_stranded_and_unreachable_exact_routes
                     matches!(
                         output,
                         GeneratedActionOutput::Destination {
-                            stage: GeneratedDestinationStage::Exact,
+                            stage: DestinationKnowledgeStage::ExactBelieved,
                             ..
                         }
                     )

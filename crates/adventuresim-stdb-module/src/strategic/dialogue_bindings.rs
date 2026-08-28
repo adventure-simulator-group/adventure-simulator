@@ -251,7 +251,13 @@ fn resolve_dialogue_turn(
         .iter()
         .any(|fragment| matches!(fragment, adventuresim_dialogue::Fragment::Runtime { .. }))
     {
-        dialogue_runtime_bindings(ctx, session, character_id, &turn.speaker, Some(&turn.addressee))?
+        dialogue_runtime_bindings(
+            ctx,
+            session,
+            character_id,
+            &turn.speaker,
+            Some(&turn.addressee),
+        )?
     } else {
         adventuresim_dialogue::RuntimeBindings::default()
     };
@@ -308,10 +314,12 @@ pub(crate) fn validated_generated_dialogue_manifest(
     case: &CaseAuthority,
     authority: Option<&QuestGenerationAuthority>,
 ) -> Result<Option<adventuresim_core::quest_generation::GeneratedCase>, String> {
-    if case.provenance_kind == "manual" && case.generated_case_id.is_empty() {
+    if case.provenance_kind == InvestigationProvenanceKind::Manual
+        && case.generated_case_id.is_empty()
+    {
         return Ok(None);
     }
-    if case.provenance_kind != "generated"
+    if case.provenance_kind != InvestigationProvenanceKind::Generated
         || case.generated_case_id.is_empty()
         || case.generated_case_id != case.id
     {
@@ -411,6 +419,10 @@ fn evidence_can_be_presented(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "recipient selection compares each independent dialogue authority input"
+)]
 fn dialogue_objective_recipient(
     ctx: &ReducerContext,
     character_id: u64,
@@ -434,10 +446,7 @@ fn dialogue_objective_recipient(
             .filter(character_id)
             .any(|lead| {
                 observer_case_refs.contains(&lead.case_id)
-                    && matches!(
-                        lead.destination_stage.as_str(),
-                        "exact_believed" | "visited"
-                    )
+                    && lead.destination_stage.is_exact()
                     && lead.exact_location_id == subject_ref.as_str()
                     && ctx
                         .db
@@ -698,7 +707,7 @@ fn issue_dialogue_investigation_bindings(
             .iter()
             .filter(|case| case_has_exact_dialogue_provenance(ctx, case, &exact_case_refs))
         {
-            if case.resolution_status != CaseResolutionStatus::Open {
+            if case.resolution_status != CaseStatus::Open {
                 continue;
             }
             let expression: adventuresim_core::case::ObjectiveExpression =

@@ -10,6 +10,7 @@ use std::{
 use adventuresim_tactical_core::physics::AdventureSimulatorPhysicsPlugin;
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::prelude::SceneVistaBundle;
+use adventuresim_world_schema::coordinates::{LatitudeMicrodegrees, LongitudeMicrodegrees};
 use bevy::{
     app::ScheduleRunnerPlugin,
     camera::RenderTarget,
@@ -135,6 +136,10 @@ struct SceneSetupData {
 struct CaptureOverlay;
 
 #[derive(SystemParam)]
+#[expect(
+    clippy::type_complexity,
+    reason = "the capture SystemParam records the exact component sets needed for lighting observations"
+)]
 struct LightingObservationParams<'w, 's> {
     spatial: SpatialQuery<'w, 's>,
     settings: Res<'w, TacticalGraphicsSettings>,
@@ -718,6 +723,10 @@ struct ScenePerformanceBenchmarkReport {
     results: Vec<ScenePerformanceBenchmarkResult>,
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the native capture entry point receives each independently authored command-line option explicitly"
+)]
 pub(crate) fn run(
     fixture: Option<String>,
     scene_input: Option<PathBuf>,
@@ -896,6 +905,10 @@ pub(crate) fn run(
     }
 }
 
+#[expect(
+    clippy::type_complexity,
+    reason = "the Bevy query captures each terrain representation and its visibility and diagnostic state"
+)]
 fn capture_terrain_wireframe(
     mut commands: Commands,
     mut state: ResMut<TerrainWireframeCaptureState>,
@@ -1146,6 +1159,10 @@ fn requested_feature_state() -> PresentationFeatureState {
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the capture contract compares independent renderer observations without hiding missing features in a partial aggregate"
+)]
 fn observed_presentation_features(
     settings: &TacticalGraphicsSettings,
     environment_map: Option<&AtmosphereEnvironmentMapLight>,
@@ -1729,6 +1746,10 @@ fn prepare_fresh_output(output: &Path) {
         .unwrap_or_else(|error| panic!("failed to create {}: {error}", output.display()));
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Bevy injects scene setup state and each independently borrowed presentation asset store"
+)]
 fn setup_scene(
     mut commands: Commands,
     mut setup: ResMut<SceneSetup>,
@@ -2276,6 +2297,10 @@ fn apply_tree_lighting_mode(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Bevy injects benchmark timing, camera, tree state, material storage, and exit messaging independently"
+)]
 fn benchmark_tree_lighting(
     mut state: Option<ResMut<TreeLightingBenchmarkState>>,
     capture: Option<Res<CaptureState>>,
@@ -2366,6 +2391,11 @@ fn benchmark_tree_lighting(
     exit.write(AppExit::Success);
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    reason = "the Bevy benchmark system independently controls and observes each presentation layer it isolates"
+)]
 fn benchmark_scene_performance(
     mut state: Option<ResMut<ScenePerformanceBenchmarkState>>,
     capture: Option<Res<CaptureState>>,
@@ -3165,6 +3195,11 @@ fn write_scene_performance_benchmark(output: &Path, report: &ScenePerformanceBen
         .expect("scene performance benchmark table writes");
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    reason = "the Bevy capture system independently observes each presentation family and controls their visibility"
+)]
 fn capture_views(
     mut commands: Commands,
     mut state: Option<ResMut<CaptureState>>,
@@ -4122,6 +4157,10 @@ struct VistaTreeObservation {
     has_collider: bool,
 }
 
+#[expect(
+    clippy::type_complexity,
+    reason = "the query describes the exact visible vista-tree provenance and collider state being measured"
+)]
 fn largest_visible_vista_tree(
     trees: &Query<
         (
@@ -4173,6 +4212,10 @@ struct CameraObstructionObservation {
     hit: bool,
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the capture manifest records independent scene populations and presentation observations from exact Bevy queries"
+)]
 fn build_manifest(
     state: &CaptureState,
     obstacles: &Query<(&SceneObstacle, Has<Collider>)>,
@@ -4520,11 +4563,11 @@ fn capture_celestial(
     latitude_microdegrees: i32,
     longitude_microdegrees: i32,
 ) -> CelestialProvenance {
-    let celestial = celestial_directions(
-        absolute_minute,
-        latitude_microdegrees,
-        longitude_microdegrees,
-    );
+    let latitude = LatitudeMicrodegrees::new(latitude_microdegrees)
+        .expect("validated tactical scene latitude");
+    let longitude = LongitudeMicrodegrees::new(longitude_microdegrees)
+        .expect("validated tactical scene longitude");
+    let celestial = celestial_directions(absolute_minute, latitude, longitude);
     CelestialProvenance {
         sun_altitude_degrees: celestial.sun[1].asin().to_degrees(),
         moon_altitude_degrees: celestial.moon[1].asin().to_degrees(),

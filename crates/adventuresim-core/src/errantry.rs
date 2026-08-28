@@ -4,10 +4,8 @@
 //! organizing principle is a chivalric purpose tested by ordered trials, not a
 //! settlement case whose hidden cause must be discovered.
 
+use adventuresim_puzzles::*;
 use serde::{Deserialize, Serialize};
-
-mod puzzles;
-pub use puzzles::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ErrantryPurpose {
@@ -444,143 +442,6 @@ const FEY_ADJACENT: [[&str; 5]; 5] = [
     ],
 ];
 
-// Historical physical-presenter text is compile-disabled while the initial
-// errantry slice is chat-only.
-#[cfg(any())]
-const RUIN_EXACT: [[&str; 5]; 5] = [
-    [
-        "Crown: I.",
-        "Crown: II.",
-        "Crown: III.",
-        "Crown: IV.",
-        "Crown: V.",
-    ],
-    [
-        "Hart: I.",
-        "Hart: II.",
-        "Hart: III.",
-        "Hart: IV.",
-        "Hart: V.",
-    ],
-    [
-        "Moon: I.",
-        "Moon: II.",
-        "Moon: III.",
-        "Moon: IV.",
-        "Moon: V.",
-    ],
-    [
-        "Rose: I.",
-        "Rose: II.",
-        "Rose: III.",
-        "Rose: IV.",
-        "Rose: V.",
-    ],
-    [
-        "Sword: I.",
-        "Sword: II.",
-        "Sword: III.",
-        "Sword: IV.",
-        "Sword: V.",
-    ],
-];
-#[cfg(any())]
-const RUIN_NOT_AT: [[&str; 5]; 5] = [
-    [
-        "Crown ≠ I.",
-        "Crown ≠ II.",
-        "Crown ≠ III.",
-        "Crown ≠ IV.",
-        "Crown ≠ V.",
-    ],
-    [
-        "Hart ≠ I.",
-        "Hart ≠ II.",
-        "Hart ≠ III.",
-        "Hart ≠ IV.",
-        "Hart ≠ V.",
-    ],
-    [
-        "Moon ≠ I.",
-        "Moon ≠ II.",
-        "Moon ≠ III.",
-        "Moon ≠ IV.",
-        "Moon ≠ V.",
-    ],
-    [
-        "Rose ≠ I.",
-        "Rose ≠ II.",
-        "Rose ≠ III.",
-        "Rose ≠ IV.",
-        "Rose ≠ V.",
-    ],
-    [
-        "Sword ≠ I.",
-        "Sword ≠ II.",
-        "Sword ≠ III.",
-        "Sword ≠ IV.",
-        "Sword ≠ V.",
-    ],
-];
-#[cfg(any())]
-const RUIN_BEFORE: [[&str; 5]; 5] = [
-    [
-        "",
-        "Crown < Hart.",
-        "Crown < Moon.",
-        "Crown < Rose.",
-        "Crown < Sword.",
-    ],
-    [
-        "Hart < Crown.",
-        "",
-        "Hart < Moon.",
-        "Hart < Rose.",
-        "Hart < Sword.",
-    ],
-    [
-        "Moon < Crown.",
-        "Moon < Hart.",
-        "",
-        "Moon < Rose.",
-        "Moon < Sword.",
-    ],
-    [
-        "Rose < Crown.",
-        "Rose < Hart.",
-        "Rose < Moon.",
-        "",
-        "Rose < Sword.",
-    ],
-    [
-        "Sword < Crown.",
-        "Sword < Hart.",
-        "Sword < Moon.",
-        "Sword < Rose.",
-        "",
-    ],
-];
-#[cfg(any())]
-const RUIN_ADJACENT: [[&str; 5]; 5] = [
-    [
-        "",
-        "Crown—Hart.",
-        "Crown—Moon.",
-        "Crown—Rose.",
-        "Crown—Sword.",
-    ],
-    ["Hart—Crown.", "", "Hart—Moon.", "Hart—Rose.", "Hart—Sword."],
-    ["Moon—Crown.", "Moon—Hart.", "", "Moon—Rose.", "Moon—Sword."],
-    ["Rose—Crown.", "Rose—Hart.", "Rose—Moon.", "", "Rose—Sword."],
-    [
-        "Sword—Crown.",
-        "Sword—Hart.",
-        "Sword—Moon.",
-        "Sword—Rose.",
-        "",
-    ],
-];
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -866,7 +727,10 @@ mod tests {
         best
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "this domain boundary names each independent input explicitly"
+    )]
     fn visit_mask_subsets(
         pool: &[OrderedSigilClue],
         masks: &[u128],

@@ -214,7 +214,10 @@ fn toggle_camera_debug(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 fn update_camera_rig(
     time: Res<Time>,
     mode: Res<CameraMode>,
@@ -386,6 +389,10 @@ fn update_camera_rig(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Bevy injects the camera, controller, input, and spatial state as independent system parameters"
+)]
 fn update_camera_aim(
     mode: Res<CameraMode>,
     guard: Res<WeaponGuardInputState>,
@@ -619,10 +626,9 @@ fn muzzle_path_is_blocked(
     muzzle_hit.is_some() && muzzle_hit != camera_hit
 }
 
-/// Legacy helper retained for deterministic animation captures. Gameplay uses
-/// the stateful rig above.
-#[allow(dead_code)]
-pub(crate) fn third_person_offset(rotation: Quat) -> Vec3 {
+/// Reproduces the lowered gameplay-camera boom for deterministic animation
+/// captures without advancing the stateful rig.
+pub(crate) fn animation_capture_camera_offset(rotation: Quat) -> Vec3 {
     rotation * Vec3::Z * CameraRigConfig::default().lowered.distance
 }
 

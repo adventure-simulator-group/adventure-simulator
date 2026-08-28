@@ -2,8 +2,7 @@
 
 pub mod clothing;
 pub mod export;
-#[path = "../../adventuresim-core/src/item_catalog_schema.rs"]
-pub mod item_catalog_schema;
+pub use adventuresim_core::item_catalog_schema;
 
 use serde::{Deserialize, Serialize};
 

@@ -4,51 +4,61 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::settlement_action_service_type::SettlementActionService;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct RestAtResidenceArgs {
+pub(super) struct RestAtSettlementHoursArgs {
     pub character_id: u64,
-    pub requested_days: u16,
+    pub requested_minutes: u64,
+    pub service: SettlementActionService,
 }
 
-impl From<RestAtResidenceArgs> for super::Reducer {
-    fn from(args: RestAtResidenceArgs) -> Self {
-        Self::RestAtResidence {
+impl From<RestAtSettlementHoursArgs> for super::Reducer {
+    fn from(args: RestAtSettlementHoursArgs) -> Self {
+        Self::RestAtSettlementHours {
             character_id: args.character_id,
-            requested_days: args.requested_days,
+            requested_minutes: args.requested_minutes,
+            service: args.service,
         }
     }
 }
 
-impl __sdk::InModule for RestAtResidenceArgs {
+impl __sdk::InModule for RestAtSettlementHoursArgs {
     type Module = super::RemoteModule;
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `rest_at_residence`.
+/// Extension trait for access to the reducer `rest_at_settlement_hours`.
 ///
 /// Implemented for [`super::RemoteReducers`].
-pub trait rest_at_residence {
-    /// Request that the remote module invoke the reducer `rest_at_residence` to run as soon as possible.
+pub trait rest_at_settlement_hours {
+    /// Request that the remote module invoke the reducer `rest_at_settlement_hours` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
-    /// /// Use [`rest_at_residence:rest_at_residence_then`] to run a callback after the reducer completes.
-    fn rest_at_residence(&self, character_id: u64, requested_days: u16) -> __sdk::Result<()> {
-        self.rest_at_residence_then(character_id, requested_days, |_, _| {})
+    /// /// Use [`rest_at_settlement_hours:rest_at_settlement_hours_then`] to run a callback after the reducer completes.
+    fn rest_at_settlement_hours(
+        &self,
+        character_id: u64,
+        requested_minutes: u64,
+        service: SettlementActionService,
+    ) -> __sdk::Result<()> {
+        self.rest_at_settlement_hours_then(character_id, requested_minutes, service, |_, _| {})
     }
 
-    /// Request that the remote module invoke the reducer `rest_at_residence` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `rest_at_settlement_hours` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed with the `callback`.
-    fn rest_at_residence_then(
+    fn rest_at_settlement_hours_then(
         &self,
         character_id: u64,
-        requested_days: u16,
+        requested_minutes: u64,
+        service: SettlementActionService,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -58,11 +68,12 @@ pub trait rest_at_residence {
     ) -> __sdk::Result<()>;
 }
 
-impl rest_at_residence for super::RemoteReducers {
-    fn rest_at_residence_then(
+impl rest_at_settlement_hours for super::RemoteReducers {
+    fn rest_at_settlement_hours_then(
         &self,
         character_id: u64,
-        requested_days: u16,
+        requested_minutes: u64,
+        service: SettlementActionService,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -71,9 +82,10 @@ impl rest_at_residence for super::RemoteReducers {
         + 'static,
     ) -> __sdk::Result<()> {
         self.imp.invoke_reducer_with_callback(
-            RestAtResidenceArgs {
+            RestAtSettlementHoursArgs {
                 character_id,
-                requested_days,
+                requested_minutes,
+                service,
             },
             callback,
         )

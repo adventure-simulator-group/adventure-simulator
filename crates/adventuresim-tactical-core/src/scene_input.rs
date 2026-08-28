@@ -7,8 +7,13 @@
 
 use std::{fs, path::Path};
 
-use adventuresim_core::weather::{Precipitation, WEATHER_RULES_VERSION, WeatherSnapshot};
+use adventuresim_core::{
+    strategic_time::MINUTES_PER_DAY,
+    weather::{Precipitation, WEATHER_RULES_VERSION, WeatherSnapshot},
+};
+use adventuresim_world_schema::BASIS_POINTS_PER_WHOLE;
 use bevy::prelude::Component;
+use fabelgeist_determinism::{inclusive_unit_f32, splitmix64};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -32,6 +37,11 @@ const MAX_VISTA_SAMPLES: usize = 2_000_000;
 const MAX_TEMPLATE_BYTES: usize = 128;
 const MAX_SOURCE_ID_BYTES: usize = 128;
 const MAX_PLAYABLE_GRADE: f32 = 0.65;
+const ROCK_PLACEMENT_DOMAIN: u64 = 0x52cc_5f1b_d391_a739;
+const ROCK_LITHOLOGY_DOMAIN: u64 = 0x6c69_7468_6f6c_6f67;
+const ROCK_DIMENSION_AXIS_STRIDE: u64 = 0x9e37_79b9_7f4a_7c15;
+const MICRORELIEF_FINE_DOMAIN: u64 = 0x8f3f_73b5_cf1c_9ade;
+const TREE_LEAF_LITTER_DOMAIN: u64 = 0x001e_af11_77e2;
 const AUTHORITATIVE_DETAIL_SPACING_METRES: f32 = 0.5;
 const DETAIL_RELIEF_MINIMUM_METRES: f32 = -0.075;
 const DETAIL_RELIEF_MAXIMUM_METRES: f32 = 0.105;
@@ -142,6 +152,49 @@ pub struct SceneEnvironment {
     pub cultivation_bps: u16,
     pub water_bps: u16,
     pub hilly_bps: u16,
+}
+
+/// Explicit environment profiles for deterministic tactical-only fixtures.
+///
+/// Review tools select one of these profiles directly; a scene identifier is
+/// never interpreted as environmental authority.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SceneEnvironmentFixture {
+    TemperateHills,
+}
+
+impl SceneEnvironmentFixture {
+    pub fn snapshot(self, scene_digest: impl Into<String>) -> SceneEnvironment {
+        match self {
+            Self::TemperateHills => SceneEnvironment {
+                scene_digest: scene_digest.into(),
+                generation_version: TACTICAL_SCENE_GENERATION_VERSION,
+                latitude_microdegrees: 53_500_000,
+                longitude_microdegrees: 10_000_000,
+                absolute_minute: MINUTES_PER_DAY / 2,
+                lunar_phase_minute: MINUTES_PER_DAY / 2,
+                absolute_elevation_metres: 20,
+                weather: WeatherSnapshot {
+                    rules_version: WEATHER_RULES_VERSION,
+                    interval_start_minute: 0,
+                    cell_latitude: 0,
+                    cell_longitude: 0,
+                    temperature_deci_c: 100,
+                    wind_speed_bps: 1_500,
+                    precipitation: Precipitation::Clear,
+                    intensity_bps: 0,
+                    ground_moisture_bps: 0,
+                    snow_cover_bps: 0,
+                    atmosphere: Default::default(),
+                },
+                canopy_bps: 1_200,
+                wetland_bps: 0,
+                cultivation_bps: 0,
+                water_bps: 0,
+                hilly_bps: 7_000,
+            },
+        }
+    }
 }
 
 /// Broad procedural silhouette family for a collider-bearing rock.
@@ -361,9 +414,10 @@ impl TacticalSceneInput {
                 let x = (index % usize::from(self.playable.width)) as u16;
                 let z = (index / usize::from(self.playable.width)) as u16;
                 let coordinate = ((x as u64) << 32) ^ z as u64;
-                let tree_roll = splitmix64(self.seed ^ coordinate) % 10_000;
-                let rock_seed = splitmix64(self.seed ^ coordinate ^ 0x52cc_5f1b_d391_a739);
-                let rock_roll = rock_seed % 10_000;
+                let tree_roll =
+                    splitmix64(self.seed ^ coordinate) % u64::from(BASIS_POINTS_PER_WHOLE);
+                let rock_seed = splitmix64(self.seed ^ coordinate ^ ROCK_PLACEMENT_DOMAIN);
+                let rock_roll = rock_seed % u64::from(BASIS_POINTS_PER_WHOLE);
                 if tree_roll < u64::from(sample.canopy_bps) / 12 {
                     Some(GeneratedObstacle::Tree { x, z })
                 } else if rock_roll < u64::from(sample.hilly_bps) / 20 && sample.water_bps < 5_000 {
@@ -494,8 +548,9 @@ fn build_scene_ground(
                     ^ ((u64::from(z)) << 32)
                     ^ ((sample_x as u64) << 16)
                     ^ sample_z as u64;
-                let litter_roll =
-                    (splitmix64(coordinate ^ 0x001e_af11_77e2) % 10_000) as f32 / 10_000.0;
+                let litter_roll = (splitmix64(coordinate ^ TREE_LEAF_LITTER_DOMAIN)
+                    % u64::from(BASIS_POINTS_PER_WHOLE)) as f32
+                    / f32::from(BASIS_POINTS_PER_WHOLE);
                 if distance <= TREE_DENSE_LEAF_LITTER_RADIUS_METRES
                     || litter_roll < tree_leaf_litter_probability(distance)
                 {
@@ -716,7 +771,7 @@ fn rocky_substrate_relief(
     strength: f32,
 ) -> f32 {
     use bevy::math::Vec2;
-    let fallback_angle = unit_hash(seed ^ 0x7374_7261_7461_6469) * core::f32::consts::TAU;
+    let fallback_angle = inclusive_unit_f32(seed ^ 0x7374_7261_7461_6469) * core::f32::consts::TAU;
     let downhill = shape
         .map(|shape| shape.downhill)
         .unwrap_or(Vec2::new(fallback_angle.cos(), fallback_angle.sin()));
@@ -761,7 +816,7 @@ fn boulder_ground_relief(
             seed ^ u64::from(rock.centre.x.to_bits()).rotate_left(29)
                 ^ u64::from(rock.centre.y.to_bits()),
         );
-        let fallback_angle = unit_hash(rock_seed) * core::f32::consts::TAU;
+        let fallback_angle = inclusive_unit_f32(rock_seed) * core::f32::consts::TAU;
         let downhill = shape
             .map(|shape| shape.downhill)
             .unwrap_or(Vec2::new(fallback_angle.cos(), fallback_angle.sin()));
@@ -772,7 +827,7 @@ fn boulder_ground_relief(
             * 0.033;
         let downstream = offset.dot(downhill);
         let across = offset.dot(across_axis).abs();
-        let tail_length = radius * (3.2 + unit_hash(splitmix64(rock_seed)) * 1.1);
+        let tail_length = radius * (3.2 + inclusive_unit_f32(splitmix64(rock_seed)) * 1.1);
         let longitudinal = detail_smoothstep(radius * 0.45, radius * 0.95, downstream)
             * (1.0 - detail_smoothstep(tail_length * 0.62, tail_length, downstream));
         let tail_width = radius * 0.42 + downstream.max(0.0) * 0.24;
@@ -810,9 +865,9 @@ fn tree_root_relief(
         let mut ridges = 0.0_f32;
         for root in 0..7_u64 {
             let root_seed = splitmix64(tree_seed ^ root.wrapping_mul(0x9e37_79b9_7f4a_7c15));
-            let origin = unit_hash(root_seed) * core::f32::consts::TAU;
-            let phase = unit_hash(splitmix64(root_seed)) * core::f32::consts::TAU;
-            let length = 4.8 + unit_hash(splitmix64(root_seed ^ 0x6c65_6e67)) * 2.9;
+            let origin = inclusive_unit_f32(root_seed) * core::f32::consts::TAU;
+            let phase = inclusive_unit_f32(splitmix64(root_seed)) * core::f32::consts::TAU;
+            let length = 4.8 + inclusive_unit_f32(splitmix64(root_seed ^ 0x6c65_6e67)) * 2.9;
             if radius > length || radius < 0.28 {
                 continue;
             }
@@ -885,7 +940,7 @@ fn ground_mask_noise(seed: u64, point: bevy::math::Vec2) -> f32 {
         let coordinate = cell + offset;
         let x = i64::from(coordinate.x as i32) as u64;
         let y = i64::from(coordinate.y as i32) as u64;
-        unit_hash(splitmix64(
+        inclusive_unit_f32(splitmix64(
             seed ^ x.wrapping_mul(0x9e37_79b9_7f4a_7c15) ^ y.wrapping_mul(0xbf58_476d_1ce4_e5b9),
         ))
     };
@@ -907,10 +962,6 @@ fn wrapped_angle_difference(left: f32, right: f32) -> f32 {
 fn detail_smoothstep(edge0: f32, edge1: f32, value: f32) -> f32 {
     let t = ((value - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
-}
-
-fn unit_hash(value: u64) -> f32 {
-    (value >> 40) as f32 / ((1_u32 << 24) - 1) as f32
 }
 
 fn base_ground_surface(sample: EnvironmentalSample) -> GroundSurface {
@@ -1025,7 +1076,7 @@ fn rock_recipe(seed: u64) -> RockRecipe {
         1 => RockArchetype::Angular,
         _ => RockArchetype::Slab,
     };
-    let lithology = match splitmix64(seed ^ 0x6c69_7468_6f6c_6f67) % 3 {
+    let lithology = match splitmix64(seed ^ ROCK_LITHOLOGY_DOMAIN) % 3 {
         0 => RockLithology::Granite,
         1 => RockLithology::Limestone,
         _ => RockLithology::Sandstone,
@@ -1036,7 +1087,7 @@ fn rock_recipe(seed: u64) -> RockRecipe {
         RockArchetype::Slab => [142, 72, 132],
     };
     let dimensions_cm = core::array::from_fn(|axis| {
-        let hash = splitmix64(seed ^ (axis as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15));
+        let hash = splitmix64(seed ^ (axis as u64).wrapping_mul(ROCK_DIMENSION_AXIS_STRIDE));
         let offset = (hash % 17) as i16 - 8;
         base_dimensions[axis].saturating_add_signed(offset)
     });
@@ -1075,13 +1126,13 @@ fn add_authoritative_microrelief(
             {
                 continue;
             }
-            let hilly = f32::from(sample.hilly_bps) / 10_000.0;
-            let wetland = f32::from(sample.wetland_bps) / 10_000.0;
+            let hilly = f32::from(sample.hilly_bps) / f32::from(BASIS_POINTS_PER_WHOLE);
+            let wetland = f32::from(sample.wetland_bps) / f32::from(BASIS_POINTS_PER_WHOLE);
             let amplitude = (0.055 + hilly * 0.22) * (1.0 - wetland * 0.55);
             let world_x = x as f32 * spacing;
             let world_z = z as f32 * spacing;
             let broad = value_noise(seed, world_x, world_z, 6.0);
-            let fine = value_noise(seed ^ 0x8f3f_73b5_cf1c_9ade, world_x, world_z, 2.25);
+            let fine = value_noise(seed ^ MICRORELIEF_FINE_DOMAIN, world_x, world_z, 2.25);
             let offset = (broad * 0.72 + fine * 0.28) * amplitude;
             if offset.abs() > f32::EPSILON {
                 heights[index] += offset;
@@ -1102,7 +1153,7 @@ fn value_noise(seed: u64, x: f32, z: f32, cell_size: f32) -> f32 {
     let sample = |ix: i32, iz: i32| {
         let coordinate = (ix as u32 as u64) << 32 | iz as u32 as u64;
         let bits = splitmix64(seed ^ coordinate);
-        (bits >> 40) as f32 / ((1_u32 << 24) - 1) as f32 * 2.0 - 1.0
+        inclusive_unit_f32(bits) * 2.0 - 1.0
     };
     let north = sample(x0, z0) + (sample(x0 + 1, z0) - sample(x0, z0)) * tx;
     let south = sample(x0, z0 + 1) + (sample(x0 + 1, z0 + 1) - sample(x0, z0 + 1)) * tx;
@@ -1233,7 +1284,7 @@ fn validate_grid(
             sample.crossing_bps,
         ]
         .into_iter()
-        .any(|value| value > 10_000)
+        .any(|value| value > BASIS_POINTS_PER_WHOLE)
     }) {
         return invalid(format!("{label} contains an invalid environment sample"));
     }
@@ -1242,20 +1293,22 @@ fn validate_grid(
 
 fn validate_weather(weather: WeatherSnapshot) -> Result<(), SceneInputError> {
     if weather.rules_version != WEATHER_RULES_VERSION
-        || weather.wind_speed_bps > 10_000
-        || weather.intensity_bps > 10_000
-        || weather.ground_moisture_bps > 10_000
-        || weather.snow_cover_bps > 10_000
-        || weather.atmosphere.relative_humidity_bps > 10_000
+        || weather.wind_speed_bps > BASIS_POINTS_PER_WHOLE
+        || weather.intensity_bps > BASIS_POINTS_PER_WHOLE
+        || weather.ground_moisture_bps > BASIS_POINTS_PER_WHOLE
+        || weather.snow_cover_bps > BASIS_POINTS_PER_WHOLE
+        || weather.atmosphere.relative_humidity_bps > BASIS_POINTS_PER_WHOLE
         || weather.atmosphere.dew_point_deci_c > weather.temperature_deci_c + 5
         || !(8_700..=10_850).contains(&weather.atmosphere.sea_level_pressure_deci_hpa)
         || weather.atmosphere.wind_direction_degrees >= 360
-        || weather.atmosphere.wind_shear_bps > 10_000
-        || weather.atmosphere.instability_bps > 10_000
-        || !(-10_000..=10_000).contains(&weather.atmosphere.lift_bps)
+        || weather.atmosphere.wind_shear_bps > BASIS_POINTS_PER_WHOLE
+        || weather.atmosphere.instability_bps > BASIS_POINTS_PER_WHOLE
+        || !(-i16::try_from(BASIS_POINTS_PER_WHOLE).unwrap()
+            ..=i16::try_from(BASIS_POINTS_PER_WHOLE).unwrap())
+            .contains(&weather.atmosphere.lift_bps)
         || weather.cloud_layers().any(|layer| {
-            layer.coverage_bps > 10_000
-                || layer.optical_density_bps > 10_000
+            layer.coverage_bps > BASIS_POINTS_PER_WHOLE
+                || layer.optical_density_bps > BASIS_POINTS_PER_WHOLE
                 || layer.top_metres <= layer.base_metres
         })
         || (matches!(weather.precipitation, Precipitation::Clear) && weather.intensity_bps != 0)
@@ -1276,13 +1329,6 @@ fn validate_weather(weather: WeatherSnapshot) -> Result<(), SceneInputError> {
 
 fn invalid<T>(message: impl Into<String>) -> Result<T, SceneInputError> {
     Err(SceneInputError::Validation(message.into()))
-}
-
-fn splitmix64(mut value: u64) -> u64 {
-    value = value.wrapping_add(0x9e37_79b9_7f4a_7c15);
-    value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-    value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-    value ^ (value >> 31)
 }
 
 #[cfg(test)]

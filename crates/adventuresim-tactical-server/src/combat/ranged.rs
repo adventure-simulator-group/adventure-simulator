@@ -1,6 +1,9 @@
 use super::*;
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 pub(super) fn resolve_ranged_attack(
     event: On<RangedAttackIntent>,
     mut cmd: Commands,

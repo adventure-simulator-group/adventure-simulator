@@ -160,7 +160,10 @@ const REPRESENTATIONS: [ShrubRepresentation; 3] = [
     ShrubRepresentation::LeafCards,
 ];
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the instanced-understory construction boundary keeps asset stores, habitat, and placement inputs explicit"
+)]
 pub(super) fn spawn(
     commands: &mut Commands,
     bark_materials: &mut Assets<TacticalShrubBarkInstancedMaterial>,

@@ -14,7 +14,6 @@ pub struct PartyRecruitmentRole {
     pub name: String,
     pub requirements: RecruitmentRequirements,
     pub quantity: u32,
-    pub weapon_precision: f32,
 }
 
 impl __sdk::InModule for PartyRecruitmentRole {
@@ -30,7 +29,6 @@ pub struct PartyRecruitmentRoleCols {
     pub name: __sdk::__query_builder::Col<PartyRecruitmentRole, String>,
     pub requirements: __sdk::__query_builder::Col<PartyRecruitmentRole, RecruitmentRequirements>,
     pub quantity: __sdk::__query_builder::Col<PartyRecruitmentRole, u32>,
-    pub weapon_precision: __sdk::__query_builder::Col<PartyRecruitmentRole, f32>,
 }
 
 impl __sdk::__query_builder::HasCols for PartyRecruitmentRole {
@@ -42,7 +40,6 @@ impl __sdk::__query_builder::HasCols for PartyRecruitmentRole {
             name: __sdk::__query_builder::Col::new(table_name, "name"),
             requirements: __sdk::__query_builder::Col::new(table_name, "requirements"),
             quantity: __sdk::__query_builder::Col::new(table_name, "quantity"),
-            weapon_precision: __sdk::__query_builder::Col::new(table_name, "weapon_precision"),
         }
     }
 }

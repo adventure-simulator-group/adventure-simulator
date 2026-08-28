@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use super::limb_region_type::LimbRegion;
+use super::body_region_type::BodyRegion;
 use super::projectile_kind_type::ProjectileKind;
 use super::retained_projectile_type::RetainedProjectile;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};

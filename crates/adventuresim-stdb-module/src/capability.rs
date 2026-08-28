@@ -1,11 +1,12 @@
 use adventuresim_core::autoresolve::CombatProjectileKind;
+use adventuresim_core::item_catalog::{EquipmentBodyPart, EquipmentChannel, EquipmentLocation};
+use adventuresim_core::physical_object::{CarriedInventoryScope, OperationalCustody};
 use adventuresim_core::prelude::*;
 use spacetimedb::{ReducerContext, Table, reducer, table};
 
 use crate::character::{character_equipped_item as _, equipment_occupancy as _};
-use crate::condition::{character_condition as _, character_needs as _};
+use crate::condition::character_condition as _;
 use crate::food::food_lot as _;
-use crate::inventory_container::{container_liquid as _, inventory_object as _};
 use crate::item::item as _;
 use crate::repair::item_condition as _;
 use crate::{
@@ -311,15 +312,12 @@ impl StrategicEquipment {
                 .equipment_occupancy()
                 .character_id()
                 .filter(character_id)
-                .find(|row| {
-                    row.location == Some(location)
-                        && row.channel == crate::item::EquipmentChannel::Held
-                })
+                .find(|row| row.location == Some(location) && row.channel == EquipmentChannel::Held)
                 .map(|row| row.inventory_item_id)
         };
         let hand_inventory_ids = [
-            normalized_hand(crate::item::EquipmentLocation::LeftHand),
-            normalized_hand(crate::item::EquipmentLocation::RightHand),
+            normalized_hand(EquipmentLocation::LeftHand),
+            normalized_hand(EquipmentLocation::RightHand),
         ];
         let hands = [
             definition(hand_inventory_ids[0]),
@@ -394,7 +392,11 @@ impl StrategicEquipment {
             .filter(character_id)
             .filter(|inventory| inventory.item_id == "arrow")
             .filter(|inventory| {
-                !crate::inventory_container::row_is_fireplace_rooted(ctx, "personal", inventory.id)
+                !crate::inventory_container::row_is_fireplace_rooted(
+                    ctx,
+                    CarriedInventoryScope::Personal,
+                    inventory.id,
+                )
             })
             .map(|inventory| inventory.quantity)
             .sum();
@@ -432,13 +434,13 @@ impl StrategicEquipment {
                         .inventory_item_id()
                         .filter(inventory.id)
                         .max_by_key(|row| (row.channel.order(), row.order))
-                        .map_or((crate::item::EquipmentChannel::Containment, 0), |row| {
+                        .map_or((EquipmentChannel::Containment, 0), |row| {
                             (row.channel, row.order)
                         });
                     Some(adventuresim_core::equipment::WearableProtection {
                         inventory_item_id: inventory.id,
                         body_part: part,
-                        channel: core_equipment_channel(channel),
+                        channel,
                         order,
                         coverage: item.coverage,
                         resistance: item.resistance,
@@ -479,7 +481,7 @@ impl StrategicEquipment {
             .filter_map(|inventory: InventoryItem| {
                 if crate::inventory_container::row_is_fireplace_rooted(
                     ctx,
-                    "personal",
+                    CarriedInventoryScope::Personal,
                     inventory.id,
                 ) {
                     return None;
@@ -493,40 +495,18 @@ impl StrategicEquipment {
                     return Some(lot.mass_kg.max(0.0));
                 }
                 ctx.db.item().id().find(&inventory.item_id).map(|item| {
-                    let effective_quantity = crate::inventory_amount::personal_amount(
-                        ctx,
-                        inventory.id,
-                    )
-                    .map_or(inventory.quantity as f32, |amount| {
-                        amount as f32 / crate::inventory_amount::FULL_AMOUNT_MILLIUNITS as f32
-                    });
+                    let effective_quantity =
+                        crate::inventory_amount::personal_fraction(ctx, inventory.id)
+                            .map_or(inventory.quantity as f32, |fraction| fraction.as_unit_f32());
                     item.weight * effective_quantity
                 })
             })
             .sum();
-        let carried_water_weight = ctx
-            .db
-            .character_needs()
-            .character_id()
-            .find(character_id)
-            .map_or(0.0, |needs| carried_water_weight_kg(needs.carried_water_ml));
-        let contained_water_weight: f32 = ctx
-            .db
-            .inventory_object()
-            .iter()
-            .filter(|object| {
-                object.location_kind == "personal"
-                    && object.location_owner == character_id.to_string()
-                    && !crate::inventory_container::ancestry_reaches_fireplace(ctx, object.id)
-            })
-            .filter_map(|object| {
-                ctx.db
-                    .container_liquid()
-                    .container_object_id()
-                    .find(object.id)
-            })
-            .map(|liquid| liquid.water_ml as f32 / 1_000.0)
-            .sum();
+        let personal_custody = OperationalCustody::character(character_id)
+            .expect("persisted character identities must be nonzero");
+        let contained_water_weight =
+            crate::inventory_container::contained_water_ml(ctx, &personal_custody)
+                .map_or(f32::INFINITY, |water_ml| water_ml as f32 / 1_000.0);
         Self {
             hands,
             weapon,
@@ -547,10 +527,12 @@ impl StrategicEquipment {
                 ),
                 // Coverage scales continuously across the seven stable body
                 // regions; resistance is capped at leather equivalence.
-                weatherproofing_bps: (weatherproofing_total / 7).min(10_000) as u16,
+                weatherproofing_bps: (weatherproofing_total / 7)
+                    .min(u32::from(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE))
+                    as u16,
                 peripheral_protection_bps,
             },
-            inventory_weight: dry_inventory_weight + carried_water_weight + contained_water_weight,
+            inventory_weight: dry_inventory_weight + contained_water_weight,
         }
     }
 
@@ -624,26 +606,8 @@ fn hand_side(index: usize) -> BodySide {
     }
 }
 
-fn core_equipment_channel(
-    channel: crate::item::EquipmentChannel,
-) -> adventuresim_core::item_catalog::EquipmentChannel {
-    use crate::item::EquipmentChannel as E;
-    use adventuresim_core::item_catalog::EquipmentChannel as C;
-    match channel {
-        E::Held => C::Held,
-        E::BaseClothing => C::BaseClothing,
-        E::Padding => C::Padding,
-        E::FlexibleArmor => C::FlexibleArmor,
-        E::RigidArmor => C::RigidArmor,
-        E::Outerwear => C::Outerwear,
-        E::Accessory => C::Accessory,
-        E::Mount => C::Mount,
-        E::Containment => C::Containment,
-    }
-}
-
-fn runtime_body_part(part: crate::item::EquipmentBodyPart) -> BodyPart {
-    use crate::item::EquipmentBodyPart as E;
+fn runtime_body_part(part: EquipmentBodyPart) -> BodyPart {
+    use EquipmentBodyPart as E;
     match part {
         E::LeftArm => BodyPart::LeftArm,
         E::RightArm => BodyPart::RightArm,
@@ -666,11 +630,7 @@ fn combat_weapon(item: &Item) -> CombatWeapon {
         accuracy: item.accuracy,
         swing_precision: item.swing_precision,
         stab_precision: item.stab_precision,
-        preferred_melee_style: if item.prefers_stab {
-            MeleeAttackStyle::Stab
-        } else {
-            MeleeAttackStyle::Swing
-        },
+        preferred_melee_style: item.preferred_melee_style,
         weight: item.weight,
         penetration: item.penetration,
         melee_reach: if item.melee { item.reach } else { 0.0 },
@@ -684,13 +644,8 @@ fn combat_weapon(item: &Item) -> CombatWeapon {
 
 fn weapon_attack_interval(item: &Item) -> f32 {
     if item.melee {
-        let style = if item.prefers_stab {
-            MeleeAttackStyle::Stab
-        } else {
-            MeleeAttackStyle::Swing
-        };
         let timing = adventuresim_core::equipment::melee_attack_timing(
-            style,
+            item.preferred_melee_style,
             item.moment_of_inertia_kg_m2,
             false,
         );
@@ -698,10 +653,6 @@ fn weapon_attack_interval(item: &Item) -> f32 {
     } else {
         (0.4 + item.weight.max(0.1) * 0.15 + 0.45).clamp(0.35, 3.0)
     }
-}
-
-fn carried_water_weight_kg(carried_water_ml: f32) -> f32 {
-    carried_water_ml.max(0.0) / 1_000.0
 }
 
 impl PlayerEquipment for StrategicEquipment {
@@ -742,13 +693,7 @@ impl PlayerEquipment for StrategicEquipment {
     fn weapon_preferred_melee_style(&self) -> MeleeAttackStyle {
         self.weapon
             .as_ref()
-            .map_or(MeleeAttackStyle::Swing, |item| {
-                if item.prefers_stab {
-                    MeleeAttackStyle::Stab
-                } else {
-                    MeleeAttackStyle::Swing
-                }
-            })
+            .map_or(MeleeAttackStyle::Swing, |item| item.preferred_melee_style)
     }
     fn weapon_weight(&self) -> f32 {
         self.weapon.as_ref().map_or(0.0, |item| item.weight)
@@ -918,11 +863,10 @@ pub(crate) fn load_combatant(
 
 #[cfg(test)]
 mod tests {
-    use super::carried_water_weight_kg;
-
     #[test]
-    fn carried_water_contributes_one_kilogram_per_litre() {
-        assert_eq!(carried_water_weight_kg(4_000.0), 4.0);
-        assert_eq!(carried_water_weight_kg(-1.0), 0.0);
+    fn water_burden_comes_only_from_physical_containers() {
+        let source = crate::production_source(include_str!("capability.rs"));
+        assert!(source.contains("contained_water_ml"));
+        assert!(!source.contains("carried_water_ml"));
     }
 }

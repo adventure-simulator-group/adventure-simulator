@@ -1,5 +1,9 @@
 use super::*;
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Bevy injects each observer resource and query as an independent system parameter"
+)]
 pub(super) fn resolve_melee_attack(
     event: On<MeleeAttackIntent>,
     mut cmd: Commands,
@@ -129,18 +133,18 @@ pub(super) fn resolve_melee_attack(
     let cooldown =
         CombatDuration::from_secs_f32(config.realtime_authority.melee.replay_cooldown_seconds);
     let Some(authorized) = authority.authorize_attack(validated, now, cooldown) else {
-        info!(attack_key, attacker = ?entity, target = ?event.target, body_part = ?event.body_part, reason = "authorization_consumed", surface_distance_metres = surface_distance, reach_metres = reach, "melee_completion_rejected");
-        info!(attack_key, attacker = ?entity, target = ?event.target, body_part = ?event.body_part, outcome = "miss", reason = "authorization_consumed", "melee_attack_resolved");
+        info!(attack_key, attacker = ?validated.attacker(), target = ?validated.target(), body_part = ?validated.body_part(), reason = "authorization_consumed", surface_distance_metres = surface_distance, reach_metres = reach, "melee_completion_rejected");
+        info!(attack_key, attacker = ?validated.attacker(), target = ?validated.target(), body_part = ?validated.body_part(), outcome = "miss", reason = "authorization_consumed", "melee_attack_resolved");
         return;
     };
-    info!(attack_key, attacker = ?entity, target = ?event.target, body_part = ?event.body_part, surface_distance_metres = surface_distance, reach_metres = reach, "melee_completion_accepted");
     let attack = authorized;
+    info!(attack_key, attacker = ?attack.attacker(), target = ?attack.target(), body_part = ?attack.body_part(), surface_distance_metres = surface_distance, reach_metres = reach, "melee_completion_accepted");
     let (a2, a1) = attack.attacker_yaw().sin_cos();
     let (d2, d1) = attack.target_yaw().sin_cos();
     let flanking = flanking_from_dir((a1, a2), (d1, d2));
 
     let Some(attacker_side) = attacker_view.weapon_holding_side() else {
-        info!(attack_key, attacker = ?entity, target = ?event.target, body_part = ?event.body_part, outcome = "failed", reason = "missing_striking_side", "melee_attack_resolved");
+        info!(attack_key, attacker = ?attack.attacker(), target = ?attack.target(), body_part = ?attack.body_part(), outcome = "failed", reason = "missing_striking_side", "melee_attack_resolved");
         return;
     };
     let attacker_has_weapon = viewer
@@ -179,7 +183,7 @@ pub(super) fn resolve_melee_attack(
         BodySide::Left => EquipSlot::HoldingLeft,
         BodySide::Right => EquipSlot::HoldingRight,
         BodySide::Both => {
-            info!(attack_key, attacker = ?entity, target = ?event.target, body_part = ?event.body_part, outcome = "failed", reason = "ambiguous_striking_side", "melee_attack_resolved");
+            info!(attack_key, attacker = ?attack.attacker(), target = ?attack.target(), body_part = ?attack.body_part(), outcome = "failed", reason = "ambiguous_striking_side", "melee_attack_resolved");
             return;
         }
     };

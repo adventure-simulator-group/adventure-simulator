@@ -29,24 +29,31 @@ fn authoritative_straight_line_case_route(
     departure_minute: u64,
     origin: (f64, f64),
     destination: (f64, f64),
+    coordinates_are_geographic: bool,
     distance_m: u64,
     minutes: u64,
-) -> JourneyRoutePlan {
+) -> Result<JourneyRoutePlan, String> {
+    let origin = encode_position_e7(origin.0, origin.1, coordinates_are_geographic)
+        .ok_or("Journey origin is not a valid WGS84 coordinate")?;
+    let destination = encode_position_e7(destination.0, destination.1, coordinates_are_geographic)
+        .ok_or("Journey destination is not a valid WGS84 coordinate")?;
     let points = vec![
         JourneyRoutePoint {
-            latitude_e7: (origin.1 * 10_000_000.0).round() as i32,
-            longitude_e7: (origin.0 * 10_000_000.0).round() as i32,
+            latitude_e7: origin.latitude_e7,
+            longitude_e7: origin.longitude_e7,
         },
         JourneyRoutePoint {
-            latitude_e7: (destination.1 * 10_000_000.0).round() as i32,
-            longitude_e7: (destination.0 * 10_000_000.0).round() as i32,
+            latitude_e7: destination.latitude_e7,
+            longitude_e7: destination.longitude_e7,
         },
     ];
+    let e7_to_microdegrees =
+        |value| value / (LatitudeE7::UNITS_PER_DEGREE / LatitudeMicrodegrees::UNITS_PER_DEGREE);
     let weather = adventuresim_core::weather::weather_at(
         adventuresim_core::weather::WORLD_WEATHER_SEED,
         departure_minute,
-        points[0].latitude_e7 / 10,
-        points[0].longitude_e7 / 10,
+        e7_to_microdegrees(points[0].latitude_e7),
+        e7_to_microdegrees(points[0].longitude_e7),
         0,
     );
     let precipitation = match weather.precipitation {
@@ -79,7 +86,7 @@ fn authoritative_straight_line_case_route(
         start_minute: 0,
         duration_minutes: minutes,
     };
-    JourneyRoutePlan {
+    Ok(JourneyRoutePlan {
         package_digest,
         weather_rules_version: weather.rules_version,
         weather_interval_start: weather.interval_start_minute,
@@ -97,7 +104,7 @@ fn authoritative_straight_line_case_route(
             points: points.into_iter().rev().collect(),
             spans: vec![span],
         }),
-    }
+    })
 }
 
 fn travel_to_case_site_impl(
@@ -169,13 +176,22 @@ fn travel_to_case_site_impl(
                 .id()
                 .find(origin_id.to_owned())
                 .ok_or("Current settlement not found")?;
+            let origin_is_geographic =
+                site.coordinates_are_geographic && origin.source_node_id.is_some();
+            let origin_coordinates = if origin_is_geographic {
+                Wgs84CoordinateE7::from_longitude_latitude_degrees(origin.coord_x, origin.coord_y)
+                    .ok_or("Current settlement has an invalid WGS84 coordinate")?
+                    .longitude_latitude_degrees()
+            } else {
+                (origin.coord_x, origin.coord_y)
+            };
             (
                 JourneyEndpoint::Settlement(JourneySettlementEndpoint {
                     id: origin.id.clone(),
                     name: origin.name,
                 }),
-                (origin.coord_x, origin.coord_y),
-                site.coordinates_are_geographic && origin.source_node_id.is_some(),
+                origin_coordinates,
+                origin_is_geographic,
                 true,
             )
         } else {
@@ -188,23 +204,26 @@ fn travel_to_case_site_impl(
                 .id_key()
                 .find(&origin_id.value)
                 .ok_or("Current case site not found")?;
+            let origin_is_geographic =
+                site.coordinates_are_geographic && origin.coordinates_are_geographic;
+            let origin_coordinates = decode_position_e7(
+                origin.longitude_e7,
+                origin.latitude_e7,
+                origin_is_geographic,
+            )
+            .ok_or("Current case site has an invalid WGS84 coordinate")?;
             (
                 JourneyEndpoint::CaseSite(JourneyCaseSiteEndpoint {
                     id: origin.id.clone(),
                     name: origin.name,
                 }),
-                (
-                    f64::from(origin.longitude_e7) / 10_000_000.0,
-                    f64::from(origin.latitude_e7) / 10_000_000.0,
-                ),
-                site.coordinates_are_geographic && origin.coordinates_are_geographic,
+                origin_coordinates,
+                origin_is_geographic,
                 false,
             )
         };
-    let destination = (
-        f64::from(lead.longitude_e7) / 10_000_000.0,
-        f64::from(lead.latitude_e7) / 10_000_000.0,
-    );
+    let destination = decode_position_e7(lead.longitude_e7, lead.latitude_e7, origin_is_geographic)
+        .ok_or("Destination case site has an invalid WGS84 coordinate")?;
     if let Some(route) = route.as_ref() {
         validate_route_departure_weather_interval(route, departure_minute)?;
         validate_journey_route(ctx, route, origin_coordinates, destination)?;
@@ -220,15 +239,17 @@ fn travel_to_case_site_impl(
     let travel_minutes = route
         .as_ref()
         .map_or_else(|| quest_journey_minutes(distance_m), |route| route.minutes);
-    let route = route.unwrap_or_else(|| {
-        authoritative_straight_line_case_route(
+    let route = match route {
+        Some(route) => route,
+        None => authoritative_straight_line_case_route(
             departure_minute,
             origin_coordinates,
             destination,
+            origin_is_geographic,
             distance_m,
             travel_minutes,
-        )
-    });
+        )?,
+    };
     start_party_journey(
         ctx,
         &party,
@@ -245,15 +266,6 @@ fn travel_to_case_site_impl(
     for member_id in traveler_ids.iter().copied() {
         crate::condition::prepare_character_waterskins(ctx, member_id, departing_settlement)?;
     }
-    // Filling shared waterskins updates the persisted party row. Keep the
-    // local copy in sync so the camp/location update below cannot restore the
-    // pre-departure pooled-water value.
-    party = ctx
-        .db
-        .party_authority()
-        .id()
-        .find(&party_id)
-        .ok_or("Party changed while its waterskins were filled")?;
     let proposed_leg_minutes =
         travel_minutes.min(party_next_walking_minutes(ctx, &party.id, travel_minutes)?);
     let (leg_minutes, encounter, narrative, next_roll) = advance_party_movement_until_encounter(
@@ -329,6 +341,10 @@ fn travel_to_case_site_impl(
     Ok(())
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "arrival applies each distinct travel, party, and companion outcome"
+)]
 fn complete_settlement_arrival(
     ctx: &ReducerContext,
     traveler_ids: Vec<u64>,
@@ -549,19 +565,23 @@ fn travel_to_settlement_impl(
             let Some(site) = ctx.db.case_site_authority().id_key().find(case_site_id) else {
                 return Err("Character's current case site does not exist".into());
             };
-            let site_x = f64::from(site.longitude_e7) / 10_000_000.0;
-            let site_y = f64::from(site.latitude_e7) / 10_000_000.0;
+            let coordinates_are_geographic =
+                site.coordinates_are_geographic && destination.source_node_id.is_some();
+            let (site_x, site_y) = decode_position_e7(
+                site.longitude_e7,
+                site.latitude_e7,
+                coordinates_are_geographic,
+            )
+            .ok_or("Current case site has an invalid WGS84 coordinate")?;
             let distance_m = straight_line_distance_m(
                 site_x,
                 site_y,
                 destination.coord_x,
                 destination.coord_y,
-                site.coordinates_are_geographic && destination.source_node_id.is_some(),
+                coordinates_are_geographic,
             );
             let zero_distance_return = distance_m == 0;
-            if !zero_distance_return
-                && let Some(route) = route.as_ref()
-            {
+            if !zero_distance_return && let Some(route) = route.as_ref() {
                 validate_journey_route(
                     ctx,
                     route,
@@ -656,15 +676,6 @@ fn travel_to_settlement_impl(
     let departing_settlement = character.current_settlement_id.is_some();
     if let Some(current_party) = party.as_ref() {
         crate::condition::prepare_party_waterskins(ctx, &current_party.id, departing_settlement)?;
-        // prepare_party_waterskins persists the new volume. Reload before any
-        // later camp/location write so that write preserves the filled water.
-        party = Some(
-            ctx.db
-                .party_authority()
-                .id()
-                .find(&current_party.id)
-                .ok_or("Party changed while its waterskins were prepared")?,
-        );
     }
     for traveler_id in traveler_ids.iter().copied() {
         crate::condition::prepare_character_waterskins(ctx, traveler_id, departing_settlement)?;
@@ -674,12 +685,13 @@ fn travel_to_settlement_impl(
         let party_id = current_party.id.clone();
         let proposed_leg_minutes =
             travel_minutes.min(party_next_walking_minutes(ctx, &party_id, travel_minutes)?);
-        let (leg_minutes, encounter, narrative, next_roll) = advance_party_movement_until_encounter(
-            ctx,
-            &party_id,
-            &traveler_ids,
-            proposed_leg_minutes,
-        )?;
+        let (leg_minutes, encounter, narrative, next_roll) =
+            advance_party_movement_until_encounter(
+                ctx,
+                &party_id,
+                &traveler_ids,
+                proposed_leg_minutes,
+            )?;
         party = Some(
             ctx.db
                 .party_authority()
@@ -773,22 +785,21 @@ pub fn set_party_travel_itinerary(
     walking_minutes_per_day: u16,
     travel_at_night: bool,
     journey_start_minute_of_day: u16,
-    automatic_camp_duration: bool,
-    fixed_camp_minutes: u16,
 ) -> Result<(), String> {
     crate::character::require_living_character(ctx, character_id)?;
-    if walking_minutes_per_day > 24 * 60
+    if walking_minutes_per_day > adventuresim_core::strategic_time::MAX_WALKING_MINUTES_PER_DAY
         || (walking_minutes_per_day > 0
             && daylight_walking_window(walking_minutes_per_day).is_none())
     {
         return Err("Daily walking time must be between 0 and 24 hours".into());
     }
-    if journey_start_minute_of_day >= 24 * 60 {
+    let Some(journey_start) =
+        adventuresim_core::strategic_time::StrategicMinuteOfDay::new(
+            journey_start_minute_of_day,
+        )
+    else {
         return Err("Journey departure time must be within one day".into());
-    }
-    // Retain the reducer's wire shape for existing clients while the daily
-    // walking window becomes the sole authoritative configuration.
-    let _legacy_camp_override = (automatic_camp_duration, fixed_camp_minutes);
+    };
     let character = ctx
         .db
         .character()
@@ -806,17 +817,13 @@ pub fn set_party_travel_itinerary(
         return Err("Only the party leader can configure travel".into());
     }
     if party.wilderness_canonical_anchor_minute.is_some()
-        && party.journey_start_minute_of_day != journey_start_minute_of_day
+        && party.journey_start_minute_of_day != journey_start.get()
     {
         return Err("Journey departure time cannot change after setting out".into());
     }
     party.walking_minutes_per_day = walking_minutes_per_day;
     party.travel_at_night = travel_at_night;
-    party.journey_start_minute_of_day = journey_start_minute_of_day;
-    // The daily cycle has one degree of freedom: all time outside the
-    // walking window is camp/downtime.
-    party.camp_duration_mode = CampDurationMode::Fixed;
-    party.fixed_camp_minutes = (24 * 60_u16).saturating_sub(walking_minutes_per_day);
+    party.journey_start_minute_of_day = journey_start.get();
     let camped = party.camp_destination.is_some();
     ctx.db.party_authority().id().update(party);
     if camped {
@@ -861,8 +868,8 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
     let camp_place = current_journey_camp_place(ctx, &party_id)?;
     crate::food::require_clear_current_camp_fireplace(ctx, &camp_place)?;
     // Refresh only after the exact pre-refresh camp and every persisted
-    // fireplace custody row have been validated. Legacy itinerary repair can
-    // never mint a new identity around existing custody.
+    // fireplace custody row have been validated. Forecast refresh must never
+    // mint a new identity around existing custody.
     refresh_party_journey_forecast(ctx, &party_id)?;
     let proposed_leg_minutes = party.camp_remaining_minutes.min(party_next_walking_minutes(
         ctx,
@@ -870,7 +877,10 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
         party.camp_remaining_minutes,
     )?);
     if proposed_leg_minutes == 0 {
-        return Err("Rest until the party reaches its next daylight walking window".into());
+        return Err(adventuresim_core::reducer_error::coded_reducer_error(
+            adventuresim_core::reducer_error::ReducerErrorCode::JourneyDaylightWindowRequired,
+            "Rest until the party reaches its next daylight walking window",
+        ));
     }
     let traveler_ids = living_party_member_ids(ctx, &party_id);
     let (leg_minutes, encounter, narrative, next_roll) = advance_party_movement_until_encounter(

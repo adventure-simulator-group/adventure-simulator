@@ -69,7 +69,10 @@ fn generated_location_testimony_has_one_public_grant_shape() {
     for seed in 0..256 {
         let generated = generate(&context(seed, TemplateFamily::RecurringDepredation)).unwrap();
         let draft = &generated.witnesses[0].testimony[0];
-        assert_eq!(draft.destination_stage, "route_segment");
+        assert_eq!(
+            draft.destination_stage,
+            DestinationKnowledgeStage::RouteSegment
+        );
         assert_eq!(draft.referred_witness_ids.len(), 1);
         assert!(!draft.spoken_text.is_empty());
         assert!(!draft.spoken_text.to_ascii_lowercase().contains("truthful"));
@@ -250,21 +253,21 @@ fn generated_physical_trails_are_opaque_contiguous_two_segment_chains() {
         assert!(first_action.outputs.iter().any(|output| matches!(
             output,
             GeneratedActionOutput::Destination {
-                stage: GeneratedDestinationStage::RouteSegment,
+                stage: DestinationKnowledgeStage::RouteSegment,
                 site_id: None,
             }
         )));
         assert!(!first_action.outputs.iter().any(|output| matches!(
             output,
             GeneratedActionOutput::Destination {
-                stage: GeneratedDestinationStage::Exact,
+                stage: DestinationKnowledgeStage::ExactBelieved,
                 ..
             }
         )));
         assert!(final_action.outputs.iter().any(|output| matches!(
             output,
             GeneratedActionOutput::Destination {
-                stage: GeneratedDestinationStage::Exact,
+                stage: DestinationKnowledgeStage::ExactBelieved,
                 site_id: Some(_),
             }
         )));
@@ -328,7 +331,7 @@ fn track_validator_rejects_broken_links_skips_and_early_exact_locations() {
         .unwrap()
         .outputs
         .push(GeneratedActionOutput::Destination {
-            stage: GeneratedDestinationStage::Exact,
+            stage: DestinationKnowledgeStage::ExactBelieved,
             site_id: Some(true_site),
         });
     assert!(validate(&leaked).is_err());
@@ -484,8 +487,7 @@ fn referred_witness_pipeline_fits_every_stable_id_budget_in_both_families() {
     ] {
         let mut context = context(seed, family);
         for (index, witness) in context.witness_candidates.iter_mut().enumerate() {
-            witness.resident_character_id =
-                9_007_199_254_740_993 + seed * 16 + index as u64;
+            witness.resident_character_id = 9_007_199_254_740_993 + seed * 16 + index as u64;
         }
         let generated = generate(&context).unwrap();
         validate(&generated).unwrap();
@@ -685,6 +687,10 @@ fn generated_claim_boundaries_exclude_narration_and_punctuation() {
                 .cloned()
         })
         .expect("golden range includes a visual claim");
-    assert!(!visual.challenge_text.starts_with("Methought it looked like "));
+    assert!(
+        !visual
+            .challenge_text
+            .starts_with("Methought it looked like ")
+    );
     assert!(!visual.challenge_text.ends_with('.'));
 }

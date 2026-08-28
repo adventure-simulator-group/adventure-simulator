@@ -13,6 +13,7 @@
 
 use crate::data::gpu::buffer::Buffer;
 use crate::data::gpu::compute::dual_contouring::{DualContouring, DualContouringDefinition};
+use crate::data::gpu::compute::{IndexedMeshCapacity, SurfaceExtractionSettings};
 use crate::data::gpu::resource::GpuResource;
 use crate::globals::WgpuContext;
 use anyhow::Result;
@@ -25,29 +26,15 @@ pub struct AdvancingFront;
 impl AdvancingFront {
     /// Extract an indexed triangle mesh from a 3D distance field.
     ///
-    /// `max_vertices` follows the Marching Cubes API: it bounds both projected
-    /// front candidates and emitted triangle vertices (indices).
+    /// The capacity independently bounds projected front candidates and
+    /// emitted triangle indices.
     pub fn execute(
         context: &WgpuContext,
         definition: &AdvancingFrontDefinition,
         sdf: &GpuResource,
-        grid: (u32, u32, u32),
-        threshold: f32,
-        max_vertices: u32,
-        scale: (f32, f32, f32),
-        offset: (f32, f32, f32),
+        settings: SurfaceExtractionSettings,
+        capacity: IndexedMeshCapacity,
     ) -> Result<(Buffer, Buffer, Buffer, Buffer)> {
-        let max_indices = max_vertices;
-        DualContouring::execute_advancing_front(
-            context,
-            definition,
-            sdf,
-            grid,
-            threshold,
-            max_vertices,
-            max_indices,
-            scale,
-            offset,
-        )
+        DualContouring::execute_advancing_front(context, definition, sdf, settings, capacity)
     }
 }

@@ -1,4 +1,5 @@
 use super::*;
+use fabelgeist_determinism::splitmix64;
 
 /// Marker for a distant tree billboard spawned as part of a vista ring.
 #[derive(Component)]
@@ -57,6 +58,10 @@ impl ActiveVistaSurface {
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Bevy injects vista scene state, presentation asset stores, and the shared tree cache independently"
+)]
 pub(super) fn on_scene_vista_bundle(
     bundle: On<SceneVistaBundle>,
     mut commands: Commands,
@@ -185,7 +190,10 @@ pub(super) fn on_scene_vista_bundle(
     );
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 fn spawn_near_vista_scatter(
     commands: &mut Commands,
     lod: &VistaLod,
@@ -355,7 +363,6 @@ fn vista_grass_cover_mask_image(
     (image, Vec4::new(1.0 / span.x, 1.0 / span.y, 0.5, 0.5))
 }
 
-#[allow(clippy::too_many_arguments)]
 fn stitched_vista_grass_coverage(
     lod: &VistaLod,
     playable_half_extent: Vec2,
@@ -459,7 +466,10 @@ fn stitched_vista_topology_coverage(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 fn spawn_vista_grass_lattice(
     commands: &mut Commands,
     lod: &VistaLod,
@@ -533,7 +543,10 @@ fn spawn_vista_grass_lattice(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 fn spawn_vista_rocks(
     commands: &mut Commands,
     lod: &VistaLod,
@@ -751,7 +764,10 @@ fn vista_rock_mesh() -> Mesh {
     mesh
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 fn spawn_vista_trees(
     commands: &mut Commands,
     lod: &VistaLod,
@@ -1482,7 +1498,6 @@ fn clear_vista_weather() -> WeatherSnapshot {
 }
 
 #[derive(Component)]
-#[allow(dead_code)]
 pub(crate) struct VistaTerrain(pub(crate) u8);
 
 /// A terrain-surface chunk, excluding vista grass, rocks, and tree cards that
@@ -1669,7 +1684,7 @@ mod tests {
             else {
                 panic!("vista mesh must expose Float32x3 positions");
             };
-            for quad in positions.chunks_exact(4) {
+            for quad in positions.as_chunks::<4>().0 {
                 let outside = quad
                     .iter()
                     .all(|position| position[0] <= -inner_half_extent.x)

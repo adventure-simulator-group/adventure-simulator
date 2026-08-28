@@ -1,7 +1,8 @@
 use adventuresim_tactical_core::prelude::TREE_TRUNK_HEIGHT_METRES;
 use bevy::math::{FloatExt, Vec3, Vec3Swizzles};
+use fabelgeist_determinism::splitmix64;
 
-use crate::presentation::{splitmix64, unit_hash};
+use crate::presentation::unit_hash;
 
 use super::{
     ENGLISH_OAK_PARAMETERS, NATURAL_OAK_GNARLING, OakGnarlingParameters, TREE_PRIMARY_GROUP_COUNT,
@@ -32,490 +33,6 @@ struct OakRootSpec {
     burial: f32,
     dominant: bool,
     fork: Option<OakRootFork>,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::presentation::obstacles::tree::geometry::{
-        BLACKTHORN_PARAMETERS, COMMON_BEECH_BARK, COMMON_BEECH_PARAMETERS,
-        COMMON_HAWTHORN_PARAMETERS, COMMON_HAZEL_PARAMETERS, ENGLISH_OAK_PARAMETERS,
-        procedural_oak_leaves, procedural_woody_plant_leaves, tree_crown_bounds,
-    };
-    use adventuresim_tactical_core::prelude::{TREE_TRUNK_HEIGHT_METRES, TREE_TRUNK_RADIUS_METRES};
-
-    #[test]
-    fn oak_shoot_pulses_leave_four_stable_canopy_windows() {
-        let attaches = (0..24_u64)
-            .map(|index| oak_clustered_shoot_attach(index, 24, 0.08, splitmix64(42 ^ index)))
-            .collect::<Vec<_>>();
-        assert!(
-            attaches
-                .iter()
-                .all(|attach| (0.04..=0.992).contains(attach))
-        );
-        let mut ordered = attaches.clone();
-        ordered.sort_by(f32::total_cmp);
-        assert_eq!(
-            ordered
-                .windows(2)
-                .filter(|pair| pair[1] - pair[0] > 0.1)
-                .count(),
-            4
-        );
-        let repeated = (0..24_u64)
-            .map(|index| oak_clustered_shoot_attach(index, 24, 0.08, splitmix64(42 ^ index)))
-            .collect::<Vec<_>>();
-        assert_eq!(attaches, repeated);
-    }
-
-    #[test]
-    fn procedural_tree_has_a_deterministic_four_order_branch_hierarchy() {
-        let branches = procedural_tree_skeleton(42, 0.0);
-        let crown_phase = unit_hash(42 ^ 0x9182_64ac) * core::f32::consts::TAU;
-        let roots = procedural_oak_root_specs(42, crown_phase);
-        let counts = (0..=3)
-            .map(|depth| {
-                branches
-                    .iter()
-                    .filter(|branch| branch.depth == depth)
-                    .count()
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(
-            counts,
-            vec![6 + oak_root_segment_count(&roots), 70, 315, 6_348]
-        );
-        assert!(branches.iter().all(|branch| branch.start.is_finite()
-            && branch.end.is_finite()
-            && branch.start.distance(branch.end) > 0.0));
-        assert!(
-            branches
-                .iter()
-                .all(|branch| branch.start_radius > branch.end_radius && branch.end_radius > 0.0)
-        );
-    }
-
-    #[test]
-    fn oak_root_plan_is_deterministic_bounded_and_irregular() {
-        for seed in 0..4_096 {
-            let crown_phase = unit_hash(seed ^ 0x9182_64ac) * core::f32::consts::TAU;
-            let roots = procedural_oak_root_specs(seed, crown_phase);
-            assert_eq!(roots, procedural_oak_root_specs(seed, crown_phase));
-            assert!((OAK_ROOT_MIN_COUNT..=OAK_ROOT_MAX_COUNT).contains(&roots.len()));
-            assert!(oak_root_segment_count(&roots) <= OAK_ROOT_MAX_SEGMENTS);
-            assert!(roots.iter().filter(|root| root.fork.is_some()).count() <= OAK_ROOT_MAX_FORKS);
-            assert!((2..=3).contains(&roots.iter().filter(|root| root.dominant).count()));
-            assert!(roots.iter().all(|root| (0.55..=1.04).contains(&root.reach)
-                && (0.14..=0.27).contains(&root.base_radius)
-                && (0.008..=0.02).contains(&root.tip_radius)
-                && (0.24..=0.36).contains(&root.burial)));
-            let mut angles = roots
-                .iter()
-                .map(|root| root.angle.rem_euclid(core::f32::consts::TAU))
-                .collect::<Vec<_>>();
-            angles.sort_by(f32::total_cmp);
-            let gaps = (0..angles.len())
-                .map(|index| {
-                    let next = if index + 1 == angles.len() {
-                        angles[0] + core::f32::consts::TAU
-                    } else {
-                        angles[index + 1]
-                    };
-                    next - angles[index]
-                })
-                .collect::<Vec<_>>();
-            let smallest = gaps.iter().copied().fold(f32::INFINITY, f32::min);
-            let largest = gaps.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-            assert!(smallest >= OAK_ROOT_MIN_ANGULAR_GAP - 0.0001);
-            assert!(largest - smallest > 0.08);
-        }
-    }
-
-    #[test]
-    fn dominant_buttresses_follow_major_scaffold_loads_and_vary_in_scale() {
-        for seed in [7, 42, 91, 4_096] {
-            let crown_phase = unit_hash(seed ^ 0x9182_64ac) * core::f32::consts::TAU;
-            let roots = procedural_oak_root_specs(seed, crown_phase);
-            let dominant = roots
-                .iter()
-                .filter(|root| root.dominant)
-                .collect::<Vec<_>>();
-            for primary_index in 0..dominant.len() as u64 {
-                let primary_seed = splitmix64(seed ^ primary_index.wrapping_mul(0x9e37_79b9));
-                let load_phase =
-                    oak_primary_scaffold_phase(crown_phase, primary_index, primary_seed);
-                assert!(
-                    dominant
-                        .iter()
-                        .any(|root| signed_angular_delta(root.angle, load_phase).abs() < 0.48)
-                );
-            }
-            assert!(
-                dominant
-                    .iter()
-                    .all(|root| root.reach >= 0.88 && root.base_radius >= 0.22)
-            );
-            let span = |values: Vec<f32>| {
-                let bounds = values
-                    .into_iter()
-                    .fold((f32::INFINITY, f32::NEG_INFINITY), |(min, max), value| {
-                        (min.min(value), max.max(value))
-                    });
-                bounds.1 - bounds.0
-            };
-            assert!(span(roots.iter().map(|root| root.reach).collect()) > 0.12);
-            assert!(span(roots.iter().map(|root| root.base_radius).collect()) > 0.035);
-        }
-    }
-
-    #[test]
-    fn root_forks_attach_to_parent_curves_and_contacts_circle_the_trunk() {
-        let mut observed_forks = 0;
-        for seed in 0..256 {
-            let crown_phase = unit_hash(seed ^ 0x9182_64ac) * core::f32::consts::TAU;
-            let roots = procedural_oak_root_specs(seed, crown_phase);
-            let root_points = roots
-                .iter()
-                .map(|root| oak_root_points(Vec3::ZERO, *root, NATURAL_OAK_GNARLING))
-                .collect::<Vec<_>>();
-            for (root, points) in roots.iter().zip(&root_points) {
-                if let Some(fork) = root.fork {
-                    observed_forks += 1;
-                    let fork_points = oak_root_fork_points(points, *root, fork);
-                    assert!(points.windows(2).any(|segment| point_segment_distance(
-                        fork_points[0],
-                        segment[0],
-                        segment[1]
-                    ) < 0.00001));
-                }
-            }
-            for (index, points) in root_points.iter().enumerate() {
-                assert!(points[0].length() >= 0.35);
-                assert!(
-                    root_points[index + 1..]
-                        .iter()
-                        .all(|other| points[0].distance(other[0]) > 0.025)
-                );
-            }
-        }
-        assert!(observed_forks > 0);
-    }
-
-    #[test]
-    fn natural_oak_roots_have_no_above_grade_continuations() {
-        for seed in 0..256 {
-            let crown_phase = unit_hash(seed ^ 0x9182_64ac) * core::f32::consts::TAU;
-            for root in procedural_oak_root_specs(seed, crown_phase) {
-                let points = oak_root_points(-Vec3::Y * 0.07, root, NATURAL_OAK_GNARLING);
-                // The contact capsule may break grade as a short trunk flare;
-                // both continuation controls and their conservative radii
-                // remain below grade, so no radial toe can terminate visibly.
-                assert!(points[1].y + root.base_radius * 0.65 < 0.0);
-                assert!(points[2].y + root.tip_radius < 0.0);
-                if let Some(fork) = root.fork {
-                    let fork_points = oak_root_fork_points(&points, root, fork);
-                    assert!(
-                        fork_points
-                            .iter()
-                            .all(|point| point.y + root.base_radius * 0.34 < 0.0)
-                    );
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn visual_root_geometry_can_extend_beyond_the_authoritative_trunk_proxy() {
-        let roots =
-            procedural_oak_root_specs(42, unit_hash(42 ^ 0x9182_64ac) * core::f32::consts::TAU);
-        assert!(
-            roots
-                .iter()
-                .any(|root| root.reach > TREE_TRUNK_RADIUS_METRES)
-        );
-        assert_eq!(TREE_TRUNK_RADIUS_METRES, 0.35);
-        assert_eq!(TREE_TRUNK_HEIGHT_METRES, 5.0);
-    }
-
-    #[test]
-    fn woody_plant_parameters_preserve_oak_and_generate_bounded_multistem_hazel() {
-        let legacy = procedural_tree_skeleton(42, 0.4);
-        let oak = procedural_woody_plant_skeleton(42, 0.4, ENGLISH_OAK_PARAMETERS);
-        assert_eq!(legacy.len(), oak.len());
-        assert!(
-            legacy
-                .iter()
-                .zip(&oak)
-                .all(|(left, right)| left.start == right.start
-                    && left.end == right.end
-                    && left.start_radius == right.start_radius
-                    && left.end_radius == right.end_radius
-                    && left.depth == right.depth
-                    && left.primary_group == right.primary_group)
-        );
-        let hazel = procedural_woody_plant_skeleton(42, 0.0, COMMON_HAZEL_PARAMETERS);
-        assert_eq!(
-            hazel
-                .iter()
-                .filter(|branch| branch.depth == 0 && branch.start.length_squared() < 0.0001)
-                .count(),
-            usize::from(COMMON_HAZEL_PARAMETERS.basal_stems)
-        );
-        let bounds = tree_crown_bounds(&hazel, |_| true);
-        assert!(bounds.vertical_span() > 1.8 && bounds.vertical_span() < 3.25);
-        assert!(bounds.horizontal_span() > 1.5 && bounds.horizontal_span() < 3.6);
-        let leaves = procedural_woody_plant_leaves(42, &hazel, 0.0, COMMON_HAZEL_PARAMETERS);
-        assert!(!leaves.is_empty());
-        assert!(
-            leaves
-                .iter()
-                .all(|leaf| (0.08..=0.125).contains(&leaf.length)
-                    && leaf.width / leaf.length > 0.7
-                    && leaf.width / leaf.length < 0.86)
-        );
-    }
-
-    #[test]
-    fn central_german_shrub_presets_are_deterministic_and_morphologically_distinct() {
-        let presets = [
-            COMMON_HAZEL_PARAMETERS,
-            BLACKTHORN_PARAMETERS,
-            COMMON_HAWTHORN_PARAMETERS,
-        ];
-        let mut metrics = Vec::new();
-        for parameters in presets {
-            let first = procedural_woody_plant_skeleton(91, 0.0, parameters);
-            let repeated = procedural_woody_plant_skeleton(91, 0.0, parameters);
-            assert_eq!(first.len(), repeated.len());
-            assert!(
-                first
-                    .iter()
-                    .zip(&repeated)
-                    .all(|(a, b)| a.start == b.start && a.end == b.end)
-            );
-            let bounds = tree_crown_bounds(&first, |_| true);
-            let leaves = procedural_woody_plant_leaves(91, &first, 0.0, parameters);
-            assert!(leaves.iter().all(|leaf| {
-                (parameters.leaf_length_metres[0]..=parameters.leaf_length_metres[1])
-                    .contains(&leaf.length)
-                    && (parameters.leaf_width_ratio[0]..=parameters.leaf_width_ratio[1])
-                        .contains(&(leaf.width / leaf.length))
-            }));
-            metrics.push((
-                bounds.vertical_span(),
-                bounds.horizontal_span(),
-                leaves[0].length,
-            ));
-        }
-        assert!(metrics[1].0 < metrics[0].0 && metrics[0].0 < metrics[2].0);
-        assert!(metrics[1].2 < metrics[2].2 && metrics[2].2 < metrics[0].2);
-    }
-
-    #[test]
-    fn common_beech_has_a_straight_clear_bole_smooth_bark_and_ovate_leaves() {
-        let branches = procedural_woody_plant_skeleton(91, 0.65, COMMON_BEECH_PARAMETERS);
-        let repeated = procedural_woody_plant_skeleton(91, 0.65, COMMON_BEECH_PARAMETERS);
-        assert!(
-            branches
-                .iter()
-                .zip(&repeated)
-                .all(|(a, b)| a.start == b.start
-                    && a.end == b.end
-                    && a.start_radius == b.start_radius
-                    && a.end_radius == b.end_radius)
-        );
-        let trunk = branches
-            .iter()
-            .filter(|branch| branch.depth == 0 && (branch.end - branch.start).normalize().y > 0.9)
-            .collect::<Vec<_>>();
-        assert_eq!(trunk.len(), 10);
-        assert!(
-            (trunk[0].start.y + TREE_TRUNK_HEIGHT_METRES * 0.5).abs() < f32::EPSILON,
-            "the beech mesh root must share the collider-centred tree origin"
-        );
-        assert!(
-            trunk
-                .iter()
-                .all(|segment| segment.end.xz().length() < 0.075)
-        );
-        let basal_roots = branches
-            .iter()
-            .filter(|branch| {
-                branch.depth == 0
-                    && branch.end.y < -TREE_TRUNK_HEIGHT_METRES * 0.5
-                    && branch.end_radius < 0.03
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(basal_roots.len(), 3);
-        assert!(basal_roots.iter().all(|root| root.end.xz().length() < 0.55));
-        let crown_base = branches
-            .iter()
-            .filter(|branch| branch.depth == 1)
-            .map(|branch| branch.start.y)
-            .fold(f32::INFINITY, f32::min);
-        assert!(
-            crown_base + TREE_TRUNK_HEIGHT_METRES * 0.5
-                > COMMON_BEECH_PARAMETERS.height_metres * 0.4
-        );
-        assert!(COMMON_BEECH_BARK.fissure_depth_metres < 0.0005);
-        assert_eq!(COMMON_BEECH_BARK.root_lobe_height_metres, 0.003);
-        let branch_counts = (0..=3)
-            .map(|depth| {
-                branches
-                    .iter()
-                    .filter(|branch| branch.depth == depth)
-                    .count()
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(branch_counts, vec![16, 100, 200, 1_200]);
-        assert!((0..TREE_PRIMARY_GROUP_COUNT).all(|group| {
-            branches
-                .iter()
-                .any(|branch| branch.depth == 1 && branch.primary_group == group)
-        }));
-        assert!(
-            branches
-                .iter()
-                .filter(|branch| (branch.depth == 1 || branch.depth == 2) && branch.is_limb_tip)
-                .all(|branch| branch.end.y > branch.start.y)
-        );
-        let leaves = procedural_woody_plant_leaves(91, &branches, 0.65, COMMON_BEECH_PARAMETERS);
-        assert_eq!(leaves.len(), 7_200);
-        assert!(leaves.iter().all(|leaf| {
-            (0.165..=0.301).contains(&leaf.length)
-                && (0.48..=0.66).contains(&(leaf.width / leaf.length))
-        }));
-        let horizontal_laminae = leaves
-            .iter()
-            .filter(|leaf| leaf.right.cross(leaf.up).normalize().dot(Vec3::Y).abs() > 0.72)
-            .count();
-        assert!(horizontal_laminae * 5 > leaves.len() * 2);
-        let crown = tree_crown_bounds(&branches, |branch| branch.depth > 0);
-        // A closed-stand beech crown should remain a coherent dome, but need
-        // not be taller than its maximum lateral scaffold span.
-        assert!(crown.vertical_span() > crown.horizontal_span() * 0.65);
-    }
-
-    #[test]
-    fn every_live_axis_is_connected_and_terminates_in_descendants() {
-        let branches = procedural_tree_skeleton(42, 0.0);
-        let leaves = procedural_oak_leaves(42, &branches, 0.0);
-        for (index, branch) in branches
-            .iter()
-            .enumerate()
-            .filter(|(_, branch)| branch.depth > 0)
-        {
-            assert!(
-                branches
-                    .iter()
-                    .enumerate()
-                    .any(|(other_index, other)| index != other_index
-                        && other.depth <= branch.depth
-                        && point_segment_distance(branch.start, other.start, other.end) < 0.002)
-            );
-        }
-        for branch in branches
-            .iter()
-            .filter(|branch| branch.is_limb_tip && branch.depth > 0)
-        {
-            if branch.depth < 3 {
-                assert!(branches.iter().any(|child| child.depth > branch.depth
-                    && point_segment_distance(child.start, branch.start, branch.end) < 0.002
-                    && child.start.distance(branch.end) < 0.55));
-            } else {
-                assert!(
-                    leaves
-                        .iter()
-                        .any(|leaf| leaf.secondary_group == branch.secondary_group
-                            && leaf.center.distance(branch.end) < 0.55)
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn canopy_competition_raises_the_clear_bole_and_narrows_the_crown() {
-        let isolated = procedural_tree_skeleton(42, 0.0);
-        let competitive = procedural_tree_skeleton(42, 1.0);
-        let isolated_crown = tree_crown_bounds(&isolated, |branch| branch.depth > 0);
-        let competitive_crown = tree_crown_bounds(&competitive, |branch| branch.depth > 0);
-        let first = |branches: &[TreeBranchSegment]| {
-            branches
-                .iter()
-                .filter(|branch| branch.depth == 1)
-                .map(|branch| branch.start.y)
-                .fold(f32::INFINITY, f32::min)
-        };
-        assert!(first(&competitive) > first(&isolated) + 3.0);
-        assert!(competitive_crown.maximum.y > isolated_crown.maximum.y + 2.0);
-        assert!(isolated_crown.horizontal_span() > competitive_crown.horizontal_span() * 1.3);
-    }
-
-    #[test]
-    fn canopy_competition_changes_oak_architecture_continuously_and_monotonically() {
-        let metrics = [0.0, 0.25, 0.5, 0.75, 1.0].map(|competition| {
-            let branches = procedural_tree_skeleton(42, competition);
-            let crown = tree_crown_bounds(&branches, |branch| branch.depth > 0);
-            let crown_base = branches
-                .iter()
-                .filter(|branch| branch.depth == 1)
-                .map(|branch| branch.start.y)
-                .fold(f32::INFINITY, f32::min);
-            (crown.horizontal_span(), crown.maximum.y, crown_base)
-        });
-        assert!(metrics.windows(2).all(|pair| pair[1].0 < pair[0].0));
-        assert!(metrics.windows(2).all(|pair| pair[1].1 > pair[0].1));
-        assert!(metrics.windows(2).all(|pair| pair[1].2 > pair[0].2));
-    }
-
-    #[test]
-    fn gnarling_recipe_is_deterministic_bounded_and_changes_every_growth_system() {
-        let baseline = procedural_oak_skeleton_with_gnarling(42, 0.0, NATURAL_OAK_GNARLING);
-        let extreme =
-            procedural_oak_skeleton_with_gnarling(42, 0.0, super::super::EXTREME_OAK_GNARLING);
-        let repeated =
-            procedural_oak_skeleton_with_gnarling(42, 0.0, super::super::EXTREME_OAK_GNARLING);
-        assert_eq!(extreme.len(), repeated.len());
-        assert!(
-            extreme
-                .iter()
-                .zip(&repeated)
-                .all(|(left, right)| left.start == right.start
-                    && left.end == right.end
-                    && left.start_radius == right.start_radius
-                    && left.end_radius == right.end_radius)
-        );
-        assert!(extreme.len() > baseline.len());
-        let root_span = |branches: &[TreeBranchSegment]| {
-            branches
-                .iter()
-                .filter(|branch| branch.depth == 0 && branch.end.y < -2.0)
-                .map(|branch| branch.end.xz().length())
-                .fold(0.0_f32, f32::max)
-        };
-        assert!(root_span(&extreme) > root_span(&baseline) * 1.3);
-        let trunk_horizontal_span = |branches: &[TreeBranchSegment]| {
-            branches
-                .iter()
-                .filter(|branch| branch.depth == 0 && branch.start.y > -2.1)
-                .map(|branch| branch.end.xz().length())
-                .fold(0.0_f32, f32::max)
-        };
-        assert!(trunk_horizontal_span(&extreme) > trunk_horizontal_span(&baseline) + 0.7);
-        assert!(extreme.iter().all(|branch| branch.start.is_finite()
-            && branch.end.is_finite()
-            && branch.start_radius.is_finite()
-            && branch.end_radius.is_finite()
-            && branch.start_radius > branch.end_radius
-            && branch.end_radius > 0.0));
-    }
-
-    fn point_segment_distance(point: Vec3, start: Vec3, end: Vec3) -> f32 {
-        let segment = end - start;
-        let along = ((point - start).dot(segment) / segment.length_squared()).clamp(0.0, 1.0);
-        point.distance(start + segment * along)
-    }
 }
 
 pub(in crate::presentation) fn procedural_tree_skeleton(
@@ -553,6 +70,7 @@ fn signed_angular_delta(from: f32, to: f32) -> f32 {
     delta
 }
 
+#[cfg(test)]
 fn procedural_oak_root_specs(seed: u64, crown_phase: f32) -> Vec<OakRootSpec> {
     procedural_oak_root_specs_with_gnarling(seed, crown_phase, NATURAL_OAK_GNARLING)
 }
@@ -1088,29 +606,6 @@ fn procedural_oak_skeleton(seed: u64, canopy_competition: f32) -> Vec<TreeBranch
     procedural_oak_skeleton_with_gnarling(seed, canopy_competition, NATURAL_OAK_GNARLING)
 }
 
-pub(in crate::presentation) fn oak_gnarling_from_seed(seed: u64) -> OakGnarlingParameters {
-    let h = |salt| unit_hash(splitmix64(seed ^ salt));
-    OakGnarlingParameters {
-        stress_azimuth_radians: h(0x00) * core::f32::consts::TAU,
-        root_spread: h(0x01),
-        root_meander: h(0x02),
-        root_exposure: h(0x03),
-        root_forking: h(0x04),
-        trunk_lean: h(0x05),
-        trunk_sweep: h(0x06),
-        trunk_twist: h(0x07),
-        trunk_crooks: h(0x08),
-        taper_irregularity: h(0x09),
-        knot_frequency: h(0x0a),
-        knot_scale: h(0x0b),
-        burl_scale: h(0x0c),
-        scaffold_droop: h(0x0d),
-        scaffold_sweep: h(0x0e),
-        scaffold_contortion: h(0x0f),
-        crown_asymmetry: h(0x10),
-    }
-}
-
 fn append_oak_knots(
     branches: &mut Vec<TreeBranchSegment>,
     seed: u64,
@@ -1476,174 +971,488 @@ fn polyline_tangent(points: &[Vec3], t: f32) -> Vec3 {
     (points[index + 1] - points[index]).normalize()
 }
 
-#[allow(dead_code)]
-pub(in crate::presentation) fn legacy_procedural_tree_skeleton(
-    seed: u64,
-) -> Vec<TreeBranchSegment> {
-    let mut branches = Vec::new();
-    let crown_phase = unit_hash(seed ^ 0x9182_64ac) * core::f32::consts::TAU;
-    let trunk_bend = Vec3::new(crown_phase.cos(), 0.0, crown_phase.sin())
-        * (0.22 + unit_hash(seed ^ 0x51c7_329d) * 0.18);
-    let trunk_points = (0..=7)
-        .map(|index| {
-            let t = index as f32 / 7.0;
-            Vec3::new(0.0, -TREE_TRUNK_HEIGHT_METRES * 0.5, 0.0)
-                + Vec3::Y * (6.7 * t)
-                + trunk_bend * t.powf(1.3)
-        })
-        .collect::<Vec<_>>();
-    for index in 0..7 {
-        let t0 = index as f32 / 7.0;
-        let t1 = (index + 1) as f32 / 7.0;
-        branches.push(TreeBranchSegment {
-            start: trunk_points[index],
-            end: trunk_points[index + 1],
-            start_radius: 0.62 * (1.0 - t0 * 0.76),
-            end_radius: (0.62 * (1.0 - t1 * 0.9)).max(0.025),
-            depth: 0,
-            primary_group: u8::MAX,
-            secondary_group: u16::MAX,
-            is_limb_tip: index == 6,
-        });
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::presentation::obstacles::tree::geometry::{
+        BLACKTHORN_PARAMETERS, COMMON_BEECH_BARK, COMMON_BEECH_PARAMETERS,
+        COMMON_HAWTHORN_PARAMETERS, COMMON_HAZEL_PARAMETERS, ENGLISH_OAK_PARAMETERS,
+        procedural_oak_leaves, procedural_woody_plant_leaves, tree_crown_bounds,
+    };
+    use adventuresim_tactical_core::prelude::{TREE_TRUNK_HEIGHT_METRES, TREE_TRUNK_RADIUS_METRES};
+
+    #[test]
+    fn oak_shoot_pulses_leave_four_stable_canopy_windows() {
+        let attaches = (0..24_u64)
+            .map(|index| oak_clustered_shoot_attach(index, 24, 0.08, splitmix64(42 ^ index)))
+            .collect::<Vec<_>>();
+        assert!(
+            attaches
+                .iter()
+                .all(|attach| (0.04..=0.992).contains(attach))
+        );
+        let mut ordered = attaches.clone();
+        ordered.sort_by(f32::total_cmp);
+        assert_eq!(
+            ordered
+                .windows(2)
+                .filter(|pair| pair[1] - pair[0] > 0.1)
+                .count(),
+            4
+        );
+        let repeated = (0..24_u64)
+            .map(|index| oak_clustered_shoot_attach(index, 24, 0.08, splitmix64(42 ^ index)))
+            .collect::<Vec<_>>();
+        assert_eq!(attaches, repeated);
     }
 
-    for root_index in 0..8_u64 {
-        let phase = crown_phase + root_index as f32 * core::f32::consts::TAU / 8.0;
-        let direction = Vec3::new(phase.cos(), -0.1, phase.sin());
-        branches.push(TreeBranchSegment {
-            start: trunk_points[0] + Vec3::Y * 0.08,
-            end: trunk_points[0] + direction * (0.72 + unit_hash(seed ^ root_index) * 0.35),
-            start_radius: 0.3,
-            end_radius: 0.055,
-            depth: 0,
-            primary_group: u8::MAX,
-            secondary_group: u16::MAX,
-            is_limb_tip: false,
-        });
+    #[test]
+    fn procedural_tree_has_a_deterministic_four_order_branch_hierarchy() {
+        let branches = procedural_tree_skeleton(42, 0.0);
+        let crown_phase = unit_hash(42 ^ 0x9182_64ac) * core::f32::consts::TAU;
+        let roots = procedural_oak_root_specs(42, crown_phase);
+        let counts = (0..=3)
+            .map(|depth| {
+                branches
+                    .iter()
+                    .filter(|branch| branch.depth == depth)
+                    .count()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            counts,
+            vec![6 + oak_root_segment_count(&roots), 70, 315, 6_348]
+        );
+        assert!(branches.iter().all(|branch| branch.start.is_finite()
+            && branch.end.is_finite()
+            && branch.start.distance(branch.end) > 0.0));
+        assert!(
+            branches
+                .iter()
+                .all(|branch| branch.start_radius > branch.end_radius && branch.end_radius > 0.0)
+        );
     }
 
-    // A mature open-grown English oak has a few unequal, load-bearing scaffold
-    // limbs rather than a radial whorl of equivalent ascending rods.
-    for primary_index in 0..7_u64 {
-        let primary_seed = splitmix64(seed ^ primary_index.wrapping_mul(0x9e37_79b9));
-        let phase = crown_phase
-            + primary_index as f32 * 2.399_963_1
-            + (unit_hash(primary_seed) - 0.5) * 0.52;
-        let outward = Vec3::new(phase.cos(), 0.0, phase.sin());
-        let tangent = Vec3::new(-phase.sin(), 0.0, phase.cos());
-        let trunk_t = 0.29 + primary_index as f32 * 0.062;
-        let trunk_scaled = trunk_t * 7.0;
-        let trunk_segment = trunk_scaled.floor().min(6.0) as usize;
-        let start =
-            trunk_points[trunk_segment].lerp(trunk_points[trunk_segment + 1], trunk_scaled.fract());
-        let lower_crown = 1.0 - primary_index as f32 / 7.0;
-        let reach = 3.8 + lower_crown * 2.05 + unit_hash(primary_seed ^ 1) * 0.65;
-        let rise = 1.0 + (1.0 - lower_crown) * 2.0 + unit_hash(primary_seed ^ 2) * 0.45;
-        let sag = 0.85 + lower_crown * 0.7;
-        let curve = (unit_hash(primary_seed ^ 3) - 0.5) * 1.15;
-        let mut primary_points = [Vec3::ZERO; 6];
-        for (point_index, point) in primary_points.iter_mut().enumerate() {
-            let t = point_index as f32 / 5.0;
-            let gravity = -sag * (core::f32::consts::PI * t).sin();
-            let recovery = rise * t.powf(2.15);
-            *point = start
-                + outward * reach * t
-                + Vec3::Y * (gravity + recovery)
-                + tangent * curve * (core::f32::consts::PI * t).sin()
-                + outward * 0.22 * (t * core::f32::consts::TAU).sin();
+    #[test]
+    fn oak_root_plan_is_deterministic_bounded_and_irregular() {
+        for seed in 0..4_096 {
+            let crown_phase = unit_hash(seed ^ 0x9182_64ac) * core::f32::consts::TAU;
+            let roots = procedural_oak_root_specs(seed, crown_phase);
+            assert_eq!(roots, procedural_oak_root_specs(seed, crown_phase));
+            assert!((OAK_ROOT_MIN_COUNT..=OAK_ROOT_MAX_COUNT).contains(&roots.len()));
+            assert!(oak_root_segment_count(&roots) <= OAK_ROOT_MAX_SEGMENTS);
+            assert!(roots.iter().filter(|root| root.fork.is_some()).count() <= OAK_ROOT_MAX_FORKS);
+            assert!((2..=3).contains(&roots.iter().filter(|root| root.dominant).count()));
+            assert!(roots.iter().all(|root| (0.55..=1.04).contains(&root.reach)
+                && (0.14..=0.27).contains(&root.base_radius)
+                && (0.008..=0.02).contains(&root.tip_radius)
+                && (0.24..=0.36).contains(&root.burial)));
+            let mut angles = roots
+                .iter()
+                .map(|root| root.angle.rem_euclid(core::f32::consts::TAU))
+                .collect::<Vec<_>>();
+            angles.sort_by(f32::total_cmp);
+            let gaps = (0..angles.len())
+                .map(|index| {
+                    let next = if index + 1 == angles.len() {
+                        angles[0] + core::f32::consts::TAU
+                    } else {
+                        angles[index + 1]
+                    };
+                    next - angles[index]
+                })
+                .collect::<Vec<_>>();
+            let smallest = gaps.iter().copied().fold(f32::INFINITY, f32::min);
+            let largest = gaps.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+            assert!(smallest >= OAK_ROOT_MIN_ANGULAR_GAP - 0.0001);
+            assert!(largest - smallest > 0.08);
         }
-        let primary_base_radius = 0.3 + lower_crown * 0.16 + unit_hash(primary_seed ^ 9) * 0.05;
-        for segment_index in 0..5 {
-            let t0 = segment_index as f32 / 5.0;
-            let t1 = (segment_index + 1) as f32 / 5.0;
-            branches.push(TreeBranchSegment {
-                start: primary_points[segment_index],
-                end: primary_points[segment_index + 1],
-                start_radius: primary_base_radius * (1.0 - t0 * 0.78),
-                end_radius: (primary_base_radius * (1.0 - t1 * 0.9)).max(0.018),
-                depth: 1,
-                primary_group: primary_index as u8,
-                secondary_group: u16::MAX,
-                is_limb_tip: segment_index == 4,
-            });
-        }
+    }
 
-        for secondary_index in 0..8_u64 {
-            let secondary_seed = splitmix64(primary_seed ^ (secondary_index + 11));
-            let attach_t = 0.25 + secondary_index as f32 * 0.09;
-            let primary_scaled = attach_t * 5.0;
-            let segment = primary_scaled.floor().min(4.0) as usize;
-            let secondary_start =
-                primary_points[segment].lerp(primary_points[segment + 1], primary_scaled.fract());
-            let side = if secondary_index & 1 == 0 { 1.0 } else { -1.0 };
-            let yaw = phase
-                + (secondary_index as f32 - 3.5) * 0.19
-                + side * (0.5 + unit_hash(secondary_seed) * 0.38);
-            let secondary_outward = Vec3::new(yaw.cos(), 0.0, yaw.sin());
-            let inherited = (primary_points[segment + 1] - primary_points[segment]).normalize();
-            let secondary_direction = (inherited * 0.34
-                + secondary_outward * 0.68
-                + Vec3::Y * (0.28 + unit_hash(secondary_seed ^ 1) * 0.3))
-                .normalize();
-            let secondary_length = 1.5 + unit_hash(secondary_seed ^ 2) * 0.85;
-            let bend = tangent * side * (0.22 + unit_hash(secondary_seed ^ 3) * 0.3);
-            let mut secondary_points = [Vec3::ZERO; 4];
-            for (point_index, point) in secondary_points.iter_mut().enumerate() {
-                let t = point_index as f32 / 3.0;
-                *point = secondary_start
-                    + secondary_direction * secondary_length * t
-                    + bend * (core::f32::consts::PI * t).sin()
-                    + Vec3::Y * (0.55 * t.powf(2.0) - 0.2 * (core::f32::consts::PI * t).sin());
+    #[test]
+    fn dominant_buttresses_follow_major_scaffold_loads_and_vary_in_scale() {
+        for seed in [7, 42, 91, 4_096] {
+            let crown_phase = unit_hash(seed ^ 0x9182_64ac) * core::f32::consts::TAU;
+            let roots = procedural_oak_root_specs(seed, crown_phase);
+            let dominant = roots
+                .iter()
+                .filter(|root| root.dominant)
+                .collect::<Vec<_>>();
+            for primary_index in 0..dominant.len() as u64 {
+                let primary_seed = splitmix64(seed ^ primary_index.wrapping_mul(0x9e37_79b9));
+                let load_phase =
+                    oak_primary_scaffold_phase(crown_phase, primary_index, primary_seed);
+                assert!(
+                    dominant
+                        .iter()
+                        .any(|root| signed_angular_delta(root.angle, load_phase).abs() < 0.48)
+                );
             }
-            let secondary_group = (primary_index * 8 + secondary_index) as u16;
-            for segment_index in 0..3 {
-                let t0 = segment_index as f32 / 3.0;
-                let t1 = (segment_index + 1) as f32 / 3.0;
-                branches.push(TreeBranchSegment {
-                    start: secondary_points[segment_index],
-                    end: secondary_points[segment_index + 1],
-                    start_radius: 0.095 * (1.0 - t0 * 0.75),
-                    end_radius: (0.095 * (1.0 - t1 * 0.75)).max(0.018),
-                    depth: 2,
-                    primary_group: primary_index as u8,
-                    secondary_group,
-                    is_limb_tip: segment_index == 2,
-                });
-            }
-            for twig_index in 0..32_u64 {
-                let twig_seed = splitmix64(secondary_seed ^ (twig_index + 23));
-                let twig_start = secondary_points[2]
-                    .lerp(secondary_points[3], 0.08 + twig_index as f32 / 31.0 * 0.9);
-                let twig_yaw = yaw + (twig_index as f32 - 15.5) * 0.14;
-                let twig_direction = (secondary_direction * 0.5
-                    + Vec3::new(
-                        twig_yaw.cos(),
-                        0.22 + unit_hash(twig_seed ^ 8) * 0.62,
-                        twig_yaw.sin(),
-                    ) * 0.68)
-                    .normalize();
-                let twig_length = 0.62 + unit_hash(twig_seed) * 0.28;
-                let twig_mid = twig_start + twig_direction * twig_length * 0.54;
-                let twig_end = twig_start
-                    + twig_direction * twig_length
-                    + Vec3::Y * (0.1 + unit_hash(twig_seed ^ 4) * 0.1);
-                for (segment_index, (start, end)) in [(twig_start, twig_mid), (twig_mid, twig_end)]
+            assert!(
+                dominant
+                    .iter()
+                    .all(|root| root.reach >= 0.88 && root.base_radius >= 0.22)
+            );
+            let span = |values: Vec<f32>| {
+                let bounds = values
                     .into_iter()
-                    .enumerate()
-                {
-                    branches.push(TreeBranchSegment {
-                        start,
-                        end,
-                        start_radius: if segment_index == 0 { 0.018 } else { 0.011 },
-                        end_radius: if segment_index == 0 { 0.011 } else { 0.0045 },
-                        depth: 3,
-                        primary_group: primary_index as u8,
-                        secondary_group,
-                        is_limb_tip: segment_index == 1,
+                    .fold((f32::INFINITY, f32::NEG_INFINITY), |(min, max), value| {
+                        (min.min(value), max.max(value))
                     });
+                bounds.1 - bounds.0
+            };
+            assert!(span(roots.iter().map(|root| root.reach).collect()) > 0.12);
+            assert!(span(roots.iter().map(|root| root.base_radius).collect()) > 0.035);
+        }
+    }
+
+    #[test]
+    fn root_forks_attach_to_parent_curves_and_contacts_circle_the_trunk() {
+        let mut observed_forks = 0;
+        for seed in 0..256 {
+            let crown_phase = unit_hash(seed ^ 0x9182_64ac) * core::f32::consts::TAU;
+            let roots = procedural_oak_root_specs(seed, crown_phase);
+            let root_points = roots
+                .iter()
+                .map(|root| oak_root_points(Vec3::ZERO, *root, NATURAL_OAK_GNARLING))
+                .collect::<Vec<_>>();
+            for (root, points) in roots.iter().zip(&root_points) {
+                if let Some(fork) = root.fork {
+                    observed_forks += 1;
+                    let fork_points = oak_root_fork_points(points, *root, fork);
+                    assert!(points.windows(2).any(|segment| point_segment_distance(
+                        fork_points[0],
+                        segment[0],
+                        segment[1]
+                    ) < 0.00001));
+                }
+            }
+            for (index, points) in root_points.iter().enumerate() {
+                assert!(points[0].length() >= 0.35);
+                assert!(
+                    root_points[index + 1..]
+                        .iter()
+                        .all(|other| points[0].distance(other[0]) > 0.025)
+                );
+            }
+        }
+        assert!(observed_forks > 0);
+    }
+
+    #[test]
+    fn natural_oak_roots_have_no_above_grade_continuations() {
+        for seed in 0..256 {
+            let crown_phase = unit_hash(seed ^ 0x9182_64ac) * core::f32::consts::TAU;
+            for root in procedural_oak_root_specs(seed, crown_phase) {
+                let points = oak_root_points(-Vec3::Y * 0.07, root, NATURAL_OAK_GNARLING);
+                // The contact capsule may break grade as a short trunk flare;
+                // both continuation controls and their conservative radii
+                // remain below grade, so no radial toe can terminate visibly.
+                assert!(points[1].y + root.base_radius * 0.65 < 0.0);
+                assert!(points[2].y + root.tip_radius < 0.0);
+                if let Some(fork) = root.fork {
+                    let fork_points = oak_root_fork_points(&points, root, fork);
+                    assert!(
+                        fork_points
+                            .iter()
+                            .all(|point| point.y + root.base_radius * 0.34 < 0.0)
+                    );
                 }
             }
         }
     }
-    branches
+
+    #[test]
+    fn visual_root_geometry_can_extend_beyond_the_authoritative_trunk_proxy() {
+        let roots =
+            procedural_oak_root_specs(42, unit_hash(42 ^ 0x9182_64ac) * core::f32::consts::TAU);
+        assert!(
+            roots
+                .iter()
+                .any(|root| root.reach > TREE_TRUNK_RADIUS_METRES)
+        );
+        assert_eq!(TREE_TRUNK_RADIUS_METRES, 0.35);
+        assert_eq!(TREE_TRUNK_HEIGHT_METRES, 5.0);
+    }
+
+    #[test]
+    fn default_tree_is_english_oak_and_hazel_is_bounded_multistem() {
+        let default_oak = procedural_tree_skeleton(42, 0.4);
+        let oak = procedural_woody_plant_skeleton(42, 0.4, ENGLISH_OAK_PARAMETERS);
+        assert_eq!(default_oak.len(), oak.len());
+        assert!(
+            default_oak
+                .iter()
+                .zip(&oak)
+                .all(|(left, right)| left.start == right.start
+                    && left.end == right.end
+                    && left.start_radius == right.start_radius
+                    && left.end_radius == right.end_radius
+                    && left.depth == right.depth
+                    && left.primary_group == right.primary_group)
+        );
+        let hazel = procedural_woody_plant_skeleton(42, 0.0, COMMON_HAZEL_PARAMETERS);
+        assert_eq!(
+            hazel
+                .iter()
+                .filter(|branch| branch.depth == 0 && branch.start.length_squared() < 0.0001)
+                .count(),
+            usize::from(COMMON_HAZEL_PARAMETERS.basal_stems)
+        );
+        let bounds = tree_crown_bounds(&hazel, |_| true);
+        assert!(bounds.vertical_span() > 1.8 && bounds.vertical_span() < 3.25);
+        assert!(bounds.horizontal_span() > 1.5 && bounds.horizontal_span() < 3.6);
+        let leaves = procedural_woody_plant_leaves(42, &hazel, 0.0, COMMON_HAZEL_PARAMETERS);
+        assert!(!leaves.is_empty());
+        assert!(
+            leaves
+                .iter()
+                .all(|leaf| (0.08..=0.125).contains(&leaf.length)
+                    && leaf.width / leaf.length > 0.7
+                    && leaf.width / leaf.length < 0.86)
+        );
+    }
+
+    #[test]
+    fn central_german_shrub_presets_are_deterministic_and_morphologically_distinct() {
+        let presets = [
+            COMMON_HAZEL_PARAMETERS,
+            BLACKTHORN_PARAMETERS,
+            COMMON_HAWTHORN_PARAMETERS,
+        ];
+        let mut metrics = Vec::new();
+        for parameters in presets {
+            let first = procedural_woody_plant_skeleton(91, 0.0, parameters);
+            let repeated = procedural_woody_plant_skeleton(91, 0.0, parameters);
+            assert_eq!(first.len(), repeated.len());
+            assert!(
+                first
+                    .iter()
+                    .zip(&repeated)
+                    .all(|(a, b)| a.start == b.start && a.end == b.end)
+            );
+            let bounds = tree_crown_bounds(&first, |_| true);
+            let leaves = procedural_woody_plant_leaves(91, &first, 0.0, parameters);
+            assert!(leaves.iter().all(|leaf| {
+                (parameters.leaf_length_metres[0]..=parameters.leaf_length_metres[1])
+                    .contains(&leaf.length)
+                    && (parameters.leaf_width_ratio[0]..=parameters.leaf_width_ratio[1])
+                        .contains(&(leaf.width / leaf.length))
+            }));
+            metrics.push((
+                bounds.vertical_span(),
+                bounds.horizontal_span(),
+                leaves[0].length,
+            ));
+        }
+        assert!(metrics[1].0 < metrics[0].0 && metrics[0].0 < metrics[2].0);
+        assert!(metrics[1].2 < metrics[2].2 && metrics[2].2 < metrics[0].2);
+    }
+
+    #[test]
+    fn common_beech_has_a_straight_clear_bole_smooth_bark_and_ovate_leaves() {
+        let branches = procedural_woody_plant_skeleton(91, 0.65, COMMON_BEECH_PARAMETERS);
+        let repeated = procedural_woody_plant_skeleton(91, 0.65, COMMON_BEECH_PARAMETERS);
+        assert!(
+            branches
+                .iter()
+                .zip(&repeated)
+                .all(|(a, b)| a.start == b.start
+                    && a.end == b.end
+                    && a.start_radius == b.start_radius
+                    && a.end_radius == b.end_radius)
+        );
+        let trunk = branches
+            .iter()
+            .filter(|branch| branch.depth == 0 && (branch.end - branch.start).normalize().y > 0.9)
+            .collect::<Vec<_>>();
+        assert_eq!(trunk.len(), 10);
+        assert!(
+            (trunk[0].start.y + TREE_TRUNK_HEIGHT_METRES * 0.5).abs() < f32::EPSILON,
+            "the beech mesh root must share the collider-centred tree origin"
+        );
+        assert!(
+            trunk
+                .iter()
+                .all(|segment| segment.end.xz().length() < 0.075)
+        );
+        let basal_roots = branches
+            .iter()
+            .filter(|branch| {
+                branch.depth == 0
+                    && branch.end.y < -TREE_TRUNK_HEIGHT_METRES * 0.5
+                    && branch.end_radius < 0.03
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(basal_roots.len(), 3);
+        assert!(basal_roots.iter().all(|root| root.end.xz().length() < 0.55));
+        let crown_base = branches
+            .iter()
+            .filter(|branch| branch.depth == 1)
+            .map(|branch| branch.start.y)
+            .fold(f32::INFINITY, f32::min);
+        assert!(
+            crown_base + TREE_TRUNK_HEIGHT_METRES * 0.5
+                > COMMON_BEECH_PARAMETERS.height_metres * 0.4
+        );
+        const {
+            assert!(COMMON_BEECH_BARK.fissure_depth_metres < 0.0005);
+        }
+        assert_eq!(COMMON_BEECH_BARK.root_lobe_height_metres, 0.003);
+        let branch_counts = (0..=3)
+            .map(|depth| {
+                branches
+                    .iter()
+                    .filter(|branch| branch.depth == depth)
+                    .count()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(branch_counts, vec![16, 100, 200, 1_200]);
+        assert!((0..TREE_PRIMARY_GROUP_COUNT).all(|group| {
+            branches
+                .iter()
+                .any(|branch| branch.depth == 1 && branch.primary_group == group)
+        }));
+        assert!(
+            branches
+                .iter()
+                .filter(|branch| (branch.depth == 1 || branch.depth == 2) && branch.is_limb_tip)
+                .all(|branch| branch.end.y > branch.start.y)
+        );
+        let leaves = procedural_woody_plant_leaves(91, &branches, 0.65, COMMON_BEECH_PARAMETERS);
+        assert_eq!(leaves.len(), 7_200);
+        assert!(leaves.iter().all(|leaf| {
+            (0.165..=0.301).contains(&leaf.length)
+                && (0.48..=0.66).contains(&(leaf.width / leaf.length))
+        }));
+        let horizontal_laminae = leaves
+            .iter()
+            .filter(|leaf| leaf.right.cross(leaf.up).normalize().dot(Vec3::Y).abs() > 0.72)
+            .count();
+        assert!(horizontal_laminae * 5 > leaves.len() * 2);
+        let crown = tree_crown_bounds(&branches, |branch| branch.depth > 0);
+        // A closed-stand beech crown should remain a coherent dome, but need
+        // not be taller than its maximum lateral scaffold span.
+        assert!(crown.vertical_span() > crown.horizontal_span() * 0.65);
+    }
+
+    #[test]
+    fn every_live_axis_is_connected_and_terminates_in_descendants() {
+        let branches = procedural_tree_skeleton(42, 0.0);
+        let leaves = procedural_oak_leaves(42, &branches, 0.0);
+        for (index, branch) in branches
+            .iter()
+            .enumerate()
+            .filter(|(_, branch)| branch.depth > 0)
+        {
+            assert!(
+                branches
+                    .iter()
+                    .enumerate()
+                    .any(|(other_index, other)| index != other_index
+                        && other.depth <= branch.depth
+                        && point_segment_distance(branch.start, other.start, other.end) < 0.002)
+            );
+        }
+        for branch in branches
+            .iter()
+            .filter(|branch| branch.is_limb_tip && branch.depth > 0)
+        {
+            if branch.depth < 3 {
+                assert!(branches.iter().any(|child| child.depth > branch.depth
+                    && point_segment_distance(child.start, branch.start, branch.end) < 0.002
+                    && child.start.distance(branch.end) < 0.55));
+            } else {
+                assert!(
+                    leaves
+                        .iter()
+                        .any(|leaf| leaf.secondary_group == branch.secondary_group
+                            && leaf.center.distance(branch.end) < 0.55)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn canopy_competition_raises_the_clear_bole_and_narrows_the_crown() {
+        let isolated = procedural_tree_skeleton(42, 0.0);
+        let competitive = procedural_tree_skeleton(42, 1.0);
+        let isolated_crown = tree_crown_bounds(&isolated, |branch| branch.depth > 0);
+        let competitive_crown = tree_crown_bounds(&competitive, |branch| branch.depth > 0);
+        let first = |branches: &[TreeBranchSegment]| {
+            branches
+                .iter()
+                .filter(|branch| branch.depth == 1)
+                .map(|branch| branch.start.y)
+                .fold(f32::INFINITY, f32::min)
+        };
+        assert!(first(&competitive) > first(&isolated) + 3.0);
+        assert!(competitive_crown.maximum.y > isolated_crown.maximum.y + 2.0);
+        assert!(isolated_crown.horizontal_span() > competitive_crown.horizontal_span() * 1.3);
+    }
+
+    #[test]
+    fn canopy_competition_changes_oak_architecture_continuously_and_monotonically() {
+        let metrics = [0.0, 0.25, 0.5, 0.75, 1.0].map(|competition| {
+            let branches = procedural_tree_skeleton(42, competition);
+            let crown = tree_crown_bounds(&branches, |branch| branch.depth > 0);
+            let crown_base = branches
+                .iter()
+                .filter(|branch| branch.depth == 1)
+                .map(|branch| branch.start.y)
+                .fold(f32::INFINITY, f32::min);
+            (crown.horizontal_span(), crown.maximum.y, crown_base)
+        });
+        assert!(metrics.windows(2).all(|pair| pair[1].0 < pair[0].0));
+        assert!(metrics.windows(2).all(|pair| pair[1].1 > pair[0].1));
+        assert!(metrics.windows(2).all(|pair| pair[1].2 > pair[0].2));
+    }
+
+    #[test]
+    fn gnarling_recipe_is_deterministic_bounded_and_changes_every_growth_system() {
+        let baseline = procedural_oak_skeleton_with_gnarling(42, 0.0, NATURAL_OAK_GNARLING);
+        let extreme =
+            procedural_oak_skeleton_with_gnarling(42, 0.0, super::super::EXTREME_OAK_GNARLING);
+        let repeated =
+            procedural_oak_skeleton_with_gnarling(42, 0.0, super::super::EXTREME_OAK_GNARLING);
+        assert_eq!(extreme.len(), repeated.len());
+        assert!(
+            extreme
+                .iter()
+                .zip(&repeated)
+                .all(|(left, right)| left.start == right.start
+                    && left.end == right.end
+                    && left.start_radius == right.start_radius
+                    && left.end_radius == right.end_radius)
+        );
+        assert!(extreme.len() > baseline.len());
+        let root_span = |branches: &[TreeBranchSegment]| {
+            branches
+                .iter()
+                .filter(|branch| branch.depth == 0 && branch.end.y < -2.0)
+                .map(|branch| branch.end.xz().length())
+                .fold(0.0_f32, f32::max)
+        };
+        assert!(root_span(&extreme) > root_span(&baseline) * 1.3);
+        let trunk_horizontal_span = |branches: &[TreeBranchSegment]| {
+            branches
+                .iter()
+                .filter(|branch| branch.depth == 0 && branch.start.y > -2.1)
+                .map(|branch| branch.end.xz().length())
+                .fold(0.0_f32, f32::max)
+        };
+        assert!(trunk_horizontal_span(&extreme) > trunk_horizontal_span(&baseline) + 0.7);
+        assert!(extreme.iter().all(|branch| branch.start.is_finite()
+            && branch.end.is_finite()
+            && branch.start_radius.is_finite()
+            && branch.end_radius.is_finite()
+            && branch.start_radius > branch.end_radius
+            && branch.end_radius > 0.0));
+    }
+
+    fn point_segment_distance(point: Vec3, start: Vec3, end: Vec3) -> f32 {
+        let segment = end - start;
+        let along = ((point - start).dot(segment) / segment.length_squared()).clamp(0.0, 1.0);
+        point.distance(start + segment * along)
+    }
 }

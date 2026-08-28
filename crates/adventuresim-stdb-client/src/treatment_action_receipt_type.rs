@@ -4,7 +4,7 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::limb_region_type::LimbRegion;
+use super::body_region_type::BodyRegion;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -13,7 +13,7 @@ pub struct TreatmentActionReceipt {
     pub action_id: String,
     pub actor_id: u64,
     pub patient_id: u64,
-    pub limb: LimbRegion,
+    pub limb: BodyRegion,
     pub procedure: String,
     pub projectile_id: Option<u64>,
     pub use_soap: bool,
@@ -34,7 +34,7 @@ pub struct TreatmentActionReceiptCols {
     pub action_id: __sdk::__query_builder::Col<TreatmentActionReceipt, String>,
     pub actor_id: __sdk::__query_builder::Col<TreatmentActionReceipt, u64>,
     pub patient_id: __sdk::__query_builder::Col<TreatmentActionReceipt, u64>,
-    pub limb: __sdk::__query_builder::Col<TreatmentActionReceipt, LimbRegion>,
+    pub limb: __sdk::__query_builder::Col<TreatmentActionReceipt, BodyRegion>,
     pub procedure: __sdk::__query_builder::Col<TreatmentActionReceipt, String>,
     pub projectile_id: __sdk::__query_builder::Col<TreatmentActionReceipt, Option<u64>>,
     pub use_soap: __sdk::__query_builder::Col<TreatmentActionReceipt, bool>,

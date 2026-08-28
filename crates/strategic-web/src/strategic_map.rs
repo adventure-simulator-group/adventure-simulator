@@ -17,6 +17,8 @@ use maud::{Markup, html};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
+#[cfg(test)]
+use crate::spacetimedb::DestinationKnowledgeStage;
 use crate::spacetimedb::{BackendCaseSitePin, Settlement, SettlementCategory};
 
 const WIDTH: f64 = 1200.0;
@@ -34,6 +36,7 @@ const RENDERER_REVISION: u32 = 10;
 const MIN_TILE_SIZE: u32 = 64;
 const MAX_TILE_SIZE: u32 = 2_048;
 const MAX_TILE_ENTRIES: usize = 100_000;
+const ANNUAL_IMMUTABLE_TILE_CACHE_SECONDS: u32 = 31_536_000;
 const VIABUNDUS_URL: &str = "https://doi.org/10.5281/zenodo.16611998";
 const ELEVATION_URL: &str = "https://doi.org/10.5270/ESA-c5d3d65";
 const FOREST_URL: &str = "https://doi.org/10.2909/82f93572-9888-47ef-97a1-5cac5985a26a";
@@ -351,7 +354,10 @@ pub(crate) async fn world_tile(
     let bytes = Bytes::from_owner(map.tile_pack.clone()).slice(range.clone());
     let mut response = Response::builder().header(CONTENT_TYPE, "image/avif");
     if query.v.as_deref() == Some(package.tiles.content_sha256.as_str()) {
-        response = response.header(CACHE_CONTROL, "public, max-age=31536000, immutable");
+        response = response.header(
+            CACHE_CONTROL,
+            format!("public, max-age={ANNUAL_IMMUTABLE_TILE_CACHE_SECONDS}, immutable"),
+        );
     }
     response
         .body(Body::from(bytes))
@@ -479,6 +485,10 @@ fn population_level_threshold(view_width: f64) -> i32 {
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the map renderer consumes independent overlay, selection, and route layers"
+)]
 pub fn strategic_map(
     map: &StrategicMap,
     settlements: &[Settlement],
@@ -583,7 +593,7 @@ pub fn strategic_map(
                                 aria-label=(format!("Computed terrain route, {:.1} kilometres", route.distance_m as f64 / 1000.0))
                                 points=(points) {}
                         } @else if let Some((destination_x, destination_y)) = destination {
-                            line class="map-selection-line map-legacy-route" data-map-selection-line aria-hidden="true"
+                            line class="map-selection-line map-straight-line-route" data-map-selection-line aria-hidden="true"
                                 x1=(format!("{origin_x:.3}")) y1=(format!("{origin_y:.3}"))
                                 x2=(format!("{destination_x:.3}")) y2=(format!("{destination_y:.3}")) {}
                         }
@@ -882,7 +892,7 @@ mod tests {
             latitude_e7: (latitude * 10_000_000.0) as i32,
             coordinates_are_geographic: true,
             distance_m: 8_000,
-            knowledge_stage: "exact_believed".into(),
+            knowledge_stage: DestinationKnowledgeStage::ExactBelieved,
             tracked: true,
             display_title: title.into(),
             generated_case: false,
@@ -1057,7 +1067,7 @@ mod tests {
         assert!(markup.contains("map-quest-shape"));
         assert!(markup.contains("data-map-selection-line"));
         assert!(markup.contains("map-terrain-route"));
-        assert!(!markup.contains("map-legacy-route"));
+        assert!(!markup.contains("map-straight-line-route"));
         assert!(markup.contains("Computed terrain route, 74.5 kilometres"));
         assert!(markup.contains("aria-current=\"true\""));
         assert!(markup.contains("map-settlement-hit-overlay"));

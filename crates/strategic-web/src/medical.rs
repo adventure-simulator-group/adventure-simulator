@@ -7,7 +7,7 @@
 use crate::spacetimedb::{BackendPhysiologyAdministration, BackendPhysiologyChart};
 use adventuresim_core::{
     disease::{DiseaseId, definition, elemental_association},
-    physiology::{BodyRegion, Humour},
+    physiology::{BodyRegion, DoseMilliunits, Humour},
 };
 
 #[derive(Clone, Debug, Default)]
@@ -62,9 +62,9 @@ pub struct AdministrationPresentation {
     pub preparation_id: String,
     pub display_name: String,
     pub profile_version: u16,
-    pub route: String,
-    pub amount_milliunits: u32,
-    pub region: Option<String>,
+    pub route: adventuresim_core::physiology::InterventionRoute,
+    pub dose: DoseMilliunits,
+    pub region: Option<adventuresim_core::physiology::BodyRegion>,
     pub administered_at: u64,
     pub stopped_at: Option<u64>,
 }
@@ -100,7 +100,9 @@ pub fn sanitize(
                     .map(|candidate| DiseaseLikelihoodPresentation {
                         disease_id: candidate.disease_id.clone(),
                         label: candidate.label.clone(),
-                        likelihood_bps: candidate.likelihood_bps.min(10_000),
+                        likelihood_bps: candidate
+                            .likelihood_bps
+                            .min(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE),
                         typical_effects: typical_disease_effects(&candidate.disease_id),
                     })
                     .collect(),
@@ -125,10 +127,14 @@ pub fn sanitize(
     let latest = readings.last();
     let regional_humours = latest.map(|reading| {
         reading.humour_deviations_bps.map(|values| HumourVitals {
-            sanguine: values[0] as f32 / 10_000.0,
-            phlegmatic: values[1] as f32 / 10_000.0,
-            choleric: values[2] as f32 / 10_000.0,
-            melancholic: values[3] as f32 / 10_000.0,
+            sanguine: values[0] as f32
+                / f32::from(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE),
+            phlegmatic: values[1] as f32
+                / f32::from(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE),
+            choleric: values[2] as f32
+                / f32::from(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE),
+            melancholic: values[3] as f32
+                / f32::from(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE),
         })
     });
     let concealed_other = if regional_humours.is_some() {
@@ -137,7 +143,10 @@ pub fn sanitize(
         let aggregate = latest.map_or(0.0, |reading| {
             reading.humour_deviations_bps[0]
                 .iter()
-                .map(|value| value.unsigned_abs() as f32 / 10_000.0)
+                .map(|value| {
+                    value.unsigned_abs() as f32
+                        / f32::from(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE)
+                })
                 .sum::<f32>()
                 .clamp(0.0, 1.0)
         });
@@ -160,9 +169,10 @@ pub fn sanitize(
                     |definition| definition.display_name.clone(),
                 ),
             profile_version: row.profile_version,
-            route: row.route.clone(),
-            amount_milliunits: row.amount_milliunits,
-            region: row.region.clone(),
+            route: row.route,
+            dose: DoseMilliunits::try_new(row.dose_milliunits)
+                .expect("backend administration dose must satisfy the physiology invariant"),
+            region: row.region,
             administered_at: row.administered_at,
             stopped_at: row.stopped_at,
         })
@@ -360,8 +370,8 @@ mod tests {
                 patient_id: 2,
                 preparation_id: "first_course".into(),
                 profile_version: 1,
-                route: "oral".into(),
-                amount_milliunits: 750,
+                route: adventuresim_core::physiology::InterventionRoute::Oral,
+                dose_milliunits: DoseMilliunits::try_new(750).unwrap().get(),
                 region: None,
                 administered_at: 100,
                 stopped_at: Some(200),
@@ -371,8 +381,8 @@ mod tests {
                 patient_id: 2,
                 preparation_id: "oral_rehydration_draught".into(),
                 profile_version: 1,
-                route: "oral".into(),
-                amount_milliunits: 1_000,
+                route: adventuresim_core::physiology::InterventionRoute::Oral,
+                dose_milliunits: DoseMilliunits::STANDARD.get(),
                 region: None,
                 administered_at: 300,
                 stopped_at: None,
@@ -382,8 +392,8 @@ mod tests {
                 patient_id: 2,
                 preparation_id: "cooling_willow_draught".into(),
                 profile_version: 1,
-                route: "oral".into(),
-                amount_milliunits: 1_000,
+                route: adventuresim_core::physiology::InterventionRoute::Oral,
+                dose_milliunits: DoseMilliunits::STANDARD.get(),
                 region: None,
                 administered_at: 100,
                 stopped_at: None,

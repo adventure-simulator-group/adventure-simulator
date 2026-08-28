@@ -4,6 +4,8 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::encounter_archetype_type::EncounterArchetype;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct LocalProblemAuthority {
@@ -16,7 +18,7 @@ pub struct LocalProblemAuthority {
     pub buy_bps: i32,
     pub sell_penalty_bps: i32,
     pub encounter_frequency_bps: u16,
-    pub encounter_archetype: String,
+    pub encounter_archetype: Option<EncounterArchetype>,
     pub disease_intensity: u16,
     pub disease_id: String,
     pub starts_at: u64,
@@ -47,7 +49,8 @@ pub struct LocalProblemAuthorityCols {
     pub buy_bps: __sdk::__query_builder::Col<LocalProblemAuthority, i32>,
     pub sell_penalty_bps: __sdk::__query_builder::Col<LocalProblemAuthority, i32>,
     pub encounter_frequency_bps: __sdk::__query_builder::Col<LocalProblemAuthority, u16>,
-    pub encounter_archetype: __sdk::__query_builder::Col<LocalProblemAuthority, String>,
+    pub encounter_archetype:
+        __sdk::__query_builder::Col<LocalProblemAuthority, Option<EncounterArchetype>>,
     pub disease_intensity: __sdk::__query_builder::Col<LocalProblemAuthority, u16>,
     pub disease_id: __sdk::__query_builder::Col<LocalProblemAuthority, String>,
     pub starts_at: __sdk::__query_builder::Col<LocalProblemAuthority, u64>,

@@ -8,7 +8,7 @@ fn non_exact_rows_are_sanitized_without_coordinates() {
         summary: "somewhere north".into(),
         source_label: "witness".into(),
         confidence_bps: 5000,
-        destination_stage: "approximate_area".into(),
+        destination_stage: DestinationKnowledgeStage::ApproximateArea,
         directions: "north wood".into(),
         exact_location_id: "hidden-cave".into(),
         latitude_e7: 12,
@@ -37,7 +37,7 @@ fn journal_cross_scope_references_degrade_to_safe_chronology() {
         summary: "An uncertain account".into(),
         source_label: "the miller".into(),
         confidence_bps: 5000,
-        destination_stage: "textual".into(),
+        destination_stage: DestinationKnowledgeStage::Textual,
         directions: String::new(),
         exact_location_id: String::new(),
         latitude_e7: 0,
@@ -115,12 +115,38 @@ fn journal_cross_scope_references_degrade_to_safe_chronology() {
 
 #[test]
 fn destination_validation_is_bidirectional_and_bounded() {
-    assert!(validate_destination("exact_believed", "cave", 900_000_000, -1_800_000_000).is_ok());
-    assert!(validate_destination("visited", "", 1, 2).is_err());
-    assert!(validate_destination("exact_believed", "cave", 900_000_001, 0).is_err());
-    assert!(validate_destination("exact_believed", "cave", 0, -1_800_000_001).is_err());
-    assert!(validate_destination("approximate_area", "hidden", 0, 0).is_err());
-    assert!(validate_destination("textual", "", 0, 0).is_ok());
+    assert!(
+        validate_destination(
+            DestinationKnowledgeStage::ExactBelieved,
+            "cave",
+            900_000_000,
+            -1_800_000_000,
+        )
+        .is_ok()
+    );
+    assert!(validate_destination(DestinationKnowledgeStage::Visited, "", 1, 2).is_err());
+    assert!(
+        validate_destination(
+            DestinationKnowledgeStage::ExactBelieved,
+            "cave",
+            900_000_001,
+            0,
+        )
+        .is_err()
+    );
+    assert!(
+        validate_destination(
+            DestinationKnowledgeStage::ExactBelieved,
+            "cave",
+            0,
+            -1_800_000_001,
+        )
+        .is_err()
+    );
+    assert!(
+        validate_destination(DestinationKnowledgeStage::ApproximateArea, "hidden", 0, 0,).is_err()
+    );
+    assert!(validate_destination(DestinationKnowledgeStage::Textual, "", 0, 0).is_ok());
 }
 
 #[test]
@@ -150,8 +176,16 @@ fn raw_tables_are_private_and_views_fail_closed() {
         assert!(source.contains(&declaration));
         assert!(!source.contains(&format!("#[table(accessor = {table}, public)]")));
     }
-    assert_eq!(source.matches("if !is_gateway(ctx)").count(), 3);
-    assert!(!source.contains("pub hidden_target"));
+    assert_eq!(
+        source.matches("if !is_gateway(ctx)").count(),
+        source.matches("#[view(accessor =").count(),
+    );
+    let public_types = source
+        .split("pub struct BackendInvestigationJournalEntry")
+        .nth(1)
+        .and_then(|tail| tail.split("fn journal_case_resolution").next())
+        .expect("public investigation projection types");
+    assert!(!public_types.contains("hidden_target"));
 }
 
 #[test]
@@ -166,7 +200,7 @@ fn case_site_projection_requires_exact_unrevised_observer_knowledge() {
         })
         .expect("case-site projection body");
     assert!(projection.contains("lead.corrected_by.is_empty()"));
-    assert!(projection.contains("\"exact_believed\" | \"visited\""));
+    assert!(projection.contains("destination_stage.is_exact()"));
     assert!(projection.contains("owner_character_id: lead.owner_character_id"));
     assert!(projection.contains("case_site_authority()"));
     assert!(!projection.contains("destination_stage.as_str(), \"textual\""));
@@ -181,9 +215,16 @@ fn generated_case_site_presentation_is_validated_and_action_only() {
         .nth(1)
         .and_then(|tail| tail.split("fn lead_projects_exact_case_site_pin").next())
         .expect("generated case-site presentation helper");
+    let projected_type = source
+        .split("pub struct BackendCaseSitePin")
+        .nth(1)
+        .and_then(|tail| tail.split("pub struct BackendCharacterCaseSiteLocation").next())
+        .expect("case-site pin projection type");
     for required in [
         "validate_quest_generation_authority",
-        "generated_site.id.0 == site.id.value",
+        "canonical_case_site_place(&generated_site.id.0)",
+        ".zip(site.id.to_place())",
+        "generated == persisted",
         "generated_site.safe_label != site.name",
         "generated_case_site_combat_eligible",
         "find(owner_character_id)",
@@ -193,7 +234,7 @@ fn generated_case_site_presentation_is_validated_and_action_only() {
         assert!(projection.contains(required), "{required}");
     }
     for forbidden in ["enemy_type", "cause", "factor_trace", "manifest_json"] {
-        assert!(!projection.contains(forbidden), "{forbidden} leaked");
+        assert!(!projected_type.contains(forbidden), "{forbidden} leaked");
     }
 }
 
@@ -222,7 +263,7 @@ fn exact_witness_belief_projects_a_pin_without_route_completion() {
         summary: "I saw it enter the old croft.".into(),
         source_label: "the referred local witness".into(),
         confidence_bps: 5_000,
-        destination_stage: "exact_believed".into(),
+        destination_stage: DestinationKnowledgeStage::ExactBelieved,
         directions: String::new(),
         exact_location_id: site.id.value.clone(),
         latitude_e7: site.latitude_e7,
@@ -242,7 +283,7 @@ fn exact_witness_belief_projects_a_pin_without_route_completion() {
         Some("public-case")
     ));
     let mut approximate = lead.clone();
-    approximate.destination_stage = "approximate_area".into();
+    approximate.destination_stage = DestinationKnowledgeStage::ApproximateArea;
     assert!(!lead_projects_exact_case_site_pin(
         &approximate,
         &site,
@@ -265,9 +306,17 @@ fn source_has_authorization_idempotency_and_no_implicit_sharing() {
     assert!(source.contains("co-located member"));
     assert!(source.contains("share_investigation_belief"));
     assert!(!source.contains("on_party_join"));
-    assert!(source.contains("compound_id(&[\"case\", \"problem\""));
-    assert!(!source.contains("case_id = receipt.opaque_case_ref"));
-    assert!(source.contains("local_problem_receipt().id().find(&receipt_id)"));
+    assert!(source.contains("let canonical_case_id = receipt.opaque_case_ref.clone()"));
+    assert!(source.contains("let case_id = generated.public_case_id"));
+    assert!(!source.contains("let case_id = receipt.opaque_case_ref"));
+    let rumor = source
+        .split("fn receive_local_problem_rumor_impl")
+        .nth(1)
+        .and_then(|tail| tail.split("fn process_investigation_pipeline").next())
+        .expect("local rumor reducer implementation");
+    assert!(rumor.contains(".local_problem_receipt()"));
+    assert!(rumor.contains(".id()"));
+    assert!(rumor.contains(".find(&receipt_id)"));
     assert!(source.contains("Evidence knowledge has conflicting provenance"));
     assert!(!source.contains("#[table(accessor = investigation_evidence_knowledge, public)]"));
 }
@@ -309,6 +358,7 @@ fn action_projection_and_reducer_keep_hidden_authority_server_side() {
     let reducer = source
         .split("pub fn perform_investigation_action")
         .nth(1)
+        .and_then(|tail| tail.split("pub fn receive_investigation_claim").next())
         .expect("action reducer body");
     assert!(reducer.contains("expected_version"));
     assert!(reducer.contains("perform_investigation_action_authorized"));
@@ -322,7 +372,7 @@ fn corrected_exact_site_knowledge_is_not_live_action_support() {
         "site",
         "case",
         "site",
-        "exact_believed",
+        DestinationKnowledgeStage::ExactBelieved,
         "",
         "case",
         "site",
@@ -335,7 +385,7 @@ fn corrected_exact_site_knowledge_is_not_live_action_support() {
         "site",
         "case",
         "site",
-        "exact_believed",
+        DestinationKnowledgeStage::ExactBelieved,
         "newer-lead",
         "case",
         "site",
@@ -348,7 +398,7 @@ fn corrected_exact_site_knowledge_is_not_live_action_support() {
         "site",
         "public",
         "site",
-        "visited",
+        DestinationKnowledgeStage::Visited,
         "",
         "canonical",
         "site",
@@ -361,7 +411,7 @@ fn corrected_exact_site_knowledge_is_not_live_action_support() {
         "site",
         "collision",
         "site",
-        "visited",
+        DestinationKnowledgeStage::Visited,
         "",
         "canonical",
         "site",
@@ -374,7 +424,7 @@ fn corrected_exact_site_knowledge_is_not_live_action_support() {
         "site",
         "public",
         "other-site",
-        "visited",
+        DestinationKnowledgeStage::Visited,
         "",
         "canonical",
         "site",
@@ -398,9 +448,9 @@ fn corrected_exact_site_knowledge_is_not_live_action_support() {
     assert!(recovery.contains("exact_site_knowledge_is_live"));
     assert!(recovery.contains("exact_action_case_site_for_observer(ctx, capability)"));
     let legacy_site_lookup = source
-        .split("pub(crate) fn exact_case_site_for_observer")
+        .split("pub(crate) fn exact_case_site_for_observer_at")
         .nth(1)
-        .and_then(|tail| tail.split("pub(crate) fn disclose_exact_case_site").next())
+        .and_then(|tail| tail.split("pub(crate) fn case_site_presence_for_observer").next())
         .expect("stable travel and pin exact-site helper");
     assert!(legacy_site_lookup.contains("observer_character_id: u64"));
     assert!(legacy_site_lookup.contains("case_site_id: &str"));
@@ -419,7 +469,10 @@ fn case_site_transport_and_presence_adapters_fail_closed() {
     let occupancy = source
         .split("pub(crate) fn case_site_presence_for_observer")
         .nth(1)
-        .and_then(|tail| tail.split("pub(crate) fn case_context_presence_for_observer").next())
+        .and_then(|tail| {
+            tail.split("pub(crate) fn case_context_presence_for_observer")
+                .next()
+        })
         .expect("observer-safe case occupancy adapter");
     assert!(occupancy.contains("exact_case_site_for_observer_at"));
     assert!(occupancy.contains("character_case_site_occupancy_at"));
@@ -455,7 +508,7 @@ fn corrected_contact_referral_is_not_live_at_any_action_boundary() {
         summary: "Ask the cooper what she saw.".into(),
         source_label: "local rumor".into(),
         confidence_bps: 5_000,
-        destination_stage: "textual".into(),
+        destination_stage: DestinationKnowledgeStage::Textual,
         directions: "Public square".into(),
         exact_location_id: String::new(),
         latitude_e7: 0,
@@ -510,7 +563,7 @@ fn generated_opposition_projection_is_checked_and_fail_closed() {
     assert_eq!(checked_generated_opposition(0, 125), None);
     assert_eq!(checked_generated_opposition(2, 0), None);
     assert_eq!(checked_generated_opposition(u32::MAX, u64::MAX), None);
-    let projection = include_str!("../sites.rs");
+    let projection = crate::production_source(include_str!("../sites.rs"));
     assert!(projection.contains("combat_available: false"));
     assert!(projection.contains("opposition_count: None"));
     assert!(projection.contains("opposition_combat_power: None"));
@@ -531,7 +584,10 @@ fn generated_live_support_uses_the_observer_safe_case_alias_at_every_boundary() 
     let recovery = source
         .split("fn capability_has_live_support_reducer")
         .nth(1)
-        .and_then(|tail| tail.split("fn capability_has_live_pattern_support_reducer").next())
+        .and_then(|tail| {
+            tail.split("fn capability_has_live_pattern_support_reducer")
+                .next()
+        })
         .expect("reducer live support");
     assert!(recovery.contains("reducer_action_public_case_id(ctx, capability)"));
     assert!(recovery.contains("&observer_case_id"));
@@ -540,7 +596,10 @@ fn generated_live_support_uses_the_observer_safe_case_alias_at_every_boundary() 
     let execution = source
         .split("fn validate_live_action_prerequisites")
         .nth(1)
-        .and_then(|tail| tail.split("fn case_objective_contains_custody_target").next())
+        .and_then(|tail| {
+            tail.split("fn case_objective_contains_custody_target")
+                .next()
+        })
         .expect("action execution prerequisites");
     assert!(execution.contains("reducer_action_public_case_id(ctx, capability)"));
     assert!(execution.contains("&observer_case_id"));
@@ -549,14 +608,20 @@ fn generated_live_support_uses_the_observer_safe_case_alias_at_every_boundary() 
     let pattern_projection = source
         .split("fn capability_has_live_pattern_support_view")
         .nth(1)
-        .and_then(|tail| tail.split("fn tracking_capability_chain_is_coherent").next())
+        .and_then(|tail| {
+            tail.split("fn tracking_capability_chain_is_coherent")
+                .next()
+        })
         .expect("pattern projection support");
     assert!(pattern_projection.contains("projected_action_public_case_id(ctx, capability)"));
     assert!(pattern_projection.contains("&observer_case_id"));
     let pattern_recovery = source
         .split("fn capability_has_live_pattern_support_reducer")
         .nth(1)
-        .and_then(|tail| tail.split("fn validate_capability_blueprint_reducer").next())
+        .and_then(|tail| {
+            tail.split("fn validate_capability_blueprint_reducer")
+                .next()
+        })
         .expect("pattern reducer support");
     assert!(pattern_recovery.contains("reducer_action_public_case_id(ctx, capability)"));
     assert!(pattern_recovery.contains("&observer_case_id"));
@@ -622,7 +687,7 @@ fn changed_victim_cohort_projects_one_generic_observer_safe_reason() {
     for predicate in [
         "investigation_pattern_target_authority()",
         "target.case_id != capability.case_id",
-        "settlement_resident_profile()",
+        "resolve_settlement_resident_view(",
         "settlement_resident_presence()",
         "target.expected_settlement_id",
         "target.expected_location",
@@ -631,7 +696,7 @@ fn changed_victim_cohort_projects_one_generic_observer_safe_reason() {
         "target.sex",
         "target.profession",
         "pattern_target_matches",
-        "npc_is_present",
+        "npc_presence_remaining_minutes",
     ] {
         assert!(live_check.contains(predicate), "missing {predicate}");
     }
@@ -685,8 +750,14 @@ fn locate_contact_projection_mirrors_public_scheduled_presence() {
         context_suppressed: false,
         health_suppressed: false,
     };
-    assert_eq!(public_contact_schedule_wait_minutes(&presence, 600), Some(0));
-    assert_eq!(public_contact_schedule_wait_minutes(&presence, 1_020), Some(900));
+    assert_eq!(
+        public_contact_schedule_wait_minutes(&presence, 600),
+        Some(0)
+    );
+    assert_eq!(
+        public_contact_schedule_wait_minutes(&presence, 1_020),
+        Some(900)
+    );
 
     let mut suppressed = presence.clone();
     suppressed.health_suppressed = true;
@@ -749,7 +820,9 @@ fn locate_contact_stale_target_beats_off_hours_schedule_wait() {
         .and_then(|tail| tail.split("fn night_window_wait_minutes").next())
         .expect("locate-contact projection");
     let validates_target = projection.find("referred_contact_is_current_view").unwrap();
-    let computes_wait = projection.find("public_contact_schedule_wait_minutes").unwrap();
+    let computes_wait = projection
+        .find("public_contact_schedule_wait_minutes")
+        .unwrap();
     assert!(validates_target < computes_wait);
 }
 

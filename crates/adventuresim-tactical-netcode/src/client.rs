@@ -6,6 +6,7 @@ use crate::message::{
 use adventuresim_tactical_core::prelude::*;
 use aeronet_replicon::client::{AeronetRepliconClient, AeronetRepliconClientPlugin};
 use aeronet_websocket::client::{ClientConfig, WebSocketClient, WebSocketClientPlugin};
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevy_replicon::prelude::*;
 
@@ -206,6 +207,13 @@ impl SprintInputState {
 #[reflect(Resource, Default)]
 pub struct PlayerInputOverride(pub Option<PlayerInputRequest>);
 
+#[derive(SystemParam)]
+struct DirectControlQueries<'w, 's> {
+    gamepads: Query<'w, 's, &'static Gamepad>,
+    controlled_players: Query<'w, 's, &'static SkeletonState, With<ControlledPlayer>>,
+    combat_config: Res<'w, TacticalCombatConfig>,
+}
+
 #[derive(Resource, Debug, Clone, Copy, Default)]
 struct LocalInputTick(u32);
 
@@ -213,13 +221,16 @@ fn update_direct_control_input(
     time: Res<Time>,
     keys: Res<ButtonInput<KeyCode>>,
     mouse: Res<ButtonInput<MouseButton>>,
-    gamepads: Query<&Gamepad>,
-    controlled_players: Query<&SkeletonState, With<ControlledPlayer>>,
+    queries: DirectControlQueries<'_, '_>,
     mut guard: ResMut<WeaponGuardInputState>,
     mut controls: ResMut<DirectControlState>,
     mut force_attack: ResMut<DebugForceAttackTrigger>,
-    combat_config: Res<TacticalCombatConfig>,
 ) {
+    let DirectControlQueries {
+        gamepads,
+        controlled_players,
+        combat_config,
+    } = queries;
     let input_config = &combat_config.client_input;
     if keys.just_pressed(KeyCode::CapsLock) {
         controls.caps_jog = !controls.caps_jog;
@@ -698,7 +709,7 @@ fn queue_posture_action(controls: &mut DirectControlState, action: PostureAction
 
 #[cfg(target_family = "wasm")]
 fn websocket_config(_server_url: &str) -> ClientConfig {
-    ClientConfig::default()
+    ClientConfig
 }
 
 #[cfg(not(target_family = "wasm"))]

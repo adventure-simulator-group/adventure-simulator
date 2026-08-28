@@ -179,8 +179,9 @@ test("containers hydrate authoritative trees and wire accessible mutations", () 
   assert.match(source, /inventory-container-move/);
   assert.match(source, /data-container-close/);
   assert.match(source, /data-container-remove/);
-  assert.match(source, /data-container-pour/);
-  assert.match(source, /data-container-drain/);
+  assert.match(source, /data-container-discard-water/);
+  assert.doesNotMatch(source, /data-container-pour/);
+  assert.doesNotMatch(source, /data-container-drain/);
   assert.match(source, /application\/x-adventuresim-inventory-object/);
 });
 
@@ -189,8 +190,9 @@ test("container hydration is race-safe and empty-stack opening is read-only", ()
   assert.match(source, /containerHydrationGenerations = new WeakMap/);
   assert.match(source, /generation !== containerHydrationGenerations\.get\(root\)/);
   assert.doesNotMatch(source, /\/api\/inventory\/containers\/open/);
-  assert.match(source, /parentLegacy/);
-  assert.match(source, /parent_scope/);
+  assert.doesNotMatch(source, /parentLegacy/);
+  assert.doesNotMatch(source, /parent_scope/);
+  assert.match(source, /inventoryLocationSelector/);
   assert.match(source, /data-container-toggle/);
   assert.match(source, /\/api\/inventory\/containers\/remove/);
   assert.match(source, /authoritativeContainerSnapshot\.presentations/);

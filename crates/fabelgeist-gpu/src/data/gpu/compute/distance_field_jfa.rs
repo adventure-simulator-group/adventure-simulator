@@ -127,7 +127,7 @@ impl DistanceFieldJfa {
     ) -> Result<()> {
         let size = input.size;
         let max_dim = (size.0.max(size.1).max(size.2)) as f32;
-        let size_vec3 = crate::data::vector::Vec3::new(size.0 as f32, size.1 as f32, size.2 as f32);
+        let size_vec3 = fabelgeist_math::Vec3::new(size.0 as f32, size.1 as f32, size.2 as f32);
 
         let temp_a = Texture3d::new(context, size_vec3, TextureFormat::Rgba32Float)?;
         let temp_b = Texture3d::new(context, size_vec3, TextureFormat::Rgba32Float)?;
@@ -248,7 +248,7 @@ mod tests {
         let context = WgpuContext::new().await.expect("Failed to init WGPU");
 
         // 5x5 grid
-        let size = crate::data::Vec2::new(5.0, 5.0);
+        let size = fabelgeist_math::Vec2::new(5.0, 5.0);
         let input_tex = Texture2d::create(&context, size, TextureFormat::R32Float)?;
         let output_tex = Texture2d::create(&context, size, TextureFormat::R32Float)?;
 
@@ -279,7 +279,7 @@ mod tests {
         let context = WgpuContext::new().await.expect("Failed to init WGPU");
 
         // 3x3x3 grid
-        let size = crate::data::vector::Vec3::new(3.0, 3.0, 3.0);
+        let size = fabelgeist_math::Vec3::new(3.0, 3.0, 3.0);
         let input_tex = Texture3d::new(&context, size, TextureFormat::R32Float)?;
         let output_tex = Texture3d::new(&context, size, TextureFormat::R32Float)?;
 

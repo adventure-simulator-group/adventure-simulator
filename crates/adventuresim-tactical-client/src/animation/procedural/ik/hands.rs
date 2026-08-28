@@ -1,5 +1,46 @@
 use super::*;
 
+#[derive(Debug, Clone, Copy)]
+struct HandChain {
+    upper_role: BoneRole,
+    lower_role: BoneRole,
+    hand_role: BoneRole,
+    side: HandSide,
+}
+
+impl HandChain {
+    const LEFT: Self = Self {
+        upper_role: BoneRole::UpperArmLeft,
+        lower_role: BoneRole::ForearmLeft,
+        hand_role: BoneRole::HandLeft,
+        side: HandSide::Left,
+    };
+    const RIGHT: Self = Self {
+        upper_role: BoneRole::UpperArmRight,
+        lower_role: BoneRole::ForearmRight,
+        hand_role: BoneRole::HandRight,
+        side: HandSide::Right,
+    };
+
+    fn for_side(side: HandSide) -> Self {
+        match side {
+            HandSide::Left => Self::LEFT,
+            HandSide::Right => Self::RIGHT,
+        }
+    }
+
+    fn target(self, targets: HumanoidIkTargets) -> Option<HandIkTarget> {
+        match self.side {
+            HandSide::Left => targets.left,
+            HandSide::Right => targets.right,
+        }
+    }
+
+    fn is_left(self) -> bool {
+        self.side == HandSide::Left
+    }
+}
+
 /// Applies optional client-only hand targets and held-item constraints. Missing
 /// targets, sockets, or arm bones are intentionally inert.
 pub(in crate::animation) fn apply_arm_and_weapon_constraints(
@@ -18,26 +59,8 @@ pub(in crate::animation) fn apply_arm_and_weapon_constraints(
             continue;
         };
         let explicit = targets.get(constraint.owner).copied().unwrap_or_default();
-        let (target, roles, left) = match constraint.primary_hand {
-            HandSide::Left => (
-                explicit.left,
-                (
-                    BoneRole::UpperArmLeft,
-                    BoneRole::ForearmLeft,
-                    BoneRole::HandLeft,
-                ),
-                true,
-            ),
-            HandSide::Right => (
-                explicit.right,
-                (
-                    BoneRole::UpperArmRight,
-                    BoneRole::ForearmRight,
-                    BoneRole::HandRight,
-                ),
-                false,
-            ),
-        };
+        let chain = HandChain::for_side(constraint.primary_hand);
+        let target = chain.target(explicit);
         let Some(target) = target else { continue };
         let mut memory = ik_states
             .get_mut(constraint.owner)
@@ -46,9 +69,8 @@ pub(in crate::animation) fn apply_arm_and_weapon_constraints(
         apply_hand_target(
             constraint.owner,
             rig,
-            roles,
+            chain,
             target,
-            left,
             &mut memory,
             &parents,
             &mut transforms,
@@ -107,29 +129,16 @@ pub(in crate::animation) fn apply_arm_and_weapon_constraints(
             .get_mut(owner)
             .map(|state| state.0)
             .unwrap_or_default();
-        for (upper_role, lower_role, hand_role, target, left) in [
-            (
-                BoneRole::UpperArmLeft,
-                BoneRole::ForearmLeft,
-                BoneRole::HandLeft,
-                combined.left,
-                true,
-            ),
-            (
-                BoneRole::UpperArmRight,
-                BoneRole::ForearmRight,
-                BoneRole::HandRight,
-                combined.right,
-                false,
-            ),
+        for (chain, target) in [
+            (HandChain::LEFT, combined.left),
+            (HandChain::RIGHT, combined.right),
         ] {
             let Some(target) = target else { continue };
             apply_hand_target(
                 owner,
                 rig,
-                (upper_role, lower_role, hand_role),
+                chain,
                 target,
-                left,
                 &mut memory,
                 &parents,
                 &mut transforms,
@@ -174,9 +183,8 @@ mod tests {
 fn apply_hand_target(
     owner: Entity,
     rig: &HumanoidRig,
-    (upper_role, lower_role, hand_role): (BoneRole, BoneRole, BoneRole),
+    chain: HandChain,
     target: HandIkTarget,
-    left: bool,
     memory: &mut ArmIkMemory,
     parents: &Query<&ChildOf>,
     transforms: &mut ParamSet<(TransformHelper, Query<&mut Transform>)>,
@@ -186,9 +194,9 @@ fn apply_hand_target(
         return;
     }
     let (Some(&upper), Some(&lower), Some(&hand)) = (
-        rig.get(&upper_role),
-        rig.get(&lower_role),
-        rig.get(&hand_role),
+        rig.get(&chain.upper_role),
+        rig.get(&chain.lower_role),
+        rig.get(&chain.hand_role),
     ) else {
         return;
     };
@@ -201,7 +209,7 @@ fn apply_hand_target(
         .global
         .translation()
         .lerp(target.translation, weight);
-    let remembered = if left {
+    let remembered = if chain.is_left() {
         memory.left_arm
     } else {
         memory.right_arm
@@ -212,25 +220,27 @@ fn apply_hand_target(
         .map(|global| global.rotation())
         .unwrap_or(Quat::IDENTITY);
     if let Some(solution) = solve_two_bone(
-        upper_snapshot.global.translation(),
-        lower_snapshot.global.translation(),
-        hand_snapshot.global.translation(),
+        TwoBoneChain::new(
+            upper_snapshot.global.translation(),
+            lower_snapshot.global.translation(),
+            hand_snapshot.global.translation(),
+            upper_snapshot
+                .global
+                .translation()
+                .distance(lower_snapshot.global.translation()),
+            lower_snapshot
+                .global
+                .translation()
+                .distance(hand_snapshot.global.translation()),
+            pole_to_world(owner_rotation, remembered.unwrap_or(Vec3::NEG_Y)),
+        ),
         blended_target,
-        upper_snapshot
-            .global
-            .translation()
-            .distance(lower_snapshot.global.translation()),
-        lower_snapshot
-            .global
-            .translation()
-            .distance(hand_snapshot.global.translation()),
-        pole_to_world(owner_rotation, remembered.unwrap_or(Vec3::NEG_Y)),
     ) {
         apply_two_bone_solution(upper, lower, hand, solution, parents, transforms);
         let bend = (solution.knee - upper_snapshot.global.translation())
             .reject_from_normalized(solution.end_direction);
         if let Some(valid) = bend.try_normalize() {
-            if left {
+            if chain.is_left() {
                 memory.left_arm = Some(pole_to_owner(owner_rotation, valid));
             } else {
                 memory.right_arm = Some(pole_to_owner(owner_rotation, valid));

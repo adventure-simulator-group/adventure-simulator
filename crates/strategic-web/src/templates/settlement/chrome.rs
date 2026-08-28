@@ -1,12 +1,13 @@
 use std::collections::BTreeSet;
 
+use adventuresim_core::strategic_time::DAYS_PER_YEAR;
 use maud::{Markup, html};
 
 use super::social::{npc_description_stage, npc_portrait_strip, settlement_resident_chat_area};
 use super::{SoapRestPreview, corpse_medical_dialog, rest_service_menu};
 use crate::spacetimedb::{
     BackendCharacterResidenceStatus, BackendCorpse, Character, ChildActivityFocus, ChildStage,
-    CourtshipKind, ResidenceTenure, ResidenceTier, Settlement, SettlementAlias, SettlementCategory,
+    CourtshipKind, HousingTier, ResidenceTenure, Settlement, SettlementAlias, SettlementCategory,
     SettlementDescription, SettlementDescriptionKind, SettlementResidenceOffer,
 };
 use crate::templates::{
@@ -40,6 +41,10 @@ fn public_square_place_link(settlement: &Settlement, current: bool) -> Markup {
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the overview page boundary composes independent settlement and selected-detail projections"
+)]
 pub fn settlement_overview_page(
     settlement: &Settlement,
     aliases: &[SettlementAlias],
@@ -180,6 +185,10 @@ pub fn settlement_resident_location_page(
     )
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the residence page boundary composes independent character and residence projections"
+)]
 pub fn settlement_residence_page(
     settlement: &Settlement,
     active_character: &Character,
@@ -398,19 +407,19 @@ fn household_progress(icon: &str, class_name: &str, label: &str, percent: u64) -
     }
 }
 
-fn residence_tier_label(tier: ResidenceTier) -> &'static str {
+fn residence_tier_label(tier: HousingTier) -> &'static str {
     match tier {
-        ResidenceTier::Cheap => "Cheap",
-        ResidenceTier::Moderate => "Moderate",
-        ResidenceTier::Fancy => "Fancy",
+        HousingTier::Cheap => "Cheap",
+        HousingTier::Moderate => "Moderate",
+        HousingTier::Fancy => "Fancy",
     }
 }
 
-fn residence_tier_id(tier: ResidenceTier) -> &'static str {
+fn residence_tier_id(tier: HousingTier) -> &'static str {
     match tier {
-        ResidenceTier::Cheap => "cheap",
-        ResidenceTier::Moderate => "moderate",
-        ResidenceTier::Fancy => "fancy",
+        HousingTier::Cheap => "cheap",
+        HousingTier::Moderate => "moderate",
+        HousingTier::Fancy => "fancy",
     }
 }
 
@@ -532,7 +541,7 @@ fn residence_offer_panel(
                 }
                 @if let Some(wedding) = &relationship.wedding {
                     @let wedding_label = format!("Wedding {}, {} days remaining", wedding.date_label, wedding.days_remaining);
-                    @let wedding_progress = 365_u64.saturating_sub(wedding.days_remaining.min(365)) * 100 / 365;
+                    @let wedding_progress = DAYS_PER_YEAR.saturating_sub(wedding.days_remaining.min(DAYS_PER_YEAR)) * 100 / DAYS_PER_YEAR;
                     (household_progress("calendar", "wedding", &wedding_label, wedding_progress))
                 }
                 @if let Some(days) = relationship.pregnancy_due_days {
@@ -607,7 +616,11 @@ fn format_morale_percent(basis_points: u16) -> String {
 
 fn format_residence_date(minute: u64) -> String {
     let day = minute / adventuresim_core::strategic_time::MINUTES_PER_DAY;
-    format!("year {}, day {}", 1544 + day / 365, day % 365 + 1)
+    format!(
+        "year {}, day {}",
+        1544 + day / DAYS_PER_YEAR,
+        day % DAYS_PER_YEAR + 1
+    )
 }
 
 fn settlement_alias_labels(settlement: &Settlement, aliases: &[SettlementAlias]) -> Vec<String> {
@@ -914,7 +927,6 @@ mod tests {
             name: "Greta".into(),
             xp: 0,
             level: 1,
-            gold: 0,
             current_settlement_id: Some("lubeck".into()),
             current_case_site_id: None,
             party_id: Some("party".into()),
@@ -1182,7 +1194,6 @@ mod tests {
             name: "Visitor".into(),
             xp: 0,
             level: 1,
-            gold: 0,
             current_settlement_id: Some(settlement.id.clone()),
             current_case_site_id: None,
             party_id: Some("party".into()),
@@ -1240,9 +1251,9 @@ mod tests {
     fn residence_panel_compares_three_tiers_and_names_family_without_raw_time_or_ids() {
         let settlement = settlement();
         let offers = [
-            ResidenceTier::Cheap,
-            ResidenceTier::Moderate,
-            ResidenceTier::Fancy,
+            HousingTier::Cheap,
+            HousingTier::Moderate,
+            HousingTier::Fancy,
         ]
         .into_iter()
         .enumerate()
@@ -1263,7 +1274,7 @@ mod tests {
             courtship_kind: Some(CourtshipKind::Formal),
             courtship_exposed: false,
             wedding: Some(WeddingPresentation {
-                days_remaining: 365,
+                days_remaining: DAYS_PER_YEAR,
                 date_label: "year 1546, day 120".into(),
             }),
             pregnancy_due_days: Some(270),
@@ -1282,7 +1293,7 @@ mod tests {
                 holding_id: "holding-primary".into(),
                 owner_character_id: 1,
                 settlement_id: settlement.id.clone(),
-                tier: ResidenceTier::Moderate,
+                tier: HousingTier::Moderate,
                 tenure: ResidenceTenure::Owner,
                 active: true,
                 primary: true,
@@ -1296,7 +1307,7 @@ mod tests {
                 holding_id: "holding-dormant".into(),
                 owner_character_id: 1,
                 settlement_id: "elsewhere".into(),
-                tier: ResidenceTier::Cheap,
+                tier: HousingTier::Cheap,
                 tenure: ResidenceTenure::Owner,
                 active: false,
                 primary: false,
@@ -1310,7 +1321,7 @@ mod tests {
                 holding_id: "holding-household".into(),
                 owner_character_id: 2,
                 settlement_id: settlement.id.clone(),
-                tier: ResidenceTier::Fancy,
+                tier: HousingTier::Fancy,
                 tenure: ResidenceTenure::Owner,
                 active: true,
                 primary: false,

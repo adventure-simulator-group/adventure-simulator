@@ -10,7 +10,7 @@ pub(super) struct AdministerTinctureFromContainerArgs {
     pub actor_id: u64,
     pub patient_id: u64,
     pub object_id: u64,
-    pub amount_milliunits: u32,
+    pub dose_milliunits: u32,
 }
 
 impl From<AdministerTinctureFromContainerArgs> for super::Reducer {
@@ -19,7 +19,7 @@ impl From<AdministerTinctureFromContainerArgs> for super::Reducer {
             actor_id: args.actor_id,
             patient_id: args.patient_id,
             object_id: args.object_id,
-            amount_milliunits: args.amount_milliunits,
+            dose_milliunits: args.dose_milliunits,
         }
     }
 }
@@ -44,13 +44,13 @@ pub trait administer_tincture_from_container {
         actor_id: u64,
         patient_id: u64,
         object_id: u64,
-        amount_milliunits: u32,
+        dose_milliunits: u32,
     ) -> __sdk::Result<()> {
         self.administer_tincture_from_container_then(
             actor_id,
             patient_id,
             object_id,
-            amount_milliunits,
+            dose_milliunits,
             |_, _| {},
         )
     }
@@ -66,7 +66,7 @@ pub trait administer_tincture_from_container {
         actor_id: u64,
         patient_id: u64,
         object_id: u64,
-        amount_milliunits: u32,
+        dose_milliunits: u32,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -82,7 +82,7 @@ impl administer_tincture_from_container for super::RemoteReducers {
         actor_id: u64,
         patient_id: u64,
         object_id: u64,
-        amount_milliunits: u32,
+        dose_milliunits: u32,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -95,7 +95,7 @@ impl administer_tincture_from_container for super::RemoteReducers {
                 actor_id,
                 patient_id,
                 object_id,
-                amount_milliunits,
+                dose_milliunits,
             },
             callback,
         )

@@ -4,6 +4,7 @@
 //! consumers decompress only a bounded LRU and never put the continental grid
 //! in SpacetimeDB or in one allocation.
 
+use adventuresim_world_schema::BASIS_POINTS_PER_WHOLE;
 use flate2::read::DeflateDecoder;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -152,7 +153,7 @@ impl TerrainWeights {
     /// final remainder is assigned deterministically, preserving normalization.
     pub fn with_ground_moisture(self, moisture_bps: u16) -> WeatheredTerrain {
         debug_assert!(self.is_normalized());
-        let moisture = u32::from(moisture_bps.min(10_000));
+        let moisture = u32::from(moisture_bps.min(BASIS_POINTS_PER_WHOLE));
         let susceptibility = if self.wetlands >= Self::WETLAND_SUSCEPTIBILITY_THRESHOLD {
             u32::from(Self::TOTAL - self.wetlands)
         } else {
@@ -184,7 +185,8 @@ impl TerrainWeights {
         let saturation_bps = if self.wetlands < Self::WETLAND_SUSCEPTIBILITY_THRESHOLD {
             0
         } else {
-            (moisture * (5_000 + u32::from(self.wetlands) * 5) / 10_000).min(10_000) as u16
+            (moisture * (5_000 + u32::from(self.wetlands) * 5) / u32::from(BASIS_POINTS_PER_WHOLE))
+                .min(u32::from(BASIS_POINTS_PER_WHOLE)) as u16
         };
         WeatheredTerrain {
             weights,
@@ -222,8 +224,8 @@ pub struct RoutingWeather {
 
 impl RoutingWeather {
     pub const fn is_valid(self) -> bool {
-        self.ground_moisture_bps <= 10_000
-            && self.snow_cover_bps <= 10_000
+        self.ground_moisture_bps <= BASIS_POINTS_PER_WHOLE
+            && self.snow_cover_bps <= BASIS_POINTS_PER_WHOLE
             && self.snow_check_millirank <= TerrainSkillProfile::MAX
     }
 }
@@ -1225,19 +1227,21 @@ fn step_seconds(
         .terrain_weights()
         .with_ground_moisture(weather.ground_moisture_bps);
     let underlying_check = weathered.weights.dot(profile);
+    let whole_bps = u32::from(BASIS_POINTS_PER_WHOLE);
     let cover = u32::from(weather.snow_cover_bps);
     let check = u64::from(
-        ((u32::from(underlying_check) * (10_000 - cover))
+        ((u32::from(underlying_check) * (whole_bps - cover))
             + u32::from(weather.snow_check_millirank) * cover)
-            / 10_000,
+            / whole_bps,
     );
-    let saturation_factor = 10_000 + u64::from(weathered.saturation_bps);
+    let whole_bps = u64::from(BASIS_POINTS_PER_WHOLE);
+    let saturation_factor = whole_bps + u64::from(weathered.saturation_bps);
     let snow_cost_bps = u64::from(weather.snow_cover_bps)
         * u64::from(5_000u16.saturating_sub(weather.snow_check_millirank))
-        / 10_000;
+        / whole_bps;
     // check is milli-rank: 1 + rank/10 => (10_000 + check) / 10_000.
-    (base * uphill * saturation_factor * (10_000 + snow_cost_bps))
-        .div_ceil(1000 * 10_000 * (10_000 + check))
+    (base * uphill * saturation_factor * (whole_bps + snow_cost_bps))
+        .div_ceil(1000 * whole_bps * (whole_bps + check))
         .max(1)
 }
 
@@ -1283,10 +1287,11 @@ fn reconstruct<G: RoutingGrid>(
             1_000
         };
         let underlying_check = terrain.dot(profile);
+        let whole_bps = u32::from(BASIS_POINTS_PER_WHOLE);
         let cover = u32::from(weather.snow_cover_bps);
-        let check_millirank = (((u32::from(underlying_check) * (10_000 - cover))
+        let check_millirank = (((u32::from(underlying_check) * (whole_bps - cover))
             + u32::from(weather.snow_check_millirank) * cover)
-            / 10_000) as u16;
+            / whole_bps) as u16;
         if let Some((_, _, _, _, duration)) =
             second_spans
                 .last_mut()

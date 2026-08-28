@@ -2,10 +2,10 @@
 
 use spacetimedb::{ReducerContext, Table, table};
 
+use adventuresim_core::inventory_measurement::ConsumableFractionMicros;
+
 use crate::item::item;
 use crate::{inventory_item, party_inventory_item};
-
-pub use adventuresim_core::inventory_measurement::FULL_AMOUNT_MILLIUNITS;
 
 pub const SMITHING_MATERIAL_IDS: [&str; 4] =
     ["steel_stock", "leather_stock", "brass_stock", "wood_stock"];
@@ -15,7 +15,7 @@ pub const SMITHING_MATERIAL_IDS: [&str; 4] =
 pub struct InventoryItemAmount {
     #[primary_key]
     pub inventory_item_id: u64,
-    pub remaining_milliunits: u32,
+    pub remaining_fraction_micros: u32,
 }
 
 #[derive(Clone, Debug)]
@@ -23,13 +23,13 @@ pub struct InventoryItemAmount {
 pub struct PartyItemAmount {
     #[primary_key]
     pub party_inventory_item_id: u64,
-    pub remaining_milliunits: u32,
+    pub remaining_fraction_micros: u32,
 }
 
 pub fn is_measured_definition(definition: &crate::Item) -> bool {
     definition.kind == crate::ItemKind::Food
         || definition.alcohol_serving_ml > 0
-        || definition.id == crate::filth::SOAP_ITEM_ID
+        || definition.id == adventuresim_core::item_references::SOFT_SOAP_ID
         || SMITHING_MATERIAL_IDS.contains(&definition.id.as_str())
 }
 
@@ -45,40 +45,51 @@ pub fn is_measured_item(ctx: &ReducerContext, item_id: &str) -> bool {
 pub fn initialize_personal(ctx: &ReducerContext, inventory_item_id: u64) {
     ctx.db.inventory_item_amount().insert(InventoryItemAmount {
         inventory_item_id,
-        remaining_milliunits: FULL_AMOUNT_MILLIUNITS,
+        remaining_fraction_micros: ConsumableFractionMicros::WHOLE.get(),
     });
 }
 
 pub fn initialize_party(ctx: &ReducerContext, party_inventory_item_id: u64) {
     ctx.db.party_item_amount().insert(PartyItemAmount {
         party_inventory_item_id,
-        remaining_milliunits: FULL_AMOUNT_MILLIUNITS,
+        remaining_fraction_micros: ConsumableFractionMicros::WHOLE.get(),
     });
 }
 
-pub fn personal_amount(ctx: &ReducerContext, inventory_item_id: u64) -> Option<u32> {
+fn persisted_fraction(fraction_micros: u32) -> ConsumableFractionMicros {
+    ConsumableFractionMicros::try_new(fraction_micros)
+        .expect("persisted consumable fraction must not exceed one whole")
+}
+
+pub fn personal_fraction(
+    ctx: &ReducerContext,
+    inventory_item_id: u64,
+) -> Option<ConsumableFractionMicros> {
     ctx.db
         .inventory_item_amount()
         .inventory_item_id()
         .find(inventory_item_id)
-        .map(|row| row.remaining_milliunits)
+        .map(|row| persisted_fraction(row.remaining_fraction_micros))
 }
 
-pub fn party_amount(ctx: &ReducerContext, party_inventory_item_id: u64) -> Option<u32> {
+pub fn party_fraction(
+    ctx: &ReducerContext,
+    party_inventory_item_id: u64,
+) -> Option<ConsumableFractionMicros> {
     ctx.db
         .party_item_amount()
         .party_inventory_item_id()
         .find(party_inventory_item_id)
-        .map(|row| row.remaining_milliunits)
+        .map(|row| persisted_fraction(row.remaining_fraction_micros))
 }
 
 pub fn consume_personal(
     ctx: &ReducerContext,
     inventory_item_id: u64,
-    requested_milliunits: u32,
-) -> Result<u32, String> {
-    if requested_milliunits == 0 {
-        return Ok(0);
+    requested_fraction: ConsumableFractionMicros,
+) -> Result<ConsumableFractionMicros, String> {
+    if requested_fraction.is_zero() {
+        return Ok(ConsumableFractionMicros::ZERO);
     }
     let mut state = ctx
         .db
@@ -86,9 +97,13 @@ pub fn consume_personal(
         .inventory_item_id()
         .find(inventory_item_id)
         .ok_or("Measured personal item state is missing")?;
-    let consumed = requested_milliunits.min(state.remaining_milliunits);
-    state.remaining_milliunits -= consumed;
-    if state.remaining_milliunits == 0 {
+    let available = persisted_fraction(state.remaining_fraction_micros);
+    let consumed = requested_fraction.min(available);
+    let remaining = available
+        .checked_sub(consumed)
+        .expect("consumed fraction cannot exceed available fraction");
+    state.remaining_fraction_micros = remaining.get();
+    if remaining.is_zero() {
         ctx.db
             .inventory_item_amount()
             .inventory_item_id()
@@ -106,10 +121,10 @@ pub fn consume_personal(
 pub fn consume_party(
     ctx: &ReducerContext,
     party_inventory_item_id: u64,
-    requested_milliunits: u32,
-) -> Result<u32, String> {
-    if requested_milliunits == 0 {
-        return Ok(0);
+    requested_fraction: ConsumableFractionMicros,
+) -> Result<ConsumableFractionMicros, String> {
+    if requested_fraction.is_zero() {
+        return Ok(ConsumableFractionMicros::ZERO);
     }
     let mut state = ctx
         .db
@@ -117,9 +132,13 @@ pub fn consume_party(
         .party_inventory_item_id()
         .find(party_inventory_item_id)
         .ok_or("Measured party item state is missing")?;
-    let consumed = requested_milliunits.min(state.remaining_milliunits);
-    state.remaining_milliunits -= consumed;
-    if state.remaining_milliunits == 0 {
+    let available = persisted_fraction(state.remaining_fraction_micros);
+    let consumed = requested_fraction.min(available);
+    let remaining = available
+        .checked_sub(consumed)
+        .expect("consumed fraction cannot exceed available fraction");
+    state.remaining_fraction_micros = remaining.get();
+    if remaining.is_zero() {
         ctx.db
             .party_item_amount()
             .party_inventory_item_id()
@@ -154,7 +173,7 @@ pub fn move_personal_to_party(
         .delete(inventory_item_id);
     ctx.db.party_item_amount().insert(PartyItemAmount {
         party_inventory_item_id,
-        remaining_milliunits: state.remaining_milliunits,
+        remaining_fraction_micros: state.remaining_fraction_micros,
     });
     Ok(())
 }
@@ -176,7 +195,7 @@ pub fn move_party_to_personal(
         .delete(party_inventory_item_id);
     ctx.db.inventory_item_amount().insert(InventoryItemAmount {
         inventory_item_id,
-        remaining_milliunits: state.remaining_milliunits,
+        remaining_fraction_micros: state.remaining_fraction_micros,
     });
     Ok(())
 }
@@ -196,7 +215,7 @@ mod tests {
             ..crate::Item::default()
         };
         let soap = crate::Item {
-            id: crate::filth::SOAP_ITEM_ID.into(),
+            id: adventuresim_core::item_references::SOFT_SOAP_ID.into(),
             ..crate::Item::default()
         };
         let sword = crate::Item {

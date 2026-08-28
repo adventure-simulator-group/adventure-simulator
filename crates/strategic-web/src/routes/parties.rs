@@ -102,15 +102,13 @@ impl RecruitmentRoleForm {
         RecruitmentRequirements {
             melee: self.melee,
             ranged: self.ranged,
-            precise: false,
+            weapon_precision: ((self.weapon_precision * 2.0).round() / 2.0)
+                .clamp(0.0, adventuresim_core::capability::WEAPON_PRECISION_RAPIER),
             heavy: self.heavy,
             quarter_armor: self.armor_tier == 1,
             half_armor: self.armor_tier == 2,
             three_quarter_armor: self.armor_tier == 3,
             full_armor: self.armor_tier == 4,
-            blunt: false,
-            slash: false,
-            pierce: false,
             athletics: self.athletics,
             endurance: self.endurance,
             physiology: 0,
@@ -118,11 +116,6 @@ impl RecruitmentRoleForm {
             command: 0,
             religion: 0,
         }
-    }
-
-    fn weapon_precision(&self) -> f32 {
-        ((self.weapon_precision * 2.0).round() / 2.0)
-            .clamp(0.0, adventuresim_core::capability::WEAPON_PRECISION_RAPIER)
     }
 }
 
@@ -169,7 +162,6 @@ async fn create_recruitment_role(
             name: form.name.clone(),
             quantity: form.quantity,
             requirements,
-            weapon_precision: form.weapon_precision(),
             save_role: form.save_role,
         },
     )
@@ -198,7 +190,6 @@ async fn update_recruitment_role(
             name: form.name.clone(),
             quantity: form.quantity,
             requirements: form.requirements(),
-            weapon_precision: form.weapon_precision(),
         },
     )
     .await;
@@ -253,7 +244,6 @@ async fn save_recruitment_role(
                     json!(owner_id),
                     json!(form.name),
                     json!(form.requirements()),
-                    json!(form.weapon_precision()),
                 ],
             )
             .await;
@@ -310,10 +300,7 @@ async fn join_party(
     if let Some(role) = role {
         let party = state
             .db
-            .query::<Party>(&format!(
-                "SELECT * FROM party WHERE id = {}",
-                sql_string_literal(&role.party_id)
-            ))
+            .query::<Party>(&crate::spacetimedb::party_by_id(&role.party_id))
             .await
             .unwrap_or_default()
             .into_iter()
@@ -378,10 +365,7 @@ async fn recruitment_panel_fragment(
     };
     let Some(party) = state
         .db
-        .query::<Party>(&format!(
-            "SELECT * FROM party WHERE id = {}",
-            sql_string_literal(&party_id)
-        ))
+        .query::<Party>(&crate::spacetimedb::party_by_id(&party_id))
         .await
         .unwrap_or_default()
         .into_iter()
@@ -628,10 +612,7 @@ async fn reject_join_request(
 async fn party_location_url(state: &AppState, party_id: &str) -> String {
     let parties: Vec<Party> = state
         .db
-        .query(&format!(
-            "SELECT * FROM party WHERE id = {}",
-            sql_string_literal(party_id)
-        ))
+        .query(&crate::spacetimedb::party_by_id(party_id))
         .await
         .unwrap_or_default();
     let Some(party) = parties.first() else {
@@ -701,10 +682,7 @@ async fn party_notifications(
     };
     let parties: Vec<Party> = state
         .db
-        .query(&format!(
-            "SELECT * FROM party WHERE id = {}",
-            sql_string_literal(&party_id)
-        ))
+        .query(&crate::spacetimedb::party_by_id(&party_id))
         .await
         .unwrap_or_default();
     let is_leader = parties

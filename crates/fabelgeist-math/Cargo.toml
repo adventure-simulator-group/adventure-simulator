@@ -14,3 +14,6 @@ bytemuck = { version = "1.16", features = ["derive"] }
 # behind a feature, so that nothing that only wants the maths pulls in a GPU
 # stack.
 wgpu = { version = "30.0", default-features = false, optional = true }
+
+[lints]
+workspace = true

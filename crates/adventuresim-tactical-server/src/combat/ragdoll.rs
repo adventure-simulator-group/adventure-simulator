@@ -29,7 +29,10 @@ fn recovery_yaw(rotation: Quat) -> Quat {
     }
 }
 
-#[allow(clippy::type_complexity)]
+#[expect(
+    clippy::type_complexity,
+    reason = "the Bevy system must update the complete authoritative ragdoll boundary atomically"
+)]
 pub(super) fn update_authoritative_ragdoll_lifecycle(
     mut commands: Commands,
     mut combatants: Query<

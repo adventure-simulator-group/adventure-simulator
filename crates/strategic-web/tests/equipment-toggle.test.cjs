@@ -447,7 +447,7 @@ test('medication checkbox submits no browser-selected medical parameters', () =>
   );
   assert.match(client, /inventory_item_id: control\.dataset\.inventoryItemId/);
   assert.match(client, /await equipmentMutation\(checkbox, checkbox\.checked\)/);
-  for (const parameter of ['patient_id', 'route', 'amount_milliunits', 'region']) {
+  for (const parameter of ['patient_id', 'route', 'dose_milliunits', 'region']) {
     assert.doesNotMatch(client, new RegExp(`${parameter}:`));
   }
 });
@@ -469,12 +469,14 @@ test('parameterized preparation form and browser route are absent', () => {
   const removedEmptyState = ['No prepared', ' interventions'].join('');
   assert.equal(healthProduction.includes(removedHeading), false);
   assert.equal(healthProduction.includes(removedEmptyState), false);
-  assert.doesNotMatch(healthProduction, /name="(?:route|amount_milliunits|region)"/);
+  assert.doesNotMatch(healthProduction, /name="(?:route|dose_milliunits|region)"/);
   const removedRoute = ['physiology', '/administer'].join('');
   assert.equal(routes.includes(removedRoute), false);
   assert.match(routes, /standard_medication_administration/);
-  assert.match(routes, /"equip_item"/);
+  assert.doesNotMatch(routes, /"equip_item"/);
+  assert.match(routes, /"unequip_item"/);
+  assert.match(routes, /"equip_item_at_placement"/);
   assert.match(routes, /"replace_item_at_placement"/);
   assert.match(client, /replace_occupied: 'true'/);
-  assert.match(routes, /definition\.slot/);
+  assert.match(routes, /definition\.equipment_placements/);
 });

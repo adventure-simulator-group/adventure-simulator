@@ -229,6 +229,10 @@ fn impact_affinity(body_part: BodyPart, role: BoneRole) -> f32 {
     }
 }
 
+#[expect(
+    clippy::type_complexity,
+    reason = "the Bevy query selects each player state input that drives secondary bone response"
+)]
 pub(super) fn apply_secondary_bone_physics(
     time: Res<Time>,
     mut telemetry: ResMut<SecondaryPhysicsTelemetry>,

@@ -1,12 +1,12 @@
 use axum::{
     Router,
-    extract::{DefaultBodyLimit, Query, RawForm, State},
+    extract::{DefaultBodyLimit, RawForm, State},
     http::StatusCode,
     response::{IntoResponse, Redirect, Response},
-    routing::{get, post},
+    routing::post,
 };
 use maud::{Markup, html};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::{
@@ -33,15 +33,10 @@ const FORAGE_FORM_MAX_SOURCE_LEN: usize = 32;
 const FORAGE_FORM_MAX_RETURN_TO_LEN: usize = 512;
 
 pub fn routes() -> Router<AppState> {
-    Router::new().route("/forage", get(menu)).route(
+    Router::new().route(
         "/forage",
         post(perform).layer(DefaultBodyLimit::max(FORAGE_FORM_MAX_BYTES)),
     )
-}
-
-#[derive(Default, Deserialize)]
-struct ForageQuery {
-    return_to: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -244,10 +239,7 @@ async fn vicinity(state: &AppState, character: &Character) -> Result<Vicinity, S
     if let Some(id) = character.current_settlement_id.as_deref() {
         let row = state
             .db
-            .query_one::<Settlement>(&format!(
-                "SELECT * FROM settlement WHERE id = {}",
-                sql_string_literal(id)
-            ))
+            .query_one::<Settlement>(&crate::spacetimedb::settlement_by_id(id))
             .await
             .map_err(|error| error.to_string())?
             .ok_or("Current settlement not found")?;
@@ -284,10 +276,7 @@ async fn vicinity(state: &AppState, character: &Character) -> Result<Vicinity, S
         .ok_or("Character has no stationary vicinity")?;
     let party = state
         .db
-        .query_one::<Party>(&format!(
-            "SELECT * FROM party WHERE id = {}",
-            sql_string_literal(party_id)
-        ))
+        .query_one::<Party>(&crate::spacetimedb::party_by_id(party_id))
         .await
         .map_err(|error| error.to_string())?
         .ok_or("Party not found")?;
@@ -312,8 +301,9 @@ async fn vicinity(state: &AppState, character: &Character) -> Result<Vicinity, S
         .await
         .map_err(|error| error.to_string())?
         .ok_or("Camp terrain route not found")?;
-    let (latitude, longitude) = persisted_route_position(&route, journey.completed_minutes)
-        .ok_or("Camp terrain position is unavailable")?;
+    let (latitude, longitude) =
+        persisted_route_position(&route, journey.completed_movement_minutes)
+            .ok_or("Camp terrain position is unavailable")?;
     Ok(Vicinity {
         kind: "camp".into(),
         id: party_id.into(),
@@ -375,30 +365,8 @@ fn forage_error_message(code: &str) -> Option<&'static str> {
     }
 }
 
-fn forage_error_code(error: &str) -> &'static str {
-    let error = error.to_ascii_lowercase();
-    if error.contains("target") || error.contains("resource") || error.contains("source") {
-        "targets"
-    } else if error.contains("hour") || error.contains("minute") || error.contains("duration") {
-        "duration"
-    } else if [
-        "terrain",
-        "water",
-        "vicinity",
-        "location",
-        "settlement",
-        "case site",
-        "camp",
-        "journey",
-        "moving",
-    ]
-    .iter()
-    .any(|term| error.contains(term))
-    {
-        "location"
-    } else {
-        "unavailable"
-    }
+fn forage_error_code(_error: &str) -> &'static str {
+    "unavailable"
 }
 
 fn forage_error_href(return_to: &str, code: &str) -> String {
@@ -582,50 +550,6 @@ pub(crate) async fn activity_dialog(
             }
         }
     }
-}
-
-async fn menu(
-    State(state): State<AppState>,
-    session: Session,
-    Query(query): Query<ForageQuery>,
-) -> Response {
-    let return_to = query
-        .return_to
-        .as_deref()
-        .and_then(local_return_url)
-        .unwrap_or("/");
-    let Some(character_id) = session.character_id_u64() else {
-        return Redirect::to("/characters").into_response();
-    };
-    let Ok(character) = character(&state, character_id).await else {
-        return Redirect::to("/characters").into_response();
-    };
-    Redirect::to(&integrated_forage_href(&character, return_to)).into_response()
-}
-
-fn integrated_forage_href(character: &Character, return_to: &str) -> String {
-    if return_to == "/camp" {
-        return "/camp?forage=true".into();
-    }
-    if return_to.starts_with("/locations/") && return_to.contains("/party/") {
-        return format!(
-            "{return_to}{}forage=true",
-            if return_to.contains('?') { "&" } else { "?" }
-        );
-    }
-    if let Some(id) = character.current_settlement_id.as_deref() {
-        return format!(
-            "/locations/settlement/{id}/party/{}?forage=true",
-            character.id
-        );
-    }
-    if let Some(id) = character.current_case_site_id.as_deref() {
-        return format!(
-            "/locations/case-site/{id}/party/{}?forage=true",
-            character.id
-        );
-    }
-    "/camp?forage=true".into()
 }
 
 async fn perform(
@@ -939,8 +863,11 @@ mod tests {
 
     #[test]
     fn failures_reopen_the_integrated_dialog_with_allowlisted_feedback() {
-        assert_eq!(forage_error_code("invalid target item"), "targets");
-        assert_eq!(forage_error_code("Terrain data is unavailable"), "location");
+        assert_eq!(forage_error_code("invalid target item"), "unavailable");
+        assert_eq!(
+            forage_error_code("Terrain data is unavailable"),
+            "unavailable"
+        );
         assert_eq!(forage_error_code("database exploded"), "unavailable");
         assert_eq!(forage_error_message("../raw-error"), None);
         assert_eq!(
@@ -953,39 +880,6 @@ mod tests {
                 "targets"
             ),
             "/locations/settlement/lubeck/party/17?building=public-square&forage=true&forage_error=targets"
-        );
-    }
-
-    #[test]
-    fn legacy_forage_routes_reopen_the_integrated_location_dialog() {
-        let mut character = Character {
-            id: 17,
-            name: "Ada".into(),
-            xp: 0,
-            level: 1,
-            gold: 0,
-            current_settlement_id: Some("lubeck".into()),
-            current_case_site_id: None,
-            party_id: Some("party".into()),
-            age_years: 24,
-            alive: true,
-            temporary: false,
-            social_notification_count: 0,
-            automatic_social_chat_enabled: false,
-        };
-        assert_eq!(
-            integrated_forage_href(&character, "/"),
-            "/locations/settlement/lubeck/party/17?forage=true"
-        );
-        assert_eq!(
-            integrated_forage_href(&character, "/camp"),
-            "/camp?forage=true"
-        );
-        character.current_settlement_id = None;
-        character.current_case_site_id = Some("site".into());
-        assert_eq!(
-            integrated_forage_href(&character, "/"),
-            "/locations/case-site/site/party/17?forage=true"
         );
     }
 }

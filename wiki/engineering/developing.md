@@ -217,13 +217,13 @@ commands, prerequisites, and operator-safe development workflows.
 ## Quick Start
 
 ```bash
-just dev
+just web
 ```
 
 Open http://localhost:8080
 
-Ordinary `just dev` / `just web` startup publishes without deleting database
-data. Publication failures stop startup before the tactical spawner or web
+Ordinary `just web` startup publishes without deleting database data.
+Publication failures stop startup before the tactical spawner or web
 process starts and print the server/database identity plus recovery choices.
 Canonical reset recipes are intentionally disabled.
 
@@ -267,7 +267,7 @@ To run the complete stack with automatic tactical server spawning:
 **Terminal 1:** Start SpacetimeDB, the strategic web server, and tactical
 spawner
 ```bash
-just dev
+just web
 ```
 
 **Terminal 2:** (Optional) Rebuild the WASM client independently
@@ -285,13 +285,13 @@ without building the tactical WASM client or tactical server binaries and
 without running the tactical dispatcher:
 
 ```bash
-just dev-strategic
+just web-strategic
 ```
 
-This preserves the canonical local database just like `just dev`. It also
-stops a canonical dispatcher left by an earlier full-stack run. Tactical
-missions can still enter the pending state, but they will not start until the
-full stack is running again.
+Like `just web`, `just web-strategic` preserves the canonical local database.
+It also stops a canonical dispatcher left by an earlier full-stack run.
+Tactical missions can still enter the pending state, but they will not start
+until the full stack is running again.
 
 For a disposable, worktree-safe strategic-only database, use:
 
@@ -304,7 +304,7 @@ cleanup as `web-isolated`, but it neither reserves the tactical port nor starts
 a dispatcher.
 
 For native tactical testing from WSL on Windows, the equivalent of running
-`just dev`, `just tactical`, and `just client 0` in separate Linux terminals is:
+`just web`, `just tactical`, and `just client 0` in separate Linux terminals is:
 
 ```bash
 just win-dev
@@ -314,7 +314,7 @@ This runs the strategic stack in WSL, cross-compiles and stages the tactical
 executables in `E:\adventure-sim-dev`, then starts one native Windows tactical
 server and client 0. Press Ctrl+C to stop the web process and Windows tactical
 processes; the detached SpacetimeDB and tactical dispatcher follow the normal
-`just dev` lifecycle and can be stopped with `just stop`. The recipe installs
+`just web` lifecycle and can be stopped with `just stop`. The recipe installs
 the pinned toolchain's `x86_64-pc-windows-gnu` Rust target when needed; the WSL
 package `gcc-mingw-w64-x86-64` must already be installed.
 
@@ -354,8 +354,8 @@ name or lives outside `PATH`.
 
 ```bash
 # Development
-just dev              # Start the complete browser stack
-just dev-strategic    # Start only SpacetimeDB and the strategic browser UI
+just web              # Start the complete browser stack
+just web-strategic    # Start only SpacetimeDB and the strategic browser UI
 just web-isolated     # Reset and start an explicitly isolated local profile
 just web-isolated-strategic # Reset and start an isolated strategic-only profile
 just web-secure       # Start strategic-web at https://localhost:8443
@@ -376,9 +376,10 @@ just stop             # Stop all services
 
 # Workspace verification
 just fmt              # Format all Rust workspace packages
+just fmt-check        # Check Rust formatting without changing files
 just check            # Check all Rust workspace packages
 just test             # Test native Rust packages and build the SpacetimeDB module
-just lint             # Run Clippy for all workspace targets/features with warnings denied
+just lint             # Verify generated bindings and run strict Clippy across every Rust workspace and the tactical WASM target
 
 # Building
 just build-strategic  # Build the SpacetimeDB module
@@ -399,7 +400,6 @@ just install-world-data /path/to/archive.zip /path/to/archive.release.json <publ
 just build-base-terrain # Build documented-road-only inference terrain
 just compile-world      # Build base terrain, then compile the 1544 world
 just build-strategic-map # Build base, world, and final map/terrain artifacts
-just normalise-viabundus # Compatibility alias for compile-world
 just load-world         # Recreate the canonical local database and load it
 just load-world http://127.0.0.1:24610 adventuresim-dev-example # Recreate and load an isolated profile database
 ```
@@ -425,9 +425,9 @@ and WASM builds run `just verify-db-client`, which generates and formats into a
 temporary directory and compares the result without changing the checkout.
 
 Schema changes are clean pre-launch changes. Regenerate client bindings and
-recreate the development database rather than adding a migration or
-compatibility path. Routine `just dev`, `just web`, and `just publish` preserve
-data. `just load-world` is the explicit destructive exception: it accepts only
+recreate the development database; do not add migrations, compatibility shims,
+or parallel paths. Routine `just web` and `just publish` preserve data.
+`just load-world` is the explicit destructive exception: it accepts only
 a bare loopback server and a lowercase `adventuresim-*` database, reset-publishes
 the current module, and discards all existing data before importing the pinned
 world. `web-reset` and `publish-reset` remain unavailable; never pass

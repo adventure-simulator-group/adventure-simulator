@@ -8,11 +8,66 @@ use crate::bestiary::{
     CandidateScore, EvidenceKind, ObservationDistance, ObservationVisibility, RegionalContext,
     ReportDescription, WitnessCapability, rank_candidates_in_region,
 };
+use adventuresim_world_schema::BASIS_POINTS_PER_WHOLE;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
 pub const MAX_TEXT: usize = 512;
 pub const MAX_RECORDS: usize = 64;
+
+/// Observer knowledge about an investigation destination, ordered from no
+/// usable location information through firsthand confirmation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+#[serde(rename_all = "snake_case")]
+pub enum DestinationKnowledgeStage {
+    Unknown,
+    Textual,
+    Landmark,
+    ApproximateArea,
+    RouteSegment,
+    ExactBelieved,
+    Visited,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+#[serde(rename_all = "snake_case")]
+pub enum InvestigationProvenanceKind {
+    Manual,
+    Generated,
+}
+
+impl InvestigationProvenanceKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Manual => "manual",
+            Self::Generated => "generated",
+        }
+    }
+}
+
+impl DestinationKnowledgeStage {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Unknown => "unknown",
+            Self::Textual => "textual",
+            Self::Landmark => "landmark",
+            Self::ApproximateArea => "approximate_area",
+            Self::RouteSegment => "route_segment",
+            Self::ExactBelieved => "exact_believed",
+            Self::Visited => "visited",
+        }
+    }
+
+    pub const fn is_exact(self) -> bool {
+        matches!(self, Self::ExactBelieved | Self::Visited)
+    }
+
+    pub const fn is_generated_disclosure(self) -> bool {
+        !matches!(self, Self::Visited)
+    }
+}
 
 macro_rules! stable_id {
     ($name:ident) => {
@@ -159,7 +214,7 @@ pub fn adapt_evidence_knowledge(
         learned_at,
         learned_at,
         observer_personal_minute,
-        KnowledgeConfidence::try_new(10_000)
+        KnowledgeConfidence::try_new(BasisPoints::FULL.get())
             .map_err(EvidenceKnowledgeAdapterError::InvalidKnowledge)?,
         KnowledgeVisibility::ObserverPrivate,
         KnowledgeLineage::try_new(
@@ -219,19 +274,34 @@ mod evidence_knowledge_adapter_tests {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct BasisPoints(u16);
 impl BasisPoints {
+    pub const FULL: Self = Self(BASIS_POINTS_PER_WHOLE);
+
     pub fn new(value: u16) -> Result<Self, ValidationError> {
-        (value <= 10_000)
+        (value <= BASIS_POINTS_PER_WHOLE)
             .then_some(Self(value))
             .ok_or(ValidationError::OutOfRange)
     }
     pub const fn get(self) -> u16 {
         self.0
     }
-    fn scaled(self, factor: u16) -> Self {
-        Self(((u32::from(self.0) * u32::from(factor)) / 10_000).min(10_000) as u16)
+
+    fn scaled(self, factor: Self) -> Self {
+        Self(
+            ((u32::from(self.0) * u32::from(factor.0)) / u32::from(BASIS_POINTS_PER_WHOLE))
+                .min(u32::from(BASIS_POINTS_PER_WHOLE)) as u16,
+        )
+    }
+
+    fn from_ratio(numerator: u64, denominator: u64) -> Self {
+        let value = numerator
+            .saturating_mul(u64::from(BASIS_POINTS_PER_WHOLE))
+            .checked_div(denominator)
+            .unwrap_or(0)
+            .min(u64::from(BASIS_POINTS_PER_WHOLE));
+        Self(value as u16)
     }
 }
 
@@ -319,11 +389,29 @@ pub enum PerceptionCondition {
     Darkness,
     PoorPerception,
 }
+impl PerceptionCondition {
+    const fn confidence(self) -> BasisPoints {
+        match self {
+            Self::Clear => BasisPoints(9_000),
+            Self::Darkness => BasisPoints(4_500),
+            Self::PoorPerception => BasisPoints(3_500),
+        }
+    }
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MemoryCondition {
     Accurate,
     Faded,
     Confused,
+}
+impl MemoryCondition {
+    const fn retention(self) -> BasisPoints {
+        match self {
+            Self::Accurate => BasisPoints(9_500),
+            Self::Faded => BasisPoints(6_500),
+            Self::Confused => BasisPoints(4_000),
+        }
+    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DisclosureMode {
@@ -337,6 +425,15 @@ pub enum TransmissionCondition {
     Clear,
     PoorTranslation,
     Hearsay,
+}
+impl TransmissionCondition {
+    const fn fidelity(self) -> BasisPoints {
+        match self {
+            Self::Clear => BasisPoints(9_500),
+            Self::PoorTranslation => BasisPoints(6_000),
+            Self::Hearsay => BasisPoints(5_000),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -519,21 +616,6 @@ pub struct PipelineInput {
 pub fn process_report(
     input: PipelineInput,
 ) -> Result<(Observation, Recollection, Option<Claim>), ValidationError> {
-    let perception_factor = match input.perception {
-        PerceptionCondition::Clear => 9_000,
-        PerceptionCondition::Darkness => 4_500,
-        PerceptionCondition::PoorPerception => 3_500,
-    };
-    let memory_factor = match input.memory {
-        MemoryCondition::Accurate => 9_500,
-        MemoryCondition::Faded => 6_500,
-        MemoryCondition::Confused => 4_000,
-    };
-    let transmission_factor = match input.transmission {
-        TransmissionCondition::Clear => 9_500,
-        TransmissionCondition::PoorTranslation => 6_000,
-        TransmissionCondition::Hearsay => 5_000,
-    };
     let observation = Observation {
         id: ObservationId::new(compound_id(&[
             "obs",
@@ -545,7 +627,7 @@ pub fn process_report(
         observer_ref: bounded_text(input.observer_ref)?,
         proposition_id: input.proposition.id.clone(),
         perceived_text: bounded_text(input.perceived_text)?,
-        confidence: BasisPoints::new(perception_factor)?,
+        confidence: input.perception.confidence(),
         condition: input.perception,
     };
     let recollection = Recollection {
@@ -556,7 +638,7 @@ pub fn process_report(
         ]))?,
         observation_id: observation.id.clone(),
         recalled_text: bounded_text(input.recalled_text)?,
-        confidence: observation.confidence.scaled(memory_factor),
+        confidence: observation.confidence.scaled(input.memory.retention()),
         condition: input.memory,
     };
     if input.disclosure == DisclosureMode::Omit {
@@ -581,7 +663,9 @@ pub fn process_report(
         } else {
             input.transmitted_text
         })?,
-        confidence: recollection.confidence.scaled(transmission_factor),
+        confidence: recollection
+            .confidence
+            .scaled(input.transmission.fidelity()),
         disclosure: input.disclosure,
         transmission: input.transmission,
         received_at: input.received_at,
@@ -630,6 +714,22 @@ pub enum DeductionSupport {
     Weak,
 }
 
+impl DeductionSupport {
+    const STRONG_MINIMUM: BasisPoints = BasisPoints(7_500);
+    const PLAUSIBLE_MINIMUM: BasisPoints = BasisPoints(3_000);
+
+    fn from_score_ratio(score: u64, top_score: u64) -> Self {
+        let relative_score = BasisPoints::from_ratio(score, top_score);
+        if relative_score >= Self::STRONG_MINIMUM {
+            Self::Strong
+        } else if relative_score >= Self::PLAUSIBLE_MINIMUM {
+            Self::Plausible
+        } else {
+            Self::Weak
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ThreatDeduction {
     pub threat_id: crate::bestiary::ThreatId,
@@ -647,23 +747,9 @@ pub fn qualitative_deductions(inference: &SafeInference) -> Vec<ThreatDeduction>
         .ranked
         .iter()
         .take(6)
-        .map(|candidate| {
-            let ratio_bps = candidate
-                .score
-                .saturating_mul(10_000)
-                .checked_div(top)
-                .unwrap_or(0);
-            let support = if ratio_bps >= 7_500 {
-                DeductionSupport::Strong
-            } else if ratio_bps >= 3_000 {
-                DeductionSupport::Plausible
-            } else {
-                DeductionSupport::Weak
-            };
-            ThreatDeduction {
-                threat_id: candidate.id,
-                support,
-            }
+        .map(|candidate| ThreatDeduction {
+            threat_id: candidate.id,
+            support: DeductionSupport::from_score_ratio(candidate.score, top),
         })
         .collect()
 }
@@ -708,6 +794,53 @@ mod tests {
         WitnessCapability::Ordinary,
     };
     const LARGE_UPRIGHT_BEAST: ReportDescription = ReportDescription::LargeUprightBeast;
+
+    #[test]
+    fn basis_points_are_bounded_and_scale_as_fractions() {
+        let half = BasisPoints::new(BASIS_POINTS_PER_WHOLE / 2).unwrap();
+
+        assert_eq!(
+            BasisPoints::new(BASIS_POINTS_PER_WHOLE),
+            Ok(BasisPoints::FULL)
+        );
+        assert_eq!(
+            BasisPoints::new(BASIS_POINTS_PER_WHOLE + 1),
+            Err(ValidationError::OutOfRange)
+        );
+        assert_eq!(BasisPoints::FULL.scaled(half), half);
+        assert_eq!(half.scaled(half).get(), BASIS_POINTS_PER_WHOLE / 4);
+        assert_eq!(
+            serde_json::to_value(BasisPoints::FULL).unwrap(),
+            serde_json::json!(BASIS_POINTS_PER_WHOLE)
+        );
+    }
+
+    #[test]
+    fn deduction_support_uses_bounded_relative_scores() {
+        let whole = u64::from(BASIS_POINTS_PER_WHOLE);
+        assert_eq!(
+            DeductionSupport::from_score_ratio(3, 4),
+            DeductionSupport::Strong
+        );
+        assert_eq!(
+            DeductionSupport::from_score_ratio(
+                u64::from(DeductionSupport::STRONG_MINIMUM.get() - 1),
+                whole,
+            ),
+            DeductionSupport::Plausible
+        );
+        assert_eq!(
+            DeductionSupport::from_score_ratio(
+                u64::from(DeductionSupport::PLAUSIBLE_MINIMUM.get() - 1),
+                whole,
+            ),
+            DeductionSupport::Weak
+        );
+        assert_eq!(
+            DeductionSupport::from_score_ratio(1, 0),
+            DeductionSupport::Weak
+        );
+    }
 
     fn id<T>(make: impl FnOnce(String) -> Result<T, ValidationError>, value: &str) -> T {
         make(value.into()).unwrap()

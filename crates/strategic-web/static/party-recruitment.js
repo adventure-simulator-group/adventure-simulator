@@ -135,9 +135,6 @@
         if (typeof value === "boolean") field.checked = value;
         else field.value = String(value);
       });
-      if (roleBuilder.elements.weapon_precision) {
-        roleBuilder.elements.weapon_precision.value = source.dataset.roleWeaponPrecision || "0";
-      }
       const armor = roleBuilder.elements.armor_tier;
       if (armor) {
         armor.value = requirements.full_armor ? "4"

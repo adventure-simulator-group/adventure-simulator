@@ -125,7 +125,10 @@ pub(super) fn resolve_ragdoll_terrain_contacts(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::type_complexity,
+    reason = "the Bevy query selects presented player rigs with their optional ragdoll ownership state"
+)]
 pub(super) fn sync_full_ragdolls(
     mut commands: Commands,
     owners: Query<
@@ -327,6 +330,10 @@ fn hinge_joint(
     )
 }
 
+#[expect(
+    clippy::type_complexity,
+    reason = "the Bevy parameter set separates immutable pose snapshots from mutable bone transforms"
+)]
 pub(super) fn apply_full_ragdoll_pose(
     ragdolls: Query<&FullBodyRagdoll>,
     body_poses: Query<(&Position, &Rotation)>,

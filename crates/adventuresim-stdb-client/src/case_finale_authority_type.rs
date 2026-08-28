@@ -4,7 +4,7 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::case_resolution_status_type::CaseResolutionStatus;
+use super::case_status_type::CaseStatus;
 use super::finale_kind_type::FinaleKind;
 use super::finale_status_type::FinaleStatus;
 
@@ -14,7 +14,7 @@ pub struct CaseFinaleAuthority {
     pub id: String,
     pub case_id: String,
     pub kind: FinaleKind,
-    pub resolution_status: CaseResolutionStatus,
+    pub resolution_status: CaseStatus,
     pub eligible_path_index: Option<u16>,
     pub priority: u16,
     pub status: FinaleStatus,
@@ -31,7 +31,7 @@ pub struct CaseFinaleAuthorityCols {
     pub id: __sdk::__query_builder::Col<CaseFinaleAuthority, String>,
     pub case_id: __sdk::__query_builder::Col<CaseFinaleAuthority, String>,
     pub kind: __sdk::__query_builder::Col<CaseFinaleAuthority, FinaleKind>,
-    pub resolution_status: __sdk::__query_builder::Col<CaseFinaleAuthority, CaseResolutionStatus>,
+    pub resolution_status: __sdk::__query_builder::Col<CaseFinaleAuthority, CaseStatus>,
     pub eligible_path_index: __sdk::__query_builder::Col<CaseFinaleAuthority, Option<u16>>,
     pub priority: __sdk::__query_builder::Col<CaseFinaleAuthority, u16>,
     pub status: __sdk::__query_builder::Col<CaseFinaleAuthority, FinaleStatus>,

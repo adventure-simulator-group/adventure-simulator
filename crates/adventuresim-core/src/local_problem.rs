@@ -2,6 +2,8 @@
 //!
 //! Hidden causes stay in the strategic authority.  Consumers receive only the
 //! bounded effects returned by [`aggregate`] and safe public symptoms.
+use crate::{encounter::EncounterArchetype, strategic_time::MINUTES_PER_DAY};
+use adventuresim_world_schema::BASIS_POINTS_PER_WHOLE;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -12,7 +14,7 @@ pub const MAX_DISEASE_INTENSITY: u16 = 700;
 /// The initial offence plus four follow-up incidents. This bounded ceiling is
 /// temporary until other adventuring parties can retire neglected cases.
 pub const MAX_INCIDENTS_PER_PROBLEM: u16 = 5;
-pub const INCIDENT_INTERVAL_MINUTES: u64 = 2 * 1_440;
+pub const INCIDENT_INTERVAL_MINUTES: u64 = 2 * MINUTES_PER_DAY;
 /// Each follow-up incident makes the unresolved consequences 25% more severe.
 pub const INCIDENT_SEVERITY_STEP_BPS: u32 = 2_500;
 
@@ -45,19 +47,21 @@ pub fn incident_severity_bps(incident_count: u16) -> u32 {
     if incident_count == 0 {
         return 0;
     }
-    10_000u32.saturating_add(
+    u32::from(BASIS_POINTS_PER_WHOLE).saturating_add(
         u32::from(incident_count.saturating_sub(1)).saturating_mul(INCIDENT_SEVERITY_STEP_BPS),
     )
 }
 
 fn scale_i32_for_incidents(value: i32, incident_count: u16) -> i32 {
-    (i64::from(value) * i64::from(incident_severity_bps(incident_count)) / 10_000)
-        .clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32
+    (i64::from(value) * i64::from(incident_severity_bps(incident_count))
+        / i64::from(BASIS_POINTS_PER_WHOLE))
+    .clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32
 }
 
 fn scale_u16_for_incidents(value: u16, incident_count: u16) -> u16 {
-    (u64::from(value) * u64::from(incident_severity_bps(incident_count)) / 10_000)
-        .min(u64::from(u16::MAX)) as u16
+    (u64::from(value) * u64::from(incident_severity_bps(incident_count))
+        / u64::from(BASIS_POINTS_PER_WHOLE))
+    .min(u64::from(u16::MAX)) as u16
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -108,14 +112,6 @@ pub enum Symptom {
     VanishedLivestock,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum EncounterArchetype {
-    Bandits,
-    Goblins,
-    Undead,
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Effects {
     /// Positive makes merchant purchases dearer; negative makes them cheaper.
@@ -150,10 +146,10 @@ impl LocalProblem {
         {
             return 0;
         }
-        10_000u16.saturating_sub(self.mitigation_bps.min(10_000))
+        BASIS_POINTS_PER_WHOLE.saturating_sub(self.mitigation_bps.min(BASIS_POINTS_PER_WHOLE))
     }
     pub fn mitigate(&mut self, bps: u16) {
-        self.mitigation_bps = self.mitigation_bps.max(bps.min(10_000));
+        self.mitigation_bps = self.mitigation_bps.max(bps.min(BASIS_POINTS_PER_WHOLE));
     }
     pub fn resolve(&mut self, minute: u64) {
         self.resolved_at = Some(self.resolved_at.map_or(minute, |old| old.min(minute)));
@@ -328,7 +324,7 @@ pub fn generate(
             symptom: chosen.symptom,
             effects,
             starts_at,
-            ends_at: starts_at.saturating_add(30 * 1_440),
+            ends_at: starts_at.saturating_add(30 * MINUTES_PER_DAY),
             mitigation_bps: 0,
             resolved_at: None,
             bridge_keys: bridges.clone(),
@@ -416,31 +412,33 @@ pub fn aggregate_consequences<'a>(
             minute >= r.starts_at
                 && minute < r.ends_at
                 && r.resolved_at.is_none_or(|at| minute < at)
-                && r.mitigation_bps < 10_000
+                && r.mitigation_bps < BASIS_POINTS_PER_WHOLE
         })
         .collect();
     rows.sort_by(|a, b| a.id.cmp(&b.id));
     rows.truncate(MAX_ACTIVE_PER_SCOPE);
     let mut out = AggregateEffects::default();
     for r in rows {
-        let f = i64::from(10_000u16.saturating_sub(r.mitigation_bps.min(10_000)));
+        let f = i64::from(
+            BASIS_POINTS_PER_WHOLE.saturating_sub(r.mitigation_bps.min(BASIS_POINTS_PER_WHOLE)),
+        );
         let buy_bps = scale_i32_for_incidents(r.buy_bps, r.incident_count);
         let sell_penalty_bps = scale_i32_for_incidents(r.sell_penalty_bps, r.incident_count);
         let encounter_frequency_bps =
             scale_u16_for_incidents(r.encounter_frequency_bps, r.incident_count);
         let disease_intensity = scale_u16_for_incidents(r.disease_intensity, r.incident_count);
-        out.buy_bps = (i64::from(out.buy_bps) + i64::from(buy_bps) * f / 10_000)
-            .clamp(i64::from(-MAX_TRADE_BPS), i64::from(MAX_TRADE_BPS))
-            as i32;
+        out.buy_bps = (i64::from(out.buy_bps)
+            + i64::from(buy_bps) * f / i64::from(BASIS_POINTS_PER_WHOLE))
+        .clamp(i64::from(-MAX_TRADE_BPS), i64::from(MAX_TRADE_BPS)) as i32;
         out.sell_penalty_bps = (i64::from(out.sell_penalty_bps)
-            + i64::from(sell_penalty_bps) * f / 10_000)
-            .clamp(0, i64::from(MAX_TRADE_BPS)) as i32;
+            + i64::from(sell_penalty_bps) * f / i64::from(BASIS_POINTS_PER_WHOLE))
+        .clamp(0, i64::from(MAX_TRADE_BPS)) as i32;
         out.encounter_frequency_bps = (u64::from(out.encounter_frequency_bps)
-            + u64::from(encounter_frequency_bps) * f as u64 / 10_000)
-            .min(u64::from(MAX_ENCOUNTER_BPS)) as u16;
+            + u64::from(encounter_frequency_bps) * f as u64 / u64::from(BASIS_POINTS_PER_WHOLE))
+        .min(u64::from(MAX_ENCOUNTER_BPS)) as u16;
         out.disease_intensity = (u64::from(out.disease_intensity)
-            + u64::from(disease_intensity) * f as u64 / 10_000)
-            .min(u64::from(MAX_DISEASE_INTENSITY)) as u16;
+            + u64::from(disease_intensity) * f as u64 / u64::from(BASIS_POINTS_PER_WHOLE))
+        .min(u64::from(MAX_DISEASE_INTENSITY)) as u16;
     }
     out
 }
@@ -459,18 +457,19 @@ pub fn aggregate<'a>(
     let mut out = AggregateEffects::default();
     for p in rows {
         let f = i64::from(p.active_fraction_bps(minute));
-        out.buy_bps = (i64::from(out.buy_bps) + i64::from(p.effects.buy_bps) * f / 10_000)
-            .clamp(i64::from(-MAX_TRADE_BPS), i64::from(MAX_TRADE_BPS))
-            as i32;
+        out.buy_bps = (i64::from(out.buy_bps)
+            + i64::from(p.effects.buy_bps) * f / i64::from(BASIS_POINTS_PER_WHOLE))
+        .clamp(i64::from(-MAX_TRADE_BPS), i64::from(MAX_TRADE_BPS)) as i32;
         out.sell_penalty_bps = (i64::from(out.sell_penalty_bps)
-            + i64::from(p.effects.sell_penalty_bps) * f / 10_000)
-            .clamp(0, i64::from(MAX_TRADE_BPS)) as i32;
+            + i64::from(p.effects.sell_penalty_bps) * f / i64::from(BASIS_POINTS_PER_WHOLE))
+        .clamp(0, i64::from(MAX_TRADE_BPS)) as i32;
         out.encounter_frequency_bps = (u64::from(out.encounter_frequency_bps)
-            + u64::from(p.effects.encounter_frequency_bps) * f as u64 / 10_000)
-            .min(u64::from(MAX_ENCOUNTER_BPS)) as u16;
+            + u64::from(p.effects.encounter_frequency_bps) * f as u64
+                / u64::from(BASIS_POINTS_PER_WHOLE))
+        .min(u64::from(MAX_ENCOUNTER_BPS)) as u16;
         out.disease_intensity = (u64::from(out.disease_intensity)
-            + u64::from(p.effects.disease_intensity) * f as u64 / 10_000)
-            .min(u64::from(MAX_DISEASE_INTENSITY)) as u16;
+            + u64::from(p.effects.disease_intensity) * f as u64 / u64::from(BASIS_POINTS_PER_WHOLE))
+        .min(u64::from(MAX_DISEASE_INTENSITY)) as u16;
         if let Some(a) = p.effects.encounter_archetype {
             out.encounter_archetypes.insert(a);
         }
@@ -479,9 +478,12 @@ pub fn aggregate<'a>(
 }
 
 pub fn adjust_price(base: u32, basis_points: i32) -> u32 {
-    let numerator =
-        i64::from(base).saturating_mul(i64::from(10_000 + basis_points.clamp(-9_999, 50_000)));
-    u32::try_from((numerator + 9_999) / 10_000)
+    let whole_bps = i32::from(BASIS_POINTS_PER_WHOLE);
+    let maximum_discount_bps = whole_bps - 1;
+    let numerator = i64::from(base).saturating_mul(i64::from(
+        whole_bps + basis_points.clamp(-maximum_discount_bps, 50_000),
+    ));
+    u32::try_from((numerator + i64::from(maximum_discount_bps)) / i64::from(BASIS_POINTS_PER_WHOLE))
         .unwrap_or(u32::MAX)
         .max(1)
 }
@@ -507,7 +509,10 @@ pub fn discovery_action(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 /// Formats a safe referral, including an inline topic when the speaker is the
 /// contact, and explicitly distinguishes a same-named contact from the speaker.
 pub fn referral_presentation(

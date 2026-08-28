@@ -5,7 +5,10 @@
 use spacetimedb::{ReducerContext, Table, ViewContext, reducer, table};
 use std::str::FromStr;
 
-use adventuresim_core::strategic_place::{StrategicFixtureId, StrategicPlaceId};
+use adventuresim_core::{
+    material::Microliters,
+    strategic_place::{StrategicFixtureId, StrategicPlaceId},
+};
 
 use crate::{
     character::{character, character_attributes, character_death},
@@ -126,59 +129,48 @@ pub struct WaterOutputLot {
     pub anchor_minute: u64,
 }
 
-/// Private exact material contributions in containers and legacy water pools.
+/// Private exact material contributions in one physical container.
 #[derive(Clone, Debug)]
-#[table(accessor = water_holding_contribution)]
-pub struct WaterHoldingContribution {
+#[table(accessor = container_water_contribution)]
+pub struct ContainerWaterContribution {
     #[primary_key]
-    pub id: String,
-    #[index(btree)]
-    pub holding_key: String,
     pub material_lot_id: u64,
+    #[index(btree)]
+    pub container_object_id: u64,
     pub amount_microliters: u64,
     pub contaminant_load_microunits: u64,
     pub collected_at: u64,
 }
 
-fn water_holding_key(kind: &str, id: &str) -> String {
-    format!("{kind}:{id}")
-}
-
-fn water_holding_contribution_id(kind: &str, id: &str, material_lot_id: u64) -> String {
-    format!("{}:{material_lot_id}", water_holding_key(kind, id))
-}
-
-pub(crate) fn delete_water_holding_contributions(ctx: &ReducerContext, kind: &str, id: &str) {
-    let key = water_holding_key(kind, id);
+pub(crate) fn delete_container_water_contributions(ctx: &ReducerContext, container_object_id: u64) {
     for row in ctx
         .db
-        .water_holding_contribution()
-        .holding_key()
-        .filter(&key)
+        .container_water_contribution()
+        .container_object_id()
+        .filter(container_object_id)
         .collect::<Vec<_>>()
     {
-        ctx.db.water_holding_contribution().id().delete(row.id);
+        ctx.db
+            .container_water_contribution()
+            .material_lot_id()
+            .delete(row.material_lot_id);
     }
 }
 
-pub(crate) fn move_water_holding_contributions(
+pub(crate) fn take_container_water_contributions(
     ctx: &ReducerContext,
-    source_kind: &str,
-    source_id: &str,
-    destination_kind: &str,
-    destination_id: &str,
-    source_total_microliters: u64,
-    moved_water_microliters: u64,
-) -> Result<Vec<(u64, u64, u64)>, String> {
-    if moved_water_microliters > source_total_microliters {
+    container_object_id: u64,
+    source_total: Microliters,
+    moved_water: Microliters,
+) -> Result<Vec<(u64, Microliters, u64)>, String> {
+    if moved_water > source_total {
         return Err("Water material transfer exceeds public volume".into());
     }
-    let source_key = water_holding_key(source_kind, source_id);
     let mut rows = ctx
         .db
-        .water_holding_contribution()
-        .holding_key()
-        .filter(&source_key)
+        .container_water_contribution()
+        .container_object_id()
+        .filter(container_object_id)
         .collect::<Vec<_>>();
     rows.sort_by_key(|row| row.material_lot_id);
     let mut moved = Vec::new();
@@ -186,81 +178,48 @@ pub(crate) fn move_water_holding_contributions(
         let amount_before = row.amount_microliters;
         let load_before = row.contaminant_load_microunits;
         let (amount, moved_load) = adventuresim_core::water_source::proportional_material_transfer(
-            source_total_microliters,
-            moved_water_microliters,
-            amount_before,
+            source_total,
+            moved_water,
+            Microliters::new(amount_before),
             load_before,
         )
         .ok_or("Water material transfer exceeds public volume")?;
-        if amount == 0 {
+        if amount.is_zero() {
             continue;
         }
-        row.amount_microliters -= amount;
+        row.amount_microliters -= amount.get();
         row.contaminant_load_microunits -= moved_load;
         if row.amount_microliters == 0 {
-            ctx.db.water_holding_contribution().id().delete(row.id);
-        } else {
-            ctx.db.water_holding_contribution().id().update(row.clone());
-        }
-        let destination_row_id =
-            water_holding_contribution_id(destination_kind, destination_id, row.material_lot_id);
-        if let Some(mut destination) = ctx
-            .db
-            .water_holding_contribution()
-            .id()
-            .find(&destination_row_id)
-        {
-            destination.amount_microliters = destination
-                .amount_microliters
-                .checked_add(amount)
-                .ok_or("Water material amount overflow")?;
-            destination.contaminant_load_microunits = destination
-                .contaminant_load_microunits
-                .checked_add(moved_load)
-                .ok_or("Water contaminant load overflow")?;
-            ctx.db.water_holding_contribution().id().update(destination);
+            ctx.db
+                .container_water_contribution()
+                .material_lot_id()
+                .delete(row.material_lot_id);
         } else {
             ctx.db
-                .water_holding_contribution()
-                .insert(WaterHoldingContribution {
-                    id: destination_row_id,
-                    holding_key: water_holding_key(destination_kind, destination_id),
-                    material_lot_id: row.material_lot_id,
-                    amount_microliters: amount,
-                    contaminant_load_microunits: moved_load,
-                    collected_at: row.collected_at,
-                });
+                .container_water_contribution()
+                .material_lot_id()
+                .update(row.clone());
         }
         moved.push((row.material_lot_id, amount, moved_load));
     }
     Ok(moved)
 }
 
-pub(crate) fn consume_water_holding_contributions(
+pub(crate) fn consume_container_water_contributions(
     ctx: &ReducerContext,
-    source_kind: &str,
-    source_id: &str,
-    source_total_ml: f32,
-    consumed_water_ml: f32,
+    container_object_id: u64,
+    source_total_ml: u64,
+    consumed_water_ml: u64,
     consumer_character_id: u64,
 ) -> Result<(), String> {
-    let minute = ctx
-        .db
-        .character_time()
-        .character_id()
-        .find(consumer_character_id)
-        .map_or(0, |row| row.minutes);
-    let sink = format!("consume:{consumer_character_id}:{}", minute);
-    let moved = move_water_holding_contributions(
+    let moved = take_container_water_contributions(
         ctx,
-        source_kind,
-        source_id,
-        "consumed",
-        &sink,
-        (source_total_ml.max(0.0) * 1_000.0).round() as u64,
-        (consumed_water_ml.max(0.0) * 1_000.0).round() as u64,
+        container_object_id,
+        Microliters::try_from_milliliters(source_total_ml)
+            .map_err(|_| "Source water volume is invalid")?,
+        Microliters::try_from_milliliters(consumed_water_ml)
+            .map_err(|_| "Consumed water volume is invalid")?,
     )?;
-    delete_water_holding_contributions(ctx, "consumed", &sink);
     if !moved.is_empty() {
         expose_to_water_contributions(ctx, consumer_character_id, &moved)?;
     }
@@ -270,7 +229,7 @@ pub(crate) fn consume_water_holding_contributions(
 fn expose_to_water_contributions(
     ctx: &ReducerContext,
     character_id: u64,
-    moved: &[(u64, u64, u64)],
+    moved: &[(u64, Microliters, u64)],
 ) -> Result<(), String> {
     use sha2::{Digest as _, Sha256};
     let minute = ctx
@@ -289,9 +248,9 @@ fn expose_to_water_contributions(
             .find(output_lot_id)
             .ok_or("Consumed water material provenance is incomplete")?;
         digest.update(output_lot_id.to_le_bytes());
-        digest.update(amount_microliters.to_le_bytes());
+        digest.update(amount_microliters.get().to_le_bytes());
         digest.update(anchor_load.to_le_bytes());
-        let amount_ml = amount_microliters as f32 / 1_000.0;
+        let amount_ml = amount_microliters.as_milliliters_f32();
         let anchor_concentration = anchor_load as f32 / (amount_ml.max(0.001) * 1_000.0);
         let current = adventuresim_core::food::contamination_at(
             anchor_concentration,
@@ -314,7 +273,7 @@ fn expose_to_water_contributions(
         minute,
         dose,
         &contribution_digest,
-        10_000,
+        adventuresim_world_schema::BASIS_POINTS_PER_WHOLE,
     )
 }
 
@@ -395,7 +354,8 @@ pub fn collect_fixture_water_into_container(
             capability.owner_character_id == character_id
                 && capability.active
                 && capability.version == expected_capability_version
-                && capability.provenance_kind == "generated"
+                && capability.provenance_kind
+                    == adventuresim_core::investigation::InvestigationProvenanceKind::Generated
                 && capability.target_kind == "site"
         })
         .ok_or("Water collection action is unavailable")?;
@@ -620,8 +580,10 @@ pub fn collect_fixture_water_into_container(
         lot.growth_per_hour,
         plan.time().end_minute.saturating_sub(lot.anchor_minute),
     );
+    let requested_microliters = Microliters::try_from_milliliters(requested_ml)
+        .map_err(|_| "Requested water volume exceeds the material range")?;
     let contaminant_load_microunits =
-        (current_concentration.max(0.0) * requested_ml as f32 * 1_000.0).round() as u64;
+        (current_concentration.max(0.0) * requested_microliters.get() as f32).round() as u64;
     source.available_ml = source_after;
     source.revision = source
         .revision
@@ -642,12 +604,11 @@ pub fn collect_fixture_water_into_container(
         });
     }
     ctx.db
-        .water_holding_contribution()
-        .insert(WaterHoldingContribution {
-            id: water_holding_contribution_id("container", &object.id.to_string(), output_lot_id),
-            holding_key: water_holding_key("container", &object.id.to_string()),
+        .container_water_contribution()
+        .insert(ContainerWaterContribution {
             material_lot_id: output_lot_id,
-            amount_microliters: requested_ml.saturating_mul(1_000),
+            container_object_id: object.id,
+            amount_microliters: requested_microliters.get(),
             contaminant_load_microunits,
             collected_at: plan.time().end_minute,
         });
@@ -686,35 +647,38 @@ pub(crate) fn contained_water_contamination(
     ctx: &ReducerContext,
     container_object_id: u64,
     minute: u64,
-) -> Result<Vec<(u64, f32, f32, u64)>, String> {
-    water_holding_contamination(
+) -> Result<Vec<(u64, f32, f32, Microliters)>, String> {
+    let source_total = match ctx
+        .db
+        .container_liquid()
+        .container_object_id()
+        .find(container_object_id)
+    {
+        Some(liquid) => Microliters::try_from_milliliters(liquid.water_ml)
+            .map_err(|_| "Container water volume exceeds the material range")?,
+        None => Microliters::ZERO,
+    };
+    container_water_contamination(
         ctx,
-        "container",
-        &container_object_id.to_string(),
-        ctx.db
-            .container_liquid()
-            .container_object_id()
-            .find(container_object_id)
-            .map_or(0, |liquid| liquid.water_ml.saturating_mul(1_000)),
-        u64::MAX,
+        container_object_id,
+        source_total,
+        Microliters::new(u64::MAX),
         minute,
     )
 }
 
-pub(crate) fn water_holding_contamination(
+fn container_water_contamination(
     ctx: &ReducerContext,
-    kind: &str,
-    id: &str,
-    source_total_microliters: u64,
-    moved_microliters: u64,
+    container_object_id: u64,
+    source_total: Microliters,
+    moved: Microliters,
     minute: u64,
-) -> Result<Vec<(u64, f32, f32, u64)>, String> {
-    let key = water_holding_key(kind, id);
+) -> Result<Vec<(u64, f32, f32, Microliters)>, String> {
     let mut contributions = ctx
         .db
-        .water_holding_contribution()
-        .holding_key()
-        .filter(&key)
+        .container_water_contribution()
+        .container_object_id()
+        .filter(container_object_id)
         .collect::<Vec<_>>();
     contributions.sort_by_key(|row| row.material_lot_id);
     let mut result = Vec::new();
@@ -733,17 +697,16 @@ pub(crate) fn water_holding_contamination(
         }
         let (amount_microliters, selected_load) =
             adventuresim_core::water_source::proportional_material_transfer(
-                source_total_microliters,
-                moved_microliters.min(source_total_microliters),
-                contribution.amount_microliters,
+                source_total,
+                moved.min(source_total),
+                Microliters::new(contribution.amount_microliters),
                 contribution.contaminant_load_microunits,
             )
             .ok_or("Water material preview exceeds public volume")?;
-        if amount_microliters == 0 {
+        if amount_microliters.is_zero() {
             continue;
         }
-        let amount_ml = amount_microliters as f32 / 1_000.0;
-        let held_anchor_concentration = selected_load as f32 / (amount_ml * 1_000.0);
+        let held_anchor_concentration = selected_load as f32 / amount_microliters.get() as f32;
         let current = adventuresim_core::food::contamination_at(
             held_anchor_concentration,
             lot.growth_per_hour,
@@ -953,7 +916,10 @@ fn materialize_patient_corpse(
             .map_or(3.0, |attributes| attributes.immunity),
         &physiology_key.key,
     );
-    let bps = |value: f32| (value.clamp(0.0, 1.0) * 10_000.0).round() as u16;
+    let bps = |value: f32| {
+        (value.clamp(0.0, 1.0) * f32::from(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE))
+            .round() as u16
+    };
     crate::corpse::persist_pathology_snapshot(
         ctx,
         &corpse_id,
@@ -1635,7 +1601,7 @@ pub(crate) fn patient_presence_suppression_at(
 mod water_integration_contract_tests {
     #[test]
     fn collection_input_is_observer_safe_and_replay_precedes_private_reads() {
-        let source = include_str!("outbreak.rs");
+        let source = crate::production_source(include_str!("outbreak.rs"));
         let reducer = source
             .split("pub fn collect_fixture_water_into_container")
             .nth(1)
@@ -1655,7 +1621,7 @@ mod water_integration_contract_tests {
 
     #[test]
     fn private_truth_does_not_control_public_fixture_handling() {
-        let container = include_str!("inventory_container.rs");
+        let container = crate::production_source(include_str!("inventory_container.rs"));
         let public_row = container
             .split("pub struct ContainerLiquid")
             .nth(1)
@@ -1985,7 +1951,7 @@ pub(crate) fn discover_case_corpses(
 mod tests {
     #[test]
     fn outbreak_authority_and_patients_are_private_and_real() {
-        let source = include_str!("outbreak.rs");
+        let source = crate::production_source(include_str!("outbreak.rs"));
         let production = source.split("#[cfg(test)]").next().unwrap();
         assert!(production.contains("#[table(accessor = outbreak_authority)]"));
         assert!(production.contains("#[table(accessor = outbreak_patient_authority)]"));
@@ -2002,7 +1968,7 @@ mod tests {
 
     #[test]
     fn outbreak_corpses_use_ordinary_character_death_and_generic_pathology() {
-        let source = include_str!("outbreak.rs");
+        let source = crate::production_source(include_str!("outbreak.rs"));
         let production = source.split("#[cfg(test)]").next().unwrap();
         assert!(production.contains("transition_character_to_dead_at"));
         assert!(production.contains("corpse:character:"));
@@ -2013,7 +1979,7 @@ mod tests {
 
     #[test]
     fn patient_context_visibility_requires_problem_knowledge() {
-        let source = include_str!("outbreak.rs");
+        let source = crate::production_source(include_str!("outbreak.rs"));
         let production = source.split("#[cfg(test)]").next().unwrap();
         assert!(production.contains("case_patient_visible_to_character_view"));
         assert!(production.contains("local_problem_receipt()"));
@@ -2029,21 +1995,26 @@ mod tests {
 
     #[test]
     fn remediation_is_exact_idempotent_and_uses_normal_outcome_authority() {
-        let source = include_str!("outbreak.rs");
+        let source = crate::production_source(include_str!("outbreak.rs"));
         assert!(source.contains("authority.remediation_id != remediation_id"));
         assert!(source.contains("physical_source_fixture_id != source_fixture.to_string()"));
         assert!(source.contains("StrategicFixtureId::outbreak_source"));
         assert!(source.contains("parse_outbreak_source_fixture"));
         assert!(source.contains("remediation_source_id.as_deref() == Some(source_id)"));
-        let actions = include_str!("investigation/actions.rs");
-        assert!(actions.contains("OutcomeFactKind::SourceRemediated"));
-        let objectives = include_str!("strategic/custody_objectives.rs");
+        // The custody module keeps source-boundary tests ahead of this
+        // implementation, so select the canonical outcome-ingestion owner
+        // directly instead of applying the conventional trailing-test split.
+        let objectives = include_str!("strategic/custody_objectives.rs")
+            .rsplit("pub(crate) fn ingest_case_outcome_fact")
+            .next()
+            .unwrap();
         assert!(objectives.contains("accepted_hostile_remediation"));
+        assert!(objectives.contains("OutcomeFactKind::SourceRemediated"));
     }
 
     #[test]
     fn generated_outbreak_retry_checks_every_immutable_authority_field() {
-        let source = include_str!("outbreak.rs");
+        let source = crate::production_source(include_str!("outbreak.rs"));
         let retry = source
             .split("pub(crate) fn materialize_generated_outbreak")
             .nth(1)
@@ -2071,7 +2042,7 @@ mod tests {
 
     #[test]
     fn remediation_releases_context_without_curing_and_family_is_canonical() {
-        let source = include_str!("outbreak.rs");
+        let source = crate::production_source(include_str!("outbreak.rs"));
         let deactivate = source
             .split("fn deactivate_outbreak_patient_contexts")
             .nth(1)

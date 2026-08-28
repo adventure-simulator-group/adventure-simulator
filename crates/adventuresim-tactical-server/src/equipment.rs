@@ -105,7 +105,6 @@ fn can_enqueue(queue: &VecDeque<(Entity, EquipmentActionRequest)>, actor: Entity
     queue.iter().filter(|(queued, _)| *queued == actor).count() < MAX_PENDING_PER_ACTOR
 }
 
-#[allow(clippy::too_many_arguments)]
 fn process_equipment_actions(
     mut commands: Commands,
     mut pending: ResMut<PendingEquipmentActions>,

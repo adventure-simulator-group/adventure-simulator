@@ -1,5 +1,6 @@
 use super::terrain::terrain_heightmap_image;
 use super::*;
+use fabelgeist_determinism::splitmix64;
 
 const WEATHER_SHADER: &str = "shaders/tactical_weather.wgsl";
 const FALLING_PARTICLE_CAPACITY: usize = 3_072;
@@ -75,6 +76,10 @@ impl Material for TacticalWeatherMaterial {
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Bevy injects active weather scene data, presentation assets, and occlusion state independently"
+)]
 pub(super) fn apply_active_scene_weather(
     active: Res<ActiveTacticalScene>,
     scenes: Query<(&SceneEnvironment, &SceneTerrain)>,

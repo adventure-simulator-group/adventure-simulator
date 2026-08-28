@@ -1,6 +1,30 @@
 use bevy::ecs::entity::MapEntities;
+use bevy::ecs::system::SystemParam;
 
 use super::*;
+
+type OffensiveAiQuery<'world, 'state> = Query<
+    'world,
+    'state,
+    (
+        Entity,
+        &'static Transform,
+        &'static TacticalCombatSide,
+        &'static mut CharacterLook,
+        &'static mut input::AccumulatedInput,
+        &'static mut OffensiveCombatAi,
+        &'static TacticalCombatState,
+        &'static SkeletonState,
+    ),
+>;
+
+#[derive(SystemParam)]
+pub(super) struct OffensiveAiContext<'w, 's> {
+    ai: OffensiveAiQuery<'w, 's>,
+    colliders: Query<'w, 's, &'static Collider>,
+    dimensions: Query<'w, 's, &'static CharacterDimensions>,
+    combat_config: Res<'w, TacticalCombatConfig>,
+}
 
 /// Enables server-owned offensive control, preferring ranged fire while a
 /// usable ranged weapon and arrows are available and otherwise using melee.
@@ -76,20 +100,14 @@ pub(super) fn drive_offensive_combat_ai(
         ),
         With<Player>,
     >,
-    mut ai: Query<(
-        Entity,
-        &Transform,
-        &TacticalCombatSide,
-        &mut CharacterLook,
-        &mut input::AccumulatedInput,
-        &mut OffensiveCombatAi,
-        &TacticalCombatState,
-        &SkeletonState,
-    )>,
-    colliders: Query<&Collider>,
-    dimensions: Query<&CharacterDimensions>,
-    combat_config: Res<TacticalCombatConfig>,
+    context: OffensiveAiContext<'_, '_>,
 ) {
+    let OffensiveAiContext {
+        mut ai,
+        colliders,
+        dimensions,
+        combat_config,
+    } = context;
     let config = &combat_config.ai.ordinary.offense;
     for (entity, transform, side, mut look, mut input, mut controller, state, skeleton) in &mut ai {
         if state.is_incapacitated() {
@@ -149,14 +167,16 @@ pub(super) fn drive_offensive_combat_ai(
             .zip(colliders.get(target).ok())
             .and_then(|(attacker_collider, target_collider)| {
                 crate::combat::melee_body_part_lunge_delay(
-                    transform,
-                    attacker_collider,
-                    dimensions,
-                    target_transform,
-                    target_collider,
-                    config.target_body_part,
-                    weapon_reach,
-                    quickstep_distance,
+                    crate::combat::MeleeLungeRequest {
+                        attacker_position: transform.translation,
+                        attacker_collider,
+                        attacker_dimensions: dimensions,
+                        target_transform,
+                        target_collider,
+                        target_body_part: config.target_body_part,
+                        weapon_reach_metres: weapon_reach,
+                        quickstep_distance_metres: quickstep_distance,
+                    },
                     &combat_config,
                 )
             });

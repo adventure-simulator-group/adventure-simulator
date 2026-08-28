@@ -5,9 +5,11 @@ mod encumbrance_tests {
         personal_encumbrance,
     };
     use crate::spacetimedb::{
-        Character, CharacterAttributes, CharacterCondition, CharacterLimbs, CharacterNeeds,
-        FoodLot, FoodPreparation, InventoryItem, ItemDefinition, PartyInventoryItem,
+        Character, CharacterAttributes, CharacterCondition, CharacterLimbs, ContainerLiquid,
+        FoodLot, FoodPreparation, InventoryItem, InventoryObject, ItemDefinition,
+        PartyInventoryItem,
     };
+    use adventuresim_core::physical_object::InventoryLocation;
     use serde_json::json;
 
     fn item(id: &str, weight: f32) -> ItemDefinition {
@@ -25,7 +27,6 @@ mod encumbrance_tests {
             name: format!("Character {id}"),
             xp: 0,
             level: 1,
-            gold: 0,
             current_settlement_id: None,
             current_case_site_id: None,
             party_id: Some("party".into()),
@@ -83,11 +84,16 @@ mod encumbrance_tests {
                     religion_id: None,
                 },
             ],
-            needs: vec![CharacterNeeds {
-                character_id: 1,
-                food_balance_kcal: 0.0,
-                water_balance_ml: 0.0,
-                carried_water_ml: 2_500.0,
+            objects: vec![InventoryObject {
+                id: 30,
+                item_id: "waterskin".into(),
+                location: InventoryLocation::personal(1, 31),
+            }],
+            containment: Vec::new(),
+            liquids: vec![ContainerLiquid {
+                container_object_id: 30,
+                liquid_item_id: "water".into(),
+                water_ml: 2_500,
             }],
         }
     }
@@ -98,7 +104,7 @@ mod encumbrance_tests {
             id: 10,
             character_id: 1,
             item_id: "sword".into(),
-            qty: 3,
+            quantity: 3,
         }];
         let summary = personal_encumbrance(1, &inventory, &[item("sword", 4.0)], &[], &rows());
         assert_eq!(summary.burden_kg, 84.5);
@@ -112,13 +118,13 @@ mod encumbrance_tests {
                 id: 10,
                 character_id: 1,
                 item_id: "sword".into(),
-                qty: 3,
+                quantity: 3,
             },
             InventoryItem {
                 id: 11,
                 character_id: 2,
                 item_id: "sword".into(),
-                qty: 20,
+                quantity: 20,
             },
         ];
         let pooled = vec![PartyInventoryItem {
@@ -158,7 +164,7 @@ mod encumbrance_tests {
                 id: 30,
                 character_id: 99,
                 item_id: "unknown".into(),
-                qty: 4,
+                quantity: 4,
             }],
             &[],
             &[],
@@ -175,7 +181,7 @@ mod encumbrance_tests {
             id: 40,
             character_id: 1,
             item_id: "cooked_meal".into(),
-            qty: 1,
+            quantity: 1,
         }];
         let lots = vec![FoodLot {
             id: 5,

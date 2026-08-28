@@ -46,8 +46,7 @@ use crate::{
     item::{InventoryItem, inventory_item, item},
     local_problem::{
         local_problem_authority, local_problem_authority__view, local_problem_receipt,
-        local_problem_rumor_delivery, local_problem_symptom__view,
-        public_threat_disclosure,
+        local_problem_rumor_delivery, local_problem_symptom__view, public_threat_disclosure,
     },
     npc_adventurer::npc_adventuring_party_authority,
     organization::organization_presentation,
@@ -67,7 +66,6 @@ use crate::{
 };
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
 
-const WALKING_SPEED_KM_PER_HOUR: u64 = 5;
 const QUEST_TRAVEL_SPEED_DIVISOR: u64 = 4;
 const METERS_PER_KILOMETER: u64 = 1_000;
 const MINUTES_PER_HOUR: u64 = 60;
@@ -123,7 +121,13 @@ pub(crate) fn autoresolve_enemy(
     difficulty: i32,
     combat_scale_bps: u32,
 ) -> Result<Combatant, String> {
-    autoresolve_enemy_with_countermeasure(id, enemy_type, difficulty, combat_scale_bps, 10_000)
+    autoresolve_enemy_with_countermeasure(
+        id,
+        enemy_type,
+        difficulty,
+        combat_scale_bps,
+        u32::from(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE),
+    )
 }
 
 pub(crate) fn autoresolve_enemy_with_countermeasure(

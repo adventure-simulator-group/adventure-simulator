@@ -634,7 +634,7 @@ impl ActivityPreviewRates {
             settlement.population_level,
             settlement.population_estimate,
         ) as f32
-            / 10_000.0;
+            / f32::from(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE);
         let combat = capability
             .weapon_precision
             .max(capability.athletics)
@@ -970,6 +970,10 @@ pub(super) fn skill_action_icon(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the skills rail renders independently optional capability and schedule projections"
+)]
 pub(super) fn party_skills_rail(
     title: &str,
     attributes: Option<&CharacterAttributes>,
@@ -1032,6 +1036,10 @@ pub(super) fn party_skills_rail(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the skills table combines independent projections at the Maud rendering boundary"
+)]
 fn skills_table(
     title: &str,
     attributes: Option<&CharacterAttributes>,
@@ -1689,6 +1697,10 @@ fn social_skill_rows(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "combat skill rows expose each independently derived capability input"
+)]
 fn combat_skill_rows(
     skills: &CharacterSkills,
     instinct: f32,
@@ -1830,6 +1842,10 @@ fn schedule_header_icon(icon: &str, label: &str) -> Markup {
     html! { span class="schedule-header-icon" { (game_icon(label, icon)) } }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the skill row mirrors independent label, value, schedule, and action fields"
+)]
 fn party_skill_row(
     skills: &CharacterSkills,
     name: &str,
@@ -2346,6 +2362,10 @@ fn activity_training_cell(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the special schedule row mirrors independent control and explanation fields"
+)]
 fn schedule_special_row(
     label: &str,
     icon: &str,

@@ -1,3 +1,19 @@
+fn consumable_fraction(
+    fraction_micros: u32,
+) -> adventuresim_core::inventory_measurement::ConsumableFractionMicros {
+    adventuresim_core::inventory_measurement::ConsumableFractionMicros::try_new(fraction_micros)
+        .expect("public consumable fraction must not exceed one whole")
+}
+
+fn soap_uses(fraction_micros: u32) -> u32 {
+    let fraction = consumable_fraction(fraction_micros);
+    let fraction_per_use =
+        adventuresim_core::inventory_measurement::ConsumableFractionMicros::whole_divided_by(
+            u32::from(adventuresim_core::filth::SOAP_CLEANSING_CAPACITY),
+        );
+    fraction.get() / fraction_per_use.get()
+}
+
 pub(crate) async fn soap_rest_preview(
     state: &AppState,
     members: &[Character],
@@ -37,32 +53,44 @@ pub(crate) async fn soap_rest_preview(
         &party_amounts,
         party_id,
     );
-    calculate_rest_supply_availability(
-        &mut preview,
+    calculate_rest_supply_availability(&mut preview, RestSupplySources {
         members,
-        &personal,
-        &shared,
-        &personal_amounts,
-        &party_amounts,
-        &definitions.unwrap_or_default(),
-        &personalities.unwrap_or_default(),
+        personal: &personal,
+        shared: &shared,
+        personal_amounts: &personal_amounts,
+        party_amounts: &party_amounts,
+        definitions: &definitions.unwrap_or_default(),
+        personalities: &personalities.unwrap_or_default(),
         party_id,
-    );
+    });
     preview
+}
+
+pub(super) struct RestSupplySources<'a> {
+    pub(super) members: &'a [Character],
+    pub(super) personal: &'a [InventoryItem],
+    pub(super) shared: &'a [PartyInventoryItem],
+    pub(super) personal_amounts: &'a [InventoryItemAmount],
+    pub(super) party_amounts: &'a [PartyItemAmount],
+    pub(super) definitions: &'a [ItemDefinition],
+    pub(super) personalities: &'a [CharacterPersonality],
+    pub(super) party_id: Option<&'a str>,
 }
 
 pub(super) fn calculate_rest_supply_availability(
     preview: &mut SoapRestPreview,
-    members: &[Character],
-    personal: &[InventoryItem],
-    shared: &[PartyInventoryItem],
-    personal_amounts: &[InventoryItemAmount],
-    party_amounts: &[PartyItemAmount],
-    definitions: &[ItemDefinition],
-    personalities: &[CharacterPersonality],
-    party_id: Option<&str>,
+    sources: RestSupplySources<'_>,
 ) {
-    const SOAP_ITEM_ID: &str = "soft_soap";
+    let RestSupplySources {
+        members,
+        personal,
+        shared,
+        personal_amounts,
+        party_amounts,
+        definitions,
+        personalities,
+        party_id,
+    } = sources;
     let living_ids = members
         .iter()
         .filter(|member| member.alive)
@@ -89,30 +117,23 @@ pub(super) fn calculate_rest_supply_availability(
 
     let personal_soap = personal
         .iter()
-        .filter(|stack| living_ids.contains(&stack.character_id) && stack.item_id == SOAP_ITEM_ID)
+        .filter(|stack| living_ids.contains(&stack.character_id) && stack.item_id == SOFT_SOAP_ID)
         .map(|stack| {
             personal_amounts
                 .iter()
                 .find(|state| state.inventory_item_id == stack.id)
-                .map_or(0, |state| {
-                    state.remaining_milliunits
-                        / (1_000_000 / u32::from(adventuresim_core::filth::SOAP_CLEANSING_CAPACITY))
-                })
+                .map_or(0, |state| soap_uses(state.remaining_fraction_micros))
         })
         .sum::<u32>();
     let shared_soap = party_id.map_or(0, |party_id| {
         shared
             .iter()
-            .filter(|stack| stack.party_id == party_id && stack.item_id == SOAP_ITEM_ID)
+            .filter(|stack| stack.party_id == party_id && stack.item_id == SOFT_SOAP_ID)
             .map(|stack| {
                 party_amounts
                     .iter()
                     .find(|state| state.party_inventory_item_id == stack.id)
-                    .map_or(0, |state| {
-                        state.remaining_milliunits
-                            / (1_000_000
-                                / u32::from(adventuresim_core::filth::SOAP_CLEANSING_CAPACITY))
-                    })
+                    .map_or(0, |state| soap_uses(state.remaining_fraction_micros))
             })
             .sum::<u32>()
     });
@@ -120,24 +141,27 @@ pub(super) fn calculate_rest_supply_availability(
 
     let personal_alcohol = personal.iter().any(|stack| {
         living_ids.contains(&stack.character_id)
-            && personal_amounts
-                .iter()
-                .any(|state| state.inventory_item_id == stack.id && state.remaining_milliunits > 0)
+            && personal_amounts.iter().any(|state| {
+                state.inventory_item_id == stack.id
+                    && !consumable_fraction(state.remaining_fraction_micros).is_zero()
+            })
             && alcoholic_ids.contains(stack.item_id.as_str())
     });
     let personal_drink = personal.iter().any(|stack| {
         living_ids.contains(&stack.character_id)
             && !is_temperate(stack.character_id)
-            && personal_amounts
-                .iter()
-                .any(|state| state.inventory_item_id == stack.id && state.remaining_milliunits > 0)
+            && personal_amounts.iter().any(|state| {
+                state.inventory_item_id == stack.id
+                    && !consumable_fraction(state.remaining_fraction_micros).is_zero()
+            })
             && alcoholic_ids.contains(stack.item_id.as_str())
     });
     let shared_alcohol = party_id.is_some_and(|party_id| {
         shared.iter().any(|stack| {
             stack.party_id == party_id
                 && party_amounts.iter().any(|state| {
-                    state.party_inventory_item_id == stack.id && state.remaining_milliunits > 0
+                    state.party_inventory_item_id == stack.id
+                        && !consumable_fraction(state.remaining_fraction_micros).is_zero()
                 })
                 && alcoholic_ids.contains(stack.item_id.as_str())
         })
@@ -159,7 +183,6 @@ pub(super) fn calculate_soap_rest_preview(
     party_amounts: &[PartyItemAmount],
     party_id: Option<&str>,
 ) -> SoapRestPreview {
-    const SOAP_ITEM_ID: &str = "soft_soap";
     let mut personal_units = 0_u32;
     let mut need_after_personal = 0_u32;
     for member in members.iter().filter(|member| member.alive) {
@@ -171,16 +194,12 @@ pub(super) fn calculate_soap_rest_preview(
         let needed = amount;
         let available = personal
             .iter()
-            .filter(|stack| stack.character_id == member.id && stack.item_id == SOAP_ITEM_ID)
+            .filter(|stack| stack.character_id == member.id && stack.item_id == SOFT_SOAP_ID)
             .map(|stack| {
                 personal_amounts
                     .iter()
                     .find(|state| state.inventory_item_id == stack.id)
-                    .map_or(0, |state| {
-                        state.remaining_milliunits
-                            / (1_000_000
-                                / u32::from(adventuresim_core::filth::SOAP_CLEANSING_CAPACITY))
-                    })
+                    .map_or(0, |state| soap_uses(state.remaining_fraction_micros))
             })
             .sum::<u32>();
         let used = needed.min(available);
@@ -190,16 +209,12 @@ pub(super) fn calculate_soap_rest_preview(
     let shared_available = party_id.map_or(0, |party_id| {
         shared
             .iter()
-            .filter(|stack| stack.party_id == party_id && stack.item_id == SOAP_ITEM_ID)
+            .filter(|stack| stack.party_id == party_id && stack.item_id == SOFT_SOAP_ID)
             .map(|stack| {
                 party_amounts
                     .iter()
                     .find(|state| state.party_inventory_item_id == stack.id)
-                    .map_or(0, |state| {
-                        state.remaining_milliunits
-                            / (1_000_000
-                                / u32::from(adventuresim_core::filth::SOAP_CLEANSING_CAPACITY))
-                    })
+                    .map_or(0, |state| soap_uses(state.remaining_fraction_micros))
             })
             .sum()
     });

@@ -5,6 +5,9 @@ use adventuresim_core::alcohol::{
     ROLLING_WEEK_DAYS, TemperancePreference, emergency_hydration_ml, ethanol_ml, evening_target,
     nightly_morale_effect, rest_evenings,
 };
+use adventuresim_core::inventory_measurement::ConsumableFractionMicros;
+use adventuresim_core::item_references::TAVERN_DRINK_ITEM_ID;
+use adventuresim_core::physical_object::CarriedInventoryScope;
 use spacetimedb::{ReducerContext, Table, table};
 
 use crate::character::character;
@@ -12,11 +15,8 @@ use crate::condition::character_strategic_condition;
 use crate::item::item;
 use crate::{inventory_item, inventory_quantity_target, party_authority, party_inventory_item};
 
-use crate::inventory_amount::FULL_AMOUNT_MILLIUNITS;
-
 const SURGERY_DISINFECTANT_ML: u64 = 25;
 
-pub use adventuresim_core::item_references::TAVERN_DRINK_ITEM_ID;
 #[derive(Clone, Debug)]
 #[table(
     accessor = alcohol_consumption, public,
@@ -81,14 +81,18 @@ enum Stack {
     Personal(crate::InventoryItem),
 }
 
-fn stack_amount(ctx: &ReducerContext, stack: &Stack) -> u32 {
+fn stack_fraction(ctx: &ReducerContext, stack: &Stack) -> ConsumableFractionMicros {
     match stack {
-        Stack::Party(row) => crate::inventory_amount::party_amount(ctx, row.id).unwrap_or(0),
-        Stack::Personal(row) => crate::inventory_amount::personal_amount(ctx, row.id).unwrap_or(0),
+        Stack::Party(row) => {
+            crate::inventory_amount::party_fraction(ctx, row.id).unwrap_or_default()
+        }
+        Stack::Personal(row) => {
+            crate::inventory_amount::personal_fraction(ctx, row.id).unwrap_or_default()
+        }
     }
 }
 
-fn available_item_amount(
+fn available_item_micros(
     ctx: &ReducerContext,
     owner: u64,
     party_scope: bool,
@@ -108,10 +112,18 @@ fn available_item_amount(
                     .filter(&party_id)
                     .filter(|row| row.item_id == item_id)
                     .filter(|row| {
-                        !crate::inventory_container::row_is_fireplace_rooted(ctx, "party", row.id)
+                        !crate::inventory_container::row_is_fireplace_rooted(
+                            ctx,
+                            CarriedInventoryScope::Party,
+                            row.id,
+                        )
                     })
                     .map(|row| {
-                        u64::from(crate::inventory_amount::party_amount(ctx, row.id).unwrap_or(0))
+                        u64::from(
+                            crate::inventory_amount::party_fraction(ctx, row.id)
+                                .unwrap_or_default()
+                                .get(),
+                        )
                     })
                     .sum()
             })
@@ -122,16 +134,24 @@ fn available_item_amount(
             .filter(owner)
             .filter(|row| row.item_id == item_id)
             .filter(|row| {
-                !crate::inventory_container::row_is_fireplace_rooted(ctx, "personal", row.id)
+                !crate::inventory_container::row_is_fireplace_rooted(
+                    ctx,
+                    CarriedInventoryScope::Personal,
+                    row.id,
+                )
             })
             .map(|row| {
-                u64::from(crate::inventory_amount::personal_amount(ctx, row.id).unwrap_or(0))
+                u64::from(
+                    crate::inventory_amount::personal_fraction(ctx, row.id)
+                        .unwrap_or_default()
+                        .get(),
+                )
             })
             .sum()
     };
     let reserve = if settled {
         u64::from(target_for(ctx, owner, party_scope, item_id))
-            .saturating_mul(u64::from(FULL_AMOUNT_MILLIUNITS))
+            .saturating_mul(u64::from(ConsumableFractionMicros::MICROS_PER_WHOLE))
     } else {
         0
     };
@@ -144,7 +164,7 @@ fn available_stacks(
     settled: bool,
     allow_medical: bool,
     hydration: bool,
-) -> Vec<(Stack, crate::Item, u32)> {
+) -> Vec<(Stack, crate::Item, ConsumableFractionMicros)> {
     let character = match ctx.db.character().id().find(character_id) {
         Some(row) => row,
         None => return Vec::new(),
@@ -154,7 +174,11 @@ fn available_stacks(
         && let Some(party) = ctx.db.party_authority().id().find(party_id)
     {
         for stack in ctx.db.party_inventory_item().party_id().filter(party_id) {
-            if crate::inventory_container::row_is_fireplace_rooted(ctx, "party", stack.id) {
+            if crate::inventory_container::row_is_fireplace_rooted(
+                ctx,
+                CarriedInventoryScope::Party,
+                stack.id,
+            ) {
                 continue;
             }
             if let Some(def) = ctx.db.item().id().find(&stack.item_id) {
@@ -163,18 +187,23 @@ fn available_stacks(
                     && ethanol_ml(p) > 0
                     && (!hydration || emergency_hydration_ml(p) > 0)
                     && (allow_medical || !p.disinfectant_focused)
-                    && available_item_amount(ctx, party.leader_id, true, &stack.item_id, settled)
+                    && available_item_micros(ctx, party.leader_id, true, &stack.item_id, settled)
                         > 0
                 {
                     let tagged = Stack::Party(stack);
-                    let available = stack_amount(ctx, &tagged).min(available_item_amount(
-                        ctx,
-                        party.leader_id,
-                        true,
-                        &def.id,
-                        settled,
-                    ));
-                    if available > 0 {
+                    let available_micros =
+                        stack_fraction(ctx, &tagged)
+                            .get()
+                            .min(available_item_micros(
+                                ctx,
+                                party.leader_id,
+                                true,
+                                &def.id,
+                                settled,
+                            ));
+                    let available = ConsumableFractionMicros::try_new(available_micros)
+                        .expect("available stack fraction cannot exceed one whole");
+                    if !available.is_zero() {
                         rows.push((tagged, def, available));
                     }
                 }
@@ -182,7 +211,11 @@ fn available_stacks(
         }
     }
     for stack in ctx.db.inventory_item().character_id().filter(character_id) {
-        if crate::inventory_container::row_is_fireplace_rooted(ctx, "personal", stack.id) {
+        if crate::inventory_container::row_is_fireplace_rooted(
+            ctx,
+            CarriedInventoryScope::Personal,
+            stack.id,
+        ) {
             continue;
         }
         if let Some(def) = ctx.db.item().id().find(&stack.item_id) {
@@ -191,17 +224,22 @@ fn available_stacks(
                 && ethanol_ml(p) > 0
                 && (!hydration || emergency_hydration_ml(p) > 0)
                 && (allow_medical || !p.disinfectant_focused)
-                && available_item_amount(ctx, character_id, false, &stack.item_id, settled) > 0
+                && available_item_micros(ctx, character_id, false, &stack.item_id, settled) > 0
             {
                 let tagged = Stack::Personal(stack);
-                let available = stack_amount(ctx, &tagged).min(available_item_amount(
-                    ctx,
-                    character_id,
-                    false,
-                    &def.id,
-                    settled,
-                ));
-                if available > 0 {
+                let available_micros =
+                    stack_fraction(ctx, &tagged)
+                        .get()
+                        .min(available_item_micros(
+                            ctx,
+                            character_id,
+                            false,
+                            &def.id,
+                            settled,
+                        ));
+                let available = ConsumableFractionMicros::try_new(available_micros)
+                    .expect("available stack fraction cannot exceed one whole");
+                if !available.is_zero() {
                     rows.push((tagged, def, available));
                 }
             }
@@ -232,31 +270,31 @@ fn available_stacks(
 fn consume_stack(
     ctx: &ReducerContext,
     stack: Stack,
-    amount_milliunits: u32,
-) -> Result<u32, String> {
-    let (kind, row_id, available) = match &stack {
+    requested_fraction: ConsumableFractionMicros,
+) -> Result<ConsumableFractionMicros, String> {
+    let (scope, row_id, available) = match &stack {
         Stack::Party(row) => (
-            "party",
+            CarriedInventoryScope::Party,
             row.id,
-            crate::inventory_amount::party_amount(ctx, row.id),
+            crate::inventory_amount::party_fraction(ctx, row.id),
         ),
         Stack::Personal(row) => (
-            "personal",
+            CarriedInventoryScope::Personal,
             row.id,
-            crate::inventory_amount::personal_amount(ctx, row.id),
+            crate::inventory_amount::personal_fraction(ctx, row.id),
         ),
     };
-    crate::inventory_container::reconcile_consumed_row(ctx, kind, row_id, false)?;
+    crate::inventory_container::reconcile_consumed_row(ctx, scope, row_id, false)?;
     let consumed = match stack {
         Stack::Party(row) => {
-            crate::inventory_amount::consume_party(ctx, row.id, amount_milliunits)?
+            crate::inventory_amount::consume_party(ctx, row.id, requested_fraction)?
         }
         Stack::Personal(row) => {
-            crate::inventory_amount::consume_personal(ctx, row.id, amount_milliunits)?
+            crate::inventory_amount::consume_personal(ctx, row.id, requested_fraction)?
         }
     };
     if available.is_some_and(|amount| consumed >= amount) {
-        crate::inventory_container::reconcile_consumed_row(ctx, kind, row_id, true)?;
+        crate::inventory_container::reconcile_consumed_row(ctx, scope, row_id, true)?;
     }
     Ok(consumed)
 }
@@ -278,20 +316,17 @@ fn consume_for_ethanol(
             break;
         };
         let full_effect = ethanol_ml(properties(&def));
-        let requested = adventuresim_core::inventory_measurement::amount_for_fraction(
+        let requested = ConsumableFractionMicros::try_from_ratio(
             u64::from(target - total),
             u64::from(full_effect),
         )
-        .unwrap_or(FULL_AMOUNT_MILLIUNITS)
+        .unwrap_or(ConsumableFractionMicros::WHOLE)
         .min(available);
-        let consumed = consume_stack(ctx, stack, requested).unwrap_or(0);
-        if consumed == 0 {
+        let consumed = consume_stack(ctx, stack, requested).unwrap_or_default();
+        if consumed.is_zero() {
             break;
         }
-        total = total.saturating_add(adventuresim_core::inventory_measurement::scaled_by_amount(
-            u64::from(full_effect),
-            consumed,
-        ) as u32);
+        total = total.saturating_add(consumed.scale_floor(u64::from(full_effect)) as u32);
     }
     total
 }
@@ -311,8 +346,11 @@ fn ordinary_potable_exists(ctx: &ReducerContext, character_id: u64) -> bool {
         .character_id()
         .filter(character_id)
         .any(|row| {
-            !crate::inventory_container::row_is_fireplace_rooted(ctx, "personal", row.id)
-                && row.quantity > 0
+            !crate::inventory_container::row_is_fireplace_rooted(
+                ctx,
+                CarriedInventoryScope::Personal,
+                row.id,
+            ) && row.quantity > 0
                 && ctx.db.item().id().find(&row.item_id).is_some_and(|def| {
                     def.alcohol_potable
                         && def.alcohol_abv_basis_points > 0
@@ -332,8 +370,11 @@ fn ordinary_potable_exists(ctx: &ReducerContext, character_id: u64) -> bool {
                     .party_id()
                     .filter(&party_id)
                     .any(|row| {
-                        !crate::inventory_container::row_is_fireplace_rooted(ctx, "party", row.id)
-                            && row.quantity > 0
+                        !crate::inventory_container::row_is_fireplace_rooted(
+                            ctx,
+                            CarriedInventoryScope::Party,
+                            row.id,
+                        ) && row.quantity > 0
                             && ctx.db.item().id().find(&row.item_id).is_some_and(|def| {
                                 def.alcohol_potable
                                     && def.alcohol_abv_basis_points > 0
@@ -513,29 +554,22 @@ pub fn consume_emergency_hydration(
         };
         let p = properties(&def);
         let full_hydration = emergency_hydration_ml(p);
-        let requested = adventuresim_core::inventory_measurement::amount_for_fraction(
+        let requested = ConsumableFractionMicros::try_from_ratio(
             (requested_ml - supplied as f32).ceil().max(0.0) as u64,
             u64::from(full_hydration),
         )
-        .unwrap_or(FULL_AMOUNT_MILLIUNITS)
+        .unwrap_or(ConsumableFractionMicros::WHOLE)
         .min(available);
-        let consumed = consume_stack(ctx, stack, requested).unwrap_or(0);
-        if consumed == 0 {
+        let consumed = consume_stack(ctx, stack, requested).unwrap_or_default();
+        if consumed.is_zero() {
             break;
         }
-        supplied =
-            supplied.saturating_add(adventuresim_core::inventory_measurement::scaled_by_amount(
-                u64::from(full_hydration),
-                consumed,
-            ) as u32);
+        supplied = supplied.saturating_add(consumed.scale_floor(u64::from(full_hydration)) as u32);
         record_consumed_ethanol(
             ctx,
             character_id,
             minute,
-            adventuresim_core::inventory_measurement::scaled_by_amount(
-                u64::from(ethanol_ml(p)),
-                consumed,
-            ) as u32,
+            consumed.scale_floor(u64::from(ethanol_ml(p))) as u32,
         );
     }
     supplied
@@ -547,15 +581,21 @@ pub fn best_disinfectant(ctx: &ReducerContext, character_id: u64) -> Option<(u64
         .inventory_item()
         .character_id()
         .filter(character_id)
-        .filter(|row| !crate::inventory_container::row_is_fireplace_rooted(ctx, "personal", row.id))
+        .filter(|row| {
+            !crate::inventory_container::row_is_fireplace_rooted(
+                ctx,
+                CarriedInventoryScope::Personal,
+                row.id,
+            )
+        })
         .filter_map(|row| ctx.db.item().id().find(&row.item_id).map(|def| (row, def)))
         .filter(|(row, def)| {
-            let required = adventuresim_core::inventory_measurement::amount_for_fraction(
+            let required = ConsumableFractionMicros::try_from_ratio(
                 SURGERY_DISINFECTANT_ML,
                 u64::from(def.alcohol_serving_ml),
             )
-            .unwrap_or(FULL_AMOUNT_MILLIUNITS);
-            crate::inventory_amount::personal_amount(ctx, row.id).unwrap_or(0) >= required
+            .unwrap_or(ConsumableFractionMicros::WHOLE);
+            crate::inventory_amount::personal_fraction(ctx, row.id).unwrap_or_default() >= required
                 && def.alcohol_disinfectant_effectiveness > 0
         })
         .collect::<Vec<_>>();
@@ -578,20 +618,28 @@ pub fn disinfectant_count(ctx: &ReducerContext, character_id: u64) -> u32 {
         .inventory_item()
         .character_id()
         .filter(character_id)
-        .filter(|row| !crate::inventory_container::row_is_fireplace_rooted(ctx, "personal", row.id))
+        .filter(|row| {
+            !crate::inventory_container::row_is_fireplace_rooted(
+                ctx,
+                CarriedInventoryScope::Personal,
+                row.id,
+            )
+        })
         .filter_map(|row| {
             let definition = ctx.db.item().id().find(&row.item_id)?;
             if definition.alcohol_disinfectant_effectiveness == 0 {
                 return None;
             }
-            let required = adventuresim_core::inventory_measurement::amount_for_fraction(
+            let required = ConsumableFractionMicros::try_from_ratio(
                 SURGERY_DISINFECTANT_ML,
                 u64::from(definition.alcohol_serving_ml),
             )
             .ok()?;
             Some(
-                crate::inventory_amount::personal_amount(ctx, row.id).unwrap_or(0)
-                    / required.max(1),
+                crate::inventory_amount::personal_fraction(ctx, row.id)
+                    .unwrap_or_default()
+                    .get()
+                    / required.get().max(1),
             )
         })
         .sum()
@@ -610,7 +658,7 @@ pub fn consume_inventory_row(ctx: &ReducerContext, id: u64) -> Result<(), String
         .id()
         .find(&row.item_id)
         .ok_or("Selected alcohol definition is missing")?;
-    let requested = adventuresim_core::inventory_measurement::amount_for_fraction(
+    let requested = ConsumableFractionMicros::try_from_ratio(
         SURGERY_DISINFECTANT_ML,
         u64::from(definition.alcohol_serving_ml),
     )
@@ -623,7 +671,7 @@ pub fn consume_inventory_row(ctx: &ReducerContext, id: u64) -> Result<(), String
 mod tests {
     #[test]
     fn alcohol_candidates_and_consumption_observe_effective_container_custody() {
-        let source = include_str!("alcohol.rs");
+        let source = crate::production_source(include_str!("alcohol.rs"));
         assert!(source.matches("row_is_fireplace_rooted").count() >= 6);
         let consume = source
             .split("fn consume_stack")
@@ -632,7 +680,7 @@ mod tests {
             .split("fn consume_for_ethanol")
             .next()
             .unwrap();
-        assert!(consume.contains("reconcile_consumed_row(ctx, kind, row_id, false)"));
-        assert!(consume.contains("reconcile_consumed_row(ctx, kind, row_id, true)"));
+        assert!(consume.contains("reconcile_consumed_row(ctx, scope, row_id, false)"));
+        assert!(consume.contains("reconcile_consumed_row(ctx, scope, row_id, true)"));
     }
 }

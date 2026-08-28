@@ -1,7 +1,8 @@
 //! Shared deterministic surgery rules used by reducers and server rendering.
 
+use crate::strategic_time::MINUTES_PER_DAY;
+
 pub const SELF_TREATMENT_PENALTY: f32 = 2.5;
-pub const MINUTES_PER_DAY: u64 = 1_440;
 pub const UNTREATED_CUT_DETERIORATION_PER_DAY: f32 = 0.025;
 pub const UNTREATED_CUT_BLOOD_LOSS_PER_DAY: f32 = 0.08;
 pub const PROJECTILE_KIT_DC_THRESHOLD: f32 = 1.0;

@@ -2,6 +2,7 @@
 //! physically based atmosphere.
 
 use super::*;
+use adventuresim_world_schema::coordinates::{LatitudeMicrodegrees, LongitudeMicrodegrees};
 use bevy::{
     camera::visibility::NoFrustumCulling,
     light::{CascadeShadowConfig, CascadeShadowConfigBuilder, SunDisk},
@@ -271,11 +272,15 @@ pub(in crate::presentation) struct PresentedCelestialLighting {
 
 impl CelestialLightingSnapshot {
     fn from_environment(scene: Entity, environment: &SceneEnvironment) -> Self {
+        let latitude = LatitudeMicrodegrees::new(environment.latitude_microdegrees)
+            .expect("validated tactical scene latitude");
+        let longitude = LongitudeMicrodegrees::new(environment.longitude_microdegrees)
+            .expect("validated tactical scene longitude");
         let celestial = celestial_directions_with_phase(
             environment.absolute_minute,
             environment.lunar_phase_minute,
-            environment.latitude_microdegrees,
-            environment.longitude_microdegrees,
+            latitude,
+            longitude,
         );
         let sun_direction = to_bevy_direction(celestial.sun);
         let moon_direction = to_bevy_direction(celestial.moon);
@@ -302,8 +307,8 @@ impl CelestialLightingSnapshot {
             weather_transmission: sky_weather_transmission(environment),
             equatorial_to_world: equatorial_to_world(
                 environment.absolute_minute,
-                environment.latitude_microdegrees,
-                environment.longitude_microdegrees,
+                latitude,
+                longitude,
             ),
             exposure_ev100: scene_exposure_ev100(
                 sun_altitude_degrees,
@@ -351,6 +356,11 @@ pub(in crate::presentation) fn update_presented_celestial_lighting(
     });
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    reason = "the Bevy lighting system independently borrows each light, sky representation, material store, and scene query"
+)]
 pub(in crate::presentation) fn apply_presented_celestial_lighting(
     active: Res<ActiveTacticalScene>,
     celestial: Res<PresentedCelestialLighting>,
@@ -667,6 +677,10 @@ mod ambient_handoff_tests {
     }
 }
 
+#[expect(
+    clippy::type_complexity,
+    reason = "the Bevy query mutates the sun presentation while excluding the distinct moon entity"
+)]
 pub(in crate::presentation) fn keep_celestial_visuals_centered(
     camera: Single<&GlobalTransform, With<TacticalGameplayCamera>>,
     celestial: Res<PresentedCelestialLighting>,
@@ -784,11 +798,11 @@ fn smoothstep(edge0: f32, edge1: f32, value: f32) -> f32 {
 
 fn equatorial_to_world(
     absolute_minute: u64,
-    latitude_microdegrees: i32,
-    longitude_microdegrees: i32,
+    latitude: LatitudeMicrodegrees,
+    longitude: LongitudeMicrodegrees,
 ) -> Mat4 {
-    let latitude = (latitude_microdegrees as f32 / 1_000_000.0).to_radians();
-    let longitude = (longitude_microdegrees as f32 / 1_000_000.0).to_radians();
+    let latitude = (latitude.degrees() as f32).to_radians();
+    let longitude = (longitude.degrees() as f32).to_radians();
     let day = absolute_minute as f32 / MINUTES_PER_DAY as f32;
     let sidereal = (4.383_4 + day * core::f32::consts::TAU * 1.002_737_9 + longitude)
         .rem_euclid(core::f32::consts::TAU);

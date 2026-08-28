@@ -275,13 +275,13 @@ fn settle_housing_decision(
                 NpcPolicyDecisionOutcome::HousingRecovered
             }
             crate::residence::NpcResidenceOutcome::Rented(tier) => match tier {
-                crate::residence::ResidenceTier::Cheap => {
+                adventuresim_core::courtship::HousingTier::Cheap => {
                     NpcPolicyDecisionOutcome::HousingRentedCheap
                 }
-                crate::residence::ResidenceTier::Moderate => {
+                adventuresim_core::courtship::HousingTier::Moderate => {
                     NpcPolicyDecisionOutcome::HousingRentedModerate
                 }
-                crate::residence::ResidenceTier::Fancy => {
+                adventuresim_core::courtship::HousingTier::Fancy => {
                     NpcPolicyDecisionOutcome::HousingRentedFancy
                 }
             },
@@ -510,7 +510,7 @@ mod tests {
 
     #[test]
     fn scheduler_has_hard_bounded_batches_and_one_day_steps() {
-        let source = include_str!("npc_causal.rs");
+        let source = crate::production_source(include_str!("npc_causal.rs"));
         assert!(source.contains("truncate(MAX_NPCS_PER_CAUSAL_TICK)"));
         assert!(source.contains("MAX_LIFECYCLE_EVENTS_PER_CAUSAL_TICK"));
         assert!(source.contains("time.minutes.saturating_add(MINUTES_PER_DAY)"));
@@ -518,7 +518,7 @@ mod tests {
 
     #[test]
     fn stable_policy_order_is_frontier_then_character() {
-        let source = include_str!("npc_causal.rs");
+        let source = crate::production_source(include_str!("npc_causal.rs"));
         assert!(source.contains("sort_by_key(|time| (time.minutes, time.character_id))"));
         assert!(source.contains("retain(|time| time.minutes == frontier)"));
         assert!(source.contains("person.alive && time.minutes < target_minute"));
@@ -526,7 +526,7 @@ mod tests {
 
     #[test]
     fn whole_cohort_decides_before_any_member_advances() {
-        let source = include_str!("npc_causal.rs");
+        let source = crate::production_source(include_str!("npc_causal.rs"));
         let reducer = source
             .split("pub fn run_npc_causal_tick")
             .nth(1)
@@ -540,7 +540,7 @@ mod tests {
 
     #[test]
     fn schedule_and_housing_are_receipted_and_scheduler_only() {
-        let source = include_str!("npc_causal.rs");
+        let source = crate::production_source(include_str!("npc_causal.rs"));
         assert!(source.contains("NpcPolicyDecisionReceipt"));
         assert!(source.contains("ScheduleInitialized"));
         assert!(source.contains("SchedulePreserved"));
@@ -550,7 +550,7 @@ mod tests {
 
     #[test]
     fn dependent_schedule_waits_for_authoritative_adulthood() {
-        let source = include_str!("npc_causal.rs");
+        let source = crate::production_source(include_str!("npc_causal.rs"));
         let initialization = source
             .split("fn initialize_saved_schedule_once")
             .nth(1)
@@ -567,7 +567,7 @@ mod tests {
 
     #[test]
     fn romance_is_bounded_to_present_npc_policy_candidates() {
-        let source = include_str!("npc_causal.rs");
+        let source = crate::production_source(include_str!("npc_causal.rs"));
         let romance = source
             .split("fn settle_romance_decision")
             .nth(1)
@@ -605,7 +605,7 @@ mod tests {
 
     #[test]
     fn global_events_run_without_participant_login() {
-        let source = include_str!("npc_causal.rs");
+        let source = crate::production_source(include_str!("npc_causal.rs"));
         let events = source
             .split("pub fn run_npc_causal_tick")
             .nth(1)
@@ -616,7 +616,7 @@ mod tests {
 
     #[test]
     fn recurring_schedule_is_seeded_once_and_private() {
-        let source = include_str!("npc_causal.rs");
+        let source = crate::production_source(include_str!("npc_causal.rs"));
         assert!(source.contains("TimeDuration::from_micros"));
         assert!(source.contains("ctx.sender() != ctx.database_identity()"));
         assert!(source.contains(".find(NPC_CAUSAL_SCHEDULE_ID)"));

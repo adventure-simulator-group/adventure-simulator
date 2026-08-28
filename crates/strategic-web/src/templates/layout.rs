@@ -1,7 +1,8 @@
 //! Base layout template - Three-column strategic design.
 
 use crate::spacetimedb::SettlementCategory;
-use maud::{DOCTYPE, Markup, html};
+use adventuresim_core::strategic_time::{DAYS_PER_YEAR, LUNAR_CYCLE_MINUTES, MINUTES_PER_DAY};
+use maud::{DOCTYPE, Markup, PreEscaped, html};
 
 use super::{organization_charge, organization_colors, religion_icon_path};
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -86,6 +87,10 @@ fn entry_top_bar_with_session(logged_in_as: Option<&str>) -> Markup {
 
 /// Settlement-specific layout. Settlement services replace the global navigation
 /// so their context stays visible while the player moves between service pages.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the layout boundary keeps settlement navigation and session context explicit"
+)]
 pub fn settlement_layout_with_session(
     title: &str,
     settlement_name: &str,
@@ -174,6 +179,11 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
 
                 // Datastar
                 script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar/bundles/datastar.js" {}
+                script {
+                    (PreEscaped(format!(
+                        "window.strategicCalendar=Object.freeze({{minutesPerDay:{MINUTES_PER_DAY},daysPerYear:{DAYS_PER_YEAR},lunarCycleMinutes:{LUNAR_CYCLE_MINUTES}}});"
+                    )))
+                }
                 script src="/static/background-fetch.js?v=background-fetch-2" {}
                 script src="/static/developer-mode.js?v=development-clock-2" defer {}
                 script src="/static/tooltips.js?v=delegated-mouseover-1" defer {}
@@ -205,11 +215,11 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                     script src="/static/local-chat.js?v=local-chat-location-authority-1" defer {}
                     script src="/static/strategic-condition.js?v=strategic-condition-4" defer {}
                     script src="/static/building-state.js?v=fireplace-context-2" defer {}
-                    script src="/static/travel-planner.js?v=travel-rails-1" defer {}
+                    script src="/static/travel-planner.js?v=travel-rails-2" defer {}
                     script src="/static/strategic-map.js?v=population-culling-3" defer {}
-                    script src="/static/rest-duration.js?v=wake-time-4" defer {}
-                    script src="/static/training-schedule.js?v=apprentice-system-1" defer {}
-                    script src="/static/immediate-activity.js?v=manual-activities-1" defer {}
+                    script src="/static/rest-duration.js?v=wake-time-5" defer {}
+                    script src="/static/training-schedule.js?v=apprentice-system-2" defer {}
+                    script src="/static/immediate-activity.js?v=manual-activities-2" defer {}
                 }
             }
             body {
@@ -414,7 +424,7 @@ fn settlement_top_bar(
                 }
             }
         }
-        script src="/static/strategic-time.js?v=accessible-clock-1" {}
+        script src="/static/strategic-time.js?v=accessible-clock-2" {}
     }
 }
 
@@ -550,7 +560,7 @@ fn quest_location_top_bar(
                 }
             }
         }
-        script src="/static/strategic-time.js?v=accessible-clock-1" {}
+        script src="/static/strategic-time.js?v=accessible-clock-2" {}
     }
 }
 
@@ -810,8 +820,8 @@ mod tests {
         assert!(markup.contains("/static/strategic-mutations.js?v=formaction-override-1\" defer"));
         assert_eq!(markup.matches("/static/training-schedule.js").count(), 1);
         assert_eq!(markup.matches("/static/immediate-activity.js").count(), 1);
-        assert!(markup.contains("/static/training-schedule.js?v=apprentice-system-1\" defer"));
-        assert!(markup.contains("/static/immediate-activity.js?v=manual-activities-1\" defer"));
+        assert!(markup.contains("/static/training-schedule.js?v=apprentice-system-2\" defer"));
+        assert!(markup.contains("/static/immediate-activity.js?v=manual-activities-2\" defer"));
         assert_eq!(markup.matches("id=\"strategic-live-stream\"").count(), 1);
         assert!(markup.find("id=\"strategic-live-stream\"") < markup.find("id=\"strategic-page\""));
         assert!(!markup.contains("live-regions.js?v=floating-time-editor-1"));

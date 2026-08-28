@@ -151,10 +151,7 @@ async fn active_context(
         .ok_or(StatusCode::CONFLICT)?;
     let settlement = state
         .db
-        .query_one::<Settlement>(&format!(
-            "SELECT * FROM settlement WHERE id = {}",
-            sql_string_literal(&settlement_id)
-        ))
+        .query_one::<Settlement>(&crate::spacetimedb::settlement_by_id(&settlement_id))
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
         .ok_or(StatusCode::NOT_FOUND)?;

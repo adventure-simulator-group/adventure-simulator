@@ -11,7 +11,7 @@ pub(super) struct AddFireplaceIngredientsArgs {
     pub fireplace_fixture_id: String,
     pub inventory_scope: String,
     pub inventory_item_ids: Vec<u64>,
-    pub amounts_milliunits: Vec<u32>,
+    pub fractions_micros: Vec<u32>,
 }
 
 impl From<AddFireplaceIngredientsArgs> for super::Reducer {
@@ -21,7 +21,7 @@ impl From<AddFireplaceIngredientsArgs> for super::Reducer {
             fireplace_fixture_id: args.fireplace_fixture_id,
             inventory_scope: args.inventory_scope,
             inventory_item_ids: args.inventory_item_ids,
-            amounts_milliunits: args.amounts_milliunits,
+            fractions_micros: args.fractions_micros,
         }
     }
 }
@@ -47,14 +47,14 @@ pub trait add_fireplace_ingredients {
         fireplace_fixture_id: String,
         inventory_scope: String,
         inventory_item_ids: Vec<u64>,
-        amounts_milliunits: Vec<u32>,
+        fractions_micros: Vec<u32>,
     ) -> __sdk::Result<()> {
         self.add_fireplace_ingredients_then(
             character_id,
             fireplace_fixture_id,
             inventory_scope,
             inventory_item_ids,
-            amounts_milliunits,
+            fractions_micros,
             |_, _| {},
         )
     }
@@ -71,7 +71,7 @@ pub trait add_fireplace_ingredients {
         fireplace_fixture_id: String,
         inventory_scope: String,
         inventory_item_ids: Vec<u64>,
-        amounts_milliunits: Vec<u32>,
+        fractions_micros: Vec<u32>,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -88,7 +88,7 @@ impl add_fireplace_ingredients for super::RemoteReducers {
         fireplace_fixture_id: String,
         inventory_scope: String,
         inventory_item_ids: Vec<u64>,
-        amounts_milliunits: Vec<u32>,
+        fractions_micros: Vec<u32>,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -102,7 +102,7 @@ impl add_fireplace_ingredients for super::RemoteReducers {
                 fireplace_fixture_id,
                 inventory_scope,
                 inventory_item_ids,
-                amounts_milliunits,
+                fractions_micros,
             },
             callback,
         )

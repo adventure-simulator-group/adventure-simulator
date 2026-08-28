@@ -15,3 +15,6 @@ adventuresim-tactical-server = { path = "../adventuresim-tactical-server", defau
 adventuresim-tactical-client = { path = "../adventuresim-tactical-client", default-features = false, features = [
     "remote-types",
 ] }
+
+[lints]
+workspace = true

@@ -3,7 +3,7 @@ use crate::data::gpu::compute::signature::ResourceBaseType;
 use crate::data::gpu::resource::GpuResource;
 use crate::prelude::*;
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 fn sanitize_type_name(t: &str) -> String {
     t.replace("<", "_")
@@ -37,33 +37,19 @@ pub struct StencilSignature {
     pub param_names: Vec<String>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct StencilPipelineKey {
+    input: ResourceDescriptor,
+    output: ResourceDescriptor,
+    secondary: OrderedResourceDescriptors,
+    boundary_mode: u32,
+}
+
+#[derive(Clone, Debug, Default)]
 pub struct StencilDefinition {
     pub code: String,
     pub boundary_mode: u32,
-    pub cache: Arc<
-        RwLock<
-            HashMap<
-                (
-                    ResourceDescriptor,                // input_res
-                    ResourceDescriptor,                // output_res
-                    Vec<(String, ResourceDescriptor)>, // secondary_resources
-                    u32,                               // boundary_mode
-                ),
-                Arc<(ComputePipeline, u64, u64)>,
-            >,
-        >,
-    >,
-}
-
-impl Default for StencilDefinition {
-    fn default() -> Self {
-        Self {
-            code: String::new(),
-            boundary_mode: 0,
-            cache: Arc::new(RwLock::new(HashMap::new())),
-        }
-    }
+    cache: ComputePipelineCache<StencilPipelineKey, (ComputePipeline, u64, u64)>,
 }
 
 impl PartialEq for StencilDefinition {
@@ -78,7 +64,7 @@ impl StencilDefinition {
         Ok(Self {
             code,
             boundary_mode: 0,
-            cache: Arc::new(RwLock::new(HashMap::new())),
+            cache: ComputePipelineCache::default(),
         })
     }
 
@@ -87,7 +73,7 @@ impl StencilDefinition {
         Ok(Self {
             code,
             boundary_mode,
-            cache: Arc::new(RwLock::new(HashMap::new())),
+            cache: ComputePipelineCache::default(),
         })
     }
 
@@ -864,18 +850,12 @@ impl StencilDefinition {
         output_res: ResourceDescriptor,
         secondary_resources: &HashMap<String, ResourceDescriptor>,
     ) -> Result<Arc<(ComputePipeline, u64, u64)>> {
-        let mut sec_res_sorted: Vec<(String, ResourceDescriptor)> = secondary_resources
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-        sec_res_sorted.sort_by(|a, b| a.0.cmp(&b.0));
-
-        let key = (
-            input_res.clone(),
-            output_res.clone(),
-            sec_res_sorted,
-            self.boundary_mode,
-        );
+        let key = StencilPipelineKey {
+            input: input_res.clone(),
+            output: output_res.clone(),
+            secondary: secondary_resources.into(),
+            boundary_mode: self.boundary_mode,
+        };
 
         {
             let cache = self.cache.read().unwrap();
@@ -993,7 +973,7 @@ impl Stencil {
             ),
         };
 
-        crate::data::gpu::compute::ComputePass::new(
+        crate::data::gpu::compute::ComputePass::execute(
             context,
             pipeline.clone(),
             parameters,
@@ -1010,6 +990,7 @@ impl Stencil {
 mod tests {
     use super::*;
     use crate::data::gpu::compute::test_utils::*;
+    use fabelgeist_math::Vec2;
 
     pub async fn test_stencil_generalized<IN, OUT, S>(
         definition_code: &str,

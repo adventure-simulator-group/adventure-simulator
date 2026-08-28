@@ -11,6 +11,7 @@ path = "src/main.rs"
 [dependencies]
 adventuresim-core.workspace = true
 adventuresim-dialogue.workspace = true
+adventuresim-puzzles.workspace = true
 adventuresim-stdb-client.workspace = true
 adventuresim-world-schema.workspace = true
 adventuresim-weapon-model.workspace = true

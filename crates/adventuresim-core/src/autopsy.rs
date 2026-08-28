@@ -8,6 +8,7 @@ use crate::autoresolve::{
     BattleLogEntry, BattleOpening, BattleOutcome, Combatant, CombatantOutcome, resolve_battle,
 };
 use crate::prelude::BodyPart;
+use adventuresim_world_schema::BASIS_POINTS_PER_WHOLE;
 use serde::{Deserialize, Serialize};
 
 pub const SCENE_MINUTES: u64 = 90;
@@ -164,13 +165,14 @@ pub fn resolve_death_required_incident(
 /// Internal examination precision. Low Surgery does not invent information;
 /// it raises bounded iatrogenic obscuration that both medical windows must obey.
 pub fn opening_quality_bps(surgery_check: f32, entropy_bps: u16) -> (u16, u16) {
-    let skill = (surgery_check.clamp(0.0, 5.0) / 5.0 * 10_000.0).round() as u16;
-    let obscuration = (10_000_u32
+    let skill =
+        (surgery_check.clamp(0.0, 5.0) / 5.0 * f32::from(BASIS_POINTS_PER_WHOLE)).round() as u16;
+    let obscuration = (u32::from(BASIS_POINTS_PER_WHOLE)
         .saturating_sub(u32::from(skill))
         .saturating_mul(3)
         / 5)
     .saturating_add(u32::from(entropy_bps.min(2_000)) / 4)
-    .min(10_000) as u16;
+    .min(u32::from(BASIS_POINTS_PER_WHOLE)) as u16;
     (skill, obscuration)
 }
 
@@ -195,7 +197,7 @@ fn evidence_quality_bps(skill_check: f32, context: AutopsyEvidenceContext, inter
         0
     };
     (skill - decomposition_penalty - opening_penalty)
-        .clamp(0, 10_000)
+        .clamp(0, i32::from(BASIS_POINTS_PER_WHOLE))
         .try_into()
         .unwrap_or(0)
 }

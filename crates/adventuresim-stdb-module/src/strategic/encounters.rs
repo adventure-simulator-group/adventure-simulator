@@ -41,10 +41,11 @@ fn journey_fallback_position(
                 .case_site_authority()
                 .id_key()
                 .find(&endpoint.id.value)
-                .map(|v| {
-                    (
-                        f64::from(v.longitude_e7) / 10_000_000.0,
-                        f64::from(v.latitude_e7) / 10_000_000.0,
+                .and_then(|site| {
+                    decode_position_e7(
+                        site.longitude_e7,
+                        site.latitude_e7,
+                        site.coordinates_are_geographic,
                     )
                 }),
             JourneyEndpoint::Camp(_) => None,
@@ -52,11 +53,36 @@ fn journey_fallback_position(
     };
     let start = endpoint(&journey.origin).unwrap_or((0.0, 0.0));
     let end = endpoint(&journey.destination).unwrap_or(start);
-    let progress = minute.min(journey.total_minutes) as f64 / journey.total_minutes.max(1) as f64;
+    let progress = minute.min(journey.total_movement_minutes) as f64
+        / journey.total_movement_minutes.max(1) as f64;
     (
         start.0 + (end.0 - start.0) * progress,
         start.1 + (end.1 - start.1) * progress,
     )
+}
+
+fn journey_coordinates_are_geographic(ctx: &ReducerContext, journey: &PartyJourney) -> bool {
+    let endpoint_is_geographic = |endpoint: &JourneyEndpoint| match endpoint {
+        JourneyEndpoint::Settlement(endpoint) => ctx
+            .db
+            .settlement()
+            .id()
+            .find(&endpoint.id)
+            .map(|settlement| settlement.source_node_id.is_some()),
+        JourneyEndpoint::CaseSite(endpoint) => ctx
+            .db
+            .case_site_authority()
+            .id_key()
+            .find(&endpoint.id.value)
+            .map(|site| site.coordinates_are_geographic),
+        JourneyEndpoint::Camp(_) => None,
+    };
+    let mut endpoint_kinds = [&journey.origin, &journey.destination]
+        .into_iter()
+        .filter_map(endpoint_is_geographic);
+    endpoint_kinds
+        .next()
+        .is_some_and(|first| first && endpoint_kinds.all(|kind| kind == first))
 }
 
 fn party_encumbrance_remaining_basis_points(
@@ -72,10 +98,8 @@ fn party_encumbrance_remaining_basis_points(
                 return lot.mass_kg.max(0.0);
             }
             ctx.db.item().id().find(&row.item_id).map_or(0.0, |item| {
-                let quantity = crate::inventory_amount::personal_amount(ctx, row.id)
-                    .map_or(row.quantity as f32, |amount| {
-                        amount as f32 / crate::inventory_amount::FULL_AMOUNT_MILLIUNITS as f32
-                    });
+                let quantity = crate::inventory_amount::personal_fraction(ctx, row.id)
+                    .map_or(row.quantity as f32, |fraction| fraction.as_unit_f32());
                 item.weight * quantity
             })
         })
@@ -90,10 +114,8 @@ fn party_encumbrance_remaining_basis_points(
                 return lot.mass_kg.max(0.0);
             }
             ctx.db.item().id().find(&row.item_id).map_or(0.0, |item| {
-                let quantity = crate::inventory_amount::party_amount(ctx, row.id)
-                    .map_or(row.quantity as f32, |amount| {
-                        amount as f32 / crate::inventory_amount::FULL_AMOUNT_MILLIUNITS as f32
-                    });
+                let quantity = crate::inventory_amount::party_fraction(ctx, row.id)
+                    .map_or(row.quantity as f32, |fraction| fraction.as_unit_f32());
                 item.weight * quantity
             })
         })
@@ -121,7 +143,7 @@ fn party_encumbrance_remaining_basis_points(
                 .character_id()
                 .find(*member_id)
                 .map_or(0.0, |condition| {
-                    carrying_capacity_multiplier_for_condition(&condition.status)
+                    carrying_capacity_multiplier_for_condition(condition.status)
                 });
             adventuresim_core::equipment::encumbrance_capacity_kg(adjusted_leg_strength)
                 * condition_multiplier
@@ -143,14 +165,17 @@ fn party_encumbrance_remaining_basis_points(
         body_burden + personal_burden + party_burden,
         capacity,
     );
-    (remaining.clamp(0.0, 1.0) * 10_000.0).round() as u32
+    (remaining.clamp(0.0, 1.0) * f32::from(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE))
+        .round() as u32
 }
 
-fn carrying_capacity_multiplier_for_condition(status: &str) -> f32 {
+fn carrying_capacity_multiplier_for_condition(
+    status: adventuresim_core::morale::IncapacitationStatus,
+) -> f32 {
     match status {
-        "ready" => 1.0,
-        "staggered" => 0.5,
-        _ => 0.0,
+        adventuresim_core::morale::IncapacitationStatus::Ready => 1.0,
+        adventuresim_core::morale::IncapacitationStatus::Staggered => 0.5,
+        adventuresim_core::morale::IncapacitationStatus::Incapacitated => 0.0,
     }
 }
 
@@ -206,12 +231,14 @@ pub(crate) fn advance_party_journey_delay(
         .party_id()
         .find(party_id.to_string())
         .ok_or("Travel delay requires a durable journey")?;
-    (journey.completed_elapsed_minutes, journey.total_elapsed_minutes) =
-        journey_elapsed_after_delay(
-            journey.completed_elapsed_minutes,
-            journey.total_elapsed_minutes,
-            minutes,
-        );
+    (
+        journey.completed_elapsed_minutes,
+        journey.total_elapsed_minutes,
+    ) = journey_elapsed_after_delay(
+        journey.completed_elapsed_minutes,
+        journey.total_elapsed_minutes,
+        minutes,
+    );
     ctx.db.party_journey_authority().party_id().update(journey);
     advance_party_wilderness_elapsed(ctx, party_id, minutes)?;
     // Narrative and combat delays consume real time without movement. Rebuild
@@ -226,6 +253,10 @@ fn journey_elapsed_after_delay(completed: u64, total: u64, delay: u64) -> (u64, 
     (completed, completed.saturating_add(remaining))
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "encounter construction records each generated authority field explicitly"
+)]
 pub(crate) fn build_strategic_encounter(
     ctx: &ReducerContext,
     party_id: &str,
@@ -295,7 +326,7 @@ pub(crate) fn build_strategic_encounter(
                 | adventuresim_core::encounter::Awareness::Both
         ),
         available_choices: choices,
-        status: "awaiting_choice".into(),
+        status: StrategicEncounterStatus::AwaitingChoice,
         revision: 1,
         selected_choice: None,
         selection_explanation: explanation,
@@ -433,22 +464,25 @@ fn maybe_interrupt_travel(
         })
         .count()
         .max(1) as u16;
-    let completed = journey.completed_minutes;
+    let completed = journey.completed_movement_minutes;
     let selection = adventuresim_core::encounter::first_encounter_with_problem(
         authority.seed,
         completed,
         requested_minutes,
         |minute| {
             let terrain = core_encounter_terrain(encounter_terrain_at(route.as_ref(), minute));
-            let local_minute = local_start.saturating_add(minute.saturating_sub(completed));
-            let night = local_minute % 1_440 < 360 || local_minute % 1_440 >= 1_200;
+            let absolute_minute = local_start.saturating_add(minute.saturating_sub(completed));
+            let night = adventuresim_core::strategic_time::StrategicMinuteOfDay::from_absolute(
+                absolute_minute,
+            )
+            .is_night();
             adventuresim_core::encounter::EncounterContext {
                 terrain,
                 night,
                 accepted_active_quest: active_contract_archetype.map(|archetype| {
                     adventuresim_core::encounter::AcceptedQuestInfluence {
                         archetype,
-                        distance_minutes: journey.total_minutes.saturating_sub(minute),
+                        distance_minutes: journey.total_movement_minutes.saturating_sub(minute),
                     }
                 }),
                 combat_capable_members: capable,
@@ -520,6 +554,12 @@ fn maybe_interrupt_travel(
         .as_ref()
         .and_then(|route| route_position_at_minute(route, selection.boundary_minute))
         .unwrap_or_else(|| journey_fallback_position(ctx, &journey, selection.boundary_minute));
+    let position_e7 = encode_position_e7(
+        position.0,
+        position.1,
+        journey_coordinates_are_geographic(ctx, &journey),
+    )
+    .ok_or("Encounter position is not a valid WGS84 coordinate")?;
     let terrain = encounter_terrain_at(route.as_ref(), selection.boundary_minute);
     let encounter = build_strategic_encounter(
         ctx,
@@ -538,8 +578,8 @@ fn maybe_interrupt_travel(
                 .completed_elapsed_minutes
                 .saturating_add(selection.boundary_minute.saturating_sub(completed)),
         ),
-        (position.0 * 10_000_000.0).round() as i32,
-        (position.1 * 10_000_000.0).round() as i32,
+        position_e7.longitude_e7,
+        position_e7.latitude_e7,
         journey.fatigue_percent,
         terrain,
         selection.awareness,
@@ -832,7 +872,7 @@ fn commit_encounter_surrender(
         if loss.owner_kind == "party" {
             if crate::inventory_container::delete_carried_object_for_row(
                 ctx,
-                "party",
+                adventuresim_core::physical_object::CarriedInventoryScope::Party,
                 loss.inventory_id,
             )? {
                 continue;
@@ -846,7 +886,7 @@ fn commit_encounter_surrender(
             crate::character::unequip_wearable(ctx, loss.inventory_id);
             if crate::inventory_container::delete_carried_object_for_row(
                 ctx,
-                "personal",
+                adventuresim_core::physical_object::CarriedInventoryScope::Personal,
                 loss.inventory_id,
             )? {
                 continue;
@@ -963,7 +1003,7 @@ fn commit_autoresolve_outcome(
         crate::filth::deposit_now(
             ctx,
             *member_id,
-            crate::filth::FilthSubstance::Dirt,
+            adventuresim_core::filth::FilthSubstance::Dirt,
             None,
             adventuresim_core::filth::COMBAT_DIRT,
         )?;
@@ -973,7 +1013,7 @@ fn commit_autoresolve_outcome(
             crate::filth::deposit_now(
                 ctx,
                 exchange.attacker_id,
-                crate::filth::FilthSubstance::Blood,
+                adventuresim_core::filth::FilthSubstance::Blood,
                 member_ids
                     .contains(&exchange.defender_id)
                     .then_some(exchange.defender_id),
@@ -986,14 +1026,16 @@ fn commit_autoresolve_outcome(
         if let Some(id) = exchange.defender_contact_item_id {
             crate::repair::apply_impact(ctx, id, exchange.contact_stress);
         }
-        if exchange.armor_contact && exchange.contact_stress > 0.0
+        if exchange.armor_contact
+            && exchange.contact_stress > 0.0
             && let Some(id) = crate::character::outermost_wearable_for_body_part(
                 ctx,
                 exchange.defender_id,
                 exchange.body_part,
-            ) {
-                crate::repair::apply_impact(ctx, id, exchange.contact_stress);
-            }
+            )
+        {
+            crate::repair::apply_impact(ctx, id, exchange.contact_stress);
+        }
     }
     for member in &outcome.allies {
         consume_autoresolve_ammunition(ctx, member.id, member.ammunition_used);
@@ -1003,13 +1045,13 @@ fn commit_autoresolve_outcome(
             .filter(|exchange| exchange.defender_id == member.id && exchange.health_damage > 0.0)
         {
             let limb = match exchange.body_part {
-                BodyPart::LeftArm => crate::surgery::LimbRegion::LeftArm,
-                BodyPart::RightArm => crate::surgery::LimbRegion::RightArm,
-                BodyPart::LeftLeg => crate::surgery::LimbRegion::LeftLeg,
-                BodyPart::RightLeg => crate::surgery::LimbRegion::RightLeg,
-                BodyPart::Chest => crate::surgery::LimbRegion::Chest,
-                BodyPart::Stomach => crate::surgery::LimbRegion::Stomach,
-                BodyPart::Head => crate::surgery::LimbRegion::Head,
+                BodyPart::LeftArm => adventuresim_core::physiology::BodyRegion::LeftArm,
+                BodyPart::RightArm => adventuresim_core::physiology::BodyRegion::RightArm,
+                BodyPart::LeftLeg => adventuresim_core::physiology::BodyRegion::LeftLeg,
+                BodyPart::RightLeg => adventuresim_core::physiology::BodyRegion::RightLeg,
+                BodyPart::Chest => adventuresim_core::physiology::BodyRegion::Chest,
+                BodyPart::Stomach => adventuresim_core::physiology::BodyRegion::Abdomen,
+                BodyPart::Head => adventuresim_core::physiology::BodyRegion::Head,
             };
             let projectile = exchange.projectile_kind.map(|kind| match kind {
                 adventuresim_core::autoresolve::CombatProjectileKind::Arrowhead => {
@@ -1077,7 +1119,7 @@ fn resolve_random_encounter_battle(
                 enemy_id,
                 &encounter.archetype,
                 difficulty,
-                10_000,
+                u32::from(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE),
             )
         })
         .collect::<Result<Vec<_>, String>>()?;
@@ -1281,7 +1323,7 @@ pub fn resolve_strategic_encounter(
             encounter.outcome = Some("surrendered".into());
         }
     }
-    encounter.status = "resolved".into();
+    encounter.status = StrategicEncounterStatus::Resolved;
     encounter.revision = encounter.revision.saturating_add(1);
     resolve_narrative_combat_followup(ctx, &encounter)?;
     ctx.db
@@ -1332,7 +1374,7 @@ fn redirect_camped_party_to_settlement(
             .party_id()
             .find(&party.id)
             .ok_or("Camp has no persisted terrain route")?;
-        let origin = route_position_at_minute(&current_route, journey.completed_minutes)
+        let origin = route_position_at_minute(&current_route, journey.completed_movement_minutes)
             .ok_or("Camp route position is unavailable")?;
         validate_journey_route(
             ctx,
@@ -1354,18 +1396,13 @@ fn redirect_camped_party_to_settlement(
         id: destination.id.clone(),
         name: destination.name.clone(),
     });
-    journey.total_minutes = travel_minutes;
-    journey.completed_minutes = 0;
+    journey.total_movement_minutes = travel_minutes;
+    journey.completed_movement_minutes = 0;
     journey.departure_minute = redirect_departure_minute;
     journey.completed_elapsed_minutes = 0;
-    journey.camp_stop_minutes.clear();
-    if let Some(mut typed) = ctx.db.party_journey_itinerary().party_id().find(&party.id) {
-        typed.actual_camp_intervals.clear();
-        typed.forecast_camp_intervals.clear();
-        ctx.db.party_journey_itinerary().party_id().update(typed);
-    }
-    journey.forecast_camp_stop_minutes =
-        forecast_camp_stop_minutes(ctx, &party.id, travel_minutes, 0, journey.fatigue_percent)?;
+    journey.reached_camp_movement_minutes.clear();
+    journey.actual_camp_intervals.clear();
+    journey.forecast_camp_intervals.clear();
     ctx.db.party_journey_authority().party_id().update(journey);
     if ctx
         .db
@@ -1501,14 +1538,4 @@ fn pending_incident_allows_departure<'a>(
         (Some(site), None) => expected_case_site_id == Some(site),
         (Some(_), Some(_)) => false,
     }
-}
-
-fn reconstruct_legacy_journey_coordinates(
-    current_minute: u64,
-    completed_movement: u64,
-) -> (u64, u64) {
-    (
-        current_minute.saturating_sub(completed_movement),
-        completed_movement,
-    )
 }

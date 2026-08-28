@@ -352,6 +352,10 @@ pub fn demand_hostile_surrender(
 }
 
 #[reducer]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the reducer ABI exposes each independently validated surrender field"
+)]
 pub fn answer_hostile_surrender_offer(
     ctx: &ReducerContext,
     actor_id: u64,
@@ -391,7 +395,7 @@ mod hostile_surrender_source_tests {
 
     #[test]
     fn surrender_is_exact_precombat_and_battle_independent() {
-        let source = include_str!("hostile_surrender.rs");
+        let source = crate::production_source(include_str!("hostile_surrender.rs"));
         assert!(source.contains("HostileResolutionKind::Surrendered"));
         assert!(source.contains("exact_hostile_negotiation_authority"));
         assert!(source.contains("expected_revision"));

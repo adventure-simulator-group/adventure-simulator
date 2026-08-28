@@ -4,9 +4,9 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::housing_tier_type::HousingTier;
 use super::residence_holding_status_type::ResidenceHoldingStatus;
 use super::residence_tenure_type::ResidenceTenure;
-use super::residence_tier_type::ResidenceTier;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -14,7 +14,7 @@ pub struct ResidenceHolding {
     pub id: String,
     pub owner_character_id: u64,
     pub settlement_id: String,
-    pub tier: ResidenceTier,
+    pub tier: HousingTier,
     pub tenure: ResidenceTenure,
     pub status: ResidenceHoldingStatus,
     pub acquired_ordinal: u64,
@@ -35,7 +35,7 @@ pub struct ResidenceHoldingCols {
     pub id: __sdk::__query_builder::Col<ResidenceHolding, String>,
     pub owner_character_id: __sdk::__query_builder::Col<ResidenceHolding, u64>,
     pub settlement_id: __sdk::__query_builder::Col<ResidenceHolding, String>,
-    pub tier: __sdk::__query_builder::Col<ResidenceHolding, ResidenceTier>,
+    pub tier: __sdk::__query_builder::Col<ResidenceHolding, HousingTier>,
     pub tenure: __sdk::__query_builder::Col<ResidenceHolding, ResidenceTenure>,
     pub status: __sdk::__query_builder::Col<ResidenceHolding, ResidenceHoldingStatus>,
     pub acquired_ordinal: __sdk::__query_builder::Col<ResidenceHolding, u64>,

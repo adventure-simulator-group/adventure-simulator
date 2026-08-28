@@ -13,6 +13,7 @@ pub const DEFAULT_CHARACTER_NAME: &str = "John Fabelgeist";
 pub const DEFAULT_CHARACTER_AGE_YEARS: u16 = 20;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
 #[serde(rename_all = "lowercase")]
 pub enum StartingAgeTier {
     Young,

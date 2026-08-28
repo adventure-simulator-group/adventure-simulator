@@ -1,3 +1,6 @@
+const QUEST_DECISION_LEADER_STRIDE: u64 = 0x9e37_79b9_7f4a_7c15;
+const QUEST_DECISION_CYCLE_STRIDE: u64 = 0xbf58_476d_1ce4_e5b9;
+
 pub(super) fn leader_is_actionable(
     party_id: &str,
     authoritative_leader_id: u64,
@@ -17,7 +20,7 @@ pub(super) fn equipment_utility(profile: &AgentProfile, item: &Item) -> Option<f
         EquipmentStyle::Light => (armor && item.weight <= 8.0) || (!armor && item.melee),
         EquipmentStyle::Heavy => armor || item.melee,
     };
-    if !compatible || item.base_value.is_none() {
+    if !compatible || item.base_value.is_none() || item.equipment_placements.is_empty() {
         return None;
     }
     let protection = item.coverage + item.resistance + item.padding;
@@ -33,34 +36,34 @@ pub(super) fn equipment_utility(profile: &AgentProfile, item: &Item) -> Option<f
 
 pub(super) fn root_requirement_matches_slot(
     requirement: &EquipmentOccupancyRequirement,
-    slot: ItemSlot,
+    slot: Slot,
 ) -> bool {
     match slot {
-        ItemSlot::LeftHolding => {
+        Slot::LeftHolding => {
             requirement.location == EquipmentLocation::LeftHand
                 && requirement.channel == EquipmentChannel::Held
         }
-        ItemSlot::RightHolding => {
+        Slot::RightHolding => {
             requirement.location == EquipmentLocation::RightHand
                 && requirement.channel == EquipmentChannel::Held
         }
-        ItemSlot::AnyHolding => requirement.channel == EquipmentChannel::Held,
-        ItemSlot::LeftArm => requirement.location == EquipmentLocation::LeftArm,
-        ItemSlot::RightArm => requirement.location == EquipmentLocation::RightArm,
-        ItemSlot::AnyArm => matches!(
+        Slot::AnyHolding => requirement.channel == EquipmentChannel::Held,
+        Slot::LeftArm => requirement.location == EquipmentLocation::LeftArm,
+        Slot::RightArm => requirement.location == EquipmentLocation::RightArm,
+        Slot::AnyArm => matches!(
             requirement.location,
             EquipmentLocation::LeftArm | EquipmentLocation::RightArm
         ),
-        ItemSlot::LeftLeg => requirement.location == EquipmentLocation::LeftLeg,
-        ItemSlot::RightLeg => requirement.location == EquipmentLocation::RightLeg,
-        ItemSlot::AnyLeg => matches!(
+        Slot::LeftLeg => requirement.location == EquipmentLocation::LeftLeg,
+        Slot::RightLeg => requirement.location == EquipmentLocation::RightLeg,
+        Slot::AnyLeg => matches!(
             requirement.location,
             EquipmentLocation::LeftLeg | EquipmentLocation::RightLeg
         ),
-        ItemSlot::Head => requirement.location == EquipmentLocation::Head,
-        ItemSlot::Chest => requirement.location == EquipmentLocation::Chest,
-        ItemSlot::Stomach => requirement.location == EquipmentLocation::Stomach,
-        ItemSlot::None => true,
+        Slot::Head => requirement.location == EquipmentLocation::Head,
+        Slot::Chest => requirement.location == EquipmentLocation::Chest,
+        Slot::Stomach => requirement.location == EquipmentLocation::Stomach,
+        Slot::None => true,
     }
 }
 
@@ -229,7 +232,6 @@ fn run_core_loop_inner(
         .add_query(|query| query.from.party_inventory_item())
         .add_query(|query| query.from.party_item_amount())
         .add_query(|query| query.from.party_journey())
-        .add_query(|query| query.from.party_journey_itinerary())
         .add_query(|query| query.from.party_join_request())
         .add_query(|query| query.from.party_member())
         .add_query(|query| query.from.party_stake())
@@ -540,8 +542,8 @@ fn run_core_loop_inner(
             u64::MAX,
             "cultist",
             1,
-            10_000,
-            10_000,
+            u32::from(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE),
+            u32::from(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE),
         )?;
         let fixture_enemy_power =
             adventuresim_core::autoresolve::autoresolve_combat_power(&fixture_enemy);
@@ -551,16 +553,28 @@ fn run_core_loop_inner(
                 .current_leader(party_id)
                 .map(|(leader, _)| leader)
                 .ok_or("quest coverage party has no leader")?;
-            let assessment = runner.public_party_matchup_assessment(
-                party_id,
-                1,
-                "one",
-                fixture_enemy_power,
-            );
-            candidates.push((leader, party_id.clone(), assessment));
+            let assessment =
+                runner.public_party_matchup_assessment(party_id, 1, "one", fixture_enemy_power);
+            candidates.push(FixturePartyCandidate {
+                identity: FixturePartyIdentity {
+                    leader_id: leader,
+                    party_id: party_id.clone(),
+                },
+                assessment,
+            });
         }
-        let ((direct_leader, direct_party), (generated_leader, generated_party)) =
-            select_strongest_fixture_party(candidates)?;
+        let FixturePartySelection {
+            direct:
+                FixturePartyIdentity {
+                    leader_id: direct_leader,
+                    party_id: direct_party,
+                },
+            generated:
+                FixturePartyIdentity {
+                    leader_id: generated_leader,
+                    party_id: generated_party,
+                },
+        } = select_strongest_fixture_party(candidates)?;
         let existing_contract_ids = runner
             .connection
             .db
@@ -601,8 +615,12 @@ fn run_core_loop_inner(
             generated_case_id: None,
             direct_leader_id: expected_quest_fixture_parties.as_ref().unwrap()[0].0,
             generated_leader_id: expected_quest_fixture_parties.as_ref().unwrap()[1].0,
-            direct_party_id: expected_quest_fixture_parties.as_ref().unwrap()[0].1.clone(),
-            generated_party_id: expected_quest_fixture_parties.as_ref().unwrap()[1].1.clone(),
+            direct_party_id: expected_quest_fixture_parties.as_ref().unwrap()[0]
+                .1
+                .clone(),
+            generated_party_id: expected_quest_fixture_parties.as_ref().unwrap()[1]
+                .1
+                .clone(),
         });
     }
     let result = reducer_call!(runner, "ensure_settlement_activity", |cb| runner
@@ -628,7 +646,8 @@ fn run_core_loop_inner(
                 .ok_or("missing simulation-start character clock")
         })
         .collect::<Result<HashMap<_, _>, _>>()?;
-    let duration_minutes = u64::from(config.duration_days) * 1_440;
+    let duration_minutes =
+        u64::from(config.duration_days) * adventuresim_core::strategic_time::MINUTES_PER_DAY;
     for cycle in 0..config.cycles {
         let mut active = false;
         let mut held = false;
@@ -644,18 +663,19 @@ fn run_core_loop_inner(
                     expected_quest_fixture_parties
                         .as_ref()
                         .expect("fixture lane plan requires designated parties"),
-                )? {
-                    let plan = quest_lane_plan
-                        .as_mut()
-                        .expect("fixture projection appeared for an active lane plan");
-                    if fixture.direct_contract_id != plan.direct_contract_id {
-                        return Err(
+                )?
+            {
+                let plan = quest_lane_plan
+                    .as_mut()
+                    .expect("fixture projection appeared for an active lane plan");
+                if fixture.direct_contract_id != plan.direct_contract_id {
+                    return Err(
                             "required quest fixture public provenance identifies the wrong direct contract"
                                 .into(),
                         );
-                    }
-                    plan.generated_case_id = Some(fixture.generated_case_id);
                 }
+                plan.generated_case_id = Some(fixture.generated_case_id);
+            }
             let party_time_before = runner.public_party_elapsed_max(party_id);
             let Some((pre_recovery_leader, _)) = runner.current_leader(party_id) else {
                 continue;
@@ -761,8 +781,8 @@ fn run_core_loop_inner(
             let profile = runner.profiles[leader_agent as usize].clone();
             let fixture_lane = fixture_quest_lane(quest_lane_plan.as_ref(), leader, party_id);
             let mixed = config.seed
-                ^ u64::from(leader_agent).wrapping_mul(0x9e37_79b9_7f4a_7c15)
-                ^ u64::from(cycle).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+                ^ u64::from(leader_agent).wrapping_mul(QUEST_DECISION_LEADER_STRIDE)
+                ^ u64::from(cycle).wrapping_mul(QUEST_DECISION_CYCLE_STRIDE);
             let selector = (mixed >> 11) as f64 / ((1_u64 << 53) as f64);
             let quest_propensity = profile.activity_vs_quest_propensity;
             let wants_quest = fixture_lane.is_some()
@@ -830,15 +850,20 @@ fn run_core_loop_inner(
                 .count();
             let safe_direct_quest = match fixture_lane {
                 Some(FixtureQuestLane::Direct) => quest_lane_plan.as_ref().and_then(|fixture| {
-                    runner.connection.db.backend_contracts().iter().find(|contract| {
-                        contract.id == fixture.direct_contract_id
-                            && contract.settlement_id
-                                == party.current_settlement_id.clone().unwrap_or_default()
-                            && contract.status == ContractStatus::Offered
-                            && runner
-                                .public_party_contract_assessment(&party.id, contract)
-                                .eligible
-                    })
+                    runner
+                        .connection
+                        .db
+                        .backend_contracts()
+                        .iter()
+                        .find(|contract| {
+                            contract.id == fixture.direct_contract_id
+                                && contract.settlement_id
+                                    == party.current_settlement_id.clone().unwrap_or_default()
+                                && contract.status == ContractStatus::Offered
+                                && runner
+                                    .public_party_contract_assessment(&party.id, contract)
+                                    .eligible
+                        })
                 }),
                 Some(FixtureQuestLane::Generated) => None,
                 None => runner.choose_quest(&party, &profile),
@@ -846,9 +871,9 @@ fn run_core_loop_inner(
             let direct_quest_chosen = wants_quest && safe_direct_quest.is_some();
             let active_direct_contract = runner.active_direct_contract(&party).filter(|contract| {
                 fixture_lane != Some(FixtureQuestLane::Direct)
-                    || quest_lane_plan.as_ref().is_some_and(|fixture| {
-                        contract.id == fixture.direct_contract_id
-                    })
+                    || quest_lane_plan
+                        .as_ref()
+                        .is_some_and(|fixture| contract.id == fixture.direct_contract_id)
             });
             let quest_path = if fixture_lane == Some(FixtureQuestLane::Direct) {
                 if active_direct_contract.is_some() {
@@ -881,7 +906,7 @@ fn run_core_loop_inner(
             runner.event(
                 leader_agent,
                 CoreLoopEventKind::QuestDecision,
-                format_quest_decision_detail(
+                format_quest_decision_detail(QuestDecisionObservation {
                     cycle,
                     wants_quest,
                     selector,
@@ -889,19 +914,22 @@ fn run_core_loop_inner(
                     settlement_id,
                     offered_contracts,
                     safe_offered_contracts,
-                    open_generated_cases.len(),
+                    open_generated_cases: open_generated_cases.len(),
                     projected_investigation_actions,
                     quest_path,
-                    wants_quest,
+                    quest_intended: wants_quest,
                     quest_selected,
-                    if wants_quest && offered_contracts > 0 && safe_direct_quest.is_none() {
+                    selection_reason: if wants_quest
+                        && offered_contracts > 0
+                        && safe_direct_quest.is_none()
+                    {
                         "no_safe_contract"
                     } else if quest_selected {
                         "none"
                     } else {
                         "policy_prefers_activity"
                     },
-                ),
+                }),
             );
             match quest_path {
                 "generated_open_case" => {
@@ -910,7 +938,9 @@ fn run_core_loop_inner(
                     } else {
                         runner.select_owned_open_generated_case(leader)
                     };
-                    let Some((case_id, title)) = selected else { continue };
+                    let Some((case_id, title)) = selected else {
+                        continue;
+                    };
                     let before = runner.public_dialogue_progress_fingerprint(leader, &case_id);
                     let advance_result = runner.advance_generated_case(
                         party_id,
@@ -928,14 +958,13 @@ fn run_core_loop_inner(
                     }
                 }
                 "direct_contract" | "direct_contract_continuation" => {
-                    let reserved = (fixture_lane == Some(FixtureQuestLane::Direct))
-                        .then(|| {
-                            quest_lane_plan
-                                .as_ref()
-                                .expect("direct fixture lane has a plan")
-                                .direct_contract_id
-                                .as_str()
-                        });
+                    let reserved = (fixture_lane == Some(FixtureQuestLane::Direct)).then(|| {
+                        quest_lane_plan
+                            .as_ref()
+                            .expect("direct fixture lane has a plan")
+                            .direct_contract_id
+                            .as_str()
+                    });
                     runner.cycle(party_id, cycle, reserved)?
                 }
                 "generated_discovery" => {
@@ -947,18 +976,18 @@ fn run_core_loop_inner(
                                 .expect("generated fixture lane has a plan")
                                 .generated_case_id
                                 .as_deref();
-                            runner
-                                .owned_open_generated_cases(leader)
-                                .into_iter()
-                                .find(|(case_id, _)| {
+                            runner.owned_open_generated_cases(leader).into_iter().find(
+                                |(case_id, _)| {
                                     generated_case_id.is_some_and(|expected| case_id == expected)
-                                })
+                                },
+                            )
                         } else {
                             runner.select_owned_open_generated_case(leader)
                         };
-                        let Some((case_id, title)) = selected else { continue };
-                        let before =
-                            runner.public_dialogue_progress_fingerprint(leader, &case_id);
+                        let Some((case_id, title)) = selected else {
+                            continue;
+                        };
+                        let before = runner.public_dialogue_progress_fingerprint(leader, &case_id);
                         let advance_result = runner.advance_generated_case(
                             party_id,
                             leader,
@@ -1151,7 +1180,7 @@ fn run_core_loop_inner(
                     capability.athletics,
                     capability.endurance
                 ),
-                condition_status: condition.status,
+                condition_status: domain_incapacitation_status(condition.status),
                 thermal: survival.thermal,
                 wetness_bps: survival.wetness_bps,
                 thermal_strain: survival.thermal_strain,

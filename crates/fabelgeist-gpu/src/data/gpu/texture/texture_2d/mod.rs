@@ -5,7 +5,8 @@ use std::sync::Arc;
 
 use anyhow::Result;
 
-use crate::{data::gpu::texture::TextureFormat, data::vector::Vec2, globals::WgpuContext};
+use crate::{data::gpu::texture::TextureFormat, globals::WgpuContext};
+use fabelgeist_math::Vec2;
 
 #[derive(Clone, Debug)]
 pub struct Texture2d {
@@ -295,13 +296,13 @@ impl Texture2d {
     pub fn from_color(
         context: &WgpuContext,
         size: Option<Vec2>,
-        color: Option<crate::data::vector::Vec4>,
+        color: Option<fabelgeist_math::Vec4>,
         format: Option<TextureFormat>,
     ) -> Result<Texture2d> {
         Self::create_from_color(
             context,
             size.unwrap_or_else(|| Vec2::new(256.0, 256.0)),
-            color.unwrap_or_else(|| crate::data::vector::Vec4::new(0.0, 0.0, 0.0, 1.0)),
+            color.unwrap_or_else(|| fabelgeist_math::Vec4::new(0.0, 0.0, 0.0, 1.0)),
             format.unwrap_or(TextureFormat::Rgba8UnormSrgb),
         )
     }
@@ -309,7 +310,7 @@ impl Texture2d {
     pub fn create_from_color(
         context: &WgpuContext,
         size: Vec2,
-        color: crate::data::vector::Vec4,
+        color: fabelgeist_math::Vec4,
         format: TextureFormat,
     ) -> Result<Texture2d> {
         let tex = Texture2d::create(context, size, format)?;
@@ -366,8 +367,9 @@ impl Texture2d {
 
         context.queue.submit(Some(encoder.finish()));
 
-        #[allow(unused_mut)]
-        let (tx, mut rx) = futures_channel::oneshot::channel();
+        let (tx, rx) = futures_channel::oneshot::channel();
+        #[cfg(not(target_arch = "wasm32"))]
+        let mut rx = rx;
         {
             let slice = staging_buffer.slice(..);
             slice.map_async(wgpu::MapMode::Read, move |res| {
@@ -697,16 +699,16 @@ impl Texture2d {
     pub fn clear(
         context: &WgpuContext,
         target: Texture2d,
-        color: Option<crate::data::vector::Vec4>,
+        color: Option<fabelgeist_math::Vec4>,
     ) -> Result<Texture2d> {
         target.clear_raw(
             context,
-            color.unwrap_or_else(|| crate::data::vector::Vec4::new(0.0, 0.0, 0.0, 1.0)),
+            color.unwrap_or_else(|| fabelgeist_math::Vec4::new(0.0, 0.0, 0.0, 1.0)),
         )?;
         Ok(target)
     }
 
-    pub fn clear_raw(&self, context: &WgpuContext, color: crate::data::vector::Vec4) -> Result<()> {
+    pub fn clear_raw(&self, context: &WgpuContext, color: fabelgeist_math::Vec4) -> Result<()> {
         let view = self
             .view
             .as_ref()
@@ -750,7 +752,7 @@ impl Texture2d {
                         | TextureFormat::Rgba8Sint => 255.0,
                         _ => 255.0,
                     };
-                    clear_color = crate::data::vector::Vec4::new(
+                    clear_color = fabelgeist_math::Vec4::new(
                         color.x * max_val,
                         color.y * max_val,
                         color.z * max_val,

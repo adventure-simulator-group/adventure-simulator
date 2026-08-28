@@ -67,50 +67,60 @@ pub(in crate::animation::procedural) struct TwoBoneSolution {
     pub(in crate::animation::procedural) end_direction: Vec3,
 }
 
-pub(in crate::animation::procedural) fn solve_two_bone(
+#[derive(Debug, Clone, Copy)]
+pub(in crate::animation::procedural) struct TwoBoneChain {
     root: Vec3,
     current_knee: Vec3,
     current_end: Vec3,
-    target: Vec3,
     upper_length: f32,
     lower_length: f32,
     pole_direction: Vec3,
+}
+
+impl TwoBoneChain {
+    pub(in crate::animation::procedural) const fn new(
+        root: Vec3,
+        current_knee: Vec3,
+        current_end: Vec3,
+        upper_length: f32,
+        lower_length: f32,
+        pole_direction: Vec3,
+    ) -> Self {
+        Self {
+            root,
+            current_knee,
+            current_end,
+            upper_length,
+            lower_length,
+            pole_direction,
+        }
+    }
+}
+
+pub(in crate::animation::procedural) fn solve_two_bone(
+    chain: TwoBoneChain,
+    target: Vec3,
 ) -> Option<TwoBoneSolution> {
     solve_two_bone_internal(
-        root,
-        current_knee,
-        current_end,
+        chain,
         target,
-        upper_length,
-        lower_length,
-        pole_direction,
-        maximum_reach(upper_length, lower_length),
+        maximum_reach(chain.upper_length, chain.lower_length),
         true,
     )
 }
 
 pub(in crate::animation::procedural) fn solve_landing_two_bone(
-    root: Vec3,
-    current_knee: Vec3,
-    current_end: Vec3,
+    chain: TwoBoneChain,
     target: Vec3,
-    upper_length: f32,
-    lower_length: f32,
-    pole_direction: Vec3,
     compression: f32,
 ) -> Option<TwoBoneSolution> {
     solve_two_bone_internal(
-        root,
-        current_knee,
-        current_end,
+        chain,
         target,
-        upper_length,
-        lower_length,
-        pole_direction,
         landing_maximum_reach(
-            upper_length,
-            lower_length,
-            root.distance(current_end),
+            chain.upper_length,
+            chain.lower_length,
+            chain.root.distance(chain.current_end),
             compression,
         ),
         // Landing supplies a foot-facing-constrained leg pole. Reblending the
@@ -121,26 +131,11 @@ pub(in crate::animation::procedural) fn solve_landing_two_bone(
 }
 
 pub(in crate::animation::procedural) fn solve_two_bone_with_reach(
-    root: Vec3,
-    current_knee: Vec3,
-    current_end: Vec3,
+    chain: TwoBoneChain,
     target: Vec3,
-    upper_length: f32,
-    lower_length: f32,
-    pole_direction: Vec3,
     maximum_target_reach: f32,
 ) -> Option<TwoBoneSolution> {
-    solve_two_bone_internal(
-        root,
-        current_knee,
-        current_end,
-        target,
-        upper_length,
-        lower_length,
-        pole_direction,
-        maximum_target_reach,
-        false,
-    )
+    solve_two_bone_internal(chain, target, maximum_target_reach, false)
 }
 
 pub(in crate::animation::procedural) fn advance_foot_target_at_speed(
@@ -160,16 +155,19 @@ pub(in crate::animation::procedural) fn advance_foot_target_at_speed(
 }
 
 fn solve_two_bone_internal(
-    root: Vec3,
-    current_knee: Vec3,
-    current_end: Vec3,
+    chain: TwoBoneChain,
     target: Vec3,
-    upper_length: f32,
-    lower_length: f32,
-    pole_direction: Vec3,
     maximum_target_reach: f32,
     preserve_authored_bend: bool,
 ) -> Option<TwoBoneSolution> {
+    let TwoBoneChain {
+        root,
+        current_knee,
+        current_end,
+        upper_length,
+        lower_length,
+        pole_direction,
+    } = chain;
     if !root.is_finite() || !target.is_finite() || upper_length <= 0.0001 || lower_length <= 0.0001
     {
         return None;

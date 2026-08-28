@@ -84,13 +84,7 @@ fn bounded_progress_history_is_exact_contiguous_and_nontransferable() {
     let mut malformed = failed_attempt("a2", "cap-a", 7, "reacquire_tracks", 2, false);
     malformed.private_resolution_json = "{}".into();
     assert_eq!(
-        contiguous_failed_attempts(
-            "cap-a",
-            7,
-            "reacquire_tracks",
-            3,
-            [malformed],
-        ),
+        contiguous_failed_attempts("cap-a", 7, "reacquire_tracks", 3, [malformed],),
         0,
         "malformed private receipts fail closed"
     );
@@ -114,7 +108,7 @@ fn bounded_failure_wording_snapshots_progress_and_live_alternate_truthfully() {
             assistance_bps: 0,
             familiarity_bps: 0,
         },
-        weather: action::WeatherAuthority::Unavailable,
+        weather: action::WeatherAuthority::Clear { snow_cover_bps: 0 },
     };
     let progress = (0..u64::MAX)
         .find_map(|seed| {
@@ -186,13 +180,25 @@ fn bounded_progress_covers_every_generated_kind_and_replay_precedes_history() {
         action::InvestigationActionKind::LayAmbush,
         action::InvestigationActionKind::ApproachLead,
     ] {
-        assert!(capability_uses_bounded_progress("generated", kind));
-        assert!(!capability_uses_bounded_progress("manual", kind));
+        assert!(capability_uses_bounded_progress(
+            InvestigationProvenanceKind::Generated,
+            kind,
+        ));
+        assert!(!capability_uses_bounded_progress(
+            InvestigationProvenanceKind::Manual,
+            kind,
+        ));
     }
-    assert!(reducer.contains("\"attempt_number\""));
-    assert!(reducer.contains("\"persistent_progress_bps\""));
-    assert!(reducer.contains("\"success_threshold_bps\""));
-    assert!(reducer.contains("\"guaranteed_by_attempt\""));
+    assert!(reducer.contains("private_action_resolution_json"));
+    let receipt = source
+        .split("fn private_action_resolution_json")
+        .nth(1)
+        .and_then(|tail| tail.split("fn capability_progress_depends_on_exact_lead").next())
+        .expect("bounded progress receipt serializer");
+    assert!(receipt.contains("\"attempt_number\""));
+    assert!(receipt.contains("\"persistent_progress_bps\""));
+    assert!(receipt.contains("\"success_threshold_bps\""));
+    assert!(receipt.contains("\"guaranteed_by_attempt\""));
 }
 
 #[test]
@@ -210,10 +216,12 @@ fn exact_site_projection_and_travel_require_explicit_case_provenance() {
         .and_then(|tail| tail.split("fn case_site_provenance_view").next())
         .unwrap();
     for required in [
-        "\"manual\" if case.generated_case_id.is_empty() && authorities.is_empty()",
-        "\"generated\" if case.generated_case_id == case.id && authorities.len() == 1",
+        "InvestigationProvenanceKind::Manual",
+        "case.generated_case_id.is_empty() && authorities.is_empty()",
+        "InvestigationProvenanceKind::Generated",
+        "case.generated_case_id == case.id && authorities.len() == 1",
         "validate_quest_generation_authority",
-        "canonical_case_id == case.id",
+        "validated.manifest.canonical_case_id == case.id",
     ] {
         assert!(provenance.contains(required), "{required}");
     }
@@ -223,9 +231,9 @@ fn exact_site_projection_and_travel_require_explicit_case_provenance() {
         .and_then(|tail| tail.split("fn lead_projects_exact_case_site_pin").next())
         .unwrap();
     let travel = source
-        .split("pub(crate) fn exact_case_site_for_observer")
+        .split("pub(crate) fn exact_case_site_for_observer_at")
         .nth(1)
-        .and_then(|tail| tail.split("pub(crate) fn disclose_exact_case_site").next())
+        .and_then(|tail| tail.split("pub(crate) fn case_site_presence_for_observer").next())
         .unwrap();
     assert!(pins.contains("case_site_provenance_view"));
     assert!(travel.contains("case_site_provenance_reducer"));
@@ -278,11 +286,11 @@ fn exact_site_provenance_accepts_only_valid_manual_or_generated_tuples() {
     let generated_case = crate::strategic::CaseAuthority {
         id: manifest.canonical_case_id.clone(),
         investigation_case_id: manifest.canonical_case_id.clone(),
-        provenance_kind: "generated".into(),
+        provenance_kind: InvestigationProvenanceKind::Generated,
         generated_case_id: manifest.canonical_case_id.clone(),
         local_problem_id: Some(manifest.problem_id.clone()),
         objective_expression_json: serde_json::to_string(&manifest.objectives).unwrap(),
-        resolution_status: crate::strategic::CaseResolutionStatus::Open,
+        resolution_status: crate::strategic::CaseStatus::Open,
         resolved_by_party_id: None,
     };
     assert_eq!(
@@ -305,11 +313,11 @@ fn exact_site_provenance_accepts_only_valid_manual_or_generated_tuples() {
     let manual = crate::strategic::CaseAuthority {
         id: "manual-case".into(),
         investigation_case_id: "manual-case".into(),
-        provenance_kind: "manual".into(),
+        provenance_kind: InvestigationProvenanceKind::Manual,
         generated_case_id: String::new(),
         local_problem_id: None,
         objective_expression_json: "{}".into(),
-        resolution_status: crate::strategic::CaseResolutionStatus::Open,
+        resolution_status: crate::strategic::CaseStatus::Open,
         resolved_by_party_id: None,
     };
     assert_eq!(
@@ -621,12 +629,8 @@ fn root_rumor_then_every_referred_witness_pipeline_is_valid_in_both_families() {
 
                 if authored_claims == 1 {
                     let mut invalid = pipeline;
-                    invalid.receipt_identity = inv::compound_id(&[
-                        "generated-testimony",
-                        &character_id.to_string(),
-                        &witness.id.0,
-                        &index.to_string(),
-                    ]);
+                    invalid.receipt_identity =
+                        inv::compound_id(&["generated-testimony", &"x".repeat(257)]);
                     assert_eq!(
                         inv::process_report(invalid.clone()).unwrap_err(),
                         ValidationError::InvalidId

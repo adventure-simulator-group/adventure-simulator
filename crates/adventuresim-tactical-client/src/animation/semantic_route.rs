@@ -49,7 +49,7 @@ impl SemanticRouteInputs {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum SemanticRoutePath {
-    LegacyFallback,
+    GeneralPose,
     OrdinaryLocomotion,
     RaisedGuardAttack,
 }
@@ -57,7 +57,7 @@ pub(crate) enum SemanticRoutePath {
 impl SemanticRoutePath {
     pub(crate) const fn as_str(self) -> &'static str {
         match self {
-            Self::LegacyFallback => "legacy_fallback",
+            Self::GeneralPose => "general_pose",
             Self::OrdinaryLocomotion => "ordinary_locomotion",
             Self::RaisedGuardAttack => "raised_guard_attack",
         }
@@ -86,7 +86,7 @@ fn requested_path(skeleton: &PresentedSkeleton) -> SemanticRoutePath {
     } else if skeleton.is_grounded() && skeleton.posture() == Posture::Upright {
         SemanticRoutePath::OrdinaryLocomotion
     } else {
-        SemanticRoutePath::LegacyFallback
+        SemanticRoutePath::GeneralPose
     }
 }
 

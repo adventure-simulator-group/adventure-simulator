@@ -1,32 +1,24 @@
 use crate::data::gpu::compute::ResourceDescriptor;
 use crate::data::gpu::resource::GpuResource;
 use crate::prelude::*;
-use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 #[derive(Clone, Debug)]
 pub struct GradientDefinition {
     pub boundary_mode: u32,
-    pub cache: Arc<
-        RwLock<
-            HashMap<
-                (
-                    ResourceDescriptor,
-                    ResourceDescriptor,
-                    ResourceDescriptor,
-                    u32,
-                ),
-                Arc<ComputePipeline>,
-            >,
-        >,
-    >,
+    pub cache: ComputePipelineCache<(
+        ResourceDescriptor,
+        ResourceDescriptor,
+        ResourceDescriptor,
+        u32,
+    )>,
 }
 
 impl GradientDefinition {
     pub fn new(boundary_mode: u32) -> Self {
         Self {
             boundary_mode,
-            cache: Arc::new(RwLock::new(HashMap::new())),
+            cache: ComputePipelineCache::default(),
         }
     }
 }
@@ -242,7 +234,7 @@ impl Gradient {
             _ => unreachable!(),
         };
 
-        crate::data::gpu::compute::ComputePass::new(
+        crate::data::gpu::compute::ComputePass::execute(
             context,
             pipeline.as_ref().clone(),
             parameters,

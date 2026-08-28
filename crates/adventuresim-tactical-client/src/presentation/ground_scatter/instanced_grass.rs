@@ -126,6 +126,10 @@ fn present_instanced_grass(
 }
 
 /// Every gameplay/viewer camera drives eidolon's per-instance compute cull.
+#[expect(
+    clippy::type_complexity,
+    reason = "the Bevy camera filter selects uncoupled gameplay cameras and excludes the offscreen cloud pass"
+)]
 fn enable_camera_cull_compute(
     mut commands: Commands,
     cameras: Query<
@@ -379,7 +383,10 @@ impl CoverageMask {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the instanced-grass construction boundary keeps terrain, habitat, rendering, and tuning inputs explicit"
+)]
 pub(super) fn spawn(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
@@ -491,7 +498,10 @@ pub(super) fn spawn(
 
 /// Walks the legacy jittered placement cells and fills per-species instance
 /// vectors with tuft placements.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the cell-scatter boundary keeps placement, habitat, LOD, and output state explicit"
+)]
 fn scatter_cell_tufts(
     species_batches: &mut [Vec<InstanceData>; GrassSpecies::ALL.len()],
     terrain: &SceneTerrain,

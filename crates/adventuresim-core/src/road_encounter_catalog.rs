@@ -7,12 +7,20 @@ use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, sync::OnceLock};
 
 #[cfg(runtime_catalog)]
+use fabelgeist_determinism::mix64;
+
+#[cfg(runtime_catalog)]
 include!(concat!(env!("OUT_DIR"), "/road_encounter_catalog.rs"));
 
 pub const CATALOG_REVISION: u32 = 3;
 pub const MAX_WEIGHT: u16 = 10_000;
 pub const MAX_CHOICES: usize = 8;
 pub const MAX_TEXT_BYTES: usize = 2_048;
+
+#[cfg(runtime_catalog)]
+const QUEST_ENCOUNTER_SELECTION_DOMAIN: u64 = 0x726f_6164_7175_6573;
+#[cfg(runtime_catalog)]
+const QUEST_ENCOUNTER_DRAW_STRIDE: u64 = 0x9e37_79b9_7f4a_7c15;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -1056,10 +1064,9 @@ pub fn select_quest_eligible(seed: u64, draw: u64) -> Option<&'static EncounterD
     if total == 0 {
         return None;
     }
-    let mut mixed = seed ^ draw.wrapping_mul(0x9e37_79b9_7f4a_7c15) ^ 0x726f_6164_7175_6573;
-    mixed = (mixed ^ (mixed >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-    mixed = (mixed ^ (mixed >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-    let mut roll = (mixed ^ (mixed >> 31)) % total;
+    let mut roll = mix64(
+        seed ^ draw.wrapping_mul(QUEST_ENCOUNTER_DRAW_STRIDE) ^ QUEST_ENCOUNTER_SELECTION_DOMAIN,
+    ) % total;
     for definition in eligible {
         if roll < u64::from(definition.weight) {
             return Some(definition);

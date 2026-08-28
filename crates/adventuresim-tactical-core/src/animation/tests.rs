@@ -885,18 +885,9 @@ mod legacy_tests {
     fn raised_guard_movement_front_foot_follows_direction() {
         let lead = LeadFoot::Left;
         assert_eq!(guard_movement_front_foot(lead, Vec2::NEG_Y), lead);
-        assert_eq!(
-            guard_movement_front_foot(lead, Vec2::Y),
-            LeadFoot::Right
-        );
-        assert_eq!(
-            guard_movement_front_foot(lead, Vec2::NEG_X),
-            LeadFoot::Left
-        );
-        assert_eq!(
-            guard_movement_front_foot(lead, Vec2::X),
-            LeadFoot::Right
-        );
+        assert_eq!(guard_movement_front_foot(lead, Vec2::Y), LeadFoot::Right);
+        assert_eq!(guard_movement_front_foot(lead, Vec2::NEG_X), LeadFoot::Left);
+        assert_eq!(guard_movement_front_foot(lead, Vec2::X), LeadFoot::Right);
         assert!(
             (guard_maximum_lateral_foot_separation(0.840_348)
                 - guard_maximum_foot_separation(0.840_348))
@@ -938,13 +929,16 @@ mod legacy_tests {
         let mut state = SkeletonState::default();
         set_weapon_guard(&mut state, WeaponGuardState::Raised);
         for tick in 1..=80 {
-            project_skeleton_locomotion(&mut state, SkeletonLocomotionInput {
-                orientation: Quat::IDENTITY,
-                linear_velocity: Vec3::NEG_Z * 2.0,
-                grounded: true,
-                delta_seconds: 1.0 / LOCOMOTION_SAMPLE_HZ,
-                tick,
-            });
+            project_skeleton_locomotion(
+                &mut state,
+                SkeletonLocomotionInput {
+                    orientation: Quat::IDENTITY,
+                    linear_velocity: Vec3::NEG_Z * 2.0,
+                    grounded: true,
+                    delta_seconds: 1.0 / LOCOMOTION_SAMPLE_HZ,
+                    tick,
+                },
+            );
         }
         assert!(state.contact_sequence >= 2);
         let contacts = state.raised_footwork().contacts().unwrap();
@@ -978,7 +972,13 @@ mod legacy_tests {
                     },
                 );
                 let contacts = state.raised_footwork().contacts().unwrap();
-                assert!(contacts.left().dot(direction).max(contacts.right().dot(direction)) >= 0.0);
+                assert!(
+                    contacts
+                        .left()
+                        .dot(direction)
+                        .max(contacts.right().dot(direction))
+                        >= 0.0
+                );
                 if state.contact_sequence != previous_sequence {
                     let landed = match state.contact_foot {
                         LeadFoot::Left => contacts.left(),
@@ -1349,8 +1349,7 @@ mod legacy_tests {
             .begin_dodge(DodgeSpec::quickstep(Vec2::X).unwrap(), 0, 100)
             .unwrap();
 
-        for (tick, expected_progress) in
-            [(0, 0.0), (50, 0.25), (100, 0.5), (150, 0.75), (200, 1.0)]
+        for (tick, expected_progress) in [(0, 0.0), (50, 0.25), (100, 0.5), (150, 0.75), (200, 1.0)]
         {
             state.advance_action(tick);
             let evaluation = AnimationEvaluation::from_skeleton(&state);

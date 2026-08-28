@@ -6,67 +6,53 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct PourWaterIntoContainerArgs {
+pub(super) struct RestAtResidenceHoursArgs {
     pub character_id: u64,
-    pub parent_scope: String,
-    pub parent_row_id: u64,
-    pub requested_ml: u64,
+    pub requested_minutes: u64,
 }
 
-impl From<PourWaterIntoContainerArgs> for super::Reducer {
-    fn from(args: PourWaterIntoContainerArgs) -> Self {
-        Self::PourWaterIntoContainer {
+impl From<RestAtResidenceHoursArgs> for super::Reducer {
+    fn from(args: RestAtResidenceHoursArgs) -> Self {
+        Self::RestAtResidenceHours {
             character_id: args.character_id,
-            parent_scope: args.parent_scope,
-            parent_row_id: args.parent_row_id,
-            requested_ml: args.requested_ml,
+            requested_minutes: args.requested_minutes,
         }
     }
 }
 
-impl __sdk::InModule for PourWaterIntoContainerArgs {
+impl __sdk::InModule for RestAtResidenceHoursArgs {
     type Module = super::RemoteModule;
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `pour_water_into_container`.
+/// Extension trait for access to the reducer `rest_at_residence_hours`.
 ///
 /// Implemented for [`super::RemoteReducers`].
-pub trait pour_water_into_container {
-    /// Request that the remote module invoke the reducer `pour_water_into_container` to run as soon as possible.
+pub trait rest_at_residence_hours {
+    /// Request that the remote module invoke the reducer `rest_at_residence_hours` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
-    /// /// Use [`pour_water_into_container:pour_water_into_container_then`] to run a callback after the reducer completes.
-    fn pour_water_into_container(
+    /// /// Use [`rest_at_residence_hours:rest_at_residence_hours_then`] to run a callback after the reducer completes.
+    fn rest_at_residence_hours(
         &self,
         character_id: u64,
-        parent_scope: String,
-        parent_row_id: u64,
-        requested_ml: u64,
+        requested_minutes: u64,
     ) -> __sdk::Result<()> {
-        self.pour_water_into_container_then(
-            character_id,
-            parent_scope,
-            parent_row_id,
-            requested_ml,
-            |_, _| {},
-        )
+        self.rest_at_residence_hours_then(character_id, requested_minutes, |_, _| {})
     }
 
-    /// Request that the remote module invoke the reducer `pour_water_into_container` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `rest_at_residence_hours` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed with the `callback`.
-    fn pour_water_into_container_then(
+    fn rest_at_residence_hours_then(
         &self,
         character_id: u64,
-        parent_scope: String,
-        parent_row_id: u64,
-        requested_ml: u64,
+        requested_minutes: u64,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -76,13 +62,11 @@ pub trait pour_water_into_container {
     ) -> __sdk::Result<()>;
 }
 
-impl pour_water_into_container for super::RemoteReducers {
-    fn pour_water_into_container_then(
+impl rest_at_residence_hours for super::RemoteReducers {
+    fn rest_at_residence_hours_then(
         &self,
         character_id: u64,
-        parent_scope: String,
-        parent_row_id: u64,
-        requested_ml: u64,
+        requested_minutes: u64,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -91,11 +75,9 @@ impl pour_water_into_container for super::RemoteReducers {
         + 'static,
     ) -> __sdk::Result<()> {
         self.imp.invoke_reducer_with_callback(
-            PourWaterIntoContainerArgs {
+            RestAtResidenceHoursArgs {
                 character_id,
-                parent_scope,
-                parent_row_id,
-                requested_ml,
+                requested_minutes,
             },
             callback,
         )

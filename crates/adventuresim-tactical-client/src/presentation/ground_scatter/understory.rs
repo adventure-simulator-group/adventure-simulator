@@ -5,8 +5,9 @@ use bevy::{
     camera::visibility::VisibilityRange,
     prelude::{Commands, Mesh3d, MeshMaterial3d, Name, Vec2},
 };
+use fabelgeist_determinism::splitmix64;
 
-use crate::presentation::{splitmix64, unit_hash};
+use crate::presentation::unit_hash;
 
 use super::{
     GroundScatterLayer, TreeLeafRepresentation, WoodyUnderstoryPresentationCache, foliage_transform,

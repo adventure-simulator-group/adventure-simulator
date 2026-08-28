@@ -5,6 +5,8 @@ use crate::{
 use adventuresim_core::{
     attribute::{LimbAttribute, PlayerAttributes, SimpleAttribute},
     body::{BodyPart, LimbWeights},
+    personality::{Drive, Nerve, Transparency},
+    simulation_security::MAX_SIMULATION_SKILL_HOURS,
     skill::{PlayerSkills, Skill},
     strategic_schedule::*,
     strategic_time::MINUTES_PER_DAY,
@@ -25,8 +27,6 @@ pub enum SimulationError {
     #[error("serialization failed: {0}")]
     Serialization(#[from] serde_json::Error),
 }
-
-pub const MAX_INITIAL_SKILL_HOURS: f32 = 1_000_000.0;
 
 /// Observation/intent seam for a future reducer-backed implementation. The native
 /// backend currently supports settlement downtime only; no quest model is invented here.
@@ -97,6 +97,8 @@ impl StrategicBackend for NativeSettlementBackend {
             state.profile.schedule,
             MINUTES_PER_DAY,
             ActivityTrainingProfile::default(),
+            SocializingSociability::Neutral,
+            Transparency::Neutral,
             &state.profile.attributes,
         );
         let checks = Checks {
@@ -277,7 +279,7 @@ fn run_manifest(mut manifest: RunManifest) -> Result<SimulationReport, Simulatio
         }
         if profile.schedule.allocated_minutes() > MINUTES_PER_DAY {
             return Err(SimulationError::InvalidConfig(format!(
-                "agent {} schedule exceeds 1440 minutes",
+                "agent {} schedule exceeds {MINUTES_PER_DAY} minutes",
                 profile.agent_id
             )));
         }
@@ -636,7 +638,7 @@ fn validate_profile(p: &AgentProfile) -> Result<(), String> {
             p.agent_id
         ));
     }
-    if p.build.activity_only != (p.personality.drive == crate::Drive::Content) {
+    if p.build.activity_only != (p.personality.drive == Drive::Content) {
         return Err(format!(
             "agent {} activity-only build disagrees with personality",
             p.agent_id
@@ -644,9 +646,7 @@ fn validate_profile(p: &AgentProfile) -> Result<(), String> {
     }
     if p.build.role == crate::BuildRole::FrontLine {
         let arm_strength = (p.attributes.left_arm_strength + p.attributes.right_arm_strength) * 0.5;
-        if p.personality.nerve != crate::Nerve::Brave
-            || p.attributes.endurance < 3.0
-            || arm_strength < 3.0
+        if p.personality.nerve != Nerve::Brave || p.attributes.endurance < 3.0 || arm_strength < 3.0
         {
             return Err(format!(
                 "agent {} has a non-viable front-line build",
@@ -716,17 +716,17 @@ fn validate_profile(p: &AgentProfile) -> Result<(), String> {
     if p.initial_skills
         .values()
         .into_iter()
-        .any(|hours| !(0.0..=MAX_INITIAL_SKILL_HOURS).contains(&hours))
+        .any(|hours| !(0.0..=MAX_SIMULATION_SKILL_HOURS).contains(&hours))
     {
         return Err(format!(
-            "agent {} skill hours are outside 0..={MAX_INITIAL_SKILL_HOURS}",
+            "agent {} skill hours are outside 0..={MAX_SIMULATION_SKILL_HOURS}",
             p.agent_id
         ));
     }
     if !p
         .initial_skills
         .religion
-        .direct_fields_valid(MAX_INITIAL_SKILL_HOURS)
+        .direct_fields_valid(MAX_SIMULATION_SKILL_HOURS)
     {
         return Err(format!(
             "agent {} Religion hours contain a nonfinite or out-of-range direct field",

@@ -431,6 +431,10 @@ fn attack_target_within_angular_threshold(
     camera_forward.dot(direction).clamp(-1.0, 1.0) >= threshold.cos()
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Bevy injects player ownership, camera, mesh, material, and combat configuration state independently"
+)]
 fn on_new_player_added_hook(
     event: On<Add, Player>,
     mut commands: Commands,
@@ -585,6 +589,10 @@ fn trace_local_quickstep_state(
     }
 }
 
+#[expect(
+    clippy::type_complexity,
+    reason = "the Bevy query selects the complete local-facing state while excluding the gameplay camera from player transforms"
+)]
 fn predict_local_body_facing(
     time: Res<Time>,
     guard: Res<WeaponGuardInputState>,
@@ -756,9 +764,11 @@ fn on_attack_fired_hook(
     targeting: CombatTargeting,
 ) {
     try_start_attack(
-        event.context,
-        false,
-        AttackHand::Main,
+        AttackStartRequest {
+            entity: event.context,
+            alternate_attack: false,
+            hand: AttackHand::Main,
+        },
         &mut cmd,
         &mut q_character,
         &viewer,
@@ -768,10 +778,15 @@ fn on_attack_fired_hook(
     );
 }
 
-fn try_start_attack(
+#[derive(Debug, Clone, Copy)]
+struct AttackStartRequest {
     entity: Entity,
     alternate_attack: bool,
     hand: AttackHand,
+}
+
+fn try_start_attack(
+    request: AttackStartRequest,
     cmd: &mut Commands,
     q_character: &mut Query<(Has<AttackState>, &mut SkeletonState)>,
     viewer: &TacticalPlayerViewer,
@@ -779,6 +794,11 @@ fn try_start_attack(
     combat_config: &TacticalCombatConfig,
     targeting: &CombatTargeting,
 ) {
+    let AttackStartRequest {
+        entity,
+        alternate_attack,
+        hand,
+    } = request;
     let Ok((attacking, mut skeleton)) = q_character.get_mut(entity) else {
         return;
     };
@@ -814,8 +834,7 @@ fn try_start_attack(
         if attacking {
             return;
         }
-        let mut spec = AttackSpec::default();
-        spec.curve = curve;
+        let spec = AttackSpec { curve, ..default() };
         if skeleton
             .begin_attack_timed(
                 spec,
@@ -1054,6 +1073,10 @@ fn delayed_melee_contact_seconds(authored_windup: f32, predicted_arrival: f32) -
     ((contact - authored_windup.max(0.0)).max(0.0), contact)
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Bevy injects direct controls, player queries, combat resources, and targeting state independently"
+)]
 fn apply_direct_combat_controls(
     controls: Res<DirectControlState>,
     mut cmd: Commands,
@@ -1101,9 +1124,11 @@ fn apply_direct_combat_controls(
         }
         if controls.attack_just_pressed {
             try_start_attack(
-                entity,
-                controls.alternate_attack,
-                controls.attack_hand,
+                AttackStartRequest {
+                    entity,
+                    alternate_attack: controls.alternate_attack,
+                    hand: controls.attack_hand,
+                },
                 &mut cmd,
                 &mut q_character,
                 &viewer,

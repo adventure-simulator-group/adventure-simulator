@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod healing_tests {
     use super::{
-        CaseAuthority, CaseFinaleAuthority, CaseResolutionStatus, CaseSiteAuthority, CaseSiteId,
+        CaseAuthority, CaseFinaleAuthority, CaseStatus, CaseSiteAuthority, CaseSiteId,
         FinaleKind, FinaleStatus, HostileGroupAuthority, HostileGroupDisposition,
         HostileResolutionKind, IncidentStatus, JourneyCaseSiteEndpoint, JourneyEndpoint,
         JourneySettlementEndpoint, LocalChatMessage, MissionApproachCapability,

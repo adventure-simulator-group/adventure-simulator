@@ -15,9 +15,10 @@ use bevy::{
     },
     shader::ShaderRef,
 };
+use fabelgeist_determinism::splitmix64;
 
 use crate::presentation::obstacles::rock::rock_color;
-use crate::presentation::{splitmix64, unit_hash};
+use crate::presentation::unit_hash;
 
 use super::GroundScatterLayer;
 
@@ -45,6 +46,8 @@ const BILLBOARD_VERTICES: usize = 4;
 const BILLBOARD_TRIANGLES: usize = 2;
 const MIN_PEBBLE_RADIUS_METRES: f32 = 0.03;
 const MAX_PEBBLE_RADIUS_METRES: f32 = 0.08;
+const STONE_NOISE_X_STRIDE: u64 = 0x9e37_79b9_7f4a_7c15;
+const STONE_NOISE_Y_STRIDE: u64 = 0xbf58_476d_1ce4_e5b9;
 
 #[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
 pub(crate) struct TacticalPebbleBillboardMaterial {
@@ -125,6 +128,14 @@ impl Material for TacticalPebbleMaterial {
 #[derive(Component)]
 pub(crate) struct LooseStonePebblePatch {
     pub(crate) physical_pebbles: usize,
+}
+
+impl LooseStonePebblePatch {
+    fn hero(physical_pebbles: usize) -> Self {
+        let patch = Self { physical_pebbles };
+        debug_assert!((1..=PEBBLE_CANDIDATES_PER_PATCH).contains(&patch.physical_pebbles));
+        patch
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -259,9 +270,7 @@ pub(super) fn spawn(
                 "Tactical loose-stone hero pebble patch"
             }),
             GroundScatterLayer::LooseStone,
-            LooseStonePebblePatch {
-                physical_pebbles: pebble_counts[variant],
-            },
+            LooseStonePebblePatch::hero(pebble_counts[variant]),
             NotShadowCaster,
             Mesh3d(hero_meshes[variant].clone()),
             MeshMaterial3d(if woodland {
@@ -365,7 +374,7 @@ fn scree_noise(seed: u64, point: Vec2) -> f32 {
         let x = i64::from(coordinate.x as i32) as u64;
         let y = i64::from(coordinate.y as i32) as u64;
         unit_hash(splitmix64(
-            seed ^ x.wrapping_mul(0x9e37_79b9_7f4a_7c15) ^ y.wrapping_mul(0xbf58_476d_1ce4_e5b9),
+            seed ^ x.wrapping_mul(STONE_NOISE_X_STRIDE) ^ y.wrapping_mul(STONE_NOISE_Y_STRIDE),
         ))
     };
     let bottom_left = hash(Vec2::ZERO);
@@ -646,11 +655,11 @@ mod tests {
         let Indices::U32(indices) = hero.indices().unwrap() else {
             panic!("pebble mesh should use u32 indices");
         };
-        for triangle in indices.chunks_exact(3) {
-            let [a, b, c] = triangle else { unreachable!() };
-            let a = Vec3::from_array(positions[*a as usize]);
-            let b = Vec3::from_array(positions[*b as usize]);
-            let c = Vec3::from_array(positions[*c as usize]);
+        for triangle in indices.as_chunks::<3>().0 {
+            let [a, b, c] = *triangle;
+            let a = Vec3::from_array(positions[a as usize]);
+            let b = Vec3::from_array(positions[b as usize]);
+            let c = Vec3::from_array(positions[c as usize]);
             let face = (b - a).cross(c - a).normalize_or_zero();
             let expected = triangle
                 .iter()

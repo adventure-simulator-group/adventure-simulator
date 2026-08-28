@@ -7,6 +7,7 @@ use std::{fmt, str::FromStr};
 
 use serde::{Deserialize, Serialize};
 
+pub mod coordinates;
 mod language;
 pub use language::*;
 pub const WORLD_SCHEMA_VERSION: u32 = 26;
@@ -14,6 +15,8 @@ pub const CURRENT_INFERENCE_RULES_VERSION: u32 = 10;
 pub const MAX_EDGE_GEOMETRY_POINTS: usize = 512;
 pub const MAX_WORLD_GEOMETRY_POINTS: usize = 200_000;
 pub const MAX_SOURCES_MARKDOWN_CHARS: usize = 32_768;
+/// The basis-point representation of one whole (100%).
+pub const BASIS_POINTS_PER_WHOLE: u16 = 10_000;
 
 /// Authoritative MVP playable area in `[west, south, east, north]` order.
 ///
@@ -1076,7 +1079,7 @@ pub struct SuitabilityBasisPoints {
 
 impl SuitabilityBasisPoints {
     pub const fn new(value: u16) -> Option<Self> {
-        if value <= 10_000 {
+        if value <= BASIS_POINTS_PER_WHOLE {
             Some(Self {
                 basis_points: value,
             })
@@ -1549,7 +1552,7 @@ pub struct SoilBasisPoints {
 
 impl SoilBasisPoints {
     pub const fn new(value: u16) -> Option<Self> {
-        if value <= 10_000 {
+        if value <= BASIS_POINTS_PER_WHOLE {
             Some(Self { value })
         } else {
             None
@@ -1874,8 +1877,6 @@ pub enum HistoricalVegetationEvidence {
     Fallback,
 }
 
-pub const LAND_USE_BASIS_POINTS: u16 = 10_000;
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
 pub struct LandUseFraction {
@@ -1884,7 +1885,7 @@ pub struct LandUseFraction {
 
 impl LandUseFraction {
     pub const fn new(basis_points: u16) -> Option<Self> {
-        if basis_points <= LAND_USE_BASIS_POINTS {
+        if basis_points <= BASIS_POINTS_PER_WHOLE {
             Some(Self { basis_points })
         } else {
             None
@@ -1943,7 +1944,7 @@ impl LandUseProfile {
             + grazing.basis_points() as u32
             + built_up.basis_points() as u32
             + natural.basis_points() as u32
-            == LAND_USE_BASIS_POINTS as u32
+            == BASIS_POINTS_PER_WHOLE as u32
         {
             Some(Self {
                 cropland,
@@ -2152,24 +2153,21 @@ pub struct TravelGeometryPoint {
 
 impl TravelGeometryPoint {
     pub fn new(longitude: f64, latitude: f64) -> Result<Self, String> {
-        if !longitude.is_finite()
-            || !latitude.is_finite()
-            || !(-180.0..=180.0).contains(&longitude)
-            || !(-90.0..=90.0).contains(&latitude)
-        {
-            return Err("invalid travel geometry coordinate".into());
-        }
+        let longitude = coordinates::LongitudeE7::from_degrees(longitude)
+            .ok_or_else(|| "invalid travel geometry coordinate".to_owned())?;
+        let latitude = coordinates::LatitudeE7::from_degrees(latitude)
+            .ok_or_else(|| "invalid travel geometry coordinate".to_owned())?;
         Ok(Self {
-            longitude_e7: (longitude * 10_000_000.0).round() as i32,
-            latitude_e7: (latitude * 10_000_000.0).round() as i32,
+            longitude_e7: longitude.get(),
+            latitude_e7: latitude.get(),
         })
     }
 
     pub fn longitude(self) -> f64 {
-        f64::from(self.longitude_e7) / 10_000_000.0
+        f64::from(self.longitude_e7) / f64::from(coordinates::LongitudeE7::UNITS_PER_DEGREE)
     }
     pub fn latitude(self) -> f64 {
-        f64::from(self.latitude_e7) / 10_000_000.0
+        f64::from(self.latitude_e7) / f64::from(coordinates::LatitudeE7::UNITS_PER_DEGREE)
     }
 }
 
@@ -3032,6 +3030,14 @@ pub enum SettlementService {
     Herbalist,
     Temple,
     Bookstore,
+}
+
+/// A public settlement service that can authorize a rest or downtime action.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum SettlementActionService {
+    Inn,
+    Temple,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -4641,18 +4647,19 @@ mod tests {
     use std::str::FromStr;
 
     use super::{
-        AgriculturalCommodity, AgricultureIndustry, BestiaryCategory, BestiaryHours, CanopyDensity,
-        DerivedIndustry, DroughtHistory, ElevationBand, ElevationMeters, FishCommodity,
-        FishingIndustry, ForestCommodity, ForestCover, ForestryIndustry, GeologicUnitId,
-        HabitatSuitability, HumanLandUseIntensity, IndustryEvidence, InferredIndustryProfile,
-        InferredTreeSpeciesProfile, LandUseFraction, LandUseProfile, LanguageCode, MinedCommodity,
-        MiningIndustry, ModeledTreeSpecies, ModeledTreeSpeciesProfile, NativeRangeEvidence,
-        OfficialReligion, PalmerDroughtSeverityIndex, PotentialVegetation,
-        PotentialVegetationClass, PotentialVegetationPosterior, PotteryCommodity, PotteryIndustry,
-        ProductionScale, QuarryCommodity, QuarryingIndustry, ReligionHours, ReligionMinutes,
-        SaltSource, SaltmakingIndustry, SettlementEconomyProfile, SettlementReligiousStatus,
-        SoilBasisPoints, StockCategory, StoneContentPercent, SuitabilityBasisPoints,
-        SummerHydroclimate, TreeSpeciesId, infer_settlement_economy,
+        AgriculturalCommodity, AgricultureIndustry, BASIS_POINTS_PER_WHOLE, BestiaryCategory,
+        BestiaryHours, CanopyDensity, DerivedIndustry, DroughtHistory, ElevationBand,
+        ElevationMeters, FishCommodity, FishingIndustry, ForestCommodity, ForestCover,
+        ForestryIndustry, GeologicUnitId, HabitatSuitability, HumanLandUseIntensity,
+        IndustryEvidence, InferredIndustryProfile, InferredTreeSpeciesProfile, LandUseFraction,
+        LandUseProfile, LanguageCode, MinedCommodity, MiningIndustry, ModeledTreeSpecies,
+        ModeledTreeSpeciesProfile, NativeRangeEvidence, OfficialReligion,
+        PalmerDroughtSeverityIndex, PotentialVegetation, PotentialVegetationClass,
+        PotentialVegetationPosterior, PotteryCommodity, PotteryIndustry, ProductionScale,
+        QuarryCommodity, QuarryingIndustry, ReligionHours, ReligionMinutes, SaltSource,
+        SaltmakingIndustry, SettlementEconomyProfile, SettlementReligiousStatus, SoilBasisPoints,
+        StockCategory, StoneContentPercent, SuitabilityBasisPoints, SummerHydroclimate,
+        TreeSpeciesId, infer_settlement_economy,
     };
 
     #[test]
@@ -4988,6 +4995,14 @@ mod tests {
 
     #[test]
     fn land_use_profiles_are_exhaustive_and_derive_intensity() {
+        let whole = LandUseFraction::new(BASIS_POINTS_PER_WHOLE).unwrap();
+        assert_eq!(whole.basis_points(), BASIS_POINTS_PER_WHOLE);
+        assert!(LandUseFraction::new(BASIS_POINTS_PER_WHOLE + 1).is_none());
+        assert_eq!(
+            serde_json::to_value(whole).unwrap(),
+            serde_json::json!({ "basis_points": BASIS_POINTS_PER_WHOLE })
+        );
+
         let profile = LandUseProfile::new(
             LandUseFraction::new(3_000).unwrap(),
             LandUseFraction::new(2_000).unwrap(),
@@ -5054,7 +5069,7 @@ mod tests {
                 LandUseFraction::new(crop).unwrap(),
                 LandUseFraction::new(grazing).unwrap(),
                 LandUseFraction::new(built).unwrap(),
-                LandUseFraction::new(10_000 - crop - grazing - built).unwrap(),
+                LandUseFraction::new(BASIS_POINTS_PER_WHOLE - crop - grazing - built).unwrap(),
             )
             .unwrap()
         };
@@ -5188,8 +5203,12 @@ mod tests {
 
     #[test]
     fn potential_vegetation_is_bounded_and_has_stable_ties() {
-        assert!(SuitabilityBasisPoints::new(10_000).is_some());
-        assert!(SuitabilityBasisPoints::new(10_001).is_none());
+        let whole = SuitabilityBasisPoints::new(BASIS_POINTS_PER_WHOLE).unwrap();
+        assert_eq!(
+            serde_json::to_value(whole).unwrap(),
+            serde_json::json!({ "basis_points": BASIS_POINTS_PER_WHOLE })
+        );
+        assert!(SuitabilityBasisPoints::new(BASIS_POINTS_PER_WHOLE + 1).is_none());
         assert!(
             serde_json::from_str::<SuitabilityBasisPoints>(r#"{"basis_points":10001}"#).is_err()
         );
@@ -5249,8 +5268,13 @@ mod tests {
 
     #[test]
     fn soil_uncertainty_and_percentages_are_bounded() {
-        assert_eq!(SoilBasisPoints::new(10_000).unwrap().get(), 10_000);
-        assert!(SoilBasisPoints::new(10_001).is_none());
+        let whole = SoilBasisPoints::new(BASIS_POINTS_PER_WHOLE).unwrap();
+        assert_eq!(whole.get(), BASIS_POINTS_PER_WHOLE);
+        assert_eq!(
+            serde_json::to_value(whole).unwrap(),
+            serde_json::json!({ "value": BASIS_POINTS_PER_WHOLE })
+        );
+        assert!(SoilBasisPoints::new(BASIS_POINTS_PER_WHOLE + 1).is_none());
         assert!(StoneContentPercent::new(100).is_some());
         assert!(StoneContentPercent::new(101).is_none());
     }

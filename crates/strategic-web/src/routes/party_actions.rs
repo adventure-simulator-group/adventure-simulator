@@ -21,7 +21,6 @@ pub(crate) enum PartyAction {
         name: String,
         quantity: u32,
         requirements: RecruitmentRequirements,
-        weapon_precision: f32,
         save_role: bool,
     },
     UpdateRecruitmentRole {
@@ -29,7 +28,6 @@ pub(crate) enum PartyAction {
         name: String,
         quantity: u32,
         requirements: RecruitmentRequirements,
-        weapon_precision: f32,
     },
     DeleteRecruitmentRole {
         role_id: u64,
@@ -162,7 +160,6 @@ impl PartyAction {
                 name,
                 quantity,
                 requirements,
-                weapon_precision,
                 save_role,
             } => (
                 "create_recruitment_role",
@@ -171,7 +168,6 @@ impl PartyAction {
                     json!(name),
                     json!(quantity),
                     json!(requirements),
-                    json!(weapon_precision),
                     json!(save_role),
                 ],
             ),
@@ -180,7 +176,6 @@ impl PartyAction {
                 name,
                 quantity,
                 requirements,
-                weapon_precision,
             } => (
                 "update_recruitment_role",
                 vec![
@@ -189,7 +184,6 @@ impl PartyAction {
                     json!(name),
                     json!(quantity),
                     json!(requirements),
-                    json!(weapon_precision),
                 ],
             ),
             Self::DeleteRecruitmentRole { role_id } => (
@@ -326,13 +320,16 @@ mod tests {
     }
 
     #[test]
-    fn recruitment_role_kinds_are_stable_and_keep_ids_in_the_payload() {
+    fn recruitment_role_payload_keeps_the_id_and_embeds_weapon_precision_in_requirements() {
+        let requirements = RecruitmentRequirements {
+            weapon_precision: adventuresim_core::capability::WEAPON_PRECISION_SWORD,
+            ..Default::default()
+        };
         let edit = PartyAction::UpdateRecruitmentRole {
             role_id: 17,
             name: "Scout".into(),
             quantity: 1,
-            requirements: RecruitmentRequirements::default(),
-            weapon_precision: 0.0,
+            requirements,
         };
         let delete = PartyAction::DeleteRecruitmentRole { role_id: 17 };
         assert_eq!(edit.kind(), "edit_role");
@@ -346,6 +343,13 @@ mod tests {
             serde_json::to_string(&delete)
                 .unwrap()
                 .contains("\"role_id\":17")
+        );
+        let (reducer, payload) = edit.reducer_call(42);
+        assert_eq!(reducer, "update_recruitment_role");
+        assert_eq!(payload.len(), 5);
+        assert_eq!(
+            payload[4]["weapon_precision"],
+            adventuresim_core::capability::WEAPON_PRECISION_SWORD
         );
     }
 }

@@ -4,6 +4,9 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::body_region_type::BodyRegion;
+use super::intervention_route_type::InterventionRoute;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct PhysiologyAdministration {
@@ -11,9 +14,9 @@ pub struct PhysiologyAdministration {
     pub patient_id: u64,
     pub preparation_id: String,
     pub profile_version: u16,
-    pub route: String,
-    pub amount_milliunits: u32,
-    pub region: Option<String>,
+    pub route: InterventionRoute,
+    pub dose_milliunits: u32,
+    pub region: Option<BodyRegion>,
     pub administered_at: u64,
     pub stopped_at: Option<u64>,
     pub sensitivity_bps: i16,
@@ -34,9 +37,9 @@ pub struct PhysiologyAdministrationCols {
     pub patient_id: __sdk::__query_builder::Col<PhysiologyAdministration, u64>,
     pub preparation_id: __sdk::__query_builder::Col<PhysiologyAdministration, String>,
     pub profile_version: __sdk::__query_builder::Col<PhysiologyAdministration, u16>,
-    pub route: __sdk::__query_builder::Col<PhysiologyAdministration, String>,
-    pub amount_milliunits: __sdk::__query_builder::Col<PhysiologyAdministration, u32>,
-    pub region: __sdk::__query_builder::Col<PhysiologyAdministration, Option<String>>,
+    pub route: __sdk::__query_builder::Col<PhysiologyAdministration, InterventionRoute>,
+    pub dose_milliunits: __sdk::__query_builder::Col<PhysiologyAdministration, u32>,
+    pub region: __sdk::__query_builder::Col<PhysiologyAdministration, Option<BodyRegion>>,
     pub administered_at: __sdk::__query_builder::Col<PhysiologyAdministration, u64>,
     pub stopped_at: __sdk::__query_builder::Col<PhysiologyAdministration, Option<u64>>,
     pub sensitivity_bps: __sdk::__query_builder::Col<PhysiologyAdministration, i16>,
@@ -54,7 +57,7 @@ impl __sdk::__query_builder::HasCols for PhysiologyAdministration {
             preparation_id: __sdk::__query_builder::Col::new(table_name, "preparation_id"),
             profile_version: __sdk::__query_builder::Col::new(table_name, "profile_version"),
             route: __sdk::__query_builder::Col::new(table_name, "route"),
-            amount_milliunits: __sdk::__query_builder::Col::new(table_name, "amount_milliunits"),
+            dose_milliunits: __sdk::__query_builder::Col::new(table_name, "dose_milliunits"),
             region: __sdk::__query_builder::Col::new(table_name, "region"),
             administered_at: __sdk::__query_builder::Col::new(table_name, "administered_at"),
             stopped_at: __sdk::__query_builder::Col::new(table_name, "stopped_at"),

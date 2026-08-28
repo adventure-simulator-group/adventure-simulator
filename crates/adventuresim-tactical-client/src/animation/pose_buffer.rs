@@ -274,6 +274,11 @@ impl JointInertialOffset {
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    reason = "Bevy injects each independently borrowed animation resource and query as a system parameter"
+)]
 pub(super) fn update_pose_buffers(
     mut commands: Commands,
     time: Res<Time>,
@@ -2269,9 +2274,11 @@ mod tests {
 
     #[test]
     fn critically_damped_offsets_remain_finite_after_a_large_delta() {
-        let mut offset = JointInertialOffset::default();
-        offset.translation = Vec3::splat(100.0);
-        offset.rotation = Quat::from_rotation_z(2.8);
+        let mut offset = JointInertialOffset {
+            translation: Vec3::splat(100.0),
+            rotation: Quat::from_rotation_z(2.8),
+            ..default()
+        };
         let result = offset.update(pose(Vec3::ZERO, Quat::IDENTITY), 2.0);
         assert!(result.translation.is_finite());
         assert!(result.rotation.is_finite());

@@ -54,12 +54,12 @@ mod legacy_tests {
                 .unwrap();
             skeleton.advance_action(tick);
             let presented = PresentedSkeleton::new(skeleton.clone(), None);
-            let legacy = AnimationEvaluation::from_skeleton(&skeleton);
+            let direct = AnimationEvaluation::from_skeleton(&skeleton);
             let routed = route(skeleton);
 
             assert_eq!(routed.path, SemanticRoutePath::RaisedGuardAttack);
             assert!(routed.runtime_evaluated);
-            assert_eq!(routed.evaluation, legacy);
+            assert_eq!(routed.evaluation, direct);
             assert!((routed.inputs.gait_phase - presented.gait_phase).abs() < f32::EPSILON);
             assert!((routed.evaluation.action_phase - expected_phase).abs() < f32::EPSILON);
         }
@@ -380,7 +380,7 @@ mod legacy_tests {
             "quickstep_left",
             "quickstep_back",
         ] {
-            assert_eq!(root.motions[motion].last_frame, 6);
+            assert_eq!(root.motions[motion].last_frame, 12);
         }
     }
 
@@ -800,6 +800,13 @@ mod legacy_tests {
             SemanticPose::QuickstepRightTakeoff,
             SemanticPose::QuickstepRightContact,
         ]);
+        let strides = AuthoredLocomotionStrides::default();
+        let sample_resolver = PoseSampleResolver {
+            runtime: &runtime,
+            catalog: &catalog,
+            pack: HUMANOID_UNARMED_PACK,
+            locomotion_strides: &strides,
+        };
         for (sample, expected_layer) in [
             (
                 PoseSample {
@@ -822,16 +829,7 @@ mod legacy_tests {
         ] {
             let mut weighted = Vec::new();
             let mut spans = Vec::new();
-            append_resolved_sample_layer(
-                &mut weighted,
-                &mut spans,
-                &runtime,
-                &catalog,
-                HUMANOID_UNARMED_PACK,
-                sample,
-                expected_layer,
-                &AuthoredLocomotionStrides::default(),
-            );
+            sample_resolver.append_layer(&mut weighted, &mut spans, sample, expected_layer);
             assert_eq!(weighted.len(), 1);
             assert_eq!(weighted[0].clip.layer, expected_layer);
         }
@@ -852,12 +850,15 @@ mod legacy_tests {
         let physical_phase = 0.5;
         let mut weighted = Vec::new();
         let mut spans = Vec::new();
-        append_resolved_sample_layer(
+        let sample_resolver = PoseSampleResolver {
+            runtime: &runtime,
+            catalog: &catalog,
+            pack: HUMANOID_UNARMED_PACK,
+            locomotion_strides: &strides,
+        };
+        sample_resolver.append_layer(
             &mut weighted,
             &mut spans,
-            &runtime,
-            &catalog,
-            HUMANOID_UNARMED_PACK,
             PoseSample {
                 pose: SemanticPose::WalkContact,
                 sampling: PoseSampling::Cycle {
@@ -867,7 +868,6 @@ mod legacy_tests {
                 mirror_lower_body: false,
             },
             ClipLayer::Lower,
-            &strides,
         );
         let walk_duration =
             runtime.clips[&(HUMANOID_UNARMED_PACK.to_owned(), "walk".to_owned())].duration_seconds;
@@ -875,12 +875,9 @@ mod legacy_tests {
         assert_eq!(weighted[0].locomotion_phase, Some(physical_phase));
 
         weighted.clear();
-        append_resolved_sample_layer(
+        sample_resolver.append_layer(
             &mut weighted,
             &mut spans,
-            &runtime,
-            &catalog,
-            HUMANOID_UNARMED_PACK,
             PoseSample {
                 pose: SemanticPose::StrafeCycle,
                 sampling: PoseSampling::Cycle {
@@ -890,7 +887,6 @@ mod legacy_tests {
                 mirror_lower_body: false,
             },
             ClipLayer::Lower,
-            &strides,
         );
         let strafe_duration = runtime.clips
             [&(HUMANOID_UNARMED_PACK.to_owned(), "strafe".to_owned())]

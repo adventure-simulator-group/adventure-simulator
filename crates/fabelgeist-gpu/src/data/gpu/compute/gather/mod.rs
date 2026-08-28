@@ -1,8 +1,7 @@
 use crate::data::gpu::compute::ResourceDescriptor;
 use crate::data::gpu::resource::GpuResource;
 use crate::prelude::*;
-use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct GatherSignature {
@@ -14,21 +13,11 @@ pub struct GatherSignature {
     pub param_names: Vec<String>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct GatherDefinition {
     pub code: String,
-    pub cache: Arc<
-        RwLock<HashMap<(ResourceDescriptor, ResourceDescriptor), Arc<(ComputePipeline, u64, u64)>>>,
-    >,
-}
-
-impl Default for GatherDefinition {
-    fn default() -> Self {
-        Self {
-            code: String::new(),
-            cache: Arc::new(RwLock::new(HashMap::new())),
-        }
-    }
+    pub cache:
+        ComputePipelineCache<(ResourceDescriptor, ResourceDescriptor), (ComputePipeline, u64, u64)>,
 }
 
 impl PartialEq for GatherDefinition {
@@ -42,7 +31,7 @@ impl GatherDefinition {
         let _ = Self::parse_signature(&code)?;
         Ok(Self {
             code,
-            cache: Arc::new(RwLock::new(HashMap::new())),
+            cache: ComputePipelineCache::default(),
         })
     }
 
@@ -410,7 +399,7 @@ impl Gather {
             ),
         };
 
-        crate::data::gpu::compute::ComputePass::new(
+        crate::data::gpu::compute::ComputePass::execute(
             context,
             pipeline.clone(),
             parameters,

@@ -7,7 +7,142 @@
 
 use std::{fmt, num::NonZeroU64};
 
+use serde::{Deserialize, Serialize};
+
 use crate::strategic_place::{StrategicFixtureId, StrategicPlaceId};
+
+/// The two inventories that can operationally carry a physical object.
+///
+/// Raw scope strings belong at reducer, URL, and form boundaries. Domain code
+/// uses this closed vocabulary instead.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub enum CarriedInventoryScope {
+    Personal,
+    Party,
+}
+
+impl CarriedInventoryScope {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Personal => "personal",
+            Self::Party => "party",
+        }
+    }
+}
+
+impl TryFrom<&str> for CarriedInventoryScope {
+    type Error = CustodyIdentityError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "personal" => Ok(Self::Personal),
+            "party" => Ok(Self::Party),
+            _ => Err(CustodyIdentityError::InvalidInventoryScope),
+        }
+    }
+}
+
+/// A physical object's persisted backing location.
+///
+/// Each variant contains exactly the identity required by that state, so a
+/// fireplace object cannot retain an inventory row and a carried object cannot
+/// omit its owner. Containment remains a separate relation: descendants retain
+/// the same carried backing while their direct custody names their parent.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct PersonalInventoryLocation {
+    pub character_id: u64,
+    pub row_id: u64,
+}
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct PartyInventoryLocation {
+    pub party_id: String,
+    pub row_id: u64,
+}
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct FireplaceInventoryLocation {
+    pub fixture_id: String,
+}
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct RepairInventoryLocation {
+    pub settlement_id: String,
+    pub row_id: u64,
+}
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum InventoryLocation {
+    Personal(PersonalInventoryLocation),
+    Party(PartyInventoryLocation),
+    Fireplace(FireplaceInventoryLocation),
+    Repair(RepairInventoryLocation),
+}
+
+impl InventoryLocation {
+    pub const fn personal(character_id: u64, row_id: u64) -> Self {
+        Self::Personal(PersonalInventoryLocation {
+            character_id,
+            row_id,
+        })
+    }
+
+    pub fn party(party_id: impl Into<String>, row_id: u64) -> Self {
+        Self::Party(PartyInventoryLocation {
+            party_id: party_id.into(),
+            row_id,
+        })
+    }
+
+    pub fn fireplace(fixture_id: impl Into<String>) -> Self {
+        Self::Fireplace(FireplaceInventoryLocation {
+            fixture_id: fixture_id.into(),
+        })
+    }
+
+    pub fn repair(settlement_id: impl Into<String>, row_id: u64) -> Self {
+        Self::Repair(RepairInventoryLocation {
+            settlement_id: settlement_id.into(),
+            row_id,
+        })
+    }
+
+    pub const fn scope(&self) -> Option<CarriedInventoryScope> {
+        match self {
+            Self::Personal(_) => Some(CarriedInventoryScope::Personal),
+            Self::Party(_) => Some(CarriedInventoryScope::Party),
+            Self::Fireplace(_) | Self::Repair(_) => None,
+        }
+    }
+
+    pub const fn row_id(&self) -> Option<u64> {
+        match self {
+            Self::Personal(location) => Some(location.row_id),
+            Self::Party(location) => Some(location.row_id),
+            Self::Repair(location) => Some(location.row_id),
+            Self::Fireplace(_) => None,
+        }
+    }
+
+    pub fn has_same_carried_custody(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Personal(left), Self::Personal(right)) => {
+                left.character_id == right.character_id
+            }
+            (Self::Party(left), Self::Party(right)) => left.party_id == right.party_id,
+            _ => false,
+        }
+    }
+
+    pub const fn is_fireplace(&self) -> bool {
+        matches!(self, Self::Fireplace(_))
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct PhysicalObjectId(NonZeroU64);
@@ -131,6 +266,7 @@ pub enum CustodyIdentityError {
     ZeroObjectId,
     ZeroCharacterId,
     InvalidPartyId,
+    InvalidInventoryScope,
     SelfContainment,
 }
 
@@ -140,6 +276,7 @@ impl fmt::Display for CustodyIdentityError {
             Self::ZeroObjectId => "Physical object identity must be nonzero",
             Self::ZeroCharacterId => "Custody character identity must be nonzero",
             Self::InvalidPartyId => "Custody party identity is not canonical",
+            Self::InvalidInventoryScope => "Inventory scope must be personal or party",
             Self::SelfContainment => "A physical object cannot be in its own custody",
         })
     }
@@ -208,5 +345,39 @@ mod tests {
         assert!(!personal.matches_carried_inventory(8, Some("party-7")));
         assert!(party.matches_carried_inventory(8, Some("party-7")));
         assert!(!party.matches_carried_inventory(7, Some("party-8")));
+    }
+
+    #[test]
+    fn inventory_location_encodes_only_valid_state_shapes() {
+        let personal = InventoryLocation::personal(7, 11);
+        let party = InventoryLocation::party("party-red", 12);
+        let fireplace = InventoryLocation::fireplace("fireplace|settlement|lubeck");
+        let repair = InventoryLocation::repair("lubeck", 13);
+
+        assert_eq!(personal.scope(), Some(CarriedInventoryScope::Personal));
+        assert_eq!(personal.row_id(), Some(11));
+        assert_eq!(party.scope(), Some(CarriedInventoryScope::Party));
+        assert_eq!(party.row_id(), Some(12));
+        assert_eq!(fireplace.scope(), None);
+        assert_eq!(fireplace.row_id(), None);
+        assert_eq!(repair.scope(), None);
+        assert_eq!(repair.row_id(), Some(13));
+        assert!(fireplace.is_fireplace());
+    }
+
+    #[test]
+    fn raw_inventory_scope_parses_only_at_the_closed_boundary() {
+        assert_eq!(
+            CarriedInventoryScope::try_from("personal"),
+            Ok(CarriedInventoryScope::Personal)
+        );
+        assert_eq!(
+            CarriedInventoryScope::try_from("party"),
+            Ok(CarriedInventoryScope::Party)
+        );
+        assert_eq!(
+            CarriedInventoryScope::try_from("repair"),
+            Err(CustodyIdentityError::InvalidInventoryScope)
+        );
     }
 }

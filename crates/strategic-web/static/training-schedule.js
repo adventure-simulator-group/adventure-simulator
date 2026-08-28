@@ -1,5 +1,8 @@
 (() => {
-  const DAY = 1440;
+  const calendar = typeof window === "undefined"
+    ? globalThis.strategicCalendar
+    : window.strategicCalendar;
+  const { minutesPerDay: DAY } = calendar;
   const STEP = 15;
   const activityOrder = [
     'combat_training_minutes',

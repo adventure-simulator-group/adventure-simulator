@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use super::camp_duration_mode_type::CampDurationMode;
+use super::journey_camp_interval_type::JourneyCampInterval;
 use super::journey_endpoint_type::JourneyEndpoint;
 use super::party_journey_type::PartyJourney;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};

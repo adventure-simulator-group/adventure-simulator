@@ -21,6 +21,7 @@ pub mod signature;
 pub mod simplex_noise;
 pub mod stencil;
 pub mod stream;
+mod surface_extraction;
 pub mod texture_ops;
 pub mod transpose;
 
@@ -38,7 +39,27 @@ pub use perlin_noise::RenderPerlin;
 pub use reduce::{Max, Min, ReduceDefinition};
 pub use scatter::*;
 pub use simplex_noise::RenderSimplex;
+pub use surface_extraction::*;
 pub use texture_ops::{TextureBinaryOp, TextureBinaryOpDefinition};
+
+/// Thread-safe cache shared by compute definitions that specialize pipelines by resource shape.
+pub type ComputePipelineCache<Key, Value = pipeline::ComputePipeline> =
+    std::sync::Arc<std::sync::RwLock<std::collections::HashMap<Key, std::sync::Arc<Value>>>>;
+
+/// Deterministically ordered named resources used as part of a pipeline cache key.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct OrderedResourceDescriptors(Vec<(String, ResourceDescriptor)>);
+
+impl From<&std::collections::HashMap<String, ResourceDescriptor>> for OrderedResourceDescriptors {
+    fn from(resources: &std::collections::HashMap<String, ResourceDescriptor>) -> Self {
+        let mut ordered = resources
+            .iter()
+            .map(|(name, descriptor)| (name.clone(), descriptor.clone()))
+            .collect::<Vec<_>>();
+        ordered.sort_by(|left, right| left.0.cmp(&right.0));
+        Self(ordered)
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum ResourceDescriptor {

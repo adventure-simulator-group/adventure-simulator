@@ -151,7 +151,6 @@ pub struct RigProfile {
     #[serde(default)]
     pub root: RootSource,
     /// The posture this rig's motion is measured against.
-    #[serde(default)]
     pub reference: ReferencePose,
     /// Rotation taking this rig's space to engine space, for assets an
     /// importer could not normalize. Identity for anything well-behaved.

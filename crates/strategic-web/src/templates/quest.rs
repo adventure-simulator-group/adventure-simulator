@@ -49,6 +49,10 @@ pub struct HostileSurrenderPresentation {
     pub latest_response: Option<String>,
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the quest page boundary composes independently authorized route projections"
+)]
 pub fn quest_location_map_page(
     presentation: &CaseSitePagePresentation,
     site: &BackendCaseSitePin,
@@ -133,6 +137,10 @@ pub fn quest_location_map_page(
     )
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the quest center renderer composes independently authorized route projections"
+)]
 fn quest_location_center(
     presentation: &CaseSitePagePresentation,
     site: &BackendCaseSitePin,
@@ -402,6 +410,10 @@ fn quest_counterparty_strip(case_site_id: &str, counterparties: &[QuestCounterpa
 }
 
 /// Enemy encounter and, once resolved, its loot at an off-road quest location.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the enemy page boundary composes independently authorized route projections"
+)]
 pub fn quest_location_enemy_page(
     presentation: &CaseSitePagePresentation,
     site: &BackendCaseSitePin,
@@ -575,6 +587,7 @@ fn loot_stage_form(quest_id: &str) -> Markup {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::spacetimedb::DestinationKnowledgeStage;
 
     #[test]
     fn case_site_counterparties_use_per_row_contact_and_treatment_actions() {
@@ -605,7 +618,6 @@ mod tests {
             name: name.into(),
             xp: 0,
             level: 1,
-            gold: 0,
             current_settlement_id: None,
             current_case_site_id: Some("case-site:known".into()),
             party_id: None,
@@ -744,7 +756,7 @@ mod tests {
             latitude_e7: 0,
             coordinates_are_geographic: false,
             distance_m: 4_000,
-            knowledge_stage: "visited".into(),
+            knowledge_stage: DestinationKnowledgeStage::Visited,
             tracked: false,
             display_title: presentation.title.clone(),
             generated_case: true,
@@ -776,7 +788,6 @@ mod tests {
                 name: "Bandit spokesman".into(),
                 xp: 0,
                 level: 1,
-                gold: 0,
                 current_settlement_id: None,
                 current_case_site_id: Some(site.case_site_id.clone()),
                 party_id: None,
@@ -851,7 +862,7 @@ mod tests {
             latitude_e7: 0,
             coordinates_are_geographic: false,
             distance_m: 100,
-            knowledge_stage: "visited".into(),
+            knowledge_stage: DestinationKnowledgeStage::Visited,
             tracked: false,
             display_title: presentation.title.clone(),
             generated_case: true,
@@ -904,7 +915,7 @@ mod tests {
             latitude_e7: 0,
             coordinates_are_geographic: false,
             distance_m: 100,
-            knowledge_stage: "visited".into(),
+            knowledge_stage: DestinationKnowledgeStage::Visited,
             tracked: false,
             display_title: presentation.title.clone(),
             generated_case: true,
@@ -958,7 +969,7 @@ mod tests {
             latitude_e7: 0,
             coordinates_are_geographic: false,
             distance_m: 100,
-            knowledge_stage: "visited".into(),
+            knowledge_stage: DestinationKnowledgeStage::Visited,
             tracked: false,
             display_title: presentation.title.clone(),
             generated_case: true,

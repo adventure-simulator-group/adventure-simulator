@@ -16,11 +16,11 @@ use adventuresim_core::{
         select_daily_location_target, spouse_leisure_earned_milli, succeeds_daily_trial,
         validate_housing_catalog,
     },
-    social::Transparency,
+    personality::Transparency,
     strategic_schedule::{
         SocializingSociability, SocializingTrainingWeights, socializing_training_weights,
     },
-    strategic_time::MINUTES_PER_DAY,
+    strategic_time::{DAYS_PER_YEAR, MINUTES_PER_DAY},
 };
 use serde::Serialize;
 use std::{
@@ -29,7 +29,7 @@ use std::{
     path::Path,
 };
 
-const HORIZON_DAYS: u64 = 3 * 365;
+const HORIZON_DAYS: u64 = 3 * DAYS_PER_YEAR;
 const NPC_QUEUE_LEN: u64 = 17;
 const NPC_BATCH_LIMIT: u64 = 4;
 const PRIVATE_SCENARIO_CANARY: &str = "DO_NOT_PROJECT_LIFECYCLE_AUTHORITY";
@@ -224,8 +224,8 @@ impl ScenarioState {
 fn lifecycle_entropy(seed: u64, domain: &str, ordinal: u64) -> u16 {
     let seed = seed.to_string();
     let ordinal = ordinal.to_string();
-    (adventuresim_core::courtship::stable_lifecycle_hash(domain, &[&seed, &ordinal]) % 10_000)
-        as u16
+    (adventuresim_core::courtship::stable_lifecycle_hash(domain, &[&seed, &ordinal])
+        % u64::from(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE)) as u16
 }
 
 fn select_socializing_role<'a>(tiers: &[(&'a str, &[&'a str])]) -> Option<(&'a str, &'a str)> {
@@ -464,7 +464,7 @@ fn all_acceptance_assertions_pass(metrics: &LifecycleMetrics) -> bool {
         && c.secrecy_attempts == c.secrecy_successes + c.secrecy_failures
         && c.secrecy_successes > 0
         && c.secrecy_failures > 0
-        && w.notice_days == 365
+        && w.notice_days == DAYS_PER_YEAR
         && w.ceremonies == 1
         && w.dowry_payments == 1
         && w.duplicate_wedding_processing_ignored

@@ -1,10 +1,12 @@
 //! Dependency-light validation shared verbatim by `build.rs`, runtime startup,
 //! and the authoring checker.
 
+use adventuresim_world_schema::BASIS_POINTS_PER_WHOLE;
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
-const MAX_BESTIARY_INTERPRETATION_BYTES: usize = 1_024;
+pub(crate) const MAX_BESTIARY_INTERPRETATION_BYTES: usize = 1_024;
+pub(crate) const MAX_QUEST_DIALOGUE_TEMPLATE_CHARS: usize = 1_024;
 
 const ROOT_KEYS: &[&str] = &[
     "monsters",
@@ -727,7 +729,7 @@ pub fn validate_documents(documents: &[Value], files: &[String]) -> Result<(), S
                             combat,
                             "escalation_growth_rate_bps",
                             1,
-                            10_000,
+                            u64::from(BASIS_POINTS_PER_WHOLE),
                             &format!("{at}.combat"),
                         )?;
                         unsigned(
@@ -811,7 +813,13 @@ pub fn validate_documents(documents: &[Value], files: &[String]) -> Result<(), S
                                         "{topic_at}.bestiary: duplicate category {category}"
                                     ));
                                 }
-                                unsigned(implication, "support_bps", 0, 10_000, &implication_at)?;
+                                unsigned(
+                                    implication,
+                                    "support_bps",
+                                    0,
+                                    u64::from(BASIS_POINTS_PER_WHOLE),
+                                    &implication_at,
+                                )?;
                                 unsigned(
                                     implication,
                                     "lore_difficulty_milli",
@@ -1090,10 +1098,34 @@ pub fn validate_documents(documents: &[Value], files: &[String]) -> Result<(), S
                             .entry(family.to_owned())
                             .or_default()
                             .extend(causes);
-                        signed(item, "buy_bps", -10_000, 10_000, &at)?;
-                        signed(item, "sell_penalty_bps", -10_000, 10_000, &at)?;
-                        unsigned(item, "encounter_frequency_bps", 0, 10_000, &at)?;
-                        unsigned(item, "disease_intensity", 0, 10_000, &at)?;
+                        signed(
+                            item,
+                            "buy_bps",
+                            -i64::from(BASIS_POINTS_PER_WHOLE),
+                            i64::from(BASIS_POINTS_PER_WHOLE),
+                            &at,
+                        )?;
+                        signed(
+                            item,
+                            "sell_penalty_bps",
+                            -i64::from(BASIS_POINTS_PER_WHOLE),
+                            i64::from(BASIS_POINTS_PER_WHOLE),
+                            &at,
+                        )?;
+                        unsigned(
+                            item,
+                            "encounter_frequency_bps",
+                            0,
+                            u64::from(BASIS_POINTS_PER_WHOLE),
+                            &at,
+                        )?;
+                        unsigned(
+                            item,
+                            "disease_intensity",
+                            0,
+                            u64::from(BASIS_POINTS_PER_WHOLE),
+                            &at,
+                        )?;
                         nonempty_string(item, "public_summary", &at)?;
                     }
                     "bridges" => {
@@ -1155,7 +1187,7 @@ pub fn validate_documents(documents: &[Value], files: &[String]) -> Result<(), S
                         )?;
                         signed(item, "priority", -10_000, 10_000, &at)?;
                         let template = nonempty_string(item, "template", &at)?;
-                        if template.len() > 1024 {
+                        if template.chars().count() > MAX_QUEST_DIALOGUE_TEMPLATE_CHARS {
                             return Err(format!("{at}.template: too long"));
                         }
                         if let Some(condition) = item.get("conditions") {

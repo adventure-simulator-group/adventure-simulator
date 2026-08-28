@@ -1,7 +1,6 @@
 use crate::data::gpu::resource::{GpuResource, ResourceType};
 use crate::prelude::*;
-use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ScatterSignature {
@@ -13,19 +12,10 @@ pub struct ScatterSignature {
     pub param_names: Vec<String>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct ScatterDefinition {
     pub code: String,
-    pub cache: Arc<RwLock<HashMap<(ResourceType, ResourceType), Arc<(ComputePipeline, u64, u64)>>>>,
-}
-
-impl Default for ScatterDefinition {
-    fn default() -> Self {
-        Self {
-            code: String::new(),
-            cache: Arc::new(RwLock::new(HashMap::new())),
-        }
-    }
+    pub cache: ComputePipelineCache<(ResourceType, ResourceType), (ComputePipeline, u64, u64)>,
 }
 
 impl PartialEq for ScatterDefinition {
@@ -39,7 +29,7 @@ impl ScatterDefinition {
         let _ = Self::parse_signature(&code)?;
         Ok(Self {
             code,
-            cache: Arc::new(RwLock::new(HashMap::new())),
+            cache: ComputePipelineCache::default(),
         })
     }
 
@@ -385,7 +375,7 @@ impl Scatter {
             ),
         };
 
-        crate::data::gpu::compute::ComputePass::new(
+        crate::data::gpu::compute::ComputePass::execute(
             context,
             pipeline.clone(),
             parameters,

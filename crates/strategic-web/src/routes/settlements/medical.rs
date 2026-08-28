@@ -1,14 +1,5 @@
-pub(super) fn parse_surgery_limb(slug: &str) -> Option<LimbRegion> {
-    Some(match slug {
-        "left-arm" => LimbRegion::LeftArm,
-        "right-arm" => LimbRegion::RightArm,
-        "left-leg" => LimbRegion::LeftLeg,
-        "right-leg" => LimbRegion::RightLeg,
-        "chest" => LimbRegion::Chest,
-        "stomach" => LimbRegion::Stomach,
-        "head" => LimbRegion::Head,
-        _ => return None,
-    })
+pub(super) fn parse_surgery_limb(slug: &str) -> Option<BodyRegion> {
+    BodyRegion::parse_slug(slug)
 }
 
 #[derive(Default, Deserialize)]
@@ -38,21 +29,13 @@ fn residence_notice(code: Option<&str>) -> Option<&'static str> {
 
 fn relationship_date_label(minute: u64) -> String {
     let day = minute / adventuresim_core::strategic_time::MINUTES_PER_DAY;
-    let year = 1544 + day / 365;
-    let day_of_year = day % 365 + 1;
+    let year = 1544 + day / adventuresim_core::strategic_time::DAYS_PER_YEAR;
+    let day_of_year = day % adventuresim_core::strategic_time::DAYS_PER_YEAR + 1;
     format!("year {year}, day {day_of_year}")
 }
 
-fn housing_error_code(error: &str) -> &'static str {
-    if error.contains("coin") || error.contains("fund") {
-        "funds"
-    } else if error.contains("settlement") || error.contains("co-location") {
-        "location"
-    } else if error.contains("dormant") || error.contains("due") {
-        "overdue"
-    } else {
-        "unavailable"
-    }
+fn housing_error_code(_error: &str) -> &'static str {
+    "unavailable"
 }
 
 pub(super) async fn required_surgery_rows<T>(
@@ -172,7 +155,7 @@ pub(super) async fn surgery(
                 .iter()
                 .any(|def| def.id == entry.item_id && def.alcohol_disinfectant_effectiveness > 0)
         })
-        .map(|entry| entry.qty)
+        .map(|entry| entry.quantity)
         .sum();
     let disinfectants = inventory
         .iter()
@@ -214,7 +197,7 @@ pub(super) async fn surgery(
         inventory
             .iter()
             .filter(|item| item.item_id == item_id)
-            .map(|item| item.qty)
+            .map(|item| item.quantity)
             .sum()
     };
     let surgery_check = get_character_capability(&state, actor_id)
@@ -228,7 +211,7 @@ pub(super) async fn surgery(
                     .iter()
                     .any(|injury| injury.splint_inventory_item_id == Some(item.id))
         })
-        .map(|item| item.qty)
+            .map(|item| item.quantity)
         .sum();
     let dialog = surgery_dialog(
         &location,
@@ -508,12 +491,10 @@ pub(super) async fn settlement_resident_place(
     {
         return Html("<h1>Settlement place not found</h1>".into());
     }
+    let settlement_query = settlement_by_id(&id);
     let settlement = state
         .db
-        .query_one::<Settlement>(&format!(
-            "SELECT * FROM settlement WHERE id = {}",
-            sql_string_literal(&id)
-        ))
+        .query_one::<Settlement>(settlement_query.as_str())
         .await
         .ok()
         .flatten();
@@ -576,9 +557,9 @@ pub(super) async fn settlement_resident_place(
         );
         let mut offers = offers.unwrap_or_default();
         offers.sort_by_key(|offer| match offer.tier {
-            ResidenceTier::Cheap => 0,
-            ResidenceTier::Moderate => 1,
-            ResidenceTier::Fancy => 2,
+            HousingTier::Cheap => 0,
+            HousingTier::Moderate => 1,
+            HousingTier::Fancy => 2,
         });
         let mut residences = residences.unwrap_or_default();
         residences.retain(|holding| holding.character_id == character.id);
@@ -840,11 +821,10 @@ pub(super) async fn show_settlement_location(
     session: Session,
 ) -> Html<String> {
     let settlement_literal = sql_string_literal(&id);
+    let settlement_query = settlement_by_id(&id);
     let settlement = state
         .db
-        .query_one::<Settlement>(&format!(
-            "SELECT * FROM settlement WHERE id = {settlement_literal}"
-        ))
+        .query_one::<Settlement>(settlement_query.as_str())
         .await;
     let settlement = match settlement {
         Ok(Some(settlement)) => settlement,

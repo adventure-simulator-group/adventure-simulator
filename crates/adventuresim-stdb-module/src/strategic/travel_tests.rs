@@ -1,15 +1,15 @@
 #[cfg(test)]
 mod departure_invariant_tests {
     use super::{
-        CampDurationMode, CaseSiteId, JourneyCaseSiteEndpoint, JourneyEndpoint,
-        JourneyPrecipitation, JourneyRoutePlan, JourneyRoutePoint, JourneySettlementEndpoint,
-        JourneyTerrainKind, JourneyTerrainSpan, JourneyTerrainWeights, Party, PartyJourneyRoute,
-        common_movement_prefix, core_encounter_terrain, departure_requires_ready_party,
-        departure_snapshot_allows_travel, party_can_continue_travel,
-        journey_elapsed_after_delay, pending_incident_allows_departure,
-        reconstruct_legacy_journey_coordinates,
-        route_position_at_minute, set_party_journey_state, straight_line_distance_m,
-        authoritative_straight_line_case_route,
+        CaseSiteId, JourneyCaseSiteEndpoint, JourneyEndpoint, JourneyPrecipitation,
+        JourneyRoutePlan, JourneyRoutePoint, JourneySettlementEndpoint, JourneyTerrainKind,
+        JourneyTerrainSpan, JourneyTerrainWeights, Party, PartyJourneyRoute,
+        DEFAULT_JOURNEY_START_MINUTE_OF_DAY, DEFAULT_WALKING_MINUTES_PER_DAY,
+        authoritative_straight_line_case_route, common_movement_prefix, core_encounter_terrain,
+        departure_requires_ready_party, departure_snapshot_allows_travel,
+        encode_position_e7, journey_elapsed_after_delay, party_can_continue_travel,
+        pending_incident_allows_departure, route_position_at_minute, set_party_journey_state,
+        straight_line_distance_m,
         terrain_training_exposure, validate_camp_redirect_weather_interval,
         validate_journey_route_payload, validate_route_departure_weather_interval,
         zero_boundary_requires_settlement,
@@ -19,6 +19,14 @@ mod departure_invariant_tests {
     fn journey_delay_preserves_remaining_elapsed_forecast() {
         assert_eq!(journey_elapsed_after_delay(240, 260, 180), (420, 440));
         assert_eq!(journey_elapsed_after_delay(420, 260, 180), (600, 600));
+    }
+
+    #[test]
+    fn abstract_position_encoding_rejects_invalid_storage_coordinates() {
+        assert!(encode_position_e7(f64::NAN, 0.0, false).is_none());
+        assert!(encode_position_e7(0.0, f64::INFINITY, false).is_none());
+        assert!(encode_position_e7(f64::MAX, 0.0, false).is_none());
+        assert!(encode_position_e7(0.0, f64::MIN, false).is_none());
     }
 
     fn endpoint_name(endpoint: &JourneyEndpoint) -> &str {
@@ -66,7 +74,7 @@ mod departure_invariant_tests {
     fn colocated_case_site_return_is_an_instant_exact_location_transition() {
         assert_eq!(straight_line_distance_m(10.0, 53.0, 10.0, 53.0, true), 0);
 
-        let source = include_str!("travel_reducers.rs");
+        let source = crate::production_source(include_str!("travel_reducers.rs"));
         let travel = source
             .split("fn travel_to_settlement_impl")
             .nth(1)
@@ -118,7 +126,7 @@ mod departure_invariant_tests {
 
     #[test]
     fn affordable_arrest_surrender_then_colocated_return_is_a_complete_reducer_chain() {
-        let incidents = include_str!("incidents.rs");
+        let incidents = crate::production_source(include_str!("incidents.rs"));
         let surrender = incidents
             .split("pub fn surrender_to_authority")
             .nth(1)
@@ -130,7 +138,7 @@ mod departure_invariant_tests {
         assert!(surrender.contains("IncidentStatus::Resolved"));
         assert!(!surrender.contains("set_character_case_site"));
 
-        let places = include_str!("../foraging.rs");
+        let places = crate::production_source(include_str!("../foraging.rs"));
         let provenance = places
             .split("fn actor_party_owns_incident_site")
             .nth(1)
@@ -148,7 +156,7 @@ mod departure_invariant_tests {
         }
         assert!(!provenance.contains("IncidentStatus::Pending"));
 
-        let travel = include_str!("travel_reducers.rs");
+        let travel = crate::production_source(include_str!("travel_reducers.rs"));
         let zero_return = travel
             .split("if zero_distance_case_site_return")
             .nth(1)
@@ -164,12 +172,14 @@ mod departure_invariant_tests {
             .and_then(|tail| tail.split("pub fn travel_to_settlement").next())
             .expect("settlement arrival");
         assert!(arrival.contains("set_character_case_site(ctx, traveler.id, None)"));
-        assert!(arrival.contains("set_party_journey_state(party, Some(settlement_id.to_owned()), None, None, 0)"));
+        assert!(arrival.contains(
+            "set_party_journey_state(party, Some(settlement_id.to_owned()), None, None, 0)"
+        ));
     }
 
     #[test]
     fn combat_resolved_activity_incident_retains_exact_onsite_return_provenance() {
-        let incidents = include_str!("incidents.rs");
+        let incidents = crate::production_source(include_str!("incidents.rs"));
         let combat_completion = incidents
             .split("pub(crate) fn finish_incident_for_hostile_group")
             .nth(1)
@@ -178,7 +188,7 @@ mod departure_invariant_tests {
         assert!(combat_completion.contains("IncidentStatus::Resolved"));
         assert!(!combat_completion.contains("set_character_case_site"));
 
-        let places = include_str!("../foraging.rs");
+        let places = crate::production_source(include_str!("../foraging.rs"));
         let provenance = places
             .split("fn actor_party_owns_incident_site")
             .nth(1)
@@ -213,27 +223,25 @@ mod departure_invariant_tests {
     }
 
     #[test]
-    fn legacy_journey_never_falls_back_to_day_one() {
-        assert_eq!(
-            reconstruct_legacy_journey_coordinates(20_000, 600),
-            (19_400, 600)
-        );
-        assert_eq!(reconstruct_legacy_journey_coordinates(300, 600), (0, 600));
-    }
-
-    #[test]
     fn unplanned_case_route_persists_coherent_disclosed_straight_line_geometry() {
         let route = authoritative_straight_line_case_route(
             332_661,
             (10.0, 53.0),
             (10.01, 53.01),
+            true,
             1_300,
             63,
-        );
+        )
+        .unwrap();
         assert_eq!(route.distance_m, 1_300);
         assert_eq!(route.minutes, 63);
         assert_eq!(route.package_digest.len(), 64);
-        assert!(route.package_digest.bytes().all(|byte| byte.is_ascii_hexdigit()));
+        assert!(
+            route
+                .package_digest
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit())
+        );
         assert_eq!(route.points.len(), 2);
         assert_eq!(route.points[0].longitude_e7, 100_000_000);
         assert_eq!(route.points[0].latitude_e7, 530_000_000);
@@ -247,30 +255,36 @@ mod departure_invariant_tests {
 
     #[test]
     fn journey_refresh_keeps_case_site_forecast_to_the_active_leg() {
-        let source = include_str!("journey_camp.rs");
+        let source = crate::production_source(include_str!("journey_camp.rs"));
         let refresh = source
             .split("pub(crate) fn refresh_party_journey_forecast")
             .nth(1)
             .expect("journey refresh");
-        assert!(refresh.contains("let planned_movement = journey.total_minutes"));
-        assert!(!refresh.contains("journey.total_minutes.saturating_mul(2)"));
+        assert!(refresh.contains(".total_movement_minutes"));
+        assert!(refresh.contains(".saturating_sub(journey.completed_movement_minutes)"));
+        assert!(!refresh.contains("total_movement_minutes.saturating_mul(2)"));
     }
 
     #[test]
     fn canonical_camp_identity_requires_coherent_current_journey_authority() {
-        let camp_source = include_str!("journey_camp.rs");
+        let camp_source = crate::production_source(include_str!("journey_camp.rs"));
         let predicate = camp_source
             .split("pub(crate) fn party_journey_is_current_camp")
             .nth(1)
-            .and_then(|tail| tail.split("pub(crate) fn current_journey_camp_place").next())
+            .and_then(|tail| {
+                tail.split("pub(crate) fn current_journey_camp_place")
+                    .next()
+            })
             .expect("current camp predicate");
         assert!(predicate.contains("camp_destination.as_ref() == Some(&journey.destination)"));
-        assert!(predicate.contains("journey_plan_version_is_canonical"));
-        assert!(predicate.contains("journey.completed_minutes < journey.total_minutes"));
-        assert!(predicate.contains("camp_stop_minutes"));
-        assert!(!predicate.contains("forecast_camp_stop_minutes"));
+        assert!(
+            predicate
+                .contains("journey.completed_movement_minutes < journey.total_movement_minutes")
+        );
+        assert!(predicate.contains("reached_camp_movement_minutes"));
+        assert!(!predicate.contains("forecast_camp_intervals"));
 
-        let travel_source = include_str!("travel_reducers.rs");
+        let travel_source = crate::production_source(include_str!("travel_reducers.rs"));
         let continuation = travel_source
             .split("pub fn continue_camp_travel")
             .nth(1)
@@ -286,23 +300,27 @@ mod departure_invariant_tests {
 
     #[test]
     fn every_uninterrupted_departure_camp_records_even_zero_movement_identity() {
-        let travel_source = include_str!("travel_reducers.rs");
+        let travel_source = crate::production_source(include_str!("travel_reducers.rs"));
         assert_eq!(
-            travel_source.matches("record_party_journey_camp(ctx,").count(),
+            travel_source
+                .matches("record_party_journey_camp(ctx,")
+                .count(),
             3,
             "case-site departure, settlement departure, and continuation share the camp invariant",
         );
         assert!(
-            !travel_source.contains("if leg_minutes > 0 {\n                record_party_journey_camp"),
+            !travel_source
+                .contains("if leg_minutes > 0 {\n                record_party_journey_camp"),
             "an initial nighttime camp at movement minute zero is still a reached camp",
         );
-        let camp_source = include_str!("journey_camp.rs");
+        let camp_source = crate::production_source(include_str!("journey_camp.rs"));
         let recorder = camp_source
             .split("fn record_party_journey_camp")
             .nth(1)
-            .and_then(|tail| tail.split("pub(crate) fn journey_plan_version_is_canonical").next())
+            .and_then(|tail| tail.split("/// One predicate shared").next())
             .expect("journey camp recorder");
-        assert!(recorder.contains("camp_stop_minutes.push(journey.completed_minutes)"));
+        assert!(recorder.contains("reached_camp_movement_minutes"));
+        assert!(recorder.contains("push(journey.completed_movement_minutes)"));
     }
 
     fn route_fixture() -> JourneyRoutePlan {
@@ -548,19 +566,16 @@ fn zero_minute_terminal_is_settled_before_survivors_retry() {
             active_contract_id: None,
             is_solo: true,
             camp_fatigue_percent: 50,
-            walking_minutes_per_day: 480,
+            walking_minutes_per_day: DEFAULT_WALKING_MINUTES_PER_DAY,
             travel_at_night: false,
-            journey_start_minute_of_day: 480,
+            journey_start_minute_of_day: DEFAULT_JOURNEY_START_MINUTE_OF_DAY,
             wilderness_canonical_anchor_minute: Some(10_000),
             wilderness_elapsed_minutes: 0,
-            camp_duration_mode: CampDurationMode::Auto,
-            fixed_camp_minutes: 0,
             camp_destination: Some(JourneyEndpoint::Settlement(JourneySettlementEndpoint {
                 id: "destination".into(),
                 name: "Destination".into(),
             })),
             camp_remaining_minutes: 30,
-            pooled_water_ml: 0.0,
             physiology_target: 0.0,
             command_target: 0.0,
             religion_target: 0.0,
@@ -636,12 +651,21 @@ fn zero_minute_terminal_is_settled_before_survivors_retry() {
 
     #[test]
     fn terminal_departure_sync_commits_and_stops_before_creating_a_journey() {
-        let source = include_str!("travel_reducers.rs");
+        let source = crate::production_source(include_str!("travel_reducers.rs"));
         assert_eq!(
-            source.matches("let Some(departure_minute) = crate::time::synchronize_party_departure_time").count(),
+            source
+                .matches(
+                    "let Some(departure_minute) = crate::time::synchronize_party_departure_time"
+                )
+                .count(),
             2,
         );
-        assert_eq!(source.matches("else {\n        return Ok(());\n    };").count(), 2);
+        assert_eq!(
+            source
+                .matches("else {\n        return Ok(());\n    };")
+                .count(),
+            2
+        );
     }
 }
 
@@ -658,20 +682,19 @@ fn journey_local_time_wraps_without_advancing_the_frozen_date() {
             id: "destination".into(),
             name: "Destination".into(),
         }),
-        total_minutes: 60,
-        completed_minutes: 0,
-        camp_stop_minutes: Vec::new(),
-        forecast_camp_stop_minutes: Vec::new(),
+        total_movement_minutes: 60,
+        completed_movement_minutes: 0,
+        reached_camp_movement_minutes: Vec::new(),
+        actual_camp_intervals: Vec::new(),
+        forecast_camp_intervals: Vec::new(),
         fatigue_percent: 0,
-        plan_version: 1,
-        departure_minute: 10 * 1_440 + 1_380,
+        departure_minute: 10 * MINUTES_PER_DAY + 23 * MINUTES_PER_HOUR,
         total_elapsed_minutes: 60,
         completed_elapsed_minutes: 0,
-        walking_minutes_per_day: 480,
+        walking_minutes_per_day: DEFAULT_WALKING_MINUTES_PER_DAY,
         travel_at_night: false,
-        camp_duration_mode: CampDurationMode::Fixed,
-        fixed_camp_minutes: 960,
     };
-    assert_eq!(journey_local_minute(&journey, 120), 10 * 1_440 + 60);
-    assert_eq!(journey_local_minute(&journey, 90 * 1_440 + 120), 10 * 1_440 + 60);
+    let expected = 10 * MINUTES_PER_DAY + MINUTES_PER_HOUR;
+    assert_eq!(journey_local_minute(&journey, 120), expected);
+    assert_eq!(journey_local_minute(&journey, 90 * MINUTES_PER_DAY + 120), expected);
 }

@@ -18,12 +18,8 @@ class JustTaskTests(unittest.TestCase):
             "load-world server=spacetime_url database=spacetime_module:",
             justfile,
         )
-        self.assertIn(
-            "load-viabundus-world server=spacetime_url database=spacetime_module:",
-            justfile,
-        )
         load_recipe = justfile.split("load-world server=", 1)[1].split(
-            "# Compatibility name", 1
+            "# Build the tactical server", 1
         )[0]
         self.assertIn("recreate-world-database", load_recipe)
         self.assertLess(

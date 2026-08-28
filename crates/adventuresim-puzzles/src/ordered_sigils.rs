@@ -1,3 +1,4 @@
+use fabelgeist_determinism::SplitMix64;
 use serde::{Deserialize, Serialize};
 
 use super::{MAX_MINIMIZATION_SUBSETS, ORDERED_SIGIL_COUNT, ORDERED_SIGIL_RULES_VERSION};
@@ -147,10 +148,11 @@ impl OrderedSigilPuzzle {
 
     pub fn generate_with_spec(seed: u64, spec: OrderedSigilSpec) -> Result<Self, &'static str> {
         let spec = spec.validate()?;
-        let mut rng = SplitMix64(seed ^ 0x6572_7261_6e74_7279);
+        const ORDERED_SIGIL_GENERATION_DOMAIN: u64 = 0x6572_7261_6e74_7279;
+        let mut rng = SplitMix64::new(seed ^ ORDERED_SIGIL_GENERATION_DOMAIN);
         let mut solution = Sigil::ALL;
         for end in (1..solution.len()).rev() {
-            let selected = (rng.next() as usize) % (end + 1);
+            let selected = rng.index(end + 1);
             solution.swap(end, selected);
         }
 
@@ -306,7 +308,10 @@ pub fn minimum_clues(
     Err("ordered-sigil clue bound failed for this specification")
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 fn search_minimum_subsets(
     start: usize,
     remaining: usize,
@@ -407,15 +412,4 @@ fn is_permutation(ordering: &[Sigil; ORDERED_SIGIL_COUNT]) -> bool {
             .count()
             == 1
     })
-}
-
-struct SplitMix64(u64);
-impl SplitMix64 {
-    fn next(&mut self) -> u64 {
-        self.0 = self.0.wrapping_add(0x9e37_79b9_7f4a_7c15);
-        let mut value = self.0;
-        value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-        value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-        value ^ (value >> 31)
-    }
 }

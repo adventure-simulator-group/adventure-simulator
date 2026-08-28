@@ -15,7 +15,7 @@ fn contract_and_religion_lifecycle_guards_are_explicit() {
     assert!(normalize.contains("ContractStatus::Accepted | ContractStatus::ReadyToReport"));
     assert!(!normalize.contains("ContractStatus::Paid"));
 
-    let condition = include_str!("../../condition.rs");
+    let condition = crate::production_source(include_str!("../../condition.rs"));
     let religion = condition
         .split("pub fn set_character_religion")
         .nth(1)
@@ -34,21 +34,26 @@ fn encounter_body_weight_is_authoritative_but_sanitized() {
 
 #[test]
 fn unready_members_keep_their_burden_but_lose_carrying_capacity() {
-    assert_eq!(carrying_capacity_multiplier_for_condition("ready"), 1.0);
-    assert_eq!(carrying_capacity_multiplier_for_condition("staggered"), 0.5);
+    use adventuresim_core::morale::IncapacitationStatus;
+
     assert_eq!(
-        carrying_capacity_multiplier_for_condition("incapacitated"),
-        0.0
+        carrying_capacity_multiplier_for_condition(IncapacitationStatus::Ready),
+        1.0
     );
     assert_eq!(
-        carrying_capacity_multiplier_for_condition("unavailable"),
+        carrying_capacity_multiplier_for_condition(IncapacitationStatus::Staggered),
+        0.5
+    );
+    assert_eq!(
+        carrying_capacity_multiplier_for_condition(IncapacitationStatus::Incapacitated),
         0.0
     );
 
     let unchanged_body_and_load_burden = 95.0;
-    let ready_capacity = 100.0 * carrying_capacity_multiplier_for_condition("ready");
-    let incapacitated_capacity =
-        100.0 * carrying_capacity_multiplier_for_condition("incapacitated");
+    let ready_capacity =
+        100.0 * carrying_capacity_multiplier_for_condition(IncapacitationStatus::Ready);
+    let incapacitated_capacity = 100.0
+        * carrying_capacity_multiplier_for_condition(IncapacitationStatus::Incapacitated);
     assert!(ready_capacity >= unchanged_body_and_load_burden);
     assert!(incapacitated_capacity < unchanged_body_and_load_burden);
 }
@@ -169,8 +174,8 @@ fn case_reputation_separates_canonical_and_public_battle_identity() {
         .expect("case finale");
     assert!(finale.contains("crate::world_event::commit_generated_case_resolution"));
     assert!(finale.contains("&case.id"));
-    assert!(finale.contains("&authority.public_case_id"));
-    assert!(finale.contains("&authority.settlement_id"));
+    assert!(finale.contains("&validated.manifest.public_case_id"));
+    assert!(finale.contains("&validated.context.settlement_id"));
     let unified = finale
         .find("crate::world_event::commit_generated_case_resolution")
         .expect("unified consequence boundary");
@@ -290,7 +295,6 @@ fn tracking_is_presentation_only_and_travel_revalidates_exact_knowledge() {
         .and_then(|tail| tail.split("pub fn travel_to_settlement").next())
         .expect("case-site travel implementation");
     assert_eq!(travel.matches("exact_case_site_for_observer").count(), 2);
-    assert!(travel.contains("\"case_site\""));
     assert!(travel.contains("expected_settlement_id = party.current_settlement_id.clone()"));
     assert!(travel.contains("expected_case_site_id = party.current_case_site_id.clone()"));
     assert!(travel.contains("JourneyEndpoint::Settlement"));
@@ -518,8 +522,7 @@ fn case_blocker_authority_paths_remain_reachable_and_private() {
 #[test]
 fn merchant_trade_is_bound_to_a_closed_storefront_and_persistent_provider() {
     use adventuresim_core::{
-        settlement_economy::Storefront,
-        strategic_inventory::MerchantStorefrontRoute,
+        settlement_economy::Storefront, strategic_inventory::MerchantStorefrontRoute,
     };
 
     assert_eq!(
@@ -549,10 +552,10 @@ fn merchant_trade_is_bound_to_a_closed_storefront_and_persistent_provider() {
     assert!(MerchantStorefrontRoute::try_from("herbalist").is_err());
     assert!(MerchantStorefrontRoute::try_from("../inn").is_err());
 
-    let source = STRATEGIC_SOURCE;
+    let source = include_str!("../inventory_trade.rs");
     let trade = source
-        .split("fn finalize_storefront_trade_impl")
-        .nth(1)
+        .rsplit("fn finalize_storefront_trade_impl")
+        .next()
         .and_then(|tail| tail.split("#[reducer]\npub fn leave_party").next())
         .expect("storefront trade implementation");
     for authority_check in [
@@ -580,8 +583,8 @@ fn merchant_trade_is_bound_to_a_closed_storefront_and_persistent_provider() {
     );
 
     let party_purchase = source
-        .split("fn add_to_party_inventory_checked")
-        .nth(1)
+        .rsplit("fn add_to_party_inventory_checked")
+        .next()
         .and_then(|tail| tail.split("fn credit_party_stake").next())
         .expect("party inventory purchase implementation");
     assert!(party_purchase.contains("inventory_food_definition(kind, item_id)?"));
@@ -595,7 +598,10 @@ fn atomic_personal_storefront_purchase_validates_before_funding() {
     let body = source
         .split("pub fn purchase_personal_storefront_with_party_stake")
         .nth(1)
-        .and_then(|tail| tail.split("fn validate_personal_storefront_purchase").next())
+        .and_then(|tail| {
+            tail.split("fn validate_personal_storefront_purchase")
+                .next()
+        })
         .expect("atomic personal storefront reducer");
     let validation = body.find("validate_personal_storefront_purchase").unwrap();
     let transfer = body.find("transfer_party_currency_to_personal").unwrap();
@@ -612,7 +618,10 @@ fn fully_personal_storefront_purchase_does_not_require_a_stake_row() {
     let body = STRATEGIC_SOURCE
         .split("pub fn purchase_personal_storefront_with_party_stake")
         .nth(1)
-        .and_then(|tail| tail.split("fn validate_personal_storefront_purchase").next())
+        .and_then(|tail| {
+            tail.split("fn validate_personal_storefront_purchase")
+                .next()
+        })
         .expect("atomic personal storefront reducer");
     let stake_branch = body.find("if stake_payment > 0").unwrap();
     let stake_lookup = body.find(".party_stake()").unwrap();
@@ -692,20 +701,23 @@ fn authority_arrest_action_projection_is_gateway_only_exact_and_redacted() {
         .and_then(|tail| tail.split("#[spacetimedb::reducer]").next())
         .expect("authority arrest action projection");
     let gate = projection.find("strategic_view_is_gateway(ctx)").unwrap();
-    let private_read = projection.find("strategic_incident__view").unwrap();
+    let private_read = projection.find("strategic_incident()").unwrap();
     assert!(gate < private_read);
     for exact_filter in [
-        "StrategicIncidentKind::AuthorityArrest",
-        "StrategicIncidentStatus::Pending",
-        "party.current_case_site_id.as_deref()",
-        "incident.case_site_id.as_str()",
+        "IncidentKind::AuthorityArrest",
+        "IncidentStatus::Pending",
+        "party.current_case_site_id.as_ref()",
+        "Some(&incident.case_site_id)",
         "member.character_id == incident.instigator_id",
         "character.alive",
-        "character.party_id.as_deref() == Some(party.id.as_str())",
+        "character.party_id.as_deref() != Some(&incident.party_id)",
         "authority_fine_for_charges",
         "affordable: funds >= fine",
     ] {
-        assert!(projection.contains(exact_filter), "missing exact filter: {exact_filter}");
+        assert!(
+            projection.contains(exact_filter),
+            "missing exact filter: {exact_filter}"
+        );
     }
     assert!(!projection.contains("strategic_incident__view(ctx).iter()"));
 
@@ -725,8 +737,18 @@ fn authority_arrest_action_projection_is_gateway_only_exact_and_redacted() {
     ] {
         assert!(row.contains(field), "missing public field: {field}");
     }
-    for private_field in ["incident_id", "source_id", "hostile", "offense", "severity", "created_minute"] {
-        assert!(!row.contains(private_field), "private field leaked: {private_field}");
+    for private_field in [
+        "incident_id",
+        "source_id",
+        "hostile",
+        "offense",
+        "severity",
+        "created_minute",
+    ] {
+        assert!(
+            !row.contains(private_field),
+            "private field leaked: {private_field}"
+        );
     }
     assert!(projection.contains("action_token: incident.action_token"));
     assert!(!projection.contains("action_token: incident.id"));

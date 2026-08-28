@@ -160,9 +160,9 @@ pub(super) struct StandardMedicationAdministration {
     patient_id: u64,
     inventory_item_id: u64,
     profile_version: u16,
-    route: String,
-    amount_milliunits: u32,
-    region: Option<String>,
+    route: adventuresim_core::physiology::InterventionRoute,
+    dose: adventuresim_core::physiology::DoseMilliunits,
+    region: Option<adventuresim_core::physiology::BodyRegion>,
 }
 
 impl StandardMedicationAdministration {
@@ -172,9 +172,12 @@ impl StandardMedicationAdministration {
             json!(self.patient_id),
             json!(self.inventory_item_id),
             json!(self.profile_version),
-            json!(&self.route),
-            json!(self.amount_milliunits),
-            json!(&self.region),
+            crate::spacetimedb::sats_unit_variant(self.route),
+            json!(self.dose.get()),
+            crate::spacetimedb::sats_option(
+                self.region
+                    .map(crate::spacetimedb::sats_unit_variant),
+            ),
         ]
     }
 }
@@ -195,8 +198,8 @@ pub(super) fn standard_medication_administration(
         patient_id: session_character_id,
         inventory_item_id,
         profile_version: profile.version,
-        route: format!("{:?}", profile.route).to_ascii_lowercase(),
-        amount_milliunits: 1_000,
+        route: profile.route,
+        dose: adventuresim_core::physiology::DoseMilliunits::STANDARD,
         region: None,
     })
 }
@@ -272,7 +275,14 @@ pub(super) async fn set_equipment(
         }
         return (StatusCode::NO_CONTENT, "").into_response();
     }
-    if form.equipped && !definition.equipment_placements.is_empty() {
+    if form.equipped {
+        if definition.equipment_placements.is_empty() {
+            return (
+                StatusCode::BAD_REQUEST,
+                "This item has no authored equipment placement",
+            )
+                .into_response();
+        }
         let Some(placement_index) = form
             .placement_index
             .or_else(|| (definition.equipment_placements.len() == 1).then_some(0))
@@ -290,16 +300,18 @@ pub(super) async fn set_equipment(
             return (StatusCode::BAD_REQUEST, "Invalid equipment placement").into_response();
         };
         let targets = match form.attachment_targets.as_deref() {
-            Some(value) => match serde_json::from_str::<Vec<EquipmentAttachmentTargetForm>>(value) {
-                Ok(targets) => targets,
-                Err(_) => {
-                    return (
-                        StatusCode::BAD_REQUEST,
-                        "Invalid attachment target selection",
-                    )
-                        .into_response();
+            Some(value) => {
+                match serde_json::from_str::<Vec<EquipmentAttachmentTargetForm>>(value) {
+                    Ok(targets) => targets,
+                    Err(_) => {
+                        return (
+                            StatusCode::BAD_REQUEST,
+                            "Invalid attachment target selection",
+                        )
+                            .into_response();
+                    }
                 }
-            },
+            }
             None => Vec::new(),
         };
         let result = if form.replace_occupied {
@@ -347,33 +359,16 @@ pub(super) async fn set_equipment(
         }
         return (StatusCode::NO_CONTENT, "").into_response();
     }
-    let destination = if form.equipped {
-        definition.slot
-    } else {
-        ItemSlot::None
-    };
-    if form.equipped && destination == ItemSlot::None {
-        return (StatusCode::BAD_REQUEST, "This item cannot be equipped").into_response();
-    }
     if let Err(error) = state
         .db
         .call(
-            "equip_item",
-            &[
-                json!(character_id),
-                json!(form.inventory_item_id),
-                destination.sats_json(),
-            ],
+            "unequip_item",
+            &[json!(character_id), json!(form.inventory_item_id)],
         )
         .await
     {
         tracing::warn!(%error, character_id, "failed to update equipment");
         return (StatusCode::BAD_REQUEST, error.to_string()).into_response();
-    }
-    for reducer in ["refresh_capabilities", "refresh_strategic_condition"] {
-        if let Err(error) = state.db.call(reducer, &[json!(character_id)]).await {
-            tracing::warn!(%error, character_id, reducer, "failed to refresh equipment projection");
-        }
     }
     (StatusCode::NO_CONTENT, "").into_response()
 }
@@ -396,7 +391,16 @@ pub(super) async fn deposit_party_inventory(
                 .await;
         }
     }
-    Redirect::to(&building.append_to(&state, &kind, &id, format!("/locations/{kind}/{id}/party-inventory")).await)
+    Redirect::to(
+        &building
+            .append_to(
+                &state,
+                &kind,
+                &id,
+                format!("/locations/{kind}/{id}/party-inventory"),
+            )
+            .await,
+    )
 }
 
 pub(super) async fn withdraw_party_inventory(
@@ -417,7 +421,16 @@ pub(super) async fn withdraw_party_inventory(
                 .await;
         }
     }
-    Redirect::to(&building.append_to(&state, &kind, &id, format!("/locations/{kind}/{id}/party-inventory")).await)
+    Redirect::to(
+        &building
+            .append_to(
+                &state,
+                &kind,
+                &id,
+                format!("/locations/{kind}/{id}/party-inventory"),
+            )
+            .await,
+    )
 }
 
 pub(super) fn transfer_entries(form: &PartyPoolTransferForm) -> Vec<(u64, u32)> {
@@ -457,7 +470,16 @@ pub(super) async fn liquidate_party_assets(
             )
             .await;
     }
-    Redirect::to(&building.append_to(&state, &kind, &id, format!("/locations/{kind}/{id}/party-inventory")).await)
+    Redirect::to(
+        &building
+            .append_to(
+                &state,
+                &kind,
+                &id,
+                format!("/locations/{kind}/{id}/party-inventory"),
+            )
+            .await,
+    )
 }
 
 pub(super) async fn remove_party_member(
@@ -488,7 +510,11 @@ pub(super) async fn remove_party_member(
             tracing::error!("Failed to remove party member: {error:?}");
         }
     }
-    Redirect::to(&building.append_to(&state, &kind, &id, format!("/locations/{kind}/{id}")).await)
+    Redirect::to(
+        &building
+            .append_to(&state, &kind, &id, format!("/locations/{kind}/{id}"))
+            .await,
+    )
 }
 
 pub(super) async fn party_stats(
@@ -511,7 +537,10 @@ pub(super) async fn party_stats(
     .await
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 pub(super) async fn render_party_stats(
     state: &AppState,
     kind: &str,
@@ -531,8 +560,7 @@ pub(super) async fn render_party_stats(
         }
     };
     location.active_building = building.valid_for(&location).map(str::to_owned);
-    let Some((active_character, _)) =
-        get_active_character(state, session.character_id_u64()).await
+    let Some((active_character, _)) = get_active_character(state, session.character_id_u64()).await
     else {
         return Html("<h1>Choose a character first</h1>".to_string());
     };
@@ -543,14 +571,11 @@ pub(super) async fn render_party_stats(
     let selected = if character_id == active_character.id {
         active_character.clone()
     } else {
-        let character = crate::routes::data::character_as_observed(
-            state,
-            character_id,
-            active_character.id,
-        )
-            .await
-            .ok()
-            .flatten();
+        let character =
+            crate::routes::data::character_as_observed(state, character_id, active_character.id)
+                .await
+                .ok()
+                .flatten();
         match character {
             Some(character) => character,
             None => return Html("<h1>Party member not found</h1>".to_string()),
@@ -564,10 +589,7 @@ pub(super) async fn render_party_stats(
     let active_party = match active_character.party_id.as_deref() {
         Some(party_id) => state
             .db
-            .query::<Party>(&format!(
-                "SELECT * FROM party WHERE id = {}",
-                sql_string_literal(party_id)
-            ))
+            .query::<Party>(&crate::spacetimedb::party_by_id(party_id))
             .await
             .unwrap_or_default()
             .into_iter()
@@ -577,10 +599,7 @@ pub(super) async fn render_party_stats(
     let selected_party = match selected.party_id.as_deref() {
         Some(party_id) => state
             .db
-            .query::<Party>(&format!(
-                "SELECT * FROM party WHERE id = {}",
-                sql_string_literal(party_id)
-            ))
+            .query::<Party>(&crate::spacetimedb::party_by_id(party_id))
             .await
             .unwrap_or_default()
             .into_iter()
@@ -613,9 +632,10 @@ pub(super) async fn render_party_stats(
     let can_examine = false;
     let condition = get_strategic_condition(state, character_id).await;
     let morale_sources = get_morale_sources(state, character_id).await;
-    let religion = query_single::<CharacterCondition>(state, "backend_character_conditions", character_id)
-        .await
-        .and_then(|condition| condition.religion_id);
+    let religion =
+        query_single::<CharacterCondition>(state, "backend_character_conditions", character_id)
+            .await
+            .and_then(|condition| condition.religion_id);
     let reputation = query_local_reputation(state, character_id, &location.id).await;
     let fame = reputation
         .as_ref()
@@ -762,14 +782,20 @@ mod physiology_privacy_tests {
 
     #[test]
     fn standard_medication_mapping_is_self_only_versioned_and_parameter_free() {
-        let action =
+        let mut action =
             standard_medication_administration(7, 42, "oral_rehydration_draught", true).unwrap();
         assert_eq!(action.actor_id, 7);
         assert_eq!(action.patient_id, 7);
         assert_eq!(action.inventory_item_id, 42);
         assert_eq!(action.profile_version, 1);
-        assert_eq!(action.route, "oral");
-        assert_eq!(action.amount_milliunits, 1_000);
+        assert_eq!(
+            action.route,
+            adventuresim_core::physiology::InterventionRoute::Oral
+        );
+        assert_eq!(
+            action.dose,
+            adventuresim_core::physiology::DoseMilliunits::STANDARD
+        );
         assert_eq!(action.region, None);
         assert_eq!(
             action.reducer_args(),
@@ -778,10 +804,20 @@ mod physiology_privacy_tests {
                 json!(7),
                 json!(42),
                 json!(1),
-                json!("oral"),
-                json!(1_000),
-                json!(null),
+                json!({"oral": {}}),
+                json!(adventuresim_core::physiology::DoseMilliunits::STANDARD.get()),
+                json!({"none": []}),
             ]
+        );
+        action.region = Some(adventuresim_core::physiology::BodyRegion::Abdomen);
+        assert_eq!(
+            action.reducer_args()[6],
+            json!({"some": {"abdomen": {}}})
+        );
+        action.region = Some(adventuresim_core::physiology::BodyRegion::LeftArm);
+        assert_eq!(
+            action.reducer_args()[6],
+            json!({"some": {"leftArm": {}}})
         );
     }
 
@@ -817,7 +853,16 @@ pub(super) async fn stop_preparation(
     {
         tracing::warn!(%error, actor_id, patient_id, administration_id, "preparation stop rejected");
     }
-    Redirect::to(&building.append_to(&state, &kind, &id, format!("/locations/{kind}/{id}/party/{patient_id}")).await)
+    Redirect::to(
+        &building
+            .append_to(
+                &state,
+                &kind,
+                &id,
+                format!("/locations/{kind}/{id}/party/{patient_id}"),
+            )
+            .await,
+    )
 }
 
 pub(super) async fn get_strategic_condition(
@@ -832,10 +877,18 @@ pub(super) async fn get_strategic_condition(
         tracing::warn!(%error, character_id, "failed to refresh strategic condition");
         return None;
     }
-    query_single(state, "backend_character_strategic_conditions", character_id).await
+    query_single(
+        state,
+        "backend_character_strategic_conditions",
+        character_id,
+    )
+    .await
 }
 
-pub(super) async fn get_morale_sources(state: &AppState, character_id: u64) -> Vec<CharacterMoraleSource> {
+pub(super) async fn get_morale_sources(
+    state: &AppState,
+    character_id: u64,
+) -> Vec<CharacterMoraleSource> {
     let mut sources: Vec<CharacterMoraleSource> = state
         .db
         .query(&format!(

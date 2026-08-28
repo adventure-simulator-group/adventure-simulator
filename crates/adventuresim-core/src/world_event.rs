@@ -4,6 +4,7 @@
 //! permission, subscription, or command bus. Domain reducers remain
 //! responsible for deciding rights and knowledge before constructing one.
 
+use adventuresim_world_schema::BASIS_POINTS_PER_WHOLE;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -181,7 +182,10 @@ pub fn canonical_case_resolution_participants(
     fallback
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 pub fn plan_generated_case_resolution(
     canonical_case_id: &str,
     party_id: &str,
@@ -198,7 +202,7 @@ pub fn plan_generated_case_resolution(
             problem_id: problem_id.into(),
             source_outcome_id: source_id.into(),
             minute,
-            mitigation_bps: 10_000,
+            mitigation_bps: BASIS_POINTS_PER_WHOLE,
             resolve: true,
         });
     }
@@ -328,7 +332,7 @@ impl WorldEventEnvelope {
                 && *protected_dose_microunits <= *dose_microunits
                 && *immunity_milli <= 100_000
                 && *prior_immunity_milli <= 100_000
-                && *consumed_fraction_bps <= 10_000
+                && *consumed_fraction_bps <= BASIS_POINTS_PER_WHOLE
                 && validate_id(contribution_digest).is_ok()
                 && validate_id(disease_id).is_ok()
                 && self.subjects == [WorldEventSubject::Character { character_id: *character_id }] => {}

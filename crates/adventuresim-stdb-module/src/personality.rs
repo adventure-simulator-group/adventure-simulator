@@ -1,103 +1,13 @@
 use crate::strategic::strategic_gateway_authority__view;
+pub use adventuresim_core::personality::{
+    Conscience, Conviction, Courtship, Drive, Hygiene, Inclination, Mirth, Nerve, Outlook,
+    Presentation, SelfKnowledge, SelfRegard, Sex, Sociability, Temperance, Transparency,
+};
+use fabelgeist_determinism::SplitMix64;
 use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, table, view};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
-pub enum Nerve {
-    Neutral,
-    Brave,
-    Fearful,
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
-pub enum Drive {
-    Neutral,
-    Ambitious,
-    Content,
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
-pub enum Outlook {
-    Neutral,
-    Sanguine,
-    Brooding,
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
-pub enum Sociability {
-    Neutral,
-    Gregarious,
-    Solitary,
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
-pub enum Conscience {
-    Neutral,
-    Compassionate,
-    Callous,
-    Cruel,
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
-pub enum SelfRegard {
-    Neutral,
-    Proud,
-    Humble,
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
-pub enum Conviction {
-    Neutral,
-    Zealous,
-    Irreverent,
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
-pub enum Hygiene {
-    Neutral,
-    Slovenly,
-    Cleanly,
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
-pub enum Temperance {
-    Neutral,
-    Temperate,
-    Drunkard,
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
-pub enum Mirth {
-    Neutral,
-    Merry,
-    Grave,
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
-pub enum Courtship {
-    Neutral,
-    Amorous,
-    Proper,
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
-pub enum Transparency {
-    Neutral,
-    Open,
-    Guarded,
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
-pub enum SelfKnowledge {
-    Neutral,
-    Introspective,
-    SelfDeceiving,
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
-pub enum Inclination {
-    Men,
-    Either,
-    Women,
-    Neither,
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
-pub enum Presentation {
-    Man,
-    Ambiguous,
-    Woman,
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
-pub enum Sex {
-    Female,
-    Male,
-}
+const PERSONALITY_GENERATION_DOMAIN: u64 = 0x7065_7273_6f6e_616c;
+const PERSONALITY_CHARACTER_ID_ROTATION: u32 = 29;
 
 /// Gateway-safe, derived visibility of strategic temperament. Behavioral
 /// fields are a cache projected from the private continuous score row; raw
@@ -137,7 +47,7 @@ pub const CONSCIENCE_CRUEL_THRESHOLD: i16 = -8_000;
 pub const CHIVALRIC_DEED_DELTA: i16 = 6_000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
-pub enum PersonalityAxis {
+pub enum MutablePersonalityAxis {
     Nerve,
     Drive,
     Outlook,
@@ -167,7 +77,7 @@ pub enum ChivalricVirtue {
 
 /// Sole durable authority for the thirteen mutable behavioral axes. Values
 /// are signed fixed point in `-10_000..=10_000`; zero is dispositionally
-/// neutral and the endpoints preserve the legacy trait potency.
+/// neutral and the endpoints express the full authored trait potency.
 #[derive(Clone, Debug)]
 #[table(accessor = character_personality_scores)]
 pub struct CharacterPersonalityScores {
@@ -198,7 +108,7 @@ pub struct PersonalityDevelopmentEvent {
     pub source_id: String,
     #[index(btree)]
     pub character_id: u64,
-    pub axis: PersonalityAxis,
+    pub axis: MutablePersonalityAxis,
     pub delta: i16,
     pub resulting_score: i16,
     pub deed: String,
@@ -226,39 +136,39 @@ impl CharacterPersonalityScores {
         }
     }
 
-    pub fn score(&self, axis: PersonalityAxis) -> i16 {
+    pub fn score(&self, axis: MutablePersonalityAxis) -> i16 {
         match axis {
-            PersonalityAxis::Nerve => self.nerve,
-            PersonalityAxis::Drive => self.drive,
-            PersonalityAxis::Outlook => self.outlook,
-            PersonalityAxis::Sociability => self.sociability,
-            PersonalityAxis::Conscience => self.conscience,
-            PersonalityAxis::SelfRegard => self.self_regard,
-            PersonalityAxis::Conviction => self.conviction,
-            PersonalityAxis::Hygiene => self.hygiene,
-            PersonalityAxis::Temperance => self.temperance,
-            PersonalityAxis::Mirth => self.mirth,
-            PersonalityAxis::Courtship => self.courtship,
-            PersonalityAxis::Transparency => self.transparency,
-            PersonalityAxis::SelfKnowledge => self.self_knowledge,
+            MutablePersonalityAxis::Nerve => self.nerve,
+            MutablePersonalityAxis::Drive => self.drive,
+            MutablePersonalityAxis::Outlook => self.outlook,
+            MutablePersonalityAxis::Sociability => self.sociability,
+            MutablePersonalityAxis::Conscience => self.conscience,
+            MutablePersonalityAxis::SelfRegard => self.self_regard,
+            MutablePersonalityAxis::Conviction => self.conviction,
+            MutablePersonalityAxis::Hygiene => self.hygiene,
+            MutablePersonalityAxis::Temperance => self.temperance,
+            MutablePersonalityAxis::Mirth => self.mirth,
+            MutablePersonalityAxis::Courtship => self.courtship,
+            MutablePersonalityAxis::Transparency => self.transparency,
+            MutablePersonalityAxis::SelfKnowledge => self.self_knowledge,
         }
     }
 
-    pub fn set_score(&mut self, axis: PersonalityAxis, value: i16) {
+    pub fn set_score(&mut self, axis: MutablePersonalityAxis, value: i16) {
         let target = match axis {
-            PersonalityAxis::Nerve => &mut self.nerve,
-            PersonalityAxis::Drive => &mut self.drive,
-            PersonalityAxis::Outlook => &mut self.outlook,
-            PersonalityAxis::Sociability => &mut self.sociability,
-            PersonalityAxis::Conscience => &mut self.conscience,
-            PersonalityAxis::SelfRegard => &mut self.self_regard,
-            PersonalityAxis::Conviction => &mut self.conviction,
-            PersonalityAxis::Hygiene => &mut self.hygiene,
-            PersonalityAxis::Temperance => &mut self.temperance,
-            PersonalityAxis::Mirth => &mut self.mirth,
-            PersonalityAxis::Courtship => &mut self.courtship,
-            PersonalityAxis::Transparency => &mut self.transparency,
-            PersonalityAxis::SelfKnowledge => &mut self.self_knowledge,
+            MutablePersonalityAxis::Nerve => &mut self.nerve,
+            MutablePersonalityAxis::Drive => &mut self.drive,
+            MutablePersonalityAxis::Outlook => &mut self.outlook,
+            MutablePersonalityAxis::Sociability => &mut self.sociability,
+            MutablePersonalityAxis::Conscience => &mut self.conscience,
+            MutablePersonalityAxis::SelfRegard => &mut self.self_regard,
+            MutablePersonalityAxis::Conviction => &mut self.conviction,
+            MutablePersonalityAxis::Hygiene => &mut self.hygiene,
+            MutablePersonalityAxis::Temperance => &mut self.temperance,
+            MutablePersonalityAxis::Mirth => &mut self.mirth,
+            MutablePersonalityAxis::Courtship => &mut self.courtship,
+            MutablePersonalityAxis::Transparency => &mut self.transparency,
+            MutablePersonalityAxis::SelfKnowledge => &mut self.self_knowledge,
         };
         *target = value.clamp(-PERSONALITY_SCORE_LIMIT, PERSONALITY_SCORE_LIMIT);
     }
@@ -550,7 +460,7 @@ pub fn reset_personality_from_visible(ctx: &ReducerContext, visible: CharacterPe
 pub fn set_personality_axis_score(
     ctx: &ReducerContext,
     character_id: u64,
-    axis: PersonalityAxis,
+    axis: MutablePersonalityAxis,
     score: i16,
 ) -> Result<(), String> {
     let mut scores = ctx
@@ -603,11 +513,15 @@ pub fn personality_scores_or_neutral(
 
 /// Apply one authoritative deed. The caller supplies a source identity bound
 /// to durable gameplay truth, never a free-standing client mutation token.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "development records every source, axis delta, and time coordinate explicitly"
+)]
 pub fn apply_personality_development(
     ctx: &ReducerContext,
     source_id: &str,
     character_id: u64,
-    axis: PersonalityAxis,
+    axis: MutablePersonalityAxis,
     delta: i16,
     deed: &str,
     virtue: ChivalricVirtue,
@@ -668,7 +582,7 @@ pub fn apply_personality_development(
 fn development_replay_matches(
     existing: &PersonalityDevelopmentEvent,
     character_id: u64,
-    axis: PersonalityAxis,
+    axis: MutablePersonalityAxis,
     delta: i16,
     deed: &str,
     virtue: ChivalricVirtue,
@@ -678,17 +592,6 @@ fn development_replay_matches(
         && existing.delta == delta
         && existing.deed == deed
         && existing.virtue == virtue
-}
-
-impl Conviction {
-    /// Ardor is a personality property, independent of religious knowledge.
-    pub const fn strength(self) -> f32 {
-        match self {
-            Self::Zealous => 5.0,
-            Self::Neutral => 2.5,
-            Self::Irreverent => 0.0,
-        }
-    }
 }
 
 pub fn conviction_strength_for_character(ctx: &ReducerContext, character_id: u64) -> f32 {
@@ -838,15 +741,12 @@ pub fn random_personality(
 /// the same demographic axes and sparse traits regardless of bootstrap order,
 /// retries, or unrelated random draws in the surrounding transaction.
 pub fn personality_from_stable_seed(character_id: u64, stable_seed: u64) -> CharacterPersonality {
-    let mut state = stable_seed ^ character_id.rotate_left(29) ^ 0x7065_7273_6f6e_616c;
-    random_personality(character_id, || {
-        // SplitMix64 is small, deterministic, and has no ambient/global state.
-        state = state.wrapping_add(0x9e37_79b9_7f4a_7c15);
-        let mut value = state;
-        value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-        value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-        value ^ (value >> 31)
-    })
+    let mut random = SplitMix64::new(
+        stable_seed
+            ^ character_id.rotate_left(PERSONALITY_CHARACTER_ID_ROTATION)
+            ^ PERSONALITY_GENERATION_DOMAIN,
+    );
+    random_personality(character_id, || random.next_u64())
 }
 
 pub fn personality_or_neutral(ctx: &ReducerContext, character_id: u64) -> CharacterPersonality {
@@ -955,7 +855,7 @@ pub fn continuous_axis_multiplier(
 }
 
 /// Scale one nightly alcohol reaction from neutral preference at score zero
-/// to the legacy Temperate (zero) or Drunkard (+/-5) endpoint. Seeking and
+/// to the authored temperate (zero) or drunkard (+/-5) endpoint. Seeking and
 /// consumption remain governed by the derived discrete preference.
 pub fn temperance_morale_magnitude(score: i16, neutral_magnitude: f32, satisfied: bool) -> f32 {
     let bounded = score.clamp(-PERSONALITY_SCORE_LIMIT, PERSONALITY_SCORE_LIMIT);
@@ -1230,12 +1130,12 @@ mod tests {
     fn scores_clamp_and_project_only_after_visibility_thresholds() {
         let demographics = CharacterPersonality::neutral(7);
         let mut scores = CharacterPersonalityScores::neutral(7);
-        scores.set_score(PersonalityAxis::Nerve, 25_000);
+        scores.set_score(MutablePersonalityAxis::Nerve, 25_000);
         assert_eq!(scores.nerve, PERSONALITY_SCORE_LIMIT);
         assert_eq!(project_scores(&scores, &demographics).nerve, Nerve::Brave);
-        scores.set_score(PersonalityAxis::Nerve, -4_999);
+        scores.set_score(MutablePersonalityAxis::Nerve, -4_999);
         assert_eq!(project_scores(&scores, &demographics).nerve, Nerve::Neutral);
-        scores.set_score(PersonalityAxis::Nerve, -5_000);
+        scores.set_score(MutablePersonalityAxis::Nerve, -5_000);
         assert_eq!(project_scores(&scores, &demographics).nerve, Nerve::Fearful);
     }
 
@@ -1251,7 +1151,7 @@ mod tests {
             (-7_999, Conscience::Callous),
             (-8_000, Conscience::Cruel),
         ] {
-            scores.set_score(PersonalityAxis::Conscience, score);
+            scores.set_score(MutablePersonalityAxis::Conscience, score);
             assert_eq!(project_scores(&scores, &demographics).conscience, expected);
         }
     }
@@ -1299,7 +1199,7 @@ mod tests {
     }
 
     #[test]
-    fn temperance_morale_moves_continuously_and_preserves_legacy_endpoints() {
+    fn temperance_morale_moves_continuously_between_authored_endpoints() {
         assert_eq!(temperance_morale_magnitude(0, 1.0, true), 1.0);
         assert_eq!(temperance_morale_magnitude(2_500, 1.0, true), 0.75);
         assert_eq!(temperance_morale_magnitude(-2_500, 1.0, true), 2.0);
@@ -1342,10 +1242,10 @@ mod tests {
 
     #[test]
     fn score_and_development_tables_have_no_public_views_and_delete_with_character() {
-        let personality_source = include_str!("personality.rs");
+        let personality_source = crate::production_source(include_str!("personality.rs"));
         assert!(!personality_source.contains("#[view(accessor = character_personality_scores"));
         assert!(!personality_source.contains("#[view(accessor = personality_development_event"));
-        let deletion = include_str!("character.rs");
+        let deletion = crate::production_source(include_str!("character.rs"));
         assert!(deletion.contains("character_personality_scores()"));
         assert!(deletion.contains("personality_development_event()"));
         assert!(deletion.contains(".character_id()\n        .filter(character.id)"));
@@ -1367,7 +1267,7 @@ mod tests {
         let event = PersonalityDevelopmentEvent {
             source_id: "road-challenge:one".into(),
             character_id: 9,
-            axis: PersonalityAxis::Nerve,
+            axis: MutablePersonalityAxis::Nerve,
             delta: CHIVALRIC_DEED_DELTA,
             resulting_score: CHIVALRIC_DEED_DELTA,
             deed: "RallyAndEscortCourierThroughFord".into(),
@@ -1377,7 +1277,7 @@ mod tests {
         assert!(development_replay_matches(
             &event,
             9,
-            PersonalityAxis::Nerve,
+            MutablePersonalityAxis::Nerve,
             CHIVALRIC_DEED_DELTA,
             "RallyAndEscortCourierThroughFord",
             ChivalricVirtue::Courage,
@@ -1385,7 +1285,7 @@ mod tests {
         assert!(!development_replay_matches(
             &event,
             10,
-            PersonalityAxis::Nerve,
+            MutablePersonalityAxis::Nerve,
             CHIVALRIC_DEED_DELTA,
             "RallyAndEscortCourierThroughFord",
             ChivalricVirtue::Courage,
@@ -1393,7 +1293,7 @@ mod tests {
         assert!(!development_replay_matches(
             &event,
             9,
-            PersonalityAxis::Conscience,
+            MutablePersonalityAxis::Conscience,
             CHIVALRIC_DEED_DELTA,
             "TendCourierAndCarryWarning",
             ChivalricVirtue::Mercy,

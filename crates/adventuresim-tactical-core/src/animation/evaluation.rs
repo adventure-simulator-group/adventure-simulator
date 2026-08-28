@@ -524,10 +524,11 @@ fn upright_locomotion_samples(state: &SkeletonState) -> Vec<PoseSample> {
 }
 
 fn downed_animation_speed(state: &SkeletonState) -> f32 {
-    state
-        .downed_turning()
-        .then(|| state.animation_speed())
-        .unwrap_or(0.0)
+    if state.downed_turning() {
+        state.animation_speed()
+    } else {
+        0.0
+    }
 }
 
 fn cycle_sample(pose: SemanticPose, phase: f32) -> PoseSample {

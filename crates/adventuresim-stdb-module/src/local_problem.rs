@@ -14,8 +14,9 @@ use crate::{
     },
     time::{character_time, character_time__view, world_clock},
 };
-use adventuresim_core::local_problem as lp;
+use adventuresim_core::strategic_time::MINUTES_PER_DAY;
 use adventuresim_core::threat_escalation::bounded_public_threat_candidates as bounded_public_candidates;
+use adventuresim_core::{encounter::EncounterArchetype, local_problem as lp};
 use serde::{Deserialize, Serialize};
 use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, table, view};
 use std::cmp::Reverse;
@@ -38,7 +39,7 @@ pub struct LocalProblemAuthority {
     pub buy_bps: i32,
     pub sell_penalty_bps: i32,
     pub encounter_frequency_bps: u16,
-    pub encounter_archetype: String,
+    pub encounter_archetype: Option<EncounterArchetype>,
     pub disease_intensity: u16,
     pub disease_id: String,
     pub starts_at: u64,
@@ -256,15 +257,6 @@ fn route_mechanism(value: lp::Symptom) -> &'static str {
         lp::Symptom::VanishedLivestock => "route_livestock_losses",
     }
 }
-fn archetype_name(value: Option<lp::EncounterArchetype>) -> &'static str {
-    match value {
-        Some(lp::EncounterArchetype::Bandits) => "bandits",
-        Some(lp::EncounterArchetype::Goblins) => "goblins",
-        Some(lp::EncounterArchetype::Undead) => "undead",
-        None => "",
-    }
-}
-
 fn is_gateway(ctx: &ViewContext) -> bool {
     ctx.db
         .strategic_gateway_authority()
@@ -403,7 +395,7 @@ pub(crate) fn materialize_generated_problem(
     let ends_at = if recurring_hostile {
         u64::MAX
     } else {
-        starts_at.saturating_add(30 * 1_440)
+        starts_at.saturating_add(30 * MINUTES_PER_DAY)
     };
     let mechanism = match consequence.symptom {
         lp::Symptom::MissingCaravans => "supply_disruption",
@@ -425,7 +417,7 @@ pub(crate) fn materialize_generated_problem(
             buy_bps: consequence.effects.buy_bps,
             sell_penalty_bps: consequence.effects.sell_penalty_bps,
             encounter_frequency_bps: consequence.effects.encounter_frequency_bps,
-            encounter_archetype: archetype_name(consequence.effects.encounter_archetype).into(),
+            encounter_archetype: consequence.effects.encounter_archetype,
             disease_intensity: consequence.effects.disease_intensity,
             disease_id: case.outbreak.as_ref().map_or_else(
                 || {
@@ -770,7 +762,7 @@ pub fn ensure_settlement_problems(ctx: &ReducerContext, settlement_id: &str) -> 
     {
         return Ok(());
     }
-    let cycle = minute / (30 * 1_440);
+    let cycle = minute / (30 * MINUTES_PER_DAY);
     let private_entropy = ctx.random::<u64>();
     let context = lp::GenerationContext {
         seed: format!("private:{private_entropy:016x}:cycle:{cycle}"),
@@ -796,7 +788,7 @@ pub fn ensure_settlement_problems(ctx: &ReducerContext, settlement_id: &str) -> 
             buy_bps: problem.effects.buy_bps,
             sell_penalty_bps: problem.effects.sell_penalty_bps,
             encounter_frequency_bps: problem.effects.encounter_frequency_bps,
-            encounter_archetype: archetype_name(problem.effects.encounter_archetype).into(),
+            encounter_archetype: problem.effects.encounter_archetype,
             disease_intensity: problem.effects.disease_intensity,
             disease_id: disease_id.into(),
             starts_at: problem.starts_at,
@@ -849,7 +841,7 @@ pub fn ensure_route_problem(
     {
         return Ok(());
     }
-    let cycle = minute / (30 * 1_440);
+    let cycle = minute / (30 * MINUTES_PER_DAY);
     let private_entropy = ctx.random::<u64>();
     let context = lp::GenerationContext {
         seed: format!("private:{private_entropy:016x}:route-cycle:{cycle}"),
@@ -870,7 +862,7 @@ pub fn ensure_route_problem(
             buy_bps: 0,
             sell_penalty_bps: 0,
             encounter_frequency_bps: problem.effects.encounter_frequency_bps,
-            encounter_archetype: archetype_name(problem.effects.encounter_archetype).into(),
+            encounter_archetype: problem.effects.encounter_archetype,
             disease_intensity: 0,
             disease_id: String::new(),
             starts_at: problem.starts_at,
@@ -900,10 +892,15 @@ fn is_active(row: &LocalProblemAuthority, minute: u64) -> bool {
     minute >= row.starts_at
         && (row.recurring_hostile || minute < row.ends_at)
         && row.resolved_at.is_none_or(|at| minute < at)
-        && row.mitigation_bps < 10_000
+        && row.mitigation_bps < adventuresim_world_schema::BASIS_POINTS_PER_WHOLE
 }
 fn scaled(value: i32, mitigation: u16) -> i32 {
-    (i64::from(value) * i64::from(10_000u16.saturating_sub(mitigation.min(10_000))) / 10_000) as i32
+    (i64::from(value)
+        * i64::from(
+            adventuresim_world_schema::BASIS_POINTS_PER_WHOLE
+                .saturating_sub(mitigation.min(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE)),
+        )
+        / i64::from(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE)) as i32
 }
 pub fn settlement_effects(
     ctx: &ReducerContext,
@@ -956,13 +953,8 @@ pub fn route_encounter_influence(
         .min(u32::from(lp::MAX_ENCOUNTER_BPS)) as u16;
     let archetype = rows
         .iter()
-        .filter(|r| r.encounter_frequency_bps > 0)
-        .find_map(|r| match r.encounter_archetype.as_str() {
-            "bandits" => Some(adventuresim_core::encounter::EncounterArchetype::Bandits),
-            "goblins" => Some(adventuresim_core::encounter::EncounterArchetype::Goblins),
-            "undead" => Some(adventuresim_core::encounter::EncounterArchetype::Undead),
-            _ => None,
-        });
+        .filter(|row| row.encounter_frequency_bps > 0)
+        .find_map(|row| row.encounter_archetype);
     (frequency > 0).then_some(adventuresim_core::encounter::LocalProblemInfluence {
         frequency_bonus_basis_points: frequency,
         archetype,
@@ -977,7 +969,6 @@ pub(crate) struct LocalProblemOutcomeInput {
     pub mitigation_bps: u16,
     pub resolve: bool,
 }
-#[allow(dead_code, reason = "typed internal boundary consumed by issue #186")]
 pub(crate) fn apply_outcome(
     ctx: &ReducerContext,
     problem_id: &str,
@@ -985,7 +976,7 @@ pub(crate) fn apply_outcome(
 ) -> Result<(), String> {
     if input.source_outcome_id.is_empty()
         || input.source_outcome_id.len() > 160
-        || input.mitigation_bps > 10_000
+        || input.mitigation_bps > adventuresim_world_schema::BASIS_POINTS_PER_WHOLE
     {
         return Err("Invalid source outcome ID".into());
     }
@@ -1025,7 +1016,8 @@ pub(crate) fn apply_outcome(
         .local_problem_authority()
         .id()
         .update(problem.clone());
-    if (input.resolve || problem.mitigation_bps == 10_000)
+    if (input.resolve
+        || problem.mitigation_bps == adventuresim_world_schema::BASIS_POINTS_PER_WHOLE)
         && let Some(mut symptom) = ctx
             .db
             .local_problem_symptom()
@@ -1261,6 +1253,10 @@ fn public_threat_in_hearing_range(
     )
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "threat publication keeps each authority and timing input explicit"
+)]
 fn surface_public_threat(
     ctx: &ReducerContext,
     character_id: u64,
@@ -1481,6 +1477,10 @@ fn surface_public_threat(
     Ok(true)
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "problem publication keeps each authority and timing input explicit"
+)]
 fn surface_new_problem(
     ctx: &ReducerContext,
     problem: &LocalProblemAuthority,
@@ -1878,7 +1878,8 @@ pub fn surface_problem(
                 summary: incident.public_summary.clone(),
                 source_label: "local report".into(),
                 confidence_bps: 5_000,
-                destination_stage: "unknown".into(),
+                destination_stage:
+                    adventuresim_core::investigation::DestinationKnowledgeStage::Unknown,
                 directions: String::new(),
                 exact_location_id: String::new(),
                 latitude_e7: 0,
@@ -2142,7 +2143,7 @@ mod tests {
 
     #[test]
     fn public_referrals_share_canonical_disclosure_and_closed_authorization() {
-        let source = include_str!("local_problem.rs");
+        let source = crate::production_source(include_str!("local_problem.rs"));
         let authorization = source
             .split("fn source_may_disclose_public_threat")
             .nth(1)
@@ -2172,7 +2173,7 @@ mod tests {
 
     #[test]
     fn recurring_hostiles_are_unbounded_but_transaction_catchup_is_bounded() {
-        let source = include_str!("local_problem.rs");
+        let source = crate::production_source(include_str!("local_problem.rs"));
         let incidents = source
             .split("pub(crate) fn ensure_generated_incidents")
             .nth(1)
@@ -2247,7 +2248,7 @@ mod tests {
 
     #[test]
     fn discovery_uses_world_time_for_problem_windows_and_observer_time_for_records() {
-        let source = include_str!("local_problem.rs");
+        let source = crate::production_source(include_str!("local_problem.rs"));
         let surface = source
             .split("pub fn surface_problem")
             .nth(1)
@@ -2258,14 +2259,19 @@ mod tests {
         assert!(surface.contains("is_active(problem, official_world_minute)"));
         assert!(!surface.contains("is_active(problem, observer_minute)"));
         assert!(surface.contains("npc_is_present(ctx, &presence, observer_minute)"));
-        assert!(surface.contains("learned_at: observer_minute"));
-        assert!(surface.contains("official_learned_at: official_world_minute"));
+        let new_problem = source
+            .split("fn surface_new_problem")
+            .nth(1)
+            .and_then(|tail| tail.split("fn rumor_contact_is_valid").next())
+            .expect("new-problem disclosure helper");
+        assert!(new_problem.contains("learned_at: observer_minute"));
+        assert!(new_problem.contains("official_learned_at: official_world_minute"));
         assert!(surface.contains("recorded_at: observer_minute"));
     }
 
     #[test]
     fn preferred_demo_rumor_is_private_one_shot_and_preempts_existing_followups() {
-        let source = include_str!("local_problem.rs");
+        let source = crate::production_source(include_str!("local_problem.rs"));
         assert!(source.contains("#[table(accessor = local_problem_rumor_preference)]"));
         assert!(!source.contains("#[table(accessor = local_problem_rumor_preference, public)]"));
         let surface = source
@@ -2294,16 +2300,22 @@ mod tests {
             .nth(1)
             .and_then(|tail| tail.split("fn materialize_generated_quest").next())
             .expect("outbreak demo materialization");
-        assert_eq!(demo.matches("prefer_next_rumor(").count(), 2);
+        assert!(demo.contains("materialize_preferred_generated_fixture("));
+        let preferred = bootstrap
+            .split("fn materialize_preferred_generated_fixture")
+            .nth(1)
+            .and_then(|tail| tail.split("fn preferred_fixture_seed").next())
+            .expect("preferred generated fixture helper");
+        assert_eq!(preferred.matches("prefer_next_rumor(").count(), 1);
         assert!(
-            demo.find("materialize_generated_quest(").unwrap()
-                < demo.rfind("prefer_next_rumor(").unwrap()
+            preferred.find("materialize_generated_quest(").unwrap()
+                < preferred.find("prefer_next_rumor(").unwrap()
         );
     }
 
     #[test]
     fn development_discovery_uses_bootstrap_safe_rumor_transition() {
-        let source = include_str!("local_problem.rs");
+        let source = crate::production_source(include_str!("local_problem.rs"));
         let discovery = source
             .split("pub(crate) fn discover_development_problem")
             .nth(1)
@@ -2353,7 +2365,7 @@ mod tests {
 
     #[test]
     fn rumor_consumers_use_validated_generation_provenance_before_disclosure() {
-        let source = include_str!("local_problem.rs");
+        let source = crate::production_source(include_str!("local_problem.rs"));
         let authority = source
             .split("fn validated_problem_generation")
             .nth(1)
@@ -2362,7 +2374,7 @@ mod tests {
         let referral = source
             .split("fn referral_location_label")
             .nth(1)
-            .and_then(|tail| tail.split("pub fn surface_problem").next())
+            .and_then(|tail| tail.split("fn stable_eligible_candidates").next())
             .unwrap();
         let surface = source
             .split("pub fn surface_problem")
@@ -2398,9 +2410,9 @@ mod tests {
         ] {
             assert!(authority.contains(binding), "{binding}");
         }
-        assert!(surface.contains("contact.home_settlement_id"));
-        assert!(surface.contains("npc_location_is_navigable"));
-        assert!(surface.contains("expected_location_id: witness.expected_location.clone()"));
+        assert!(new_problem.contains("contact.home_settlement_id"));
+        assert!(new_problem.contains("npc_location_is_navigable"));
+        assert!(new_problem.contains("expected_location_id: witness.expected_location.clone()"));
         assert!(!new_problem.contains("settlement_resident_presence()"));
         assert!(surface.contains("stable_eligible_candidates"));
         let selector = source
@@ -2420,7 +2432,7 @@ mod tests {
 
     #[test]
     fn public_schema_has_no_hidden_fields() {
-        let source = include_str!("local_problem.rs");
+        let source = crate::production_source(include_str!("local_problem.rs"));
         let public = source
             .split("pub struct LocalProblemSymptom")
             .nth(1)
@@ -2444,12 +2456,12 @@ mod tests {
     }
     #[test]
     fn public_handles_are_gateway_filtered_and_dialogue_delivery_is_private() {
-        let source = include_str!("local_problem.rs");
+        let source = crate::production_source(include_str!("local_problem.rs"));
         assert!(!source.contains("accessor = local_problem_consequence, public"));
         assert!(source.contains("backend_local_problem_trade_effects"));
         assert!(source.contains("backend_local_problem_rumors"));
         assert!(source.matches("if !is_gateway(ctx)").count() >= 2);
-        assert!(source.contains("#[table(accessor = local_problem_rumor_delivery)]"));
+        assert!(source.contains("#[table(accessor=local_problem_rumor_delivery)]"));
         let strategic = crate::strategic::STRATEGIC_SOURCE;
         let start = strategic
             .split("pub fn start_dialogue")
@@ -2470,7 +2482,7 @@ mod tests {
     }
     #[test]
     fn authoritative_purchase_seams_apply_problem_price_after_base_quote() {
-        let disease = include_str!("disease.rs");
+        let disease = crate::production_source(include_str!("disease.rs"));
         let purchase = disease
             .split("pub fn purchase_from_herbalist")
             .nth(1)
@@ -2480,13 +2492,11 @@ mod tests {
             .unwrap();
         assert!(purchase.contains("character_time()"));
         assert!(purchase.contains("settlement_effects"));
-        assert!(purchase.contains("adjust_price(base_price, problem_effects.buy_bps)"));
-        let strategic = crate::strategic::STRATEGIC_SOURCE;
-        let trade = strategic
-            .split("pub fn finalize_merchant_trade")
-            .nth(1)
-            .unwrap()
-            .split("pub fn ")
+        assert!(purchase.contains("local_problem::adjust_price(base, problem_effects.buy_bps)"));
+        // This module intentionally keeps a few source-boundary tests ahead of
+        // its implementation, so select the final (production) definition.
+        let trade = include_str!("strategic/inventory_trade.rs")
+            .rsplit("fn finalize_storefront_trade_impl")
             .next()
             .unwrap();
         assert!(trade.contains("character_time()"));
@@ -2494,7 +2504,7 @@ mod tests {
     }
     #[test]
     fn discovery_and_outcome_boundaries_are_bounded() {
-        let source = include_str!("local_problem.rs");
+        let source = crate::production_source(include_str!("local_problem.rs"));
         assert!(source.contains("has_service(adventuresim_world_schema::SettlementService::Inn)"));
         assert!(source.contains("stable_eligible_candidates"));
         assert!(source.contains("eligible_candidates.truncate(limit)"));
@@ -2506,12 +2516,14 @@ mod tests {
 
     #[test]
     fn generated_referrals_bind_persistent_npcs_without_revealing_testimony() {
-        let local = include_str!("local_problem.rs");
-        let surface = local.split("pub fn surface_problem").nth(1).unwrap();
+        let local = crate::production_source(include_str!("local_problem.rs"));
+        let surface = local
+            .split("fn surface_new_problem")
+            .nth(1)
+            .and_then(|tail| tail.split("fn rumor_contact_is_valid").next())
+            .expect("new-problem disclosure helper");
         assert!(surface.contains("validated.manifest.witnesses.first()"));
-        assert!(surface.contains(
-            "settlement_resident_profile().character_id().find(witness.resident_character_id)"
-        ));
+        assert!(surface.contains("resolve_settlement_resident("));
         assert!(surface.contains("contact.home_settlement_id"));
         assert!(surface.contains("npc_location_is_navigable"));
         assert!(surface.contains("expected_location_id: witness.expected_location.clone()"));
@@ -2532,7 +2544,7 @@ mod tests {
             .unwrap();
         assert!(receive.contains("referred_generated_witness"));
         assert!(receive.contains("&receipt.opaque_case_ref"));
-        assert!(receive.contains("&live_npc.character_id"));
+        assert!(receive.contains("live_npc.character_id"));
         assert!(receive.contains("&session.settlement_id"));
         assert!(receive.contains("&session.location_id"));
         assert!(!receive.contains("manifest.witnesses"));

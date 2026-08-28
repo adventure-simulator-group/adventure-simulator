@@ -4,7 +4,7 @@ fn departure_readiness_applies_continuous_load_thermal_and_ammo_floors() {
     assert_eq!(public_encumbrance_remaining_bps(80.0, 100.0), 2_000);
     assert_eq!(public_encumbrance_remaining_bps(81.0, 100.0), 1_900);
     assert!(survival_equipment_ready(
-        "ready",
+        DomainIncapacitationStatus::Ready,
         MAX_DEPARTURE_WETNESS_BPS,
         MAX_DEPARTURE_ABS_THERMAL_STRAIN as i32,
         true,
@@ -12,7 +12,7 @@ fn departure_readiness_applies_continuous_load_thermal_and_ammo_floors() {
         MIN_DEPARTURE_ENCUMBRANCE_REMAINING_BPS,
     ));
     assert!(!survival_equipment_ready(
-        "ready",
+        DomainIncapacitationStatus::Ready,
         MAX_DEPARTURE_WETNESS_BPS,
         0,
         true,
@@ -20,7 +20,7 @@ fn departure_readiness_applies_continuous_load_thermal_and_ammo_floors() {
         MIN_DEPARTURE_ENCUMBRANCE_REMAINING_BPS,
     ));
     assert!(!survival_equipment_ready(
-        "ready",
+        DomainIncapacitationStatus::Ready,
         MAX_DEPARTURE_WETNESS_BPS + 1,
         0,
         false,
@@ -64,7 +64,10 @@ fn safe_departure_configuration_does_not_rest_party_members() {
     let wait = source
         .split("pub(super) fn wait_for_safe_departure_at_settlement")
         .nth(1)
-        .and_then(|tail| tail.split("pub(super) fn configure_safe_departure_itinerary").next())
+        .and_then(|tail| {
+            tail.split("pub(super) fn configure_safe_departure_itinerary")
+                .next()
+        })
         .expect("safe-departure wait implementation");
     assert!(wait.contains("configure_safe_departure_itinerary"));
     assert!(wait.contains("journey_start_minute_of_day"));
@@ -132,7 +135,10 @@ fn generated_route_search_finds_a_warmer_hour_inside_a_daily_walking_window() {
                 .then_some(wait)
         },
     );
-    assert!(evaluated_daily_start, "the daily start was evaluated and unsafe");
+    assert!(
+        evaluated_daily_start,
+        "the daily start was evaluated and unsafe"
+    );
     assert_eq!(selected, Some(warmer_hour));
 }
 
@@ -351,7 +357,10 @@ fn generated_on_site_action_continues_only_with_same_site_full_return_reserve() 
     let next_reserve = off_settlement_return[..continuation]
         .rfind("next_action.duration_max_minutes")
         .expect("next action and return reserve");
-    assert!(off_settlement_return[..continuation].contains("row.required_case_site_id == occupied_site_id"));
+    assert!(
+        off_settlement_return[..continuation]
+            .contains("row.required_case_site_id == occupied_site_id")
+    );
     assert!(next_reserve < continuation);
     assert!(off_settlement_return[continuation..].contains("continue;"));
     assert!(off_settlement_return.contains("plan=one_attempt_then_reserved_return"));
@@ -462,7 +471,7 @@ fn on_site_reserve_requires_a_ready_actor_but_allows_survivable_stagger() {
         .expect("on-site action reserve");
     assert!(on_site.contains("stats.calories_used"));
     assert!(on_site.contains("calories_after_strenuous_action("));
-    assert!(on_site.contains("condition.status == \"ready\""));
+    assert!(on_site.contains("DomainIncapacitationStatus::Ready"));
     assert!(on_site.contains("let action_survivable = projected_action_survivable("));
     let model = include_str!("../model.rs");
     let action_cost = model
@@ -470,7 +479,7 @@ fn on_site_reserve_requires_a_ready_actor_but_allows_survivable_stagger() {
         .nth(1)
         .and_then(|tail| tail.split("fn round_trip_walking_window_minutes").next())
         .expect("shared strenuous action cost");
-    assert!(action_cost.contains("action_minutes as f32 / 1_440.0"));
+    assert!(action_cost.contains("action_minutes as f32 / MINUTES_PER_DAY as f32"));
     assert!(action_cost.contains("STRATEGIC_TRAVEL_KCAL_PER_DAY"));
 }
 
@@ -608,7 +617,7 @@ fn route_plan_persists_the_same_selected_schedule_used_for_both_legs() {
     assert!(route.contains("selected_case_site_plan = Some(selected_plan)"));
     assert!(route.contains("selected_plan.outbound.total_elapsed_minutes"));
     assert!(route.contains("selected_plan.returned.total_elapsed_minutes"));
-    assert!(route.contains("selected_plan.departure_wait_minutes.min(1_440)"));
+    assert!(route.contains("selected_plan.departure_wait_minutes.min(MINUTES_PER_DAY)"));
     assert!(route.contains("wait_toward_safe_public_route_window"));
     assert!(route.contains("wait_minutes,"));
     assert!(route.contains("travel_at_night: selected_plan.travel_at_night"));
@@ -739,7 +748,7 @@ fn public_encumbrance_counts_carried_mass_but_not_body_mass() {
         .nth(1)
         .and_then(|tail| tail.split("fn public_character_capacity_kg").next())
         .expect("public personal-load projection");
-    assert!(load.contains("carried_water_ml"));
+    assert!(!load.contains("carried_water_ml"));
     assert!(load.contains("inventory_weight"));
     assert!(load.contains("public_contained_water_ml"));
     assert!(load.contains("public_measured_stack_weight_kg"));
@@ -750,6 +759,9 @@ fn public_encumbrance_counts_carried_mass_but_not_body_mass() {
 #[test]
 fn public_supply_and_load_accounting_include_nested_measured_objects() {
     let source = LIVE_CORE_SOURCE;
+    assert!(!source.contains("location_kind"));
+    assert!(!source.contains("location_owner"));
+    assert!(!source.contains("pooled_water_ml"));
     for public_surface in [
         ".inventory_object()",
         ".inventory_containment()",
@@ -766,22 +778,73 @@ fn public_supply_and_load_accounting_include_nested_measured_objects() {
         .expect("public expedition supply observation");
     assert!(supplies.contains("public_row_is_carried"));
     assert!(supplies.contains("contained_water_ml"));
+    assert!(!supplies.contains("carried_water_ml"));
+}
+
+#[test]
+fn generated_inventory_locations_require_exact_typed_custody_and_row() {
+    let personal = InventoryLocation::Personal(PersonalInventoryLocation {
+        character_id: 7,
+        row_id: 11,
+    });
+    let personal_custody = OperationalCustody::character(7).unwrap();
+    let other_character = OperationalCustody::character(8).unwrap();
+    assert!(LiveRunner::public_inventory_location_matches_row(
+        &personal,
+        &personal_custody,
+        11,
+    ));
+    assert!(!LiveRunner::public_inventory_location_matches_row(
+        &personal,
+        &personal_custody,
+        12,
+    ));
+    assert!(!LiveRunner::public_inventory_location_matches_custody(
+        &personal,
+        &other_character,
+    ));
+
+    let party = InventoryLocation::Party(PartyInventoryLocation {
+        party_id: "party:one".into(),
+        row_id: 13,
+    });
+    let party_custody = OperationalCustody::party("party:one").unwrap();
+    assert!(LiveRunner::public_inventory_location_matches_row(
+        &party,
+        &party_custody,
+        13,
+    ));
+    assert!(!LiveRunner::public_inventory_location_matches_custody(
+        &party,
+        &personal_custody,
+    ));
+
+    let fireplace = InventoryLocation::Fireplace(FireplaceInventoryLocation {
+        fixture_id: "fireplace:one".into(),
+    });
+    assert!(!LiveRunner::public_inventory_location_matches_custody(
+        &fireplace,
+        &party_custody,
+    ));
 }
 
 #[test]
 fn measured_inventory_amount_replaces_stack_quantity_at_canonical_scale() {
-    use adventuresim_core::inventory_measurement::FULL_AMOUNT_MILLIUNITS;
+    use adventuresim_core::inventory_measurement::ConsumableFractionMicros;
 
     assert_eq!(public_effective_inventory_quantity(3, None), 3.0);
     assert_eq!(
-        public_effective_inventory_quantity(3, Some(FULL_AMOUNT_MILLIUNITS)),
+        public_effective_inventory_quantity(3, Some(ConsumableFractionMicros::WHOLE.get())),
         1.0,
         "a measured row is one measured object, not quantity times its amount"
     );
     assert_eq!(
-        public_effective_inventory_quantity(7, Some(FULL_AMOUNT_MILLIUNITS / 2)),
+        public_effective_inventory_quantity(
+            7,
+            Some(ConsumableFractionMicros::whole_divided_by(2).get())
+        ),
         0.5,
-        "half of a measured object remains half regardless of the legacy stack quantity"
+        "half of a measured object remains half regardless of its row quantity"
     );
 }
 
@@ -848,10 +911,20 @@ fn readiness_buys_shared_tent_and_personal_ammunition_through_ordinary_trade() {
 }
 
 #[test]
-fn exact_merchant_provider_races_reuse_public_unavailable_policy_without_purchase_metrics() {
-    for operation in MERCHANT_PROVIDER_RACE_OPERATIONS {
+fn coded_merchant_provider_races_reuse_public_unavailable_policy_without_purchase_metrics() {
+    let coded = adventuresim_core::reducer_error::coded_reducer_error(
+        ReducerErrorCode::MerchantProviderUnavailable,
+        "wording is not part of the protocol",
+    );
+    for operation in [
+        "purchase_party_tent",
+        "purchase_journey_provisions",
+        "purchase_ammunition",
+        "purchase_first_aid_material",
+        "purchase_personal_storefront_with_party_stake",
+    ] {
         assert!(merchant_provider_unavailable_failure(&format!(
-            "{operation} failed: Merchant service provider is not available"
+            "{operation} failed: {coded}"
         )));
     }
     for error in [
@@ -870,8 +943,11 @@ fn exact_merchant_provider_races_reuse_public_unavailable_policy_without_purchas
         .and_then(|tail| tail.split("fn ensure_ranged_ammunition").next())
         .unwrap();
     assert!(tent.contains("merchant_provider_unavailable_failure(&error)"));
-    assert!(tent.find("merchant_provider_unavailable_failure(&error)").unwrap()
-        < tent.find("party_tents_purchased").unwrap());
+    assert!(
+        tent.find("merchant_provider_unavailable_failure(&error)")
+            .unwrap()
+            < tent.find("party_tents_purchased").unwrap()
+    );
 
     let ammo = source
         .split("fn ensure_ranged_ammunition")
@@ -879,17 +955,27 @@ fn exact_merchant_provider_races_reuse_public_unavailable_policy_without_purchas
         .and_then(|tail| tail.split("fn validate_party_departure_readiness").next())
         .unwrap();
     assert!(ammo.contains("ammunition_provider_projection_unavailable"));
-    assert!(ammo.find("merchant_provider_unavailable_failure(&error)").unwrap()
-        < ammo.find("ammunition_purchases").unwrap());
+    assert!(
+        ammo.find("merchant_provider_unavailable_failure(&error)")
+            .unwrap()
+            < ammo.find("ammunition_purchases").unwrap()
+    );
 
     let provisions = source
         .split("fn provision_case_site_journey")
         .nth(1)
-        .and_then(|tail| tail.split("pub(super) fn public_active_camp_observation").next())
+        .and_then(|tail| {
+            tail.split("pub(super) fn public_active_camp_observation")
+                .next()
+        })
         .unwrap();
     assert!(provisions.contains("journey_payer_provider_projection_unavailable"));
-    assert!(provisions.find("merchant_provider_unavailable_failure(&error)").unwrap()
-        < provisions.find("journey_provision_purchases").unwrap());
+    assert!(
+        provisions
+            .find("merchant_provider_unavailable_failure(&error)")
+            .unwrap()
+            < provisions.find("journey_provision_purchases").unwrap()
+    );
 
     let first_aid = source
         .split("fn acquire_first_aid_material")
@@ -901,8 +987,12 @@ fn exact_merchant_provider_races_reuse_public_unavailable_policy_without_purchas
 
     let upgrade = source.split("fn try_upgrade").nth(1).unwrap();
     assert!(upgrade.contains("merchant_provider_unavailable_failure(&error)"));
-    assert!(upgrade.find("merchant_provider_unavailable_failure(&error)").unwrap()
-        < upgrade.find("equipment_purchases += 1").unwrap());
+    assert!(
+        upgrade
+            .find("merchant_provider_unavailable_failure(&error)")
+            .unwrap()
+            < upgrade.find("equipment_purchases += 1").unwrap()
+    );
 
     let herbalist = source
         .split("debug_assert_eq!(choice, MedicalChoice::BuyAndRest)")
@@ -1101,11 +1191,7 @@ fn departure_checks_only_living_members_and_projects_public_route_weather() {
 
 #[test]
 fn public_route_thermal_forecast_rejects_the_observed_cold_long_leg() {
-    let point = PublicRoutePoint {
-        latitude_microdegrees: 53_000_000,
-        longitude_microdegrees: 10_000_000,
-        elevation_m: 0,
-    };
+    let point = PublicRoutePoint::from_degrees(53.0, 10.0, 0).unwrap();
     assert_eq!(
         projected_route_thermal_safe(
             332_661,
@@ -1122,11 +1208,7 @@ fn public_route_thermal_forecast_rejects_the_observed_cold_long_leg() {
 
 #[test]
 fn public_route_thermal_forecast_is_bounded_and_gates_both_case_paths() {
-    let point = PublicRoutePoint {
-        latitude_microdegrees: 0,
-        longitude_microdegrees: 0,
-        elevation_m: 0,
-    };
+    let point = PublicRoutePoint::from_degrees(0.0, 0.0, 0).unwrap();
     assert_eq!(
         projected_route_thermal_safe(
             0,
@@ -1174,11 +1256,7 @@ fn public_route_thermal_forecast_is_bounded_and_gates_both_case_paths() {
 
 #[test]
 fn outbound_safe_projection_can_still_reject_the_return_camp() {
-    let point = PublicRoutePoint {
-        latitude_microdegrees: 53_000_000,
-        longitude_microdegrees: 10_000_000,
-        elevation_m: 0,
-    };
+    let point = PublicRoutePoint::from_degrees(53.0, 10.0, 0).unwrap();
     let itinerary = |minutes| adventuresim_core::strategic_time::ItineraryForecast {
         segments: vec![adventuresim_core::strategic_time::ItinerarySegment {
             kind: adventuresim_core::strategic_time::ItinerarySegmentKind::Walking,
@@ -1249,15 +1327,9 @@ fn thermal_projection_uses_core_itinerary_movement_not_provisioning_reserve() {
         calories_used: 3_000.0,
         camp_schedule: Default::default(),
     }];
-    let itinerary = adventuresim_core::strategic_time::forecast_itinerary(
-        720,
-        movement,
-        480,
-        false,
-        adventuresim_core::strategic_time::CampDurationPolicy::Auto,
-        &members,
-    )
-    .unwrap();
+    let itinerary =
+        adventuresim_core::strategic_time::forecast_itinerary(720, movement, 480, false, &members)
+            .unwrap();
     assert_eq!(itinerary.total_movement_minutes, movement);
     assert!(itinerary.total_elapsed_minutes < 240);
     let source = LIVE_CORE_SOURCE;
@@ -1308,4 +1380,40 @@ fn survival_report_schema_has_per_agent_aggregate_and_failure_context() {
     }
     assert_eq!(CORE_LOOP_FAILURE_SCHEMA_VERSION, 9);
     assert_eq!(crate::FORMAT_VERSION, 9);
+}
+fn projected_route_thermal_safe(
+    starting_minute: u64,
+    elapsed_minutes: u64,
+    origin: PublicRoutePoint,
+    destination: PublicRoutePoint,
+    starting_state: adventuresim_core::survival::SurvivalState,
+    insulation_bps: u16,
+) -> Option<bool> {
+    let itinerary = adventuresim_core::strategic_time::ItineraryForecast {
+        segments: vec![adventuresim_core::strategic_time::ItinerarySegment {
+            kind: adventuresim_core::strategic_time::ItinerarySegmentKind::Walking,
+            elapsed_start: 0,
+            elapsed_minutes,
+            movement_start: 0,
+            movement_minutes: elapsed_minutes,
+            average_fatigue_start: 0.0,
+            average_fatigue_end: 0.0,
+            maximum_fatigue_end: 0.0,
+            required_rest_minutes: 0,
+        }],
+        member_final_fatigue: vec![0.0],
+        member_maximum_fatigue: vec![0.0],
+        total_elapsed_minutes: elapsed_minutes,
+        total_movement_minutes: elapsed_minutes,
+        truncated: false,
+    };
+    projected_itinerary_thermal_safe(
+        starting_minute,
+        &itinerary,
+        origin,
+        destination,
+        starting_state,
+        insulation_bps,
+        false,
+    )
 }

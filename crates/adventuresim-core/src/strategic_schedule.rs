@@ -3,13 +3,15 @@
 use crate::attribute::PlayerAttributes;
 use crate::equipment::WeaponSkillDistribution;
 use crate::organization::{OrganizationDefinition, TrainingTarget};
+use crate::personality::Transparency;
 use crate::skill::{Skill, apply_direct_training};
-use crate::social::Transparency;
 use crate::{
     activity::*,
     strategic_time::{MINUTES_PER_DAY, training_hours_increment},
 };
-use adventuresim_world_schema::{BestiaryHours, OfficialReligion, ReligionHours};
+use adventuresim_world_schema::{
+    BASIS_POINTS_PER_WHOLE, BestiaryHours, OfficialReligion, ReligionHours,
+};
 
 /// A parsed organization allocation: zero minutes cannot carry a stale
 /// organization and positive minutes cannot omit the organization that grants
@@ -427,7 +429,7 @@ pub enum SocializingSociability {
 }
 
 impl SocializingTrainingWeights {
-    pub const TOTAL_BASIS_POINTS: u16 = 10_000;
+    pub const TOTAL_BASIS_POINTS: u16 = BASIS_POINTS_PER_WHOLE;
 
     pub const fn values(self) -> [u16; 3] {
         [
@@ -563,27 +565,6 @@ impl CombatTrainingProfile {
 /// Apply one elapsed interval. Calling this once for N days or N times for one day
 /// produces the same training total apart from normal floating-point rounding.
 pub fn apply_schedule_training(
-    skills: &mut SkillHours,
-    schedule: DailySchedule,
-    elapsed_minutes: u64,
-    profile: ActivityTrainingProfile,
-    attributes: &impl PlayerAttributes,
-) -> f32 {
-    apply_schedule_training_for_personality(
-        skills,
-        schedule,
-        elapsed_minutes,
-        profile,
-        SocializingSociability::Neutral,
-        Transparency::Neutral,
-        attributes,
-    )
-}
-
-/// Apply schedule training with the actor's immutable social personality.
-/// The compatibility entry point above uses neutral axes, while authoritative
-/// character callers can supply their exact profile.
-pub fn apply_schedule_training_for_personality(
     skills: &mut SkillHours,
     schedule: DailySchedule,
     elapsed_minutes: u64,
@@ -942,6 +923,8 @@ mod tests {
             schedule,
             MINUTES_PER_DAY,
             ActivityTrainingProfile::default(),
+            SocializingSociability::Neutral,
+            Transparency::Neutral,
             &NeutralAttributes,
         );
         let combat_total = skills.polearm
@@ -1017,6 +1000,8 @@ mod tests {
             schedule,
             MINUTES_PER_DAY,
             ActivityTrainingProfile::default(),
+            SocializingSociability::Neutral,
+            Transparency::Neutral,
             &NeutralAttributes,
         );
         assert!((neutral.charm - 0.5).abs() < 0.001);
@@ -1025,7 +1010,7 @@ mod tests {
         assert!((neutral.charm + neutral.insight + neutral.deception - 1.0).abs() < 0.001);
 
         let mut guarded = SkillHours::default();
-        apply_schedule_training_for_personality(
+        apply_schedule_training(
             &mut guarded,
             schedule,
             MINUTES_PER_DAY,
@@ -1047,7 +1032,7 @@ mod tests {
             ..Default::default()
         };
         let mut whole = SkillHours::default();
-        apply_schedule_training_for_personality(
+        apply_schedule_training(
             &mut whole,
             schedule,
             30 * MINUTES_PER_DAY,
@@ -1058,7 +1043,7 @@ mod tests {
         );
         let mut chunked = SkillHours::default();
         for _ in 0..30 {
-            apply_schedule_training_for_personality(
+            apply_schedule_training(
                 &mut chunked,
                 schedule,
                 MINUTES_PER_DAY,
@@ -1223,6 +1208,8 @@ mod tests {
             schedule,
             30 * MINUTES_PER_DAY,
             profile,
+            SocializingSociability::Neutral,
+            Transparency::Neutral,
             &NeutralAttributes,
         );
         for _ in 0..30 {
@@ -1231,6 +1218,8 @@ mod tests {
                 schedule,
                 MINUTES_PER_DAY,
                 profile,
+                SocializingSociability::Neutral,
+                Transparency::Neutral,
                 &NeutralAttributes,
             );
         }
@@ -1253,6 +1242,8 @@ mod tests {
             schedule,
             30 * MINUTES_PER_DAY,
             ActivityTrainingProfile::default(),
+            SocializingSociability::Neutral,
+            Transparency::Neutral,
             &NeutralAttributes,
         );
         let mut daily = SkillHours::default();
@@ -1262,6 +1253,8 @@ mod tests {
                 schedule,
                 MINUTES_PER_DAY,
                 ActivityTrainingProfile::default(),
+                SocializingSociability::Neutral,
+                Transparency::Neutral,
                 &NeutralAttributes,
             );
         }

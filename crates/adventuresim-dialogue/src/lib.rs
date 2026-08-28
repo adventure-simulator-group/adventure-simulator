@@ -7,7 +7,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::OnceLock;
 
 mod authoring_schema;
-pub use authoring_schema::{Condition, FactKey, FactValue, PromptMode, ResolutionPolicy};
+pub use authoring_schema::{
+    Condition, FactKey, FactValue, PromptMode, ResolutionPolicy, TopicCategory,
+};
 
 include!(concat!(env!("OUT_DIR"), "/dialogue_catalog.rs"));
 
@@ -62,15 +64,6 @@ pub struct Topic {
     #[serde(default)]
     pub conditions: Condition,
     pub responses: Vec<Response>,
-}
-
-#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum TopicCategory {
-    Quest,
-    #[default]
-    Lore,
-    About,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]

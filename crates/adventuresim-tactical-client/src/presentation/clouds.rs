@@ -5,6 +5,7 @@ use bevy::{
     camera::{ClearColorConfig, RenderTarget, visibility::RenderLayers},
     render::render_resource::{TextureDescriptor, TextureUsages},
 };
+use fabelgeist_determinism::splitmix64;
 
 #[cfg(not(target_family = "wasm"))]
 use bevy::tasks::{AsyncComputeTaskPool, Task, block_on};
@@ -46,7 +47,6 @@ impl TacticalCloudLayer {
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-#[allow(dead_code)] // Named variants are consumed by the native capture binary.
 pub(crate) enum TacticalCloudCaptureProfile {
     #[default]
     Cumulus,
@@ -299,18 +299,20 @@ fn cloud_offscreen_size(target_size: UVec2, resolution_scale: f32) -> Extent3d {
 }
 
 fn cloud_offscreen_image(size: Extent3d) -> Image {
-    let mut image = Image::default();
-    image.texture_descriptor = TextureDescriptor {
-        label: Some("tactical_cloud_offscreen_target"),
-        size,
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: TextureDimension::D2,
-        // Preserves the scene-referred radiance range until the composite,
-        // matching what the shells previously wrote into the main pass.
-        format: TextureFormat::Rgba16Float,
-        usage: TextureUsages::TEXTURE_BINDING | TextureUsages::RENDER_ATTACHMENT,
-        view_formats: &[],
+    let mut image = Image {
+        texture_descriptor: TextureDescriptor {
+            label: Some("tactical_cloud_offscreen_target"),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            // Preserves the scene-referred radiance range until the composite,
+            // matching what the shells previously wrote into the main pass.
+            format: TextureFormat::Rgba16Float,
+            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        },
+        ..default()
     };
     image.resize(size);
     image
@@ -318,6 +320,10 @@ fn cloud_offscreen_image(size: Extent3d) -> Image {
 
 /// Keeps the offscreen target matched to the window and the offscreen
 /// camera's projection matched to the gameplay camera.
+#[expect(
+    clippy::type_complexity,
+    reason = "the Bevy query selects changed gameplay-camera projections while excluding the cloud camera"
+)]
 pub(in crate::presentation) fn update_tactical_cloud_offscreen_target(
     target: Option<Res<TacticalCloudOffscreenTarget>>,
     mut images: ResMut<Assets<Image>>,
@@ -781,7 +787,7 @@ fn non_periodic_value_noise_3d(position: Vec3, seed: u64) -> f32 {
         * (fraction * (fraction * 6.0 - Vec3::splat(15.0)) + Vec3::splat(10.0));
     let value = |offset: Vec3| {
         let lattice = cell + offset;
-        cloud_noise_hash(
+        splitmix64(
             seed ^ (lattice.x as i64 as u64).wrapping_mul(0x9e37_79b9)
                 ^ (lattice.y as i64 as u64).rotate_left(23)
                 ^ (lattice.z as i64 as u64).wrapping_mul(0xd1b5_4a32_d192_ed03),
@@ -797,14 +803,6 @@ fn non_periodic_value_noise_3d(position: Vec3, seed: u64) -> f32 {
     let x3 = value(Vec3::Z + Vec3::Y).lerp(value(Vec3::ONE), smooth.x);
     y0.lerp(x2.lerp(x3, smooth.y), smooth.z)
 }
-
-fn cloud_noise_hash(mut value: u64) -> u64 {
-    value = value.wrapping_add(0x9e37_79b9_7f4a_7c15);
-    value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-    value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-    value ^ (value >> 31)
-}
-
 fn cloud_hemisphere_mesh() -> Mesh {
     // The mesh supplies only view directions. This moderate tessellation keeps
     // a smooth horizon while eliminating the old ray-march proxy density.
@@ -859,6 +857,10 @@ fn cloud_hemisphere_mesh() -> Mesh {
     mesh
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Bevy injects cloud scene state, lighting, capture controls, and material storage independently"
+)]
 pub(in crate::presentation) fn update_tactical_clouds(
     time: Res<Time>,
     active: Res<ActiveTacticalScene>,
@@ -898,7 +900,7 @@ pub(in crate::presentation) fn update_tactical_clouds(
         transform.translation = camera.translation();
         let Some(environment) = environment else {
             cloud.active = false;
-            *visibility = cloud_visibility(false, *isolation);
+            *visibility = cloud_visibility(cloud.active, *isolation);
             continue;
         };
         let Some(celestial) = celestial else {
@@ -917,7 +919,7 @@ pub(in crate::presentation) fn update_tactical_clouds(
             .all(|layer| layer.coverage <= 0.001 || layer.density <= 0.001)
         {
             cloud.active = false;
-            *visibility = cloud_visibility(false, *isolation);
+            *visibility = cloud_visibility(cloud.active, *isolation);
             continue;
         }
         let seed = cloud_seed(environment);

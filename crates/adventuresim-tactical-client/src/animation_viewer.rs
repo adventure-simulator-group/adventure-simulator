@@ -38,7 +38,9 @@ use crate::animation::{
     semantic_route::{SemanticRoutePath, SemanticRouteTrace},
 };
 use crate::{
-    camera::{CameraMode, TacticalCameraPlugin, TacticalCameraSet, third_person_offset},
+    camera::{
+        CameraMode, TacticalCameraPlugin, TacticalCameraSet, animation_capture_camera_offset,
+    },
     player::{LocalCharacterId, PlayerPlugin},
     presentation::{TacticalGameplayCamera, TacticalPresentationPlugin},
 };
@@ -1946,10 +1948,8 @@ fn setup_viewer(mut commands: Commands, sequence: Res<CaptureSequence>) {
         } else {
             "Animation review hills scene"
         }),
-        // Retain the known hills presentation family for its production sky,
-        // lighting, and materials; only the authoritative heightfield becomes
-        // flat for grid review.
         SceneId("hills".to_owned()),
+        SceneEnvironmentFixture::TemperateHills.snapshot("hills"),
         terrain,
         Transform::default(),
     ));
@@ -2005,6 +2005,11 @@ fn freeze_capture_look(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    reason = "the Bevy capture driver independently controls timing, IK modes, animation input, subject state, and labels"
+)]
 fn drive_sequence(
     mut sequence: ResMut<CaptureSequence>,
     mut procedural_clock: ResMut<ProceduralAnimationClock>,
@@ -2192,7 +2197,7 @@ fn drive_sequence(
         } else {
             1.0 / SAMPLE_HZ
         };
-        procedural_clock.set_fixed_tick(sequence.simulation_tick, delta_seconds);
+        procedural_clock.fixed_tick = Some((sequence.simulation_tick, delta_seconds.max(0.0)));
         let horizontal = transform.translation.xz() + world_velocity.xz() * delta_seconds;
         let vertical = if quickstep {
             let ground = terrain.height_at(horizontal).unwrap_or_default()
@@ -2360,7 +2365,8 @@ fn position_capture_camera(
             // that default base and apply the exact gameplay camera offset;
             // otherwise the offset accumulates and the first raw frame is a
             // pelvis-level/empty view.
-            camera.translation = subject.translation + third_person_offset(Quat::IDENTITY);
+            camera.translation =
+                subject.translation + animation_capture_camera_offset(Quat::IDENTITY);
             camera.rotation = Quat::IDENTITY;
         }
         CaptureView::Side => {
@@ -2518,6 +2524,11 @@ fn collect_locomotion_presentation_events(
         }));
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    reason = "the Bevy capture system records each independent animation state and diagnostic source"
+)]
 fn capture_frame(
     mut commands: Commands,
     mut sequence: ResMut<CaptureSequence>,
@@ -3694,7 +3705,7 @@ fn finish_capture(
     let views_are_distinct = sequence.duplicate_view_frames.is_empty();
     let repeated_evaluation_valid = sequence.repeated_evaluation_valid;
     let semantic_route_paths_exercised = frames.iter().all(|frame| {
-        frame.semantic_route_requested_path == SemanticRoutePath::LegacyFallback
+        frame.semantic_route_requested_path == SemanticRoutePath::GeneralPose
             || (frame.semantic_route_runtime_evaluated
                 && frame.semantic_route_selected_path == frame.semantic_route_requested_path)
     });
@@ -5028,7 +5039,10 @@ fn frame_uses_run_motion_budget(frame: &FrameSample) -> bool {
     frame.speed_metres_per_second >= run_speed_threshold
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 fn ordinary_planned_transition_is_valid(
     before: &FrameSample,
     after: &FrameSample,
@@ -5772,8 +5786,8 @@ mod tests {
             ik_settle_progress: None,
             ik_left_knee_foot_yaw_offset_degrees: 0.0,
             ik_right_knee_foot_yaw_offset_degrees: 0.0,
-            semantic_route_requested_path: SemanticRoutePath::LegacyFallback,
-            semantic_route_selected_path: SemanticRoutePath::LegacyFallback,
+            semantic_route_requested_path: SemanticRoutePath::GeneralPose,
+            semantic_route_selected_path: SemanticRoutePath::GeneralPose,
             semantic_route_runtime_evaluated: false,
             screenshots,
             bones: BTreeMap::new(),
@@ -6232,8 +6246,8 @@ mod tests {
             ik_settle_progress: None,
             ik_left_knee_foot_yaw_offset_degrees: 0.0,
             ik_right_knee_foot_yaw_offset_degrees: 0.0,
-            semantic_route_requested_path: SemanticRoutePath::LegacyFallback,
-            semantic_route_selected_path: SemanticRoutePath::LegacyFallback,
+            semantic_route_requested_path: SemanticRoutePath::GeneralPose,
+            semantic_route_selected_path: SemanticRoutePath::GeneralPose,
             semantic_route_runtime_evaluated: false,
             screenshots: BTreeMap::new(),
             bones,
@@ -6494,8 +6508,8 @@ mod tests {
             ik_settle_progress: None,
             ik_left_knee_foot_yaw_offset_degrees: 0.0,
             ik_right_knee_foot_yaw_offset_degrees: 0.0,
-            semantic_route_requested_path: SemanticRoutePath::LegacyFallback,
-            semantic_route_selected_path: SemanticRoutePath::LegacyFallback,
+            semantic_route_requested_path: SemanticRoutePath::GeneralPose,
+            semantic_route_selected_path: SemanticRoutePath::GeneralPose,
             semantic_route_runtime_evaluated: false,
             screenshots: BTreeMap::new(),
             bones: BTreeMap::from([

@@ -177,20 +177,36 @@ struct CachedWeapon {
 
 #[derive(Resource, Default)]
 struct WeaponMeshCache {
-    weapons: HashMap<(u16, [u8; 32]), CachedWeapon>,
-    holders: HashMap<(u16, [u8; 32]), CachedWeapon>,
+    weapons: HashMap<WeaponMeshCacheKey, CachedWeapon>,
+    holders: HashMap<WeaponMeshCacheKey, CachedWeapon>,
     materials: HashMap<MaterialClass, Handle<StandardMaterial>>,
 }
 
 #[derive(Resource, Default)]
 struct WeaponIconCache {
-    icons: HashMap<(IconSource, u16, u16, [u8; 32], u16, u8), Handle<Image>>,
+    icons: HashMap<WeaponIconCacheKey, Handle<Image>>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum IconSource {
     Weapon,
     Holder,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+struct WeaponMeshCacheKey {
+    generator_version: u16,
+    design_hash: [u8; 32],
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+struct WeaponIconCacheKey {
+    source: IconSource,
+    generator_version: u16,
+    renderer_version: u16,
+    design_hash: [u8; 32],
+    size: u16,
+    supersampling: u8,
 }
 
 #[derive(Component)]
@@ -316,6 +332,10 @@ fn key_code(input: &str) -> Option<KeyCode> {
     })
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Bevy injects grab controls, ownership topology, camera, scene-item, and spatial state independently"
+)]
 fn update_grab_input(
     mut commands: Commands,
     time: Res<Time>,
@@ -757,14 +777,14 @@ fn cached_weapon_icon(
     if adventuresim_weapon_model::design_hash(&design).0 != appearance.design_hash {
         return None;
     }
-    let key = (
-        IconSource::Weapon,
-        appearance.generator_version,
-        ICON_RENDERER_VERSION,
-        appearance.design_hash,
-        TACTICAL_WEAPON_ICON_SIZE,
-        TACTICAL_WEAPON_ICON_SUPERSAMPLING,
-    );
+    let key = WeaponIconCacheKey {
+        source: IconSource::Weapon,
+        generator_version: appearance.generator_version,
+        renderer_version: ICON_RENDERER_VERSION,
+        design_hash: appearance.design_hash,
+        size: TACTICAL_WEAPON_ICON_SIZE,
+        supersampling: TACTICAL_WEAPON_ICON_SUPERSAMPLING,
+    };
     if let Some(cached) = cache.icons.get(&key) {
         return Some(cached.clone());
     }
@@ -810,14 +830,14 @@ fn cached_holder_icon(
     if adventuresim_weapon_model::holder_design_hash(&design).0 != appearance.design_hash {
         return None;
     }
-    let key = (
-        IconSource::Holder,
-        appearance.generator_version,
-        ICON_RENDERER_VERSION,
-        appearance.design_hash,
-        TACTICAL_WEAPON_ICON_SIZE,
-        TACTICAL_WEAPON_ICON_SUPERSAMPLING,
-    );
+    let key = WeaponIconCacheKey {
+        source: IconSource::Holder,
+        generator_version: appearance.generator_version,
+        renderer_version: ICON_RENDERER_VERSION,
+        design_hash: appearance.design_hash,
+        size: TACTICAL_WEAPON_ICON_SIZE,
+        supersampling: TACTICAL_WEAPON_ICON_SUPERSAMPLING,
+    };
     if let Some(cached) = cache.icons.get(&key) {
         return Some(cached.clone());
     }
@@ -863,6 +883,10 @@ fn equipment_icon_image(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Bevy injects HUD contexts, icon stores, player equipment, appearances, and grab state independently"
+)]
 fn draw_slot_hud(
     mut contexts: EguiContexts,
     asset_server: Res<AssetServer>,
@@ -1218,7 +1242,10 @@ fn cached_weapon(
     if adventuresim_weapon_model::design_hash(&design).0 != appearance.design_hash {
         return None;
     }
-    let key = (appearance.generator_version, appearance.design_hash);
+    let key = WeaponMeshCacheKey {
+        generator_version: appearance.generator_version,
+        design_hash: appearance.design_hash,
+    };
     if let Some(cached) = cache.weapons.get(&key) {
         return Some(cached.clone());
     }
@@ -1267,7 +1294,10 @@ fn cached_holder(
     if adventuresim_weapon_model::holder_design_hash(&design).0 != appearance.design_hash {
         return None;
     }
-    let key = (appearance.generator_version, appearance.design_hash);
+    let key = WeaponMeshCacheKey {
+        generator_version: appearance.generator_version,
+        design_hash: appearance.design_hash,
+    };
     if let Some(cached) = cache.holders.get(&key) {
         return Some(cached.clone());
     }
@@ -1297,6 +1327,10 @@ fn cached_holder(
     Some(cached)
 }
 
+#[expect(
+    clippy::type_complexity,
+    reason = "the Bevy query selects every appearance change that can invalidate an equipment placeholder"
+)]
 fn spawn_item_placeholders(
     mut commands: Commands,
     added: Query<
@@ -1446,7 +1480,11 @@ fn mark_procedural_equipment_failed(
     commands.entity(entity).insert(ProceduralEquipmentFailed);
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    reason = "Bevy injects each procedural-equipment asset store and resolution query independently"
+)]
 fn resolve_procedural_equipment_models(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -1693,6 +1731,10 @@ fn equipment_bind_correction(
     Some(bind_space_attachment_correction(bind, desired_rotation))
 }
 
+#[expect(
+    clippy::type_complexity,
+    reason = "the Bevy queries describe equipment ownership, topology, rig bindings, and placeholder state exactly"
+)]
 fn update_item_placeholders(
     mut commands: Commands,
     items: Query<

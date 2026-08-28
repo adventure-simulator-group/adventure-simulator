@@ -16,3 +16,6 @@ fabelgeist-numpy-storage = { path = "../fabelgeist-numpy-storage" }
 fabelgeist-fs = { path = "../fabelgeist-fs" }
 
 [workspace]
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }

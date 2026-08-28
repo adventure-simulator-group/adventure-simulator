@@ -3,19 +3,17 @@
 use adventuresim_core::skill::Skill;
 use adventuresim_core::social::{
     AFFINITY_MAX, AFFINITY_MIN, AutomaticSocialCandidate, CasualChatDisposition, CasualChatInput,
-    ClaimAssessmentDirection, ClaimChallengeApproach, ClaimChallengeInput,
-    Courtship as CoreCourtship, Inclination as CoreInclination, Mirth as CoreMirth,
-    PersonalityAxis, Presentation as CorePresentation, SOCIAL_COOLDOWN_MINUTES,
-    SOCIAL_RESPONSE_MINUTES, SelfKnowledge as CoreSelfKnowledge, SocialActionKind, SocialAttempt,
-    SocialTopic, Transparency as CoreTransparency, actor_allows_social_action,
-    actor_allows_social_prayer, affinity_gain, assess_testimony_claim, axis_for_topic,
-    bedside_reassurance_approach, bedside_reassurance_resolution_profile, canonical_cooldown_id,
-    canonical_pair, choose_automatic_social_action, command_gravitas_modifier, diagnosed_axis,
-    diagnosis_for_axis, discovery_training_split, flirt_charm_modifier, humor_charm_modifier,
-    incompatible_flirt_outcome, prayer_approach, prayer_resolution_profile,
-    realized_affinity_delta, resolve_casual_chat, resolve_claim_challenge, resolve_social_attempt,
-    resolve_social_attempt_with_profile, self_knowledge_insight_modifier, settle_affinity,
-    should_replace_belief, social_source_eligible, topic_for_source_kind,
+    ClaimAssessmentDirection, ClaimChallengeApproach, ClaimChallengeInput, PersonalityAxis,
+    SOCIAL_COOLDOWN_MINUTES, SOCIAL_RESPONSE_MINUTES, SocialActionKind, SocialAttempt, SocialTopic,
+    actor_allows_social_action, actor_allows_social_prayer, affinity_gain, assess_testimony_claim,
+    axis_for_topic, bedside_reassurance_approach, bedside_reassurance_resolution_profile,
+    canonical_cooldown_id, canonical_pair, choose_automatic_social_action,
+    command_gravitas_modifier, diagnosed_axis, diagnosis_for_axis, discovery_training_split,
+    flirt_charm_modifier, humor_charm_modifier, incompatible_flirt_outcome, prayer_approach,
+    prayer_resolution_profile, realized_affinity_delta, resolve_casual_chat,
+    resolve_claim_challenge, resolve_social_attempt, resolve_social_attempt_with_profile,
+    self_knowledge_insight_modifier, settle_affinity, should_replace_belief,
+    social_source_eligible, topic_for_source_kind,
 };
 use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view};
 
@@ -35,69 +33,6 @@ use crate::{
 };
 
 pub const MAX_AUTOMATIC_SOCIAL_ATTEMPTS_PER_DOWNTIME: usize = 3;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
-pub enum BeliefAxis {
-    Nerve,
-    Drive,
-    Outlook,
-    Sociability,
-    Conscience,
-    SelfRegard,
-    Conviction,
-    Hygiene,
-    Temperance,
-    Mirth,
-    Courtship,
-    Transparency,
-    SelfKnowledge,
-    Inclination,
-    Presentation,
-}
-
-impl BeliefAxis {
-    fn core(self) -> PersonalityAxis {
-        match self {
-            Self::Nerve => PersonalityAxis::Nerve,
-            Self::Drive => PersonalityAxis::Drive,
-            Self::Outlook => PersonalityAxis::Outlook,
-            Self::Sociability => PersonalityAxis::Sociability,
-            Self::Conscience => PersonalityAxis::Conscience,
-            Self::SelfRegard => PersonalityAxis::SelfRegard,
-            Self::Conviction => PersonalityAxis::Conviction,
-            Self::Hygiene => PersonalityAxis::Hygiene,
-            Self::Temperance => PersonalityAxis::Temperance,
-            Self::Mirth => PersonalityAxis::Mirth,
-            Self::Courtship => PersonalityAxis::Courtship,
-            Self::Transparency => PersonalityAxis::Transparency,
-            Self::SelfKnowledge => PersonalityAxis::SelfKnowledge,
-            Self::Inclination => PersonalityAxis::Inclination,
-            Self::Presentation => PersonalityAxis::Presentation,
-        }
-    }
-}
-
-impl From<PersonalityAxis> for BeliefAxis {
-    fn from(value: PersonalityAxis) -> Self {
-        match value {
-            PersonalityAxis::Nerve => Self::Nerve,
-            PersonalityAxis::Drive => Self::Drive,
-            PersonalityAxis::Outlook => Self::Outlook,
-            PersonalityAxis::Sociability => Self::Sociability,
-            PersonalityAxis::Conscience => Self::Conscience,
-            PersonalityAxis::SelfRegard => Self::SelfRegard,
-            PersonalityAxis::Conviction => Self::Conviction,
-            PersonalityAxis::Hygiene => Self::Hygiene,
-            PersonalityAxis::Temperance => Self::Temperance,
-            PersonalityAxis::Mirth => Self::Mirth,
-            PersonalityAxis::Courtship => Self::Courtship,
-            PersonalityAxis::Transparency => Self::Transparency,
-            PersonalityAxis::SelfKnowledge => Self::SelfKnowledge,
-            PersonalityAxis::Inclination => Self::Inclination,
-            PersonalityAxis::Presentation => Self::Presentation,
-        }
-    }
-}
 
 #[derive(Clone, Debug)]
 #[table(accessor = character_affinity)]
@@ -564,12 +499,8 @@ fn character_chat_disposition(
     personality: &crate::personality::CharacterPersonality,
 ) -> CasualChatDisposition {
     CasualChatDisposition {
-        mirth: core_mirth(personality.mirth),
-        transparency: match personality.transparency {
-            crate::personality::Transparency::Neutral => CoreTransparency::Neutral,
-            crate::personality::Transparency::Open => CoreTransparency::Open,
-            crate::personality::Transparency::Guarded => CoreTransparency::Guarded,
-        },
+        mirth: personality.mirth,
+        transparency: personality.transparency,
         sociability: match personality.sociability {
             crate::personality::Sociability::Neutral => 0,
             crate::personality::Sociability::Gregarious => 1,
@@ -583,6 +514,10 @@ fn character_chat_disposition(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "chat resolution keeps each independent social input explicit"
+)]
 fn resolve_casual_chat_segments(
     ctx: &ReducerContext,
     requested_minutes: u64,
@@ -622,6 +557,10 @@ fn resolve_casual_chat_segments(
     (morale_delta, affinity_delta, outcome)
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the receipt records every immutable chat coordinate explicitly"
+)]
 fn insert_chat_receipt(
     ctx: &ReducerContext,
     actor_id: u64,
@@ -1069,14 +1008,6 @@ fn witness_approach_skill(approach: ClaimChallengeApproach) -> Skill {
     }
 }
 
-fn core_transparency(value: crate::personality::Transparency) -> CoreTransparency {
-    match value {
-        crate::personality::Transparency::Open => CoreTransparency::Open,
-        crate::personality::Transparency::Neutral => CoreTransparency::Neutral,
-        crate::personality::Transparency::Guarded => CoreTransparency::Guarded,
-    }
-}
-
 fn require_witness_social_action(
     ctx: &ReducerContext,
     observer_character_id: u64,
@@ -1181,6 +1112,10 @@ fn finish_witness_social_action(
         });
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "witness resolution keeps each relationship and morale coordinate explicit"
+)]
 fn apply_witness_relationship_outcome(
     ctx: &ReducerContext,
     observer_character_id: u64,
@@ -1261,8 +1196,11 @@ pub fn approach_dialogue_witness(
         canonical_pair(observer_character_id, capability.resident_character_id)
             .and_then(|(low, high)| ctx.db.character_familiarity().id().find(pair_id(low, high)))
             .map_or(0, |value| value.shared_minutes);
-    let familiarity_bps =
-        ((familiarity_minutes.saturating_mul(10_000) / (100 * 60)).min(10_000)) as u16;
+    let familiarity_bps = ((familiarity_minutes
+        .saturating_mul(u64::from(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE))
+        / (100 * 60))
+        .min(u64::from(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE)))
+        as u16;
     let (fame, infamy) =
         crate::reputation::local_reputation(ctx, observer_character_id, &npc.home_settlement_id);
     let reputation_modifier =
@@ -1282,8 +1220,8 @@ pub fn approach_dialogue_witness(
         affinity: (affinity + f32::from(reputation_modifier)).clamp(AFFINITY_MIN, AFFINITY_MAX),
         familiarity_hours: familiarity_minutes as f32 / 60.0,
         current_morale,
-        target_transparency: core_transparency(target_personality.transparency),
-        target_mirth: core_mirth(target_personality.mirth),
+        target_transparency: target_personality.transparency,
+        target_mirth: target_personality.mirth,
         roll: (ctx.random::<u64>() as f64 / u64::MAX as f64) as f32,
     });
     if !crate::time::advance_investigation_time(
@@ -1374,7 +1312,7 @@ pub struct SocialBelief {
     pub observer_id: u64,
     #[index(btree)]
     pub subject_id: u64,
-    pub axis: BeliefAxis,
+    pub axis: PersonalityAxis,
     pub perceived_value: i8,
     pub confidence: f32,
     pub observed_at_minute: u64,
@@ -1423,13 +1361,7 @@ pub fn backend_social_beliefs(ctx: &ViewContext) -> Vec<SocialBelief> {
         .social_belief()
         .observer_id()
         .filter(0u64..)
-        .filter(|belief| {
-            belief
-                .axis
-                .core()
-                .legal_values()
-                .contains(&belief.perceived_value)
-        })
+        .filter(|belief| belief.axis.legal_values().contains(&belief.perceived_value))
         .collect()
 }
 
@@ -1985,7 +1917,7 @@ pub fn close_physiology_presence(ctx: &ReducerContext, character_id: u64) {
 }
 
 /// Begin observation only when two contextual Characters actually make
-/// contact. Earlier co-location is never backfilled into the chart.
+/// contact. Earlier co-location is not added retroactively to the chart.
 pub(crate) fn begin_physiology_presence_on_contact(
     ctx: &ReducerContext,
     observer_id: u64,
@@ -2318,11 +2250,7 @@ fn automatic_social_action(
             && (*action != SocialActionKind::Pray
                 || (actor_allows_social_prayer(conviction_code(personality.conviction))
                     && prayer_religion.is_some()))
-            && actor_allows_social_action(
-                *action,
-                core_mirth(personality.mirth),
-                core_courtship(personality.courtship),
-            )
+            && actor_allows_social_action(*action, personality.mirth, personality.courtship)
     }) {
         let action_kind = action.reducer_value();
         let cooldown_id = canonical_cooldown_id(actor_id, target_id, topic, action_kind);
@@ -2351,10 +2279,8 @@ fn automatic_social_action(
             )?
         };
         if action == SocialActionKind::Rally {
-            unscaled_skill_check += command_gravitas_modifier(
-                core_mirth(personality.mirth),
-                core_courtship(personality.courtship),
-            );
+            unscaled_skill_check +=
+                command_gravitas_modifier(personality.mirth, personality.courtship);
         }
         let skill_check =
             adventuresim_world_schema::language_scaled_effect(unscaled_skill_check, language);
@@ -2521,39 +2447,6 @@ fn personality_truth(ctx: &ReducerContext, target_id: u64, axis: PersonalityAxis
     })
 }
 
-fn core_mirth(value: crate::personality::Mirth) -> CoreMirth {
-    match value {
-        crate::personality::Mirth::Neutral => CoreMirth::Neutral,
-        crate::personality::Mirth::Merry => CoreMirth::Merry,
-        crate::personality::Mirth::Grave => CoreMirth::Grave,
-    }
-}
-
-fn core_courtship(value: crate::personality::Courtship) -> CoreCourtship {
-    match value {
-        crate::personality::Courtship::Neutral => CoreCourtship::Neutral,
-        crate::personality::Courtship::Amorous => CoreCourtship::Amorous,
-        crate::personality::Courtship::Proper => CoreCourtship::Proper,
-    }
-}
-
-fn core_inclination(value: crate::personality::Inclination) -> CoreInclination {
-    match value {
-        crate::personality::Inclination::Men => CoreInclination::Men,
-        crate::personality::Inclination::Either => CoreInclination::Either,
-        crate::personality::Inclination::Women => CoreInclination::Women,
-        crate::personality::Inclination::Neither => CoreInclination::Neither,
-    }
-}
-
-fn core_presentation(value: crate::personality::Presentation) -> CorePresentation {
-    match value {
-        crate::personality::Presentation::Man => CorePresentation::Man,
-        crate::personality::Presentation::Ambiguous => CorePresentation::Ambiguous,
-        crate::personality::Presentation::Woman => CorePresentation::Woman,
-    }
-}
-
 fn discovery_axes(
     action: SocialActionKind,
     topic: SocialTopic,
@@ -2604,11 +2497,7 @@ fn award_discovery_training(
     subject_id: u64,
     transparency: crate::personality::Transparency,
 ) {
-    let (observer_insight, subject_deception) = discovery_training_split(match transparency {
-        crate::personality::Transparency::Open => CoreTransparency::Open,
-        crate::personality::Transparency::Neutral => CoreTransparency::Neutral,
-        crate::personality::Transparency::Guarded => CoreTransparency::Guarded,
-    });
+    let (observer_insight, subject_deception) = discovery_training_split(transparency);
     if observer_id == subject_id {
         if let (Some(mut skills), Some(attributes)) = (
             ctx.db.character_skills().character_id().find(observer_id),
@@ -2692,7 +2581,7 @@ fn upsert_belief(
         id: id.clone(),
         observer_id,
         subject_id,
-        axis: axis.into(),
+        axis,
         perceived_value,
         confidence,
         observed_at_minute: now,
@@ -2768,11 +2657,7 @@ fn perform_social_action_authoritative(
         crate::time::synchronize_party_activity_time(ctx, &[actor_id, target_id], actor_id)?;
     }
     let actor_personality = crate::personality::personality_or_neutral(ctx, actor_id);
-    if !actor_allows_social_action(
-        action,
-        core_mirth(actor_personality.mirth),
-        core_courtship(actor_personality.courtship),
-    ) {
+    if !actor_allows_social_action(action, actor_personality.mirth, actor_personality.courtship) {
         return Err("Your disposition does not permit that social approach".into());
     }
     if action == SocialActionKind::Pray
@@ -2847,10 +2732,8 @@ fn perform_social_action_authoritative(
         crate::condition::mental_check(ctx, actor_id, skill)?
     };
     if action == SocialActionKind::Rally {
-        skill_check += command_gravitas_modifier(
-            core_mirth(actor_personality.mirth),
-            core_courtship(actor_personality.courtship),
-        );
+        skill_check +=
+            command_gravitas_modifier(actor_personality.mirth, actor_personality.courtship);
     }
     if !is_self {
         skill_check = adventuresim_world_schema::language_scaled_effect(
@@ -2869,11 +2752,7 @@ fn perform_social_action_authoritative(
     .clamp(0.0, 5.0);
     let insight_check = crate::condition::mental_check(ctx, actor_id, Skill::Insight)?;
     let self_insight_modifier = if is_self {
-        self_knowledge_insight_modifier(match target_personality.self_knowledge {
-            crate::personality::SelfKnowledge::Neutral => CoreSelfKnowledge::Neutral,
-            crate::personality::SelfKnowledge::Introspective => CoreSelfKnowledge::Introspective,
-            crate::personality::SelfKnowledge::SelfDeceiving => CoreSelfKnowledge::SelfDeceiving,
-        })
+        self_knowledge_insight_modifier(target_personality.self_knowledge)
     } else {
         0.0
     };
@@ -2886,9 +2765,8 @@ fn perform_social_action_authoritative(
             .id()
             .find(format!("{actor_id}:{target_id}:{}", axis.slug()))
             .and_then(|belief| {
-                (belief.axis.core() == axis
-                    && axis.legal_values().contains(&belief.perceived_value))
-                .then_some((axis, belief.perceived_value))
+                (belief.axis == axis && axis.legal_values().contains(&belief.perceived_value))
+                    .then_some((axis, belief.perceived_value))
             })
     });
     let diagnosis_correct = diagnosis_for_axis(
@@ -2898,20 +2776,17 @@ fn perform_social_action_authoritative(
     );
     let flirt_modifier = if action == SocialActionKind::Flirt {
         flirt_charm_modifier(
-            core_inclination(actor_personality.inclination),
-            core_presentation(actor_personality.presentation),
-            core_inclination(target_personality.inclination),
-            core_presentation(target_personality.presentation),
-            core_courtship(target_personality.courtship),
+            actor_personality.inclination,
+            actor_personality.presentation,
+            target_personality.inclination,
+            target_personality.presentation,
+            target_personality.courtship,
         )
     } else {
         Some(0.0)
     };
     if action == SocialActionKind::LightenMood {
-        skill_check += humor_charm_modifier(
-            core_mirth(actor_personality.mirth),
-            core_mirth(target_personality.mirth),
-        );
+        skill_check += humor_charm_modifier(actor_personality.mirth, target_personality.mirth);
     }
     if let Some(modifier) = flirt_modifier {
         skill_check += modifier;
@@ -3334,7 +3209,7 @@ pub(crate) fn seed_social_demo(ctx: &ReducerContext) -> Result<(), String> {
     crate::personality::set_personality_axis_score(
         ctx,
         ZEALOUS_VIEWER,
-        crate::personality::PersonalityAxis::Conviction,
+        crate::personality::MutablePersonalityAxis::Conviction,
         crate::personality::PERSONALITY_SCORE_LIMIT,
     )?;
     crate::condition::initialize_character_condition(ctx, ZEALOUS_TARGET)?;
@@ -3434,7 +3309,7 @@ pub(crate) fn seed_social_demo(ctx: &ReducerContext) -> Result<(), String> {
         id: format!("{VIEWER}:{TARGET}:drive"),
         observer_id: VIEWER,
         subject_id: TARGET,
-        axis: BeliefAxis::Drive,
+        axis: PersonalityAxis::Drive,
         perceived_value: 2,
         confidence: 0.64,
         observed_at_minute: now,
@@ -3525,7 +3400,7 @@ mod contract_tests {
         assert!(actor_allows_social_prayer(conviction_code(
             crate::personality::Conviction::Irreverent
         )));
-        let source = include_str!("social.rs");
+        let source = crate::production_source(include_str!("social.rs"));
         let check = source
             .split("fn target_religion_check")
             .nth(1)
@@ -3546,7 +3421,7 @@ mod contract_tests {
         );
         assert!(discovery_axes(SocialActionKind::Reassure, SocialTopic::Injury, false).is_empty());
 
-        let source = include_str!("social.rs");
+        let source = crate::production_source(include_str!("social.rs"));
         let automatic = source
             .split("fn automatic_social_action")
             .nth(1)
@@ -3572,7 +3447,7 @@ mod contract_tests {
 
     #[test]
     fn self_discovery_updates_one_skills_row_and_unsupported_contexts_do_not_check() {
-        let source = include_str!("social.rs");
+        let source = crate::production_source(include_str!("social.rs"));
         let training = source
             .split("fn award_discovery_training")
             .nth(1)
@@ -3601,7 +3476,7 @@ mod contract_tests {
 
     #[test]
     fn contact_observes_obvious_presentation_but_checks_ambiguous_presentation() {
-        let source = include_str!("social.rs");
+        let source = crate::production_source(include_str!("social.rs"));
         let contact = source
             .split("fn observe_presentation_on_contact")
             .nth(1)
@@ -3622,8 +3497,8 @@ mod contract_tests {
 
     #[test]
     fn persisted_beliefs_are_typed_and_invalid_values_fail_closed() {
-        let source = include_str!("social.rs");
-        assert!(source.contains("pub axis: BeliefAxis"));
+        let source = crate::production_source(include_str!("social.rs"));
+        assert!(source.contains("pub axis: PersonalityAxis"));
         assert!(source.contains("if !axis.legal_values().contains(&perceived_value)"));
         assert_eq!(
             PersonalityAxis::Inclination.value_label(-1),
@@ -3660,7 +3535,7 @@ mod contract_tests {
 
     #[test]
     fn manual_and_automatic_actions_share_actor_trait_gates_and_rally_bonus() {
-        let source = include_str!("social.rs");
+        let source = crate::production_source(include_str!("social.rs"));
         let automatic = source
             .split("fn automatic_social_action")
             .nth(1)
@@ -3692,7 +3567,7 @@ mod contract_tests {
 
     #[test]
     fn automatic_selection_uses_the_same_target_clock_as_execution() {
-        let source = include_str!("social.rs");
+        let source = crate::production_source(include_str!("social.rs"));
         let automatic = source
             .split("fn automatic_social_action")
             .nth(1)
@@ -3706,7 +3581,7 @@ mod contract_tests {
 
     #[test]
     fn settlement_chat_rejects_a_target_not_born_at_the_actor_frontier() {
-        let source = include_str!("social.rs");
+        let source = crate::production_source(include_str!("social.rs"));
         let chat = source
             .split("pub fn spend_time_with_settlement_resident")
             .nth(1)
@@ -3720,7 +3595,7 @@ mod contract_tests {
 
     #[test]
     fn disabled_automatic_preferences_are_not_retained_in_the_projection() {
-        let source = include_str!("social.rs");
+        let source = crate::production_source(include_str!("social.rs"));
         let setter = source
             .split("pub fn set_automatic_social_chat")
             .nth(1)
@@ -3745,7 +3620,7 @@ mod contract_tests {
 
     #[test]
     fn automatic_failures_propagate_and_no_fallible_work_follows_first_auxiliary_write() {
-        let source = include_str!("social.rs");
+        let source = crate::production_source(include_str!("social.rs"));
         let automatic = source
             .split("pub(crate) fn apply_automatic_social_chats")
             .nth(1)
@@ -3782,7 +3657,7 @@ mod contract_tests {
 
     #[test]
     fn manual_witness_responses_use_five_authoritative_minutes() {
-        let source = include_str!("social.rs");
+        let source = crate::production_source(include_str!("social.rs"));
         let witness = source
             .split("pub fn approach_dialogue_witness")
             .nth(1)
@@ -3797,7 +3672,7 @@ mod contract_tests {
 
     #[test]
     fn witness_insight_is_passive_persisted_and_untimed() {
-        let source = include_str!("social.rs");
+        let source = crate::production_source(include_str!("social.rs"));
         let assessment = source
             .split("fn persist_claim_assessments")
             .nth(1)
@@ -3813,7 +3688,7 @@ mod contract_tests {
 
     #[test]
     fn routine_gateway_projection_is_compact_current_address_state() {
-        let source = include_str!("social.rs");
+        let source = crate::production_source(include_str!("social.rs"));
         let view = source
             .split("pub fn backend_social_addresses")
             .nth(1)
@@ -3827,7 +3702,7 @@ mod contract_tests {
 
     #[test]
     fn witness_claim_projection_keeps_truth_private() {
-        let source = include_str!("social.rs");
+        let source = crate::production_source(include_str!("social.rs"));
         let authority = source
             .split("pub struct DialogueWitnessClaim")
             .nth(1)
@@ -3850,7 +3725,7 @@ mod contract_tests {
 
     #[test]
     fn witness_actions_are_claim_scoped_idempotent_and_revision_bound() {
-        let source = include_str!("social.rs");
+        let source = crate::production_source(include_str!("social.rs"));
         let requirement = source
             .split("fn require_witness_social_action")
             .nth(1)
@@ -3872,7 +3747,7 @@ mod contract_tests {
 
     #[test]
     fn casual_npc_chat_is_replay_first_and_fits_the_presence_window() {
-        let source = include_str!("social.rs");
+        let source = crate::production_source(include_str!("social.rs"));
         let reducer = source
             .split("pub fn spend_time_with_settlement_resident")
             .nth(1)
@@ -3892,7 +3767,7 @@ mod contract_tests {
         assert_eq!(relationship_band(50.0), AffinityBand::Trusted);
         assert_eq!(familiarity_band(60), FamiliarityBand::Known);
         assert_eq!(morale_band(-20.0), MoraleBand::Distressed);
-        let source = include_str!("social.rs");
+        let source = crate::production_source(include_str!("social.rs"));
         let receipt = source
             .split("pub struct SocialChatReceipt")
             .nth(1)
@@ -3906,7 +3781,7 @@ mod contract_tests {
 
     #[test]
     fn settlement_resident_affinity_projection_uses_observer_elapsed_time() {
-        let source = include_str!("social.rs");
+        let source = crate::production_source(include_str!("social.rs"));
         let projection = source
             .split("pub fn backend_settlement_resident_relationships")
             .nth(1)
@@ -3925,7 +3800,7 @@ mod contract_tests {
 
     #[test]
     fn witness_challenge_requires_owned_unresolved_claim_and_release_is_structured() {
-        let source = include_str!("social.rs");
+        let source = crate::production_source(include_str!("social.rs"));
         let approach = source
             .split("pub fn approach_dialogue_witness")
             .nth(1)
@@ -3941,7 +3816,7 @@ mod contract_tests {
 
     #[test]
     fn witness_controls_require_a_heard_event_in_the_current_session() {
-        let source = include_str!("social.rs");
+        let source = crate::production_source(include_str!("social.rs"));
         let projection = source
             .split("pub fn backend_dialogue_witness_claims")
             .nth(1)
@@ -3960,7 +3835,7 @@ mod contract_tests {
 
     #[test]
     fn only_successful_untrue_claims_release_bound_testimony() {
-        let source = include_str!("social.rs");
+        let source = crate::production_source(include_str!("social.rs"));
         let reducer = source
             .split("pub fn approach_dialogue_witness")
             .nth(1)

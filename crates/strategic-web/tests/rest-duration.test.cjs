@@ -1,6 +1,8 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 
+globalThis.strategicCalendar = require("./strategic-calendar-fixture.cjs");
+
 const {
   formatClock,
   formatDuration,
@@ -55,7 +57,9 @@ test("settlement rest uses whole days while field rest retains the wake-time con
     source.indexOf("fn wake_time_rest_duration_control"),
   );
   assert.match(settlementControl, /name="unit" value="days"/);
-  assert.match(settlementControl, /type="number"[\s\S]+min="1" max="365" step="1"/);
+  assert.match(settlementControl, /div_ceil\(MINUTES_PER_DAY\)[\s\S]+\.clamp\(1, DAYS_PER_YEAR\)/);
+  assert.match(settlementControl, /type="number"[\s\S]+min="1"[\s\S]+max=\(DAYS_PER_YEAR\) step="1"/);
+  assert.doesNotMatch(settlementControl, /1_440|365/);
   assert.doesNotMatch(settlementControl, /wake_time_rest_duration_control|type="range"/);
   const partyControl = source.slice(source.indexOf("pub(crate) fn party_rest_menu"), source.indexOf("pub fn rest_service_menu"));
   assert.match(partyControl, /wake_time_rest_duration_control/);
@@ -170,7 +174,7 @@ test("controls remount when raw DOM patches repeatedly replace only their descen
     constructor() { this.signal = { aborted: false }; }
     abort() { this.signal.aborted = true; }
   }
-  const window = { strategicCharacterMinutes: 480 };
+  const window = { strategicCalendar: globalThis.strategicCalendar, strategicCharacterMinutes: 480 };
   class Event {
     constructor(type, options = {}) { this.type = type; Object.assign(this, options); }
     preventDefault() { this.defaultPrevented = true; }

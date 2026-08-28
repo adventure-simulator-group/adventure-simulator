@@ -74,7 +74,10 @@ impl LiveRunner {
                     .backend_character_strategic_conditions()
                     .iter()
                     .find(|row| row.character_id == id)
-                    .is_some_and(|row| row.status == "ready")
+                    .is_some_and(|row| {
+                        domain_incapacitation_status(row.status)
+                            == DomainIncapacitationStatus::Ready
+                    })
                     && !self
                         .connection
                         .db
@@ -146,7 +149,7 @@ impl LiveRunner {
                     alive: character.alive,
                     condition_status: condition
                         .as_ref()
-                        .map_or_else(|| "unavailable".into(), |row| row.status.clone()),
+                        .map(|row| domain_incapacitation_status(row.status)),
                     hunger: condition.as_ref().map_or(0.0, |row| row.hunger),
                     thirst: condition.as_ref().map_or(0.0, |row| row.thirst),
                     food_days: condition.as_ref().map_or(0.0, |row| row.food_days),
@@ -184,14 +187,12 @@ impl LiveRunner {
             .iter()
             .filter(|row| {
                 member_ids.contains(&row.character_id)
-                    && self.public_row_is_carried(
-                        "personal",
-                        &row.character_id.to_string(),
-                        row.id,
-                    )
+                    && OperationalCustody::character(row.character_id)
+                        .is_ok_and(|custody| self.public_row_is_carried(&custody, row.id))
             })
             .map(|row| row.id)
             .collect::<HashSet<_>>();
+        let party_custody = OperationalCustody::party(party_id.to_owned()).ok();
         let party_inventory_ids = self
             .connection
             .db
@@ -199,7 +200,9 @@ impl LiveRunner {
             .iter()
             .filter(|row| {
                 row.party_id == party_id
-                    && self.public_row_is_carried("party", party_id, row.id)
+                    && party_custody
+                        .as_ref()
+                        .is_some_and(|custody| self.public_row_is_carried(custody, row.id))
             })
             .map(|row| row.id)
             .collect::<HashSet<_>>();
@@ -217,47 +220,39 @@ impl LiveRunner {
             })
             .map(|lot| lot.nutrition_kcal.max(0.0))
             .sum();
-        let carried_water_ml = self
-            .connection
-            .db
-            .backend_character_needs()
-            .iter()
-            .filter(|needs| member_ids.contains(&needs.character_id))
-            .map(|needs| needs.carried_water_ml.max(0.0))
-            .sum::<f32>();
-        let pooled_water_ml = self
-            .connection
-            .db
-            .party()
-            .iter()
-            .find(|party| party.id == party_id)
-            .map_or(0.0, |party| party.pooled_water_ml.max(0.0));
         let contained_water_ml = member_ids
             .iter()
-            .map(|character_id| {
-                self.public_contained_water_ml("personal", &character_id.to_string())
-            })
+            .filter_map(|character_id| OperationalCustody::character(*character_id).ok())
+            .map(|custody| self.public_contained_water_ml(&custody))
             .sum::<f32>()
-            + self.public_contained_water_ml("party", party_id);
+            + party_custody
+                .as_ref()
+                .map_or(0.0, |custody| self.public_contained_water_ml(custody));
         ExpeditionSuppliesObservation {
             stored_food_kcal,
-            portable_water_ml: carried_water_ml + pooled_water_ml + contained_water_ml,
+            portable_water_ml: contained_water_ml,
         }
     }
 
     pub(super) fn emit_expedition_diagnostics(
         &mut self,
-        party_id: &str,
-        phase: &str,
-        action: &str,
-        reason: &str,
-        before: &[ExpeditionMemberObservation],
-        after: &[ExpeditionMemberObservation],
-        supplies_before: ExpeditionSuppliesObservation,
-        supplies_after: ExpeditionSuppliesObservation,
+        context: ExpeditionDiagnosticContext<'_>,
+        change: ExpeditionObservationChange<'_>,
     ) {
-        for member_before in before {
-            let member_after = after
+        let ExpeditionDiagnosticContext {
+            party_id,
+            phase,
+            action,
+            reason,
+        } = context;
+        let ExpeditionObservationChange {
+            members_before,
+            members_after,
+            supplies_before,
+            supplies_after,
+        } = change;
+        for member_before in members_before {
+            let member_after = members_after
                 .iter()
                 .find(|candidate| candidate.character_id == member_before.character_id)
                 .unwrap_or(member_before);
@@ -273,8 +268,16 @@ impl LiveRunner {
                     member_before.character_id,
                     member_before.alive,
                     member_after.alive,
-                    bounded_event_field(&member_before.condition_status),
-                    bounded_event_field(&member_after.condition_status),
+                    bounded_event_field(
+                        member_before
+                            .condition_status
+                            .map_or("unavailable", DomainIncapacitationStatus::as_str),
+                    ),
+                    bounded_event_field(
+                        member_after
+                            .condition_status
+                            .map_or("unavailable", DomainIncapacitationStatus::as_str),
+                    ),
                     member_before.hunger,
                     member_after.hunger,
                     member_before.thirst,
@@ -342,20 +345,12 @@ impl LiveRunner {
             .party_journey()
             .iter()
             .find(|row| row.party_id == party_id);
-        let itinerary = self
-            .connection
-            .db
-            .party_journey_itinerary()
-            .iter()
-            .find(|row| row.party_id == party_id);
         let active_interval = journey.as_ref().and_then(|journey| {
-            itinerary.as_ref().and_then(|itinerary| {
-                projected_camp_rest_minutes(
-                    journey.completed_elapsed_minutes,
-                    journey.total_elapsed_minutes,
-                    &itinerary.forecast_camp_intervals,
-                )
-            })
+            projected_camp_rest_minutes(
+                journey.completed_elapsed_minutes,
+                journey.total_elapsed_minutes,
+                &journey.forecast_camp_intervals,
+            )
         });
         let journey_completed_elapsed = journey.as_ref().map_or_else(
             || "none".into(),
@@ -403,14 +398,18 @@ impl LiveRunner {
             ),
         );
         self.emit_expedition_diagnostics(
-            party_id,
-            phase,
-            "hold_position",
-            reason,
-            &members,
-            &members,
-            supplies,
-            supplies,
+            ExpeditionDiagnosticContext {
+                party_id,
+                phase,
+                action: "hold_position",
+                reason,
+            },
+            ExpeditionObservationChange {
+                members_before: &members,
+                members_after: &members,
+                supplies_before: supplies,
+                supplies_after: supplies,
+            },
         );
         Ok(JourneyTravelOutcome::HeldNoActionableActor)
     }
@@ -431,7 +430,7 @@ impl LiveRunner {
             .into_iter()
             .filter(|member| {
                 member.alive
-                    && member.condition_status == "ready"
+                    && member.condition_status == Some(DomainIncapacitationStatus::Ready)
                     && !member.symptomatic
                     && !member.critical
             })
@@ -623,8 +622,7 @@ impl LiveRunner {
             .backend_case_site_pins()
             .iter()
             .filter(|pin| {
-                member_ids.contains(&pin.owner_character_id)
-                    && pin.case_site_id == current_site_id
+                member_ids.contains(&pin.owner_character_id) && pin.case_site_id == current_site_id
             })
             .collect::<Vec<_>>();
         if pins
@@ -768,10 +766,7 @@ impl LiveRunner {
     ) -> Result<AuthoritySurrenderOutcome, String> {
         let controlled_character_ids = self.character_ids.iter().copied().collect::<HashSet<_>>();
         let Some(action) = select_affordable_authority_surrender_action(
-            self.connection
-                .db
-                .backend_authority_arrest_actions()
-                .iter(),
+            self.connection.db.backend_authority_arrest_actions().iter(),
             party_id,
             current_site_id,
             &controlled_character_ids,
@@ -792,7 +787,9 @@ impl LiveRunner {
             .backend_characters()
             .iter()
             .find(|character| character.id == action.instigator_id)
-            .is_some_and(|character| character.alive && character.party_id.as_deref() == Some(party_id))
+            .is_some_and(|character| {
+                character.alive && character.party_id.as_deref() == Some(party_id)
+            })
         {
             return Ok(AuthoritySurrenderOutcome::NotApplicable);
         }
@@ -816,9 +813,11 @@ impl LiveRunner {
                     && action.party_id == party_id
                     && action.case_site_id == current_site_id
             });
-        let party_remains = self.party_by_id(party_id)?.current_case_site_id.as_ref().is_some_and(
-            |site| site.value == current_site_id,
-        );
+        let party_remains = self
+            .party_by_id(party_id)?
+            .current_case_site_id
+            .as_ref()
+            .is_some_and(|site| site.value == current_site_id);
         if action_remains || !party_remains {
             self.record_journey_hold(
                 party_id,
@@ -844,8 +843,7 @@ impl LiveRunner {
             origin_settlement_id.clone(),
         );
         self.metrics.authority_surrenders = self.metrics.authority_surrenders.saturating_add(1);
-        self.metrics.authority_fines_paid =
-            self.metrics.authority_fines_paid.saturating_add(fine);
+        self.metrics.authority_fines_paid = self.metrics.authority_fines_paid.saturating_add(fine);
         self.event(
             agent,
             CoreLoopEventKind::AuthoritySurrender,
@@ -907,14 +905,18 @@ impl LiveRunner {
                 "journey_held_unresolved_encounter",
             )?;
             self.emit_expedition_diagnostics(
-                party_id,
-                "plan",
-                "hold_position",
-                "journey_held_unresolved_encounter",
-                &before,
-                &before,
-                supplies_before,
-                supplies_before,
+                ExpeditionDiagnosticContext {
+                    party_id,
+                    phase: "plan",
+                    action: "hold_position",
+                    reason: "journey_held_unresolved_encounter",
+                },
+                ExpeditionObservationChange {
+                    members_before: &before,
+                    members_after: &before,
+                    supplies_before,
+                    supplies_after: supplies_before,
+                },
             );
             return Ok(ExpeditionRecoveryOutcome::Held);
         }
@@ -961,14 +963,18 @@ impl LiveRunner {
         let Some(plan_actor) = plan_actor else {
             self.record_journey_hold(party_id, "recovery_plan", "journey_held_no_recovery_actor")?;
             self.emit_expedition_diagnostics(
-                party_id,
-                "plan",
-                "hold_position",
-                "journey_held_no_recovery_actor",
-                &before,
-                &before,
-                supplies_before,
-                supplies_before,
+                ExpeditionDiagnosticContext {
+                    party_id,
+                    phase: "plan",
+                    action: "hold_position",
+                    reason: "journey_held_no_recovery_actor",
+                },
+                ExpeditionObservationChange {
+                    members_before: &before,
+                    members_after: &before,
+                    supplies_before,
+                    supplies_after: supplies_before,
+                },
             );
             return Ok(ExpeditionRecoveryOutcome::Held);
         };
@@ -976,14 +982,20 @@ impl LiveRunner {
         let actor_agent = plan_actor.agent_id();
         let actor_role = plan_actor.role();
         self.emit_expedition_diagnostics(
-            party_id,
-            "plan",
-            "field_recovery_then_evacuation",
-            &format!("quest_suppressed_off_settlement_health_cycle_{cycle}_{actor_role}"),
-            &before,
-            &before,
-            supplies_before,
-            supplies_before,
+            ExpeditionDiagnosticContext {
+                party_id,
+                phase: "plan",
+                action: "field_recovery_then_evacuation",
+                reason: &format!(
+                    "quest_suppressed_off_settlement_health_cycle_{cycle}_{actor_role}"
+                ),
+            },
+            ExpeditionObservationChange {
+                members_before: &before,
+                members_after: &before,
+                supplies_before,
+                supplies_after: supplies_before,
+            },
         );
         self.event(
             actor_agent,
@@ -1065,31 +1077,39 @@ impl LiveRunner {
                     );
                 }
                 self.emit_expedition_diagnostics(
-                    party_id,
-                    "field_rest",
-                    "rest_at_camp",
-                    &if rest_actor.is_passive() {
-                        format!("passive_no_actionable_rest_attempt_{rest_ordinal}")
-                    } else {
-                        format!("bounded_recovery_rest_{rest_ordinal}")
+                    ExpeditionDiagnosticContext {
+                        party_id,
+                        phase: "field_rest",
+                        action: "rest_at_camp",
+                        reason: &if rest_actor.is_passive() {
+                            format!("passive_no_actionable_rest_attempt_{rest_ordinal}")
+                        } else {
+                            format!("bounded_recovery_rest_{rest_ordinal}")
+                        },
                     },
-                    &rest_before,
-                    &rest_after,
-                    rest_supplies_before,
-                    rest_supplies_after,
+                    ExpeditionObservationChange {
+                        members_before: &rest_before,
+                        members_after: &rest_after,
+                        supplies_before: rest_supplies_before,
+                        supplies_after: rest_supplies_after,
+                    },
                 );
                 if expedition_party_can_resume(&rest_after) {
                     self.metrics.expedition_resumes =
                         self.metrics.expedition_resumes.saturating_add(1);
                     self.emit_expedition_diagnostics(
-                        party_id,
-                        "resume",
-                        "resume_expedition",
-                        "quest_resumed_all_members_ready_and_asymptomatic",
-                        &rest_after,
-                        &rest_after,
-                        rest_supplies_after,
-                        rest_supplies_after,
+                        ExpeditionDiagnosticContext {
+                            party_id,
+                            phase: "resume",
+                            action: "resume_expedition",
+                            reason: "quest_resumed_all_members_ready_and_asymptomatic",
+                        },
+                        ExpeditionObservationChange {
+                            members_before: &rest_after,
+                            members_after: &rest_after,
+                            supplies_before: rest_supplies_after,
+                            supplies_after: rest_supplies_after,
+                        },
                     );
                     return Ok(ExpeditionRecoveryOutcome::Resumed);
                 }
@@ -1105,14 +1125,18 @@ impl LiveRunner {
         let Some(return_settlement) = self.public_expedition_return_settlement(party_id) else {
             let supplies_after = self.expedition_supplies(party_id);
             self.emit_expedition_diagnostics(
-                party_id,
-                "evacuation",
-                "hold_position",
-                "no_public_return_route",
-                &before,
-                &before,
-                supplies_after,
-                supplies_after,
+                ExpeditionDiagnosticContext {
+                    party_id,
+                    phase: "evacuation",
+                    action: "hold_position",
+                    reason: "no_public_return_route",
+                },
+                ExpeditionObservationChange {
+                    members_before: &before,
+                    members_after: &before,
+                    supplies_before: supplies_after,
+                    supplies_after,
+                },
             );
             return Ok(ExpeditionRecoveryOutcome::Held);
         };
@@ -1172,14 +1196,18 @@ impl LiveRunner {
             return Ok(ExpeditionRecoveryOutcome::Held);
         };
         self.emit_expedition_diagnostics(
-            party_id,
-            "evacuation_plan",
-            "return_to_settlement",
-            "quest_suppressed_recovery_incomplete",
-            &evacuation_before,
-            &evacuation_before,
-            evacuation_supplies_before,
-            evacuation_supplies_before,
+            ExpeditionDiagnosticContext {
+                party_id,
+                phase: "evacuation_plan",
+                action: "return_to_settlement",
+                reason: "quest_suppressed_recovery_incomplete",
+            },
+            ExpeditionObservationChange {
+                members_before: &evacuation_before,
+                members_after: &evacuation_before,
+                supplies_before: evacuation_supplies_before,
+                supplies_after: evacuation_supplies_before,
+            },
         );
         if !self.public_journey_is_evacuation(party_id) {
             let result = reducer_call!(self, "expedition_health_evacuation", |cb| self
@@ -1201,14 +1229,18 @@ impl LiveRunner {
             && evacuation_after.iter().any(|member| member.alive);
         if !evacuation_complete {
             self.emit_expedition_diagnostics(
-                party_id,
-                "evacuation_stalled",
-                "return_to_settlement",
-                "public_state_does_not_prove_living_party_returned",
-                &evacuation_before,
-                &evacuation_after,
-                evacuation_supplies_before,
-                evacuation_supplies_after,
+                ExpeditionDiagnosticContext {
+                    party_id,
+                    phase: "evacuation_stalled",
+                    action: "return_to_settlement",
+                    reason: "public_state_does_not_prove_living_party_returned",
+                },
+                ExpeditionObservationChange {
+                    members_before: &evacuation_before,
+                    members_after: &evacuation_after,
+                    supplies_before: evacuation_supplies_before,
+                    supplies_after: evacuation_supplies_after,
+                },
             );
             return Ok(ExpeditionRecoveryOutcome::Held);
         }
@@ -1223,14 +1255,18 @@ impl LiveRunner {
             ),
         );
         self.emit_expedition_diagnostics(
-            party_id,
-            "evacuation_complete",
-            "return_to_settlement",
-            "quest_suppressed_settlement_recovery_required",
-            &evacuation_before,
-            &evacuation_after,
-            evacuation_supplies_before,
-            evacuation_supplies_after,
+            ExpeditionDiagnosticContext {
+                party_id,
+                phase: "evacuation_complete",
+                action: "return_to_settlement",
+                reason: "quest_suppressed_settlement_recovery_required",
+            },
+            ExpeditionObservationChange {
+                members_before: &evacuation_before,
+                members_after: &evacuation_after,
+                supplies_before: evacuation_supplies_before,
+                supplies_after: evacuation_supplies_after,
+            },
         );
         self.observed_activity_site_origins
             .retain(|(observed_party_id, _), _| observed_party_id != party_id);

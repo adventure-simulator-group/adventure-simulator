@@ -1,13 +1,22 @@
-use crate::{
-    ActivityPreference, AgentProfile, BuildRole, Conscience, Conviction, Drive, EquipmentStyle,
-    Nerve, SelfRegard, Sociability, Transparency, generate_profile,
+use crate::{ActivityPreference, AgentProfile, BuildRole, EquipmentStyle, generate_profile};
+use adventuresim_core::investigation::DestinationKnowledgeStage as CoreDestinationKnowledgeStage;
+use adventuresim_core::morale::IncapacitationStatus as DomainIncapacitationStatus;
+use adventuresim_core::personality::{
+    self as core_personality, Conscience, Conviction, Drive, Nerve, SelfRegard, Sociability,
+    Transparency,
 };
+use adventuresim_core::physical_object::{CarriedInventoryScope, OperationalCustody};
+use adventuresim_core::reducer_error::{ReducerErrorCode, parse_reducer_error};
 use adventuresim_core::simulation_security::{
     SIM_BOOTSTRAP_TOKEN_ENV as BOOTSTRAP_TOKEN_ENV,
     SIM_BOOTSTRAP_TOKEN_HEX_LEN as BOOTSTRAP_TOKEN_HEX_LEN,
 };
 use adventuresim_stdb_client::spacetimedb_sdk::{DbContext, Table};
 use adventuresim_stdb_client::*;
+use adventuresim_world_schema::{
+    SettlementActionService as DomainSettlementActionService,
+    coordinates::{LatitudeE7, LatitudeMicrodegrees, LongitudeE7, LongitudeMicrodegrees},
+};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
@@ -17,6 +26,10 @@ use std::{
 };
 
 use adventuresim_core::strategic_currency::is_currency_id;
+use adventuresim_core::strategic_time::{
+    DEFAULT_JOURNEY_START_MINUTE_OF_DAY, DEFAULT_NIGHT_JOURNEY_START_MINUTE_OF_DAY,
+    MINUTES_PER_DAY,
+};
 use url::Url;
 
 use adventuresim_stdb_client::{
@@ -57,38 +70,39 @@ use adventuresim_stdb_client::{
     choose_dialogue_topic_reducer::choose_dialogue_topic,
     claim_simulation_run_reducer::claim_simulation_run,
     configure_simulation_character_reducer::configure_simulation_character,
+    container_liquid_table::ContainerLiquidTableAccess,
     continue_camp_travel_reducer::continue_camp_travel,
     contract_interaction_stage_type::ContractInteractionStage,
     contract_status_type::ContractStatus,
     create_named_character_with_id_reducer::create_named_character_with_id,
     deposit_party_inventory_item_reducer::deposit_party_inventory_item,
     ensure_settlement_activity_reducer::ensure_settlement_activity,
-    equip_item_at_placement_reducer::equip_item_at_placement, equip_item_reducer::equip_item,
     equipment_occupancy_table::EquipmentOccupancyTableAccess, field_shelter_type::FieldShelter,
-    container_liquid_table::ContainerLiquidTableAccess,
     finalize_merchant_trade_reducer::finalize_merchant_trade, food_lot_table::FoodLotTableAccess,
     inventory_containment_table::InventoryContainmentTableAccess,
     inventory_item_amount_table::InventoryItemAmountTableAccess,
-    inventory_item_table::InventoryItemTableAccess, inventory_object_table::InventoryObjectTableAccess,
-    item_condition_table::ItemConditionTableAccess,
-    item_table::ItemTableAccess, limb_injury_table::LimbInjuryTableAccess,
+    inventory_item_table::InventoryItemTableAccess,
+    inventory_object_table::InventoryObjectTableAccess,
+    item_condition_table::ItemConditionTableAccess, item_table::ItemTableAccess,
+    limb_injury_table::LimbInjuryTableAccess,
     liquidate_party_inventory_reducer::liquidate_party_inventory,
     local_problem_symptom_table::LocalProblemSymptomTableAccess,
     party_inventory_item_table::PartyInventoryItemTableAccess,
     party_item_amount_table::PartyItemAmountTableAccess,
     party_join_request_table::PartyJoinRequestTableAccess,
-    party_journey_itinerary_table::PartyJourneyItineraryTableAccess,
     party_journey_table::PartyJourneyTableAccess, party_member_table::PartyMemberTableAccess,
     party_stake_table::PartyStakeTableAccess, party_table::PartyTableAccess,
     perform_investigation_action_reducer::perform_investigation_action,
     purchase_from_herbalist_reducer::purchase_from_herbalist,
     purchase_personal_storefront_with_party_stake_reducer::purchase_personal_storefront_with_party_stake,
     register_strategic_gateway_reducer::register_strategic_gateway,
-    repair_order_table::RepairOrderTableAccess, report_contract_reducer::report_contract,
+    repair_order_table::RepairOrderTableAccess,
+    replace_item_at_placement_reducer::replace_item_at_placement,
+    report_contract_reducer::report_contract,
     request_general_party_join_reducer::request_general_party_join,
     resolve_errantry_road_challenge_reducer::resolve_errantry_road_challenge,
     resolve_strategic_encounter_reducer::resolve_strategic_encounter,
-    rest_at_camp_reducer::rest_at_camp, rest_at_settlement_reducer::rest_at_settlement,
+    rest_at_camp_reducer::rest_at_camp,
     retrieve_repaired_item_reducer::retrieve_repaired_item,
     seed_simulation_disease_reducer::seed_simulation_disease,
     seed_simulation_equipment_damage_reducer::seed_simulation_equipment_damage,
@@ -125,7 +139,7 @@ const MAX_CORE_LOOP_WORK: u64 = 100_000;
 const MAX_CORE_TRACE_EVENTS: usize = 100_000;
 const MAX_GENERATED_CASE_STEPS_PER_CYCLE: u32 = 16;
 const MAX_EXPEDITION_RECOVERY_RESTS: u32 = 2;
-const EXPEDITION_RECOVERY_REST_MINUTES: u64 = 1_440;
+const EXPEDITION_RECOVERY_REST_MINUTES: u64 = MINUTES_PER_DAY;
 const TRAVEL_PROVISION_RESERVE_DAYS: f32 = 1.0;
 const MAX_TRAVEL_PROVISION_UNITS_PER_ITEM: u32 = 512;
 const MAX_PUBLIC_JOURNEY_DIAGNOSTIC_MINUTES: u64 = u32::MAX as u64;
@@ -148,12 +162,12 @@ const MAX_DEPARTURE_ABS_THERMAL_STRAIN: u32 = 2_500;
 /// Keep the public minute-by-minute weather projection bounded. A route beyond
 /// sixty days is not a credible case-site leg and fails closed instead of
 /// consuming unbounded simulator work.
-const MAX_CASE_SITE_THERMAL_FORECAST_MINUTES: u64 = 60 * 1_440;
+const MAX_CASE_SITE_THERMAL_FORECAST_MINUTES: u64 = 60 * MINUTES_PER_DAY;
 const MIN_ACTIONABLE_PHYSIOLOGY_CONFIDENCE_BPS: u16 = 3_000;
 /// Older observations can describe a materially different disease stage.
 /// One strategic day permits ordinary asynchronous party observation without
 /// allowing an indefinitely cached chart to direct treatment.
-const MAX_ACTIONABLE_PHYSIOLOGY_CHART_AGE_MINUTES: u64 = 1_440;
+const MAX_ACTIONABLE_PHYSIOLOGY_CHART_AGE_MINUTES: u64 = MINUTES_PER_DAY;
 const DEFAULT_SIMULATION_DISEASE: &str = "influenza";
 const SIMULATION_DISEASE_SCENARIOS: [&str; 9] = [
     "influenza",
@@ -166,6 +180,22 @@ const SIMULATION_DISEASE_SCENARIOS: [&str; 9] = [
     "bilwisschuss",
     "kobeldunst",
 ];
+
+fn core_destination_knowledge_stage(
+    stage: DestinationKnowledgeStage,
+) -> CoreDestinationKnowledgeStage {
+    match stage {
+        DestinationKnowledgeStage::Unknown => CoreDestinationKnowledgeStage::Unknown,
+        DestinationKnowledgeStage::Textual => CoreDestinationKnowledgeStage::Textual,
+        DestinationKnowledgeStage::Landmark => CoreDestinationKnowledgeStage::Landmark,
+        DestinationKnowledgeStage::ApproximateArea => {
+            CoreDestinationKnowledgeStage::ApproximateArea
+        }
+        DestinationKnowledgeStage::RouteSegment => CoreDestinationKnowledgeStage::RouteSegment,
+        DestinationKnowledgeStage::ExactBelieved => CoreDestinationKnowledgeStage::ExactBelieved,
+        DestinationKnowledgeStage::Visited => CoreDestinationKnowledgeStage::Visited,
+    }
+}
 
 fn default_simulation_disease() -> String {
     DEFAULT_SIMULATION_DISEASE.to_owned()
@@ -196,6 +226,10 @@ pub struct CoreLoopConfig {
 
 impl CoreLoopConfig {
     pub fn validate(&self) -> Result<(), String> {
+        const MAX_DURATION_YEARS: u32 = 100;
+        const MAX_DURATION_DAYS: u32 =
+            adventuresim_core::strategic_time::DAYS_PER_YEAR as u32 * MAX_DURATION_YEARS;
+
         validate_loopback_url(&self.host)?;
         if !self.database.starts_with("adventuresim-sim-")
             || !self
@@ -207,11 +241,13 @@ impl CoreLoopConfig {
         }
         if !(2..=32).contains(&self.population)
             || !(1..=10_000).contains(&self.cycles)
-            || !(1..=36_500).contains(&self.duration_days)
+            || !(1..=MAX_DURATION_DAYS).contains(&self.duration_days)
             || !(2..=8).contains(&self.party_size)
             || self.party_size > self.population
         {
-            return Err("population 2..=32, party_size 2..=8, cycles 1..=10000, and duration_days 1..=36500 are required".into());
+            return Err(format!(
+                "population 2..=32, party_size 2..=8, cycles 1..=10000, and duration_days 1..={MAX_DURATION_DAYS} are required"
+            ));
         }
         let work = u64::from(self.population)
             .checked_mul(u64::from(self.cycles))
@@ -456,7 +492,7 @@ pub struct FinalAgentState {
     pub gold: u32,
     pub equipment_item_ids: Vec<String>,
     pub capability_summary: String,
-    pub condition_status: String,
+    pub condition_status: DomainIncapacitationStatus,
     pub thermal: f32,
     pub wetness_bps: u16,
     pub thermal_strain: i32,
@@ -609,7 +645,7 @@ pub fn write_quest_coverage_failure(
             agent_id: agent.agent_id,
             character_id: agent.character_id,
             alive: agent.alive,
-            condition_status: agent.condition_status.clone(),
+            condition_status: agent.condition_status,
             thermal: agent.thermal,
             wetness_bps: agent.wetness_bps,
             thermal_strain: agent.thermal_strain,
@@ -665,7 +701,7 @@ pub fn write_quest_coverage_failure(
 
 const MAX_FAILURE_TRACE_EVENTS: usize = 64;
 const CORE_LOOP_FAILURE_SCHEMA_VERSION: u32 = 9;
-const MAX_PROJECTED_INVESTIGATION_WAIT_MINUTES: u32 = 1_440;
+const MAX_PROJECTED_INVESTIGATION_WAIT_MINUTES: u32 = MINUTES_PER_DAY as u32;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -673,7 +709,7 @@ pub struct CoreLoopFailureAgent {
     pub agent_id: u32,
     pub character_id: u64,
     pub alive: bool,
-    pub condition_status: String,
+    pub condition_status: DomainIncapacitationStatus,
     pub thermal: f32,
     pub wetness_bps: u16,
     pub thermal_strain: i32,
@@ -757,6 +793,17 @@ enum DepartureReadiness {
     Deferred(&'static str),
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct SettlementDepartureWait<'a> {
+    character_id: u64,
+    agent: u32,
+    case_id: &'a str,
+    reason: &'a str,
+    wait_minutes: u64,
+    walking_minutes_per_day: u16,
+    travel_at_night: bool,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 struct SelectedCaseSitePlan {
     walking_minutes_per_day: u16,
@@ -784,7 +831,7 @@ fn classify_on_site_action_decision(
 ) -> OnSiteActionDecision {
     if action_return_safe {
         OnSiteActionDecision::Ready
-    } else if rest_action_return_safe && (1..=1_440).contains(&recovery_minutes) {
+    } else if rest_action_return_safe && (1..=MINUTES_PER_DAY).contains(&recovery_minutes) {
         OnSiteActionDecision::RestThenRetry(recovery_minutes)
     } else if return_now_safe {
         OnSiteActionDecision::ReturnNow
@@ -815,7 +862,7 @@ fn classify_generated_advance(
 
 fn calories_after_strenuous_action(calories_used: f32, action_minutes: u64) -> f32 {
     calories_used
-        + action_minutes as f32 / 1_440.0
+        + action_minutes as f32 / MINUTES_PER_DAY as f32
             * adventuresim_core::provisioning::STRATEGIC_TRAVEL_KCAL_PER_DAY
 }
 
@@ -887,7 +934,7 @@ fn round_trip_walking_window_minutes(
     let required_breakpoint = required.checked_add(59)?.checked_div(60)?.checked_mul(60)?;
     u16::try_from(required_breakpoint.max(u64::from(current_walking_minutes)))
         .ok()
-        .filter(|minutes| *minutes <= 1_440)
+        .filter(|minutes| u64::from(*minutes) <= MINUTES_PER_DAY)
 }
 
 fn generated_action_walking_windows(
@@ -948,11 +995,7 @@ fn select_generated_case_site_plan<T>(
                 return Some(plan);
             }
             let candidate_waits = if window_index < 4 {
-                generated_safe_departure_waits(
-                    starting_minute,
-                    walking_minutes,
-                    travel_at_night,
-                )
+                generated_safe_departure_waits(starting_minute, walking_minutes, travel_at_night)
             } else {
                 generated_daily_walking_start_waits(
                     starting_minute,
@@ -997,12 +1040,12 @@ fn safe_departure_wait_minutes(
 ) -> Option<u64> {
     (!immediate_safe && delayed_safe)
         .then_some(wait_minutes?)
-        .filter(|minutes| (60..=1_440).contains(minutes))
+        .filter(|minutes| (60..=MINUTES_PER_DAY).contains(minutes))
 }
 
 const MAX_CASE_SITE_SAFE_WINDOW_SEARCH_DAYS: u64 = 7;
 const MAX_CASE_SITE_SAFE_WINDOW_SEARCH_MINUTES: u64 =
-    MAX_CASE_SITE_SAFE_WINDOW_SEARCH_DAYS * 1_440;
+    MAX_CASE_SITE_SAFE_WINDOW_SEARCH_DAYS * MINUTES_PER_DAY;
 
 fn generated_safe_departure_waits(
     starting_minute: u64,
@@ -1036,7 +1079,7 @@ fn generated_daily_walking_start_waits(
 ) -> Vec<u64> {
     (0..=MAX_CASE_SITE_SAFE_WINDOW_SEARCH_DAYS)
         .filter_map(|day_offset| {
-            let day_wait = day_offset * 1_440;
+            let day_wait = day_offset * MINUTES_PER_DAY;
             adventuresim_core::strategic_time::minutes_until_next_walking_start(
                 starting_minute.saturating_add(day_wait),
                 walking_minutes,
@@ -1053,13 +1096,13 @@ fn forecast_safe_departure_wait_minutes(next_walking_start: u64) -> Option<u64> 
 }
 
 fn representable_safe_departure_wait_minutes(next_walking_start: u64) -> Option<u64> {
-    (next_walking_start <= 1_440).then_some(next_walking_start.max(60))
+    (next_walking_start <= MINUTES_PER_DAY).then_some(next_walking_start.max(60))
 }
 
 #[derive(Clone, Debug, PartialEq)]
 struct ActivityObservation {
     personal_gold_coin: u64,
-    condition_status: String,
+    condition_status: DomainIncapacitationStatus,
     hunger: f32,
     thirst: f32,
     food_days: f32,
@@ -1087,7 +1130,7 @@ struct ExpeditionMemberObservation {
     agent_id: u32,
     character_id: u64,
     alive: bool,
-    condition_status: String,
+    condition_status: Option<DomainIncapacitationStatus>,
     hunger: f32,
     thirst: f32,
     food_days: f32,
@@ -1110,6 +1153,22 @@ struct ExpeditionMemberObservation {
 struct ExpeditionSuppliesObservation {
     stored_food_kcal: f32,
     portable_water_ml: f32,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ExpeditionDiagnosticContext<'a> {
+    party_id: &'a str,
+    phase: &'a str,
+    action: &'a str,
+    reason: &'a str,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ExpeditionObservationChange<'a> {
+    members_before: &'a [ExpeditionMemberObservation],
+    members_after: &'a [ExpeditionMemberObservation],
+    supplies_before: ExpeditionSuppliesObservation,
+    supplies_after: ExpeditionSuppliesObservation,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1175,7 +1234,10 @@ impl ExpeditionRecoveryRestActor {
 }
 
 fn expedition_member_needs_recovery(member: &ExpeditionMemberObservation) -> bool {
-    member.alive && (member.condition_status != "ready" || member.symptomatic || member.critical)
+    member.alive
+        && (member.condition_status != Some(DomainIncapacitationStatus::Ready)
+            || member.symptomatic
+            || member.critical)
 }
 
 fn public_journey_endpoint(endpoint: &JourneyEndpoint) -> String {
@@ -1193,7 +1255,9 @@ fn expedition_party_can_resume(members: &[ExpeditionMemberObservation]) -> bool 
         .collect::<Vec<_>>();
     !living.is_empty()
         && living.iter().any(|member| {
-            member.condition_status == "ready" && !member.symptomatic && !member.critical
+            member.condition_status == Some(DomainIncapacitationStatus::Ready)
+                && !member.symptomatic
+                && !member.critical
         })
         && living
             .iter()
@@ -1240,12 +1304,9 @@ fn passive_no_actionable_rest_allowed(
         && !actionable_actor_exists
         && !living.is_empty()
         && living.iter().any(|member| member.character_id == leader_id)
-        && living.iter().all(|member| {
-            matches!(
-                member.condition_status.as_str(),
-                "ready" | "staggered" | "incapacitated"
-            ) && !member.critical
-        })
+        && living
+            .iter()
+            .all(|member| member.condition_status.is_some() && !member.critical)
         && expedition_supplies_cover_one_rest_day(members, supplies)
 }
 
@@ -1279,7 +1340,6 @@ struct PublicPostEncounterJourneyState {
     unresolved_encounter: bool,
     active_destination: bool,
     journey_count: usize,
-    itinerary_count: usize,
     destination_matches: bool,
     active_interval_count: usize,
     actionable_actor: bool,
@@ -1298,9 +1358,27 @@ enum PostEncounterJourneyAction {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct PublicRoutePoint {
-    latitude_microdegrees: i32,
-    longitude_microdegrees: i32,
+    latitude: LatitudeMicrodegrees,
+    longitude: LongitudeMicrodegrees,
     elevation_m: i16,
+}
+
+impl PublicRoutePoint {
+    fn from_degrees(latitude: f64, longitude: f64, elevation_m: i16) -> Option<Self> {
+        Some(Self {
+            latitude: LatitudeMicrodegrees::from_degrees(latitude)?,
+            longitude: LongitudeMicrodegrees::from_degrees(longitude)?,
+            elevation_m,
+        })
+    }
+
+    fn from_e7(latitude: i32, longitude: i32, elevation_m: i16) -> Option<Self> {
+        Some(Self {
+            latitude: LatitudeE7::new(latitude)?.to_microdegrees(),
+            longitude: LongitudeE7::new(longitude)?.to_microdegrees(),
+            elevation_m,
+        })
+    }
 }
 
 fn public_straight_line_distance_m(
@@ -1308,15 +1386,15 @@ fn public_straight_line_distance_m(
     destination: PublicRoutePoint,
     geographic: bool,
 ) -> u64 {
-    let longitude_delta = (i64::from(destination.longitude_microdegrees)
-        - i64::from(origin.longitude_microdegrees)) as f64
-        / 1_000_000.0;
-    let latitude_delta = (i64::from(destination.latitude_microdegrees)
-        - i64::from(origin.latitude_microdegrees)) as f64
-        / 1_000_000.0;
+    let longitude_delta = (i64::from(destination.longitude.get())
+        - i64::from(origin.longitude.get())) as f64
+        / f64::from(LongitudeMicrodegrees::UNITS_PER_DEGREE);
+    let latitude_delta = (i64::from(destination.latitude.get()) - i64::from(origin.latitude.get()))
+        as f64
+        / f64::from(LatitudeMicrodegrees::UNITS_PER_DEGREE);
     let distance_m = if geographic {
-        let origin_latitude = f64::from(origin.latitude_microdegrees) / 1_000_000.0;
-        let destination_latitude = f64::from(destination.latitude_microdegrees) / 1_000_000.0;
+        let origin_latitude = origin.latitude.degrees();
+        let destination_latitude = destination.latitude.degrees();
         let lat1 = origin_latitude.to_radians();
         let lat2 = destination_latitude.to_radians();
         let delta_lat = latitude_delta.to_radians();
@@ -1335,45 +1413,6 @@ fn case_site_movement_minutes(distance_m: u64) -> Option<u64> {
     (distance_m > 0).then(|| ((distance_m as f64 / 1_250.0) * 60.0).ceil() as u64)
 }
 
-#[allow(dead_code)]
-fn projected_route_thermal_safe(
-    starting_minute: u64,
-    elapsed_minutes: u64,
-    origin: PublicRoutePoint,
-    destination: PublicRoutePoint,
-    starting_state: adventuresim_core::survival::SurvivalState,
-    insulation_bps: u16,
-) -> Option<bool> {
-    let itinerary = adventuresim_core::strategic_time::ItineraryForecast {
-        segments: vec![adventuresim_core::strategic_time::ItinerarySegment {
-            kind: adventuresim_core::strategic_time::ItinerarySegmentKind::Walking,
-            elapsed_start: 0,
-            elapsed_minutes,
-            movement_start: 0,
-            movement_minutes: elapsed_minutes,
-            average_fatigue_start: 0.0,
-            average_fatigue_end: 0.0,
-            maximum_fatigue_end: 0.0,
-            required_rest_minutes: 0,
-        }],
-        member_final_fatigue: vec![0.0],
-        member_maximum_fatigue: vec![0.0],
-        total_elapsed_minutes: elapsed_minutes,
-        total_movement_minutes: elapsed_minutes,
-        truncated: false,
-    };
-    projected_itinerary_thermal_safe(
-        starting_minute,
-        &itinerary,
-        origin,
-        destination,
-        starting_state,
-        insulation_bps,
-        false,
-    )
-}
-
-#[allow(dead_code)]
 fn projected_itinerary_thermal_safe(
     starting_minute: u64,
     itinerary: &adventuresim_core::strategic_time::ItineraryForecast,
@@ -1399,6 +1438,29 @@ fn projected_itinerary_thermal_safe(
 struct PublicThermalProjection {
     state: adventuresim_core::survival::SurvivalState,
     safe: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct PublicRoundTripRoute {
+    origin: PublicRoutePoint,
+    destination: PublicRoutePoint,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct PublicThermalTraveler {
+    starting_state: adventuresim_core::survival::SurvivalState,
+    insulation_bps: u16,
+    has_tent: bool,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct RoundTripThermalProjection<'a> {
+    starting_minute: u64,
+    outbound_itinerary: &'a adventuresim_core::strategic_time::ItineraryForecast,
+    return_itinerary: &'a adventuresim_core::strategic_time::ItineraryForecast,
+    action_minutes: u64,
+    route: PublicRoundTripRoute,
+    traveler: PublicThermalTraveler,
 }
 
 fn projected_itinerary_thermal_state(
@@ -1452,23 +1514,21 @@ fn projected_itinerary_thermal_state(
             let weather = adventuresim_core::weather::weather_at(
                 adventuresim_core::weather::WORLD_WEATHER_SEED,
                 starting_minute.saturating_add(offset),
-                interpolate(
-                    origin.latitude_microdegrees,
-                    destination.latitude_microdegrees,
-                ),
-                interpolate(
-                    origin.longitude_microdegrees,
-                    destination.longitude_microdegrees,
-                ),
+                interpolate(origin.latitude.get(), destination.latitude.get()),
+                interpolate(origin.longitude.get(), destination.longitude.get()),
                 elevation,
             );
             let shelter = if segment.kind
                 == adventuresim_core::strategic_time::ItinerarySegmentKind::Camp
                 && has_tent
             {
-                adventuresim_core::survival::FieldShelter::Tent
+                adventuresim_core::survival::ExposureShelter::Field(
+                    adventuresim_core::survival::FieldShelter::Tent,
+                )
             } else {
-                adventuresim_core::survival::FieldShelter::Bivouac
+                adventuresim_core::survival::ExposureShelter::Field(
+                    adventuresim_core::survival::FieldShelter::Bivouac,
+                )
             };
             state = adventuresim_core::survival::advance_exposure(
                 state,
@@ -1549,17 +1609,23 @@ fn projected_stationary_field_thermal_state(
     )
 }
 
-fn projected_round_trip_thermal_safe(
-    starting_minute: u64,
-    outbound_itinerary: &adventuresim_core::strategic_time::ItineraryForecast,
-    return_itinerary: &adventuresim_core::strategic_time::ItineraryForecast,
-    action_minutes: u64,
-    origin: PublicRoutePoint,
-    destination: PublicRoutePoint,
-    starting_state: adventuresim_core::survival::SurvivalState,
-    insulation_bps: u16,
-    has_tent: bool,
-) -> Option<bool> {
+fn projected_round_trip_thermal_safe(projection: RoundTripThermalProjection<'_>) -> Option<bool> {
+    let RoundTripThermalProjection {
+        starting_minute,
+        outbound_itinerary,
+        return_itinerary,
+        action_minutes,
+        route: PublicRoundTripRoute {
+            origin,
+            destination,
+        },
+        traveler:
+            PublicThermalTraveler {
+                starting_state,
+                insulation_bps,
+                has_tent,
+            },
+    } = projection;
     let outbound = projected_itinerary_thermal_state(
         starting_minute,
         outbound_itinerary,
@@ -1590,17 +1656,25 @@ fn projected_round_trip_thermal_safe(
 }
 
 fn projected_recovery_round_trip_thermal_safe(
-    starting_minute: u64,
-    outbound_itinerary: &adventuresim_core::strategic_time::ItineraryForecast,
+    projection: RoundTripThermalProjection<'_>,
     recovery_minutes: u64,
-    return_itinerary: &adventuresim_core::strategic_time::ItineraryForecast,
-    action_minutes: u64,
-    origin: PublicRoutePoint,
-    destination: PublicRoutePoint,
-    starting_state: adventuresim_core::survival::SurvivalState,
-    insulation_bps: u16,
-    has_tent: bool,
 ) -> Option<bool> {
+    let RoundTripThermalProjection {
+        starting_minute,
+        outbound_itinerary,
+        return_itinerary,
+        action_minutes,
+        route: PublicRoundTripRoute {
+            origin,
+            destination,
+        },
+        traveler:
+            PublicThermalTraveler {
+                starting_state,
+                insulation_bps,
+                has_tent,
+            },
+    } = projection;
     let outbound = projected_itinerary_thermal_state(
         starting_minute,
         outbound_itinerary,
@@ -1762,7 +1836,7 @@ fn classify_post_encounter_journey(
     if state.unresolved_encounter || !state.active_destination {
         return Ok(PostEncounterJourneyAction::ReclassifyPublicState);
     }
-    if state.journey_count != 1 || state.itinerary_count != 1 || !state.destination_matches {
+    if state.journey_count != 1 || !state.destination_matches {
         return Err("post_encounter_journey_projection_mismatch");
     }
     if !state.actionable_actor {
@@ -1817,10 +1891,11 @@ fn simulation_elapsed_minutes(starting_minute: u64, current_minute: u64) -> u64 
     current_minute.saturating_sub(starting_minute)
 }
 
-fn public_effective_inventory_quantity(quantity: u32, measured_amount: Option<u32>) -> f32 {
-    measured_amount.map_or(quantity as f32, |amount| {
-        amount as f32
-            / adventuresim_core::inventory_measurement::FULL_AMOUNT_MILLIUNITS as f32
+fn public_effective_inventory_quantity(quantity: u32, fraction_micros: Option<u32>) -> f32 {
+    fraction_micros.map_or(quantity as f32, |value| {
+        adventuresim_core::inventory_measurement::ConsumableFractionMicros::try_new(value)
+            .expect("public consumable fraction must not exceed one whole")
+            .as_unit_f32()
     })
 }
 
@@ -1922,12 +1997,7 @@ fn select_public_narrative_encounter_choice(
             (personality_fit > 0).then_some((presented.id.clone(), personality_fit))
         })
         .collect::<Vec<_>>();
-    meaningful.sort_by(|left, right| {
-        right
-            .1
-            .cmp(&left.1)
-            .then_with(|| left.0.cmp(&right.0))
-    });
+    meaningful.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
     let eligible_meaningful_alternatives = meaningful
         .iter()
         .map(|(choice, _)| choice.clone())
@@ -1950,7 +2020,20 @@ fn select_public_narrative_encounter_choice(
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct PublicCombatFingerprint {
-    members: Vec<(u64, bool, bool, bool, bool, u32, u32, u32, u64)>,
+    members: Vec<PublicCombatMemberFingerprint>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct PublicCombatMemberFingerprint {
+    character_id: u64,
+    melee: bool,
+    ranged: bool,
+    armored: bool,
+    precise: bool,
+    endurance_centipoints: u32,
+    athletics_centipoints: u32,
+    weapon_precision_centipoints: u32,
+    autoresolve_combat_power: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -2080,22 +2163,26 @@ fn public_contract_assessment(
 fn public_combat_fingerprint(
     mut capabilities: Vec<CharacterCapability>,
 ) -> PublicCombatFingerprint {
+    const SKILL_CENTIPOINTS_PER_POINT: f32 = 100.0;
+
     capabilities.sort_by_key(|row| row.character_id);
     PublicCombatFingerprint {
         members: capabilities
             .into_iter()
-            .map(|row| {
-                (
-                    row.character_id,
-                    row.melee,
-                    row.ranged,
-                    row.heavy || row.half_armor,
-                    row.precise,
-                    (row.endurance.max(0.0) * 100.0).round() as u32,
-                    (row.athletics.max(0.0) * 100.0).round() as u32,
-                    (row.weapon_precision.max(0.0) * 100.0).round() as u32,
-                    row.autoresolve_combat_power,
-                )
+            .map(|row| PublicCombatMemberFingerprint {
+                character_id: row.character_id,
+                melee: row.melee,
+                ranged: row.ranged,
+                armored: row.heavy || row.half_armor,
+                precise: row.precise,
+                endurance_centipoints: (row.endurance.max(0.0) * SKILL_CENTIPOINTS_PER_POINT)
+                    .round() as u32,
+                athletics_centipoints: (row.athletics.max(0.0) * SKILL_CENTIPOINTS_PER_POINT)
+                    .round() as u32,
+                weapon_precision_centipoints: (row.weapon_precision.max(0.0)
+                    * SKILL_CENTIPOINTS_PER_POINT)
+                    .round() as u32,
+                autoresolve_combat_power: row.autoresolve_combat_power,
             })
             .collect(),
     }
@@ -2218,21 +2305,22 @@ pub(crate) fn balanced_party_groups(
     groups
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum SettlementActivityVenue {
-    Inn,
-    Temple,
+fn settlement_action_service_label(service: DomainSettlementActionService) -> &'static str {
+    match service {
+        DomainSettlementActionService::Inn => "inn",
+        DomainSettlementActionService::Temple => "temple",
+    }
 }
 
-impl SettlementActivityVenue {
-    fn at_inn(self) -> bool {
-        matches!(self, Self::Inn)
-    }
-
-    fn label(self) -> &'static str {
-        match self {
-            Self::Inn => "inn",
-            Self::Temple => "temple",
+fn stdb_settlement_action_service(
+    service: DomainSettlementActionService,
+) -> adventuresim_stdb_client::SettlementActionService {
+    match service {
+        DomainSettlementActionService::Inn => {
+            adventuresim_stdb_client::SettlementActionService::Inn
+        }
+        DomainSettlementActionService::Temple => {
+            adventuresim_stdb_client::SettlementActionService::Temple
         }
     }
 }
@@ -2244,13 +2332,13 @@ fn select_settlement_activity_venue(
     purse: u64,
     committed_reserve: u64,
     inn_cost: Option<u64>,
-) -> Option<SettlementActivityVenue> {
+) -> Option<DomainSettlementActionService> {
     if temple_available && temple_food_covers_day {
-        return Some(SettlementActivityVenue::Temple);
+        return Some(DomainSettlementActionService::Temple);
     }
     if inn_available && inn_cost.is_some_and(|cost| purse >= committed_reserve.saturating_add(cost))
     {
-        return Some(SettlementActivityVenue::Inn);
+        return Some(DomainSettlementActionService::Inn);
     }
     None
 }
@@ -2266,26 +2354,51 @@ fn select_generated_travel_action<'a>(
         .find(|action| action.can_travel_to_required_site && action_safe(action))
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct FixturePartyIdentity {
+    leader_id: u64,
+    party_id: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct FixturePartyCandidate {
+    identity: FixturePartyIdentity,
+    assessment: PublicContractAssessment,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct FixturePartySelection {
+    direct: FixturePartyIdentity,
+    generated: FixturePartyIdentity,
+}
+
 fn select_strongest_fixture_party(
-    mut candidates: Vec<(u64, String, PublicContractAssessment)>,
-) -> Result<((u64, String), (u64, String)), String> {
+    mut candidates: Vec<FixturePartyCandidate>,
+) -> Result<FixturePartySelection, String> {
     if candidates.len() != 2 {
         return Err("quest fixture designation requires exactly two parties".into());
     }
     candidates.sort_by(|left, right| {
         right
-            .2
+            .assessment
             .party_power_milli
-            .cmp(&left.2.party_power_milli)
-            .then_with(|| left.1.cmp(&right.1))
-            .then_with(|| left.0.cmp(&right.0))
+            .cmp(&left.assessment.party_power_milli)
+            .then_with(|| left.identity.party_id.cmp(&right.identity.party_id))
+            .then_with(|| left.identity.leader_id.cmp(&right.identity.leader_id))
     });
-    if !candidates[0].2.eligible {
+    if !candidates[0].assessment.eligible {
         return Err("quest fixture has no publicly safe direct party".into());
     }
-    let direct = (candidates[0].0, candidates[0].1.clone());
-    let generated = (candidates[1].0, candidates[1].1.clone());
-    Ok((direct, generated))
+    let generated = candidates
+        .pop()
+        .expect("the fixture candidate count was checked");
+    let direct = candidates
+        .pop()
+        .expect("the fixture candidate count was checked");
+    Ok(FixturePartySelection {
+        direct: direct.identity,
+        generated: generated.identity,
+    })
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -2331,21 +2444,39 @@ fn visible_activity_committed_reserve(
     medical.saturating_add(profile_cash_reserve_target.min(spendable_after_medical_and_inn))
 }
 
-fn format_quest_decision_detail(
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct QuestDecisionObservation<'a> {
     cycle: u32,
     wants_quest: bool,
     selector: f64,
     quest_propensity: f32,
-    settlement_id: Option<&str>,
+    settlement_id: Option<&'a str>,
     offered_contracts: usize,
     safe_offered_contracts: usize,
     open_generated_cases: usize,
     projected_investigation_actions: usize,
-    quest_path: &str,
+    quest_path: &'a str,
     quest_intended: bool,
     quest_selected: bool,
-    selection_reason: &str,
-) -> String {
+    selection_reason: &'a str,
+}
+
+fn format_quest_decision_detail(decision: QuestDecisionObservation<'_>) -> String {
+    let QuestDecisionObservation {
+        cycle,
+        wants_quest,
+        selector,
+        quest_propensity,
+        settlement_id,
+        offered_contracts,
+        safe_offered_contracts,
+        open_generated_cases,
+        projected_investigation_actions,
+        quest_path,
+        quest_intended,
+        quest_selected,
+        selection_reason,
+    } = decision;
     format!(
         "cycle={cycle};wants_quest={wants_quest};selector={selector:.6};quest_propensity={quest_propensity:.6};settlement={};offered_contracts={offered_contracts};safe_offered_contracts={safe_offered_contracts};open_generated_cases={open_generated_cases};projected_investigation_actions={projected_investigation_actions};quest_path={quest_path};quest_intended={quest_intended};quest_selected={quest_selected};selection_reason={}",
         settlement_id.unwrap_or("none"),
@@ -2519,7 +2650,7 @@ fn retain_navigable_public_npc_candidates(
         .collect()
 }
 
-const PUBLIC_DISCOVERY_BACKOFF_MINUTES: u64 = 2 * 1_440;
+const PUBLIC_DISCOVERY_BACKOFF_MINUTES: u64 = 2 * MINUTES_PER_DAY;
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct PublicDiscoveryContactIdentity {
@@ -2572,7 +2703,7 @@ fn public_discovery_previous_contact<'a>(
 fn public_symptom_age_bucket(oldest_age_minutes: Option<u64>) -> &'static str {
     match oldest_age_minutes {
         None => "none",
-        Some(age) if age < 1_440 => "under_1_day",
+        Some(age) if age < MINUTES_PER_DAY => "under_1_day",
         Some(age) if age < 4_320 => "1_to_2_days",
         Some(age) if age < 11_520 => "3_to_7_days",
         Some(_) => "8_plus_days",
@@ -2685,7 +2816,7 @@ struct PublicDialogueProgressFingerprint {
     leads: Vec<PublicDialogueLeadSemantic>,
     actions: Vec<PublicDialogueActionSemantic>,
     outcomes: Vec<(String, String)>,
-    sites: Vec<(String, String, bool, bool, bool)>,
+    sites: Vec<(String, CoreDestinationKnowledgeStage, bool, bool, bool)>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -2693,7 +2824,7 @@ struct PublicDialogueLeadSemantic {
     summary: String,
     source_label: String,
     confidence_bps: u16,
-    destination_stage: String,
+    destination_stage: CoreDestinationKnowledgeStage,
     directions: String,
     exact_location_id: String,
     latitude_e7: i32,
@@ -2789,7 +2920,7 @@ fn npc_is_publicly_present(
     if context_suppressed || health_suppressed {
         return false;
     }
-    let minute = minute % 1_440;
+    let minute = minute % MINUTES_PER_DAY;
     let start = u64::from(start_minute);
     let end = u64::from(end_minute);
     start != end
@@ -2917,7 +3048,10 @@ fn projected_case_site_journey_minutes(
     distance_m: u64,
     walking_minutes_per_day: u16,
 ) -> Option<u64> {
-    if distance_m == 0 || walking_minutes_per_day == 0 || walking_minutes_per_day > 1_440 {
+    if distance_m == 0
+        || walking_minutes_per_day == 0
+        || u64::from(walking_minutes_per_day) > MINUTES_PER_DAY
+    {
         return None;
     }
     let movement_minutes = case_site_movement_minutes(distance_m)?;
@@ -2926,7 +3060,8 @@ fn projected_case_site_journey_minutes(
     Some(
         movement_minutes
             .saturating_add(
-                completed_walking_days.saturating_mul(1_440_u64.saturating_sub(walking_minutes)),
+                completed_walking_days
+                    .saturating_mul(MINUTES_PER_DAY.saturating_sub(walking_minutes)),
             )
             .saturating_mul(JOURNEY_PROVISION_ELAPSED_BOUND_FACTOR),
     )
@@ -3016,19 +3151,40 @@ fn bounded_event_field(value: &str) -> String {
         .collect()
 }
 
-fn format_activity_detail(
-    preferred_activity: &str,
-    effective_activity: &str,
-    schedule: &ScheduleAllocation,
-    venue: SettlementActivityVenue,
-    fallback_reason: &str,
+#[derive(Clone, Copy, Debug)]
+struct ActivityPlanDiagnostic<'a> {
+    preferred_activity: &'a str,
+    effective_activity: &'a str,
+    schedule: &'a ScheduleAllocation,
+    fallback_reason: &'a str,
     committed_reserve: u64,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ActivityExecutionDiagnostic<'a> {
+    plan: ActivityPlanDiagnostic<'a>,
+    venue: DomainSettlementActionService,
+}
+
+fn format_activity_detail(
+    diagnostic: ActivityExecutionDiagnostic<'_>,
     before: &ActivityObservation,
     after: &ActivityObservation,
 ) -> String {
+    let ActivityExecutionDiagnostic {
+        plan:
+            ActivityPlanDiagnostic {
+                preferred_activity,
+                effective_activity,
+                schedule,
+                fallback_reason,
+                committed_reserve,
+            },
+        venue,
+    } = diagnostic;
     format!(
         "outcome=completed;preferred={preferred_activity};effective={effective_activity};fallback={fallback_reason};venue={};committed_reserve={committed_reserve};schedule=combat:{},carousing:{},apprenticeship:{},profession:{},labor:{},prayer:{},thievery:{},raiding:{};purse_before={};purse_after={};purse_delta={};condition_before={};condition_after={};hunger_before={:.3};hunger_after={:.3};hunger_delta={};thirst_before={:.3};thirst_after={:.3};thirst_delta={};food_kcal_before={:.0};food_kcal_after={:.0};food_kcal_delta={};water_ml_before={:.0};water_ml_after={:.0};water_ml_delta={};elapsed_before={};elapsed_after={};elapsed_delta={}",
-        venue.label(),
+        settlement_action_service_label(venue),
         schedule.combat_training_minutes,
         schedule.carousing_minutes,
         schedule.apprenticeship_minutes,
@@ -3061,18 +3217,24 @@ fn format_activity_detail(
 }
 
 fn format_failed_activity_detail(
-    preferred_activity: &str,
-    effective_activity: &str,
-    schedule: &ScheduleAllocation,
-    venue: SettlementActivityVenue,
-    fallback_reason: &str,
-    committed_reserve: u64,
+    diagnostic: ActivityExecutionDiagnostic<'_>,
     before: &ActivityObservation,
     error_category: &str,
 ) -> String {
+    let ActivityExecutionDiagnostic {
+        plan:
+            ActivityPlanDiagnostic {
+                preferred_activity,
+                effective_activity,
+                schedule,
+                fallback_reason,
+                committed_reserve,
+            },
+        venue,
+    } = diagnostic;
     format!(
-        "outcome=failed;stage=rest_at_settlement;error_category={error_category};preferred={preferred_activity};effective={effective_activity};fallback={fallback_reason};venue={};committed_reserve={committed_reserve};schedule=combat:{},carousing:{},apprenticeship:{},profession:{},labor:{},prayer:{},thievery:{},raiding:{};requested_minutes=1440;purse_before={};condition_before={};hunger_before={:.3};thirst_before={:.3};food_kcal_before={:.0};water_ml_before={:.0};elapsed_before={}",
-        venue.label(),
+        "outcome=failed;stage=rest_at_settlement;error_category={error_category};preferred={preferred_activity};effective={effective_activity};fallback={fallback_reason};venue={};committed_reserve={committed_reserve};schedule=combat:{},carousing:{},apprenticeship:{},profession:{},labor:{},prayer:{},thievery:{},raiding:{};requested_minutes={MINUTES_PER_DAY};purse_before={};condition_before={};hunger_before={:.3};thirst_before={:.3};food_kcal_before={:.0};water_ml_before={:.0};elapsed_before={}",
+        settlement_action_service_label(venue),
         schedule.combat_training_minutes,
         schedule.carousing_minutes,
         schedule.apprenticeship_minutes,
@@ -3092,13 +3254,16 @@ fn format_failed_activity_detail(
 }
 
 fn format_deferred_activity_detail(
-    preferred_activity: &str,
-    effective_activity: &str,
-    schedule: &ScheduleAllocation,
-    fallback_reason: &str,
-    committed_reserve: u64,
+    diagnostic: ActivityPlanDiagnostic<'_>,
     before: &ActivityObservation,
 ) -> String {
+    let ActivityPlanDiagnostic {
+        preferred_activity,
+        effective_activity,
+        schedule,
+        fallback_reason,
+        committed_reserve,
+    } = diagnostic;
     format!(
         "outcome=deferred;reason=insufficient_visible_resources;preferred={preferred_activity};effective={effective_activity};fallback={fallback_reason};venue=unavailable;committed_reserve={committed_reserve};schedule=combat:{},carousing:{},apprenticeship:{},profession:{},labor:{},prayer:{},thievery:{},raiding:{};purse_before={};condition_before={};hunger_before={:.3};thirst_before={:.3};food_kcal_before={:.0};water_ml_before={:.0};elapsed_before={}",
         schedule.combat_training_minutes,
@@ -3116,349 +3281,5 @@ fn format_deferred_activity_detail(
         before.visible_food_kcal,
         before.visible_water_ml,
         before.elapsed_minutes,
-    )
-}
-
-fn event_is_repeatable(kind: &CoreLoopEventKind) -> bool {
-    matches!(
-        kind,
-        CoreLoopEventKind::Camp
-            | CoreLoopEventKind::Recover
-            | CoreLoopEventKind::Travel
-            | CoreLoopEventKind::AutoresolveDefeat
-            | CoreLoopEventKind::QuestDecision
-            | CoreLoopEventKind::GeneratedInvestigationWait
-    )
-}
-
-const VICTIM_COHORT_STATE_CHANGED_DETAILS: [&str; 7] = [
-    "Victim cohort authority no longer exists",
-    "Victim cohort target is unavailable",
-    "Victim cohort target moved from the learned location",
-    "Victim cohort profile no longer matches its authority",
-    "Victim cohort NPC no longer exists",
-    "Victim cohort NPC no longer has a visible demographic",
-    "Victim cohort target moved, changed, or is unavailable",
-];
-
-fn victim_cohort_state_changed_failure(error: &str) -> bool {
-    error
-        .strip_prefix("perform_investigation_action failed: ")
-        .is_some_and(|detail| VICTIM_COHORT_STATE_CHANGED_DETAILS.contains(&detail))
-}
-
-const CONTRACT_ISSUER_UNAVAILABLE_DETAIL: &str =
-    "Contract issuer is not available for interaction";
-
-fn contract_issuer_unavailable_failure(error: &str) -> bool {
-    ["interact_accept_contract", "interact_report_contract"]
-        .into_iter()
-        .any(|operation| {
-            error
-                .strip_prefix(&format!("{operation} failed: "))
-                .is_some_and(|detail| detail == CONTRACT_ISSUER_UNAVAILABLE_DETAIL)
-        })
-}
-
-const MERCHANT_PROVIDER_UNAVAILABLE_DETAIL: &str =
-    "Merchant service provider is not available";
-const MERCHANT_PROVIDER_RACE_OPERATIONS: [&str; 5] = [
-    "purchase_party_tent",
-    "purchase_journey_provisions",
-    "purchase_ammunition",
-    "purchase_first_aid_material",
-    "purchase_personal_storefront_with_party_stake",
-];
-
-fn merchant_provider_unavailable_failure(error: &str) -> bool {
-    MERCHANT_PROVIDER_RACE_OPERATIONS
-        .into_iter()
-        .any(|operation| {
-            error
-                .strip_prefix(&format!("{operation} failed: "))
-                .is_some_and(|detail| detail == MERCHANT_PROVIDER_UNAVAILABLE_DETAIL)
-        })
-}
-
-#[derive(Clone)]
-struct FailureRecorder {
-    output: Option<PathBuf>,
-    fixture_disease: String,
-    draft: std::sync::Arc<std::sync::Mutex<FailureDraft>>,
-}
-
-impl FailureRecorder {
-    fn new(output: Option<PathBuf>, fixture_disease: String) -> Self {
-        Self {
-            output,
-            fixture_disease,
-            draft: Default::default(),
-        }
-    }
-
-    fn update(&self, draft: FailureDraft) {
-        if let Ok(mut current) = self.draft.lock() {
-            *current = draft;
-        }
-    }
-
-    fn write(&self, error: &str) -> Result<(), String> {
-        let Some(path) = &self.output else {
-            return Ok(());
-        };
-        let (category, message) = safe_core_loop_failure(error);
-        let draft = self
-            .draft
-            .lock()
-            .map_err(|_| "failure diagnostic state was unavailable".to_string())?
-            .clone();
-        let artifact = CoreLoopFailureArtifact {
-            schema_version: CORE_LOOP_FAILURE_SCHEMA_VERSION,
-            category: category.into(),
-            message: message.into(),
-            operation: safe_failure_operation(error).map(str::to_owned),
-            reason_code: safe_failure_reason_code(error, category).into(),
-            fixture_disease: self.fixture_disease.clone(),
-            metrics: draft.metrics,
-            quest_coverage: None,
-            total_event_count: draft.total_event_count,
-            trace_truncated: draft.trace_truncated,
-            trace: draft.trace,
-            final_agents: draft.final_agents,
-        };
-        let bytes = serde_json::to_vec_pretty(&artifact).map_err(|error| error.to_string())?;
-        let mut options = std::fs::OpenOptions::new();
-        options.write(true).create_new(true);
-        use std::io::Write as _;
-        options
-            .open(path)
-            .and_then(|mut file| {
-                file.write_all(&bytes)?;
-                file.write_all(b"\n")
-            })
-            .map_err(|error| format!("could not write failure diagnostic: {error}"))
-    }
-}
-
-const SAFE_TRAVEL_FAILURE_OPERATIONS: [&str; 11] = [
-    "travel_to_case_site",
-    "travel_to_generated_case_site",
-    "unsafe_contract_retreat_to_settlement",
-    "illness_retreat_to_settlement",
-    "defeat_retreat_to_settlement",
-    "return_to_settlement",
-    "return_completed_generated_case",
-    "generated_unchanged_defeat_retreat",
-    "generated_defeat_retreat_to_settlement",
-    "return_from_generated_case_site",
-    "expedition_health_evacuation",
-];
-
-fn safe_failure_operation(error: &str) -> Option<&'static str> {
-    [
-        "perform_investigation_action",
-        "wait_for_investigation_window_settlement",
-        "wait_for_investigation_window_camp",
-        "start_discovery_dialogue",
-        "choose_dialogue_topic",
-        "rest_at_camp",
-        "continue_camp_travel",
-        "travel_camps",
-        "passive_no_actionable_rest",
-        "sponsor_party_member_inn_rest",
-        "purchase_journey_provisions",
-        "purchase_party_tent",
-        "purchase_ammunition",
-        "withdraw_purchase_coin",
-        "purchase_from_herbalist",
-        "finalize_storefront_trade",
-        "purchase_personal_storefront_with_party_stake",
-        "administer_preparation",
-    ]
-    .into_iter()
-    .chain(SAFE_TRAVEL_FAILURE_OPERATIONS)
-    .find(|operation| {
-        error.starts_with(&format!("{operation} failed:"))
-            || error.starts_with(&format!("{operation} timed out"))
-            || error.starts_with(&format!("could not send {operation}:"))
-    })
-}
-
-fn safe_travel_failure(error: &str) -> bool {
-    safe_failure_operation(error)
-        .is_some_and(|operation| SAFE_TRAVEL_FAILURE_OPERATIONS.contains(&operation))
-}
-
-fn safe_failure_reason_code(error: &str, category: &str) -> &'static str {
-    if error.contains("journey_held_no_actionable_actor")
-        || error.contains("journey has no ready, asymptomatic, noncritical actor")
-        || error.contains("camp rest left no ready, asymptomatic, noncritical actor")
-    {
-        "journey_held_no_actionable_actor"
-    } else if error.contains("Rest until the party reaches its next daylight walking window") {
-        "journey_daylight_window_rest_required"
-    } else if safe_travel_failure(error) {
-        "journey_travel_reducer_failed"
-    } else if error.contains("start_discovery_dialogue") {
-        "discovery_contact_failed"
-    } else if error.contains("purchase_journey_provisions") {
-        "journey_provision_purchase_failed"
-    } else if error.contains("purchase_party_tent") {
-        "party_tent_purchase_failed"
-    } else if error.contains("purchase_ammunition") || error.contains("withdraw_purchase_coin") {
-        "ammunition_purchase_failed"
-    } else if error.contains("purchase_from_herbalist") {
-        "medical_purchase_failed"
-    } else if error.contains("finalize_storefront_trade")
-        || error.contains("purchase_personal_storefront_with_party_stake")
-    {
-        "equipment_storefront_trade_failed"
-    } else if error.contains("administer_preparation") {
-        "medical_intervention_failed"
-    } else if error.contains("journey camp projection is incoherent")
-        || error.contains("journey provisioning projection is incoherent")
-    {
-        "journey_projection_inconsistent"
-    } else if error.contains("learned pattern requires acting during the nighttime window") {
-        "investigation_night_window"
-    } else if error.contains("Investigation track origin no longer matches the projected route") {
-        "invalid_investigation_route"
-    } else if error.contains("Investigation action is stale") {
-        "investigation_action_stale"
-    } else if error.contains("Investigation action is unavailable") {
-        "investigation_action_unavailable"
-    } else if victim_cohort_state_changed_failure(error) {
-        "investigation_victim_cohort_state_changed"
-    } else {
-        match category {
-            "rest_service_unavailable" => "rest_service_unavailable",
-            "insufficient_visible_resources" => "insufficient_visible_resources",
-            "bounded_progress_exhausted" => "bounded_progress_exhausted",
-            "authoritative_backend_unavailable" => "authoritative_backend_unavailable",
-            "invalid_run_environment" => "invalid_run_environment",
-            _ => "unclassified_core_loop_error",
-        }
-    }
-}
-
-fn safe_core_loop_failure(error: &str) -> (&'static str, &'static str) {
-    if error.contains("journey_held_no_actionable_actor")
-        || error.contains("journey has no ready, asymptomatic, noncritical actor")
-        || error.contains("camp rest left no ready, asymptomatic, noncritical actor")
-    {
-        (
-            "journey_held_no_actionable_actor",
-            "The public journey is held because no living party member is currently able to direct it.",
-        )
-    } else if error.contains("Rest until the party reaches its next daylight walking window") {
-        (
-            "journey_temporally_unavailable",
-            "Camp travel was continued outside its public projected walking window.",
-        )
-    } else if safe_travel_failure(error) {
-        (
-            "journey_travel_failed",
-            "The authoritative journey transition could not be completed.",
-        )
-    } else if error.contains("start_discovery_dialogue") {
-        (
-            "discovery_contact_failed",
-            "A public discovery contact could not be completed.",
-        )
-    } else if error.contains("purchase_journey_provisions") {
-        (
-            "journey_provision_purchase_failed",
-            "The public journey-provision purchase could not be completed.",
-        )
-    } else if error.contains("purchase_party_tent") {
-        (
-            "survival_purchase_failed",
-            "The public party-shelter purchase could not be completed.",
-        )
-    } else if error.contains("purchase_ammunition") || error.contains("withdraw_purchase_coin") {
-        (
-            "survival_purchase_failed",
-            "The public ammunition preparation could not be completed.",
-        )
-    } else if error.contains("purchase_from_herbalist") {
-        (
-            "medical_purchase_failed",
-            "The selected public herbalist preparation could not be purchased.",
-        )
-    } else if error.contains("finalize_storefront_trade")
-        || error.contains("purchase_personal_storefront_with_party_stake")
-    {
-        (
-            "equipment_purchase_failed",
-            "The revalidated public equipment purchase was rejected by authoritative storefront rules.",
-        )
-    } else if error.contains("administer_preparation") {
-        (
-            "medical_intervention_failed",
-            "The selected public preparation was rejected by authoritative intervention rules.",
-        )
-    } else if error.contains("journey camp projection is incoherent")
-        || error.contains("journey provisioning projection is incoherent")
-    {
-        (
-            "journey_projection_inconsistent",
-            "The public journey and camp projections were not coherent enough to continue safely.",
-        )
-    } else if error.contains("learned pattern requires acting during the nighttime window") {
-        (
-            "investigation_temporally_unavailable",
-            "A projected investigation action was attempted outside its learned time window.",
-        )
-    } else if error.contains("Investigation track origin no longer matches the projected route") {
-        (
-            "invalid_investigation_route",
-            "The projected investigation route no longer has a coherent completed origin.",
-        )
-    } else if victim_cohort_state_changed_failure(error) {
-        (
-            "investigation_state_changed",
-            "A publicly projected investigation target changed before the action completed.",
-        )
-    } else if error.contains("offers neither an Inn nor a Temple") {
-        (
-            "rest_service_unavailable",
-            "The settlement offers no player-visible rest service.",
-        )
-    } else if error.contains("Not enough coin") || error.contains("afford") {
-        (
-            "insufficient_visible_resources",
-            "The NPC could not afford a player-visible action.",
-        )
-    } else if error.contains("bound exhausted") || error.contains("made no progress") {
-        (
-            "bounded_progress_exhausted",
-            "The NPC exhausted a bounded action loop without making enough progress.",
-        )
-    } else if error.contains("timed out") || error.contains("connection") {
-        (
-            "authoritative_backend_unavailable",
-            "The authoritative backend did not complete the requested operation.",
-        )
-    } else if error.contains("refusing") || error.contains("manifest") {
-        (
-            "invalid_run_environment",
-            "The disposable simulation environment failed validation.",
-        )
-    } else {
-        (
-            "core_loop_error",
-            "The authoritative core loop stopped before completion.",
-        )
-    }
-}
-
-fn bounded_failure_trace(
-    trace: &[CoreLoopEvent],
-    total_event_count: u64,
-) -> (Vec<CoreLoopEvent>, bool) {
-    let start = trace.len().saturating_sub(MAX_FAILURE_TRACE_EVENTS);
-    (
-        trace[start..].to_vec(),
-        total_event_count > MAX_FAILURE_TRACE_EVENTS as u64,
     )
 }

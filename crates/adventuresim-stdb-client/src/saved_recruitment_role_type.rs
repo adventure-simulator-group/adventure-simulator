@@ -13,7 +13,6 @@ pub struct SavedRecruitmentRole {
     pub owner_character_id: u64,
     pub name: String,
     pub requirements: RecruitmentRequirements,
-    pub weapon_precision: f32,
 }
 
 impl __sdk::InModule for SavedRecruitmentRole {
@@ -28,7 +27,6 @@ pub struct SavedRecruitmentRoleCols {
     pub owner_character_id: __sdk::__query_builder::Col<SavedRecruitmentRole, u64>,
     pub name: __sdk::__query_builder::Col<SavedRecruitmentRole, String>,
     pub requirements: __sdk::__query_builder::Col<SavedRecruitmentRole, RecruitmentRequirements>,
-    pub weapon_precision: __sdk::__query_builder::Col<SavedRecruitmentRole, f32>,
 }
 
 impl __sdk::__query_builder::HasCols for SavedRecruitmentRole {
@@ -39,7 +37,6 @@ impl __sdk::__query_builder::HasCols for SavedRecruitmentRole {
             owner_character_id: __sdk::__query_builder::Col::new(table_name, "owner_character_id"),
             name: __sdk::__query_builder::Col::new(table_name, "name"),
             requirements: __sdk::__query_builder::Col::new(table_name, "requirements"),
-            weapon_precision: __sdk::__query_builder::Col::new(table_name, "weapon_precision"),
         }
     }
 }

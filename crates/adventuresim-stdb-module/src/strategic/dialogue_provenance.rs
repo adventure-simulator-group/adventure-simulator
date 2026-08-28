@@ -158,7 +158,13 @@ mod referral_variant_tests {
             .nth(1)
             .and_then(|tail| tail.split("pub fn join_dialogue_session").next())
             .expect("dialogue startup");
-        assert!(start.contains("&npc_actor_id,\n            &delivery"));
+        let render_call = start
+            .split("render_quest_referral_variant(")
+            .nth(1)
+            .and_then(|tail| tail.split(")?,").next())
+            .expect("referral renderer call");
+        assert!(render_call.contains("npc_character_id"));
+        assert!(render_call.contains("&delivery"));
 
         let renderer = source
             .split("fn render_quest_referral_variant")
@@ -827,7 +833,7 @@ fn dialogue_fact_context(
         .facts
         .insert(FactKey::SocialCheck, FactValue::Bool(false));
     if let Some(time) = ctx.db.character_time().character_id().find(character_id) {
-        let period = match time.minutes % 1440 {
+        let period = match time.minutes % adventuresim_core::strategic_time::MINUTES_PER_DAY {
             300..720 => "morning",
             720..1020 => "afternoon",
             1020..1260 => "evening",
@@ -1263,7 +1269,7 @@ fn dialogue_runtime_bindings(
         .map_or(720, |time| time.minutes);
     bindings.bind(
         S::TimeWindow,
-        match minute % 1_440 {
+        match minute % adventuresim_core::strategic_time::MINUTES_PER_DAY {
             300..720 => "in the morning",
             720..1_020 => "in the afternoon",
             1_020..1_260 => "in the evening",

@@ -1,8 +1,7 @@
 use crate::data::gpu::parameters::PassParameter;
 use crate::data::gpu::resource::GpuResource;
 use crate::prelude::*;
-use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct AdvectSignature {
@@ -15,26 +14,19 @@ pub struct AdvectSignature {
 #[derive(Clone, Debug)]
 pub struct AdvectDefinition {
     pub mode: u32,
-    pub cache: Arc<
-        RwLock<
-            HashMap<
-                (
-                    ResourceDescriptor,
-                    ResourceDescriptor,
-                    ResourceDescriptor,
-                    u32,
-                ),
-                Arc<ComputePipeline>,
-            >,
-        >,
-    >,
+    pub cache: ComputePipelineCache<(
+        ResourceDescriptor,
+        ResourceDescriptor,
+        ResourceDescriptor,
+        u32,
+    )>,
 }
 
 impl AdvectDefinition {
     pub fn new(mode: u32) -> Self {
         Self {
             mode,
-            cache: Arc::new(RwLock::new(HashMap::new())),
+            cache: ComputePipelineCache::default(),
         }
     }
 }
@@ -288,14 +280,11 @@ impl Advect {
 
         let size = match output {
             GpuResource::Texture2d(t) => {
-                crate::data::vector::Vec4::new(t.size.0 as f32, t.size.1 as f32, 1.0, 1.0)
+                fabelgeist_math::Vec4::new(t.size.0 as f32, t.size.1 as f32, 1.0, 1.0)
             }
-            GpuResource::Texture3d(t) => crate::data::vector::Vec4::new(
-                t.size.0 as f32,
-                t.size.1 as f32,
-                t.size.2 as f32,
-                1.0,
-            ),
+            GpuResource::Texture3d(t) => {
+                fabelgeist_math::Vec4::new(t.size.0 as f32, t.size.1 as f32, t.size.2 as f32, 1.0)
+            }
             _ => return Err(anyhow!("Output must be a texture")),
         };
 
@@ -312,7 +301,7 @@ impl Advect {
             _ => unreachable!(),
         };
 
-        crate::data::gpu::compute::ComputePass::new(
+        crate::data::gpu::compute::ComputePass::execute(
             context,
             pipeline.as_ref().clone(),
             parameters,

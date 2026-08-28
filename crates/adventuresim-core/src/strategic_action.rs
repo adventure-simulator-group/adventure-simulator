@@ -5,6 +5,7 @@
 //! construct plans here, and apply effects transactionally only after a fresh
 //! replan passes [`validate_commit`]. A plan is evidence, never authority.
 
+use adventuresim_world_schema::BASIS_POINTS_PER_WHOLE;
 use std::{collections::BTreeSet, fmt, num::NonZeroU64};
 
 use crate::{
@@ -106,7 +107,7 @@ pub fn assess_hostile_surrender(
     let social = social_ability.clamp(0.0, 5.0) * language;
     let relationship = spokesman_affinity.clamp(-100.0, 100.0) / 25.0;
     let morale_pressure = 100_u8.saturating_sub(hostile_morale_percent.min(100)) as f32 / 20.0;
-    let awareness = f32::from(public_awareness_bps.min(10_000)) / 2_000.0;
+    let awareness = f32::from(public_awareness_bps.min(BASIS_POINTS_PER_WHOLE)) / 2_000.0;
     let demand_score = social + relationship + morale_pressure + awareness;
     HostileSurrenderAssessment {
         accepts_demand: language > 0.0 && demand_score >= 7.5,

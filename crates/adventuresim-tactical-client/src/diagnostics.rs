@@ -471,6 +471,10 @@ fn validate_script(script: &InputScript) -> Result<(), String> {
     Ok(())
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Bevy injects scripted input state, player controls, capture state, status, and exit messaging independently"
+)]
 fn drive_scripted_input(
     mut commands: Commands,
     time: Res<Time>,

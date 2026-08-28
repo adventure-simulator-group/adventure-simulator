@@ -33,6 +33,13 @@ pub(crate) struct JitterThresholds {
     pub(crate) local_position_jerk_noise_floor: f32,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct JitterLimit {
+    absolute: f32,
+    relative: f32,
+    noise_floor: f32,
+}
+
 impl Default for JitterThresholds {
     fn default() -> Self {
         Self {
@@ -285,9 +292,11 @@ fn analyze_scenario(frames: &[JitterFrame], t: &JitterThresholds, out: &mut Vec<
             JitterClass::LocalPositionAcceleration,
             &position_accel,
             frames,
-            t.local_position_acceleration_absolute,
-            t.local_position_acceleration_relative,
-            t.local_position_acceleration_noise_floor,
+            JitterLimit {
+                absolute: t.local_position_acceleration_absolute,
+                relative: t.local_position_acceleration_relative,
+                noise_floor: t.local_position_acceleration_noise_floor,
+            },
             out,
         );
         report(
@@ -295,9 +304,11 @@ fn analyze_scenario(frames: &[JitterFrame], t: &JitterThresholds, out: &mut Vec<
             JitterClass::LocalPositionJerk,
             &position_jerk,
             frames,
-            t.local_position_jerk_absolute,
-            t.local_position_jerk_relative,
-            t.local_position_jerk_noise_floor,
+            JitterLimit {
+                absolute: t.local_position_jerk_absolute,
+                relative: t.local_position_jerk_relative,
+                noise_floor: t.local_position_jerk_noise_floor,
+            },
             out,
         );
         report(
@@ -305,9 +316,11 @@ fn analyze_scenario(frames: &[JitterFrame], t: &JitterThresholds, out: &mut Vec<
             JitterClass::AngularAcceleration,
             &angular_accel,
             &frames[2..],
-            t.angular_acceleration_absolute,
-            t.angular_acceleration_relative,
-            t.angular_acceleration_noise_floor,
+            JitterLimit {
+                absolute: t.angular_acceleration_absolute,
+                relative: t.angular_acceleration_relative,
+                noise_floor: t.angular_acceleration_noise_floor,
+            },
             out,
         );
         report(
@@ -315,9 +328,11 @@ fn analyze_scenario(frames: &[JitterFrame], t: &JitterThresholds, out: &mut Vec<
             JitterClass::AngularJerk,
             &angular_jerk,
             &frames[3..],
-            t.angular_jerk_absolute,
-            t.angular_jerk_relative,
-            t.angular_jerk_noise_floor,
+            JitterLimit {
+                absolute: t.angular_jerk_absolute,
+                relative: t.angular_jerk_relative,
+                noise_floor: t.angular_jerk_noise_floor,
+            },
             out,
         );
     }
@@ -328,9 +343,7 @@ fn report(
     class: JitterClass,
     values: &[f32],
     frames: &[JitterFrame],
-    absolute: f32,
-    relative: f32,
-    noise_floor: f32,
+    limit: JitterLimit,
     out: &mut Vec<JitterIncident>,
 ) {
     let mut baseline_values = values
@@ -343,9 +356,11 @@ fn report(
         .get(baseline_values.len() / 2)
         .copied()
         .unwrap_or(0.0);
-    let threshold = absolute.max(relative * baseline.min(absolute));
+    let threshold = limit
+        .absolute
+        .max(limit.relative * baseline.min(limit.absolute));
     for (index, value) in values.iter().copied().enumerate() {
-        if !value.is_finite() || value <= noise_floor || value <= threshold {
+        if !value.is_finite() || value <= limit.noise_floor || value <= threshold {
             continue;
         }
         let frame = frames.get(index).or_else(|| frames.last()).unwrap();

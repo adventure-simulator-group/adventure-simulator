@@ -14,7 +14,6 @@ pub struct Character {
     pub name: String,
     pub xp: u32,
     pub level: u32,
-    pub gold: u32,
     pub current_settlement_id: Option<String>,
     pub party_id: Option<String>,
     pub server: __sdk::Identity,
@@ -38,7 +37,6 @@ pub struct CharacterCols {
     pub name: __sdk::__query_builder::Col<Character, String>,
     pub xp: __sdk::__query_builder::Col<Character, u32>,
     pub level: __sdk::__query_builder::Col<Character, u32>,
-    pub gold: __sdk::__query_builder::Col<Character, u32>,
     pub current_settlement_id: __sdk::__query_builder::Col<Character, Option<String>>,
     pub party_id: __sdk::__query_builder::Col<Character, Option<String>>,
     pub server: __sdk::__query_builder::Col<Character, __sdk::Identity>,
@@ -58,7 +56,6 @@ impl __sdk::__query_builder::HasCols for Character {
             name: __sdk::__query_builder::Col::new(table_name, "name"),
             xp: __sdk::__query_builder::Col::new(table_name, "xp"),
             level: __sdk::__query_builder::Col::new(table_name, "level"),
-            gold: __sdk::__query_builder::Col::new(table_name, "gold"),
             current_settlement_id: __sdk::__query_builder::Col::new(
                 table_name,
                 "current_settlement_id",

@@ -5,6 +5,7 @@
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::strategic_encounter_loss_type::StrategicEncounterLoss;
+use super::strategic_encounter_status_type::StrategicEncounterStatus;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -23,7 +24,7 @@ pub struct StrategicEncounter {
     pub party_aware: bool,
     pub enemy_aware: bool,
     pub available_choices: Vec<String>,
-    pub status: String,
+    pub status: StrategicEncounterStatus,
     pub revision: u32,
     pub selected_choice: Option<String>,
     pub selection_explanation: String,
@@ -57,7 +58,7 @@ pub struct StrategicEncounterCols {
     pub party_aware: __sdk::__query_builder::Col<StrategicEncounter, bool>,
     pub enemy_aware: __sdk::__query_builder::Col<StrategicEncounter, bool>,
     pub available_choices: __sdk::__query_builder::Col<StrategicEncounter, Vec<String>>,
-    pub status: __sdk::__query_builder::Col<StrategicEncounter, String>,
+    pub status: __sdk::__query_builder::Col<StrategicEncounter, StrategicEncounterStatus>,
     pub revision: __sdk::__query_builder::Col<StrategicEncounter, u32>,
     pub selected_choice: __sdk::__query_builder::Col<StrategicEncounter, Option<String>>,
     pub selection_explanation: __sdk::__query_builder::Col<StrategicEncounter, String>,

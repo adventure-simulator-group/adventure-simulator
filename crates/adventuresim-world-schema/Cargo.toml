@@ -11,6 +11,7 @@ spacetimedb = ["dep:spacetimedb"]
 
 [dependencies]
 serde.workspace = true
+fabelgeist-determinism.workspace = true
 spacetimedb = { workspace = true, optional = true }
 
 [dev-dependencies]

@@ -12,7 +12,7 @@ mod sources;
 pub mod spatial;
 mod validation;
 
-pub use builder::WorldBuilder;
+pub use builder::{WorldBuilder, WorldSourcePaths};
 pub use error::{Error, Result};
 pub use sources::drought::derive_profiles as derive_owda_profiles;
 #[cfg(feature = "strategic-map-renderer")]

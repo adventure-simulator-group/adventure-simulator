@@ -70,7 +70,7 @@ enum Command {
         seed: u64,
         #[arg(long, default_value_t = 100)]
         population: u32,
-        #[arg(long, default_value_t = 1095)]
+        #[arg(long, default_value_t = DEFAULT_SIMULATION_DAYS)]
         days: u32,
     },
     /// Rerun a report's recorded manifest and verify its digest.
@@ -84,7 +84,7 @@ enum Command {
     Matched {
         #[arg(long, default_value_t = 1)]
         seed: u64,
-        #[arg(long, default_value_t = 365)]
+        #[arg(long, default_value_t = DEFAULT_MATCHED_DAYS)]
         days: u32,
         #[arg(long)]
         output: Option<PathBuf>,
@@ -102,7 +102,7 @@ enum Command {
         population: u32,
         #[arg(long, default_value_t = 1)]
         cycles: u32,
-        #[arg(long, default_value_t = 365)]
+        #[arg(long, default_value_t = DEFAULT_CORE_LOOP_DURATION_DAYS)]
         duration_days: u32,
         #[arg(long, default_value_t = 2)]
         party_size: u32,

@@ -17,7 +17,6 @@ pub(crate) const INVESTIGATION_SOURCE: &str = concat!(
     include_str!("actions.rs"),
     include_str!("sites.rs"),
     include_str!("claims.rs"),
-    include_str!("tests.rs"),
 );
 
 mod geometry;

@@ -12,6 +12,7 @@ use adventuresim_tactical_netcode::{
         PostureCommand, ReconnectCapability, ReconnectToken, TacticalCombatConfigSnapshot,
     },
 };
+use adventuresim_world_schema::BASIS_POINTS_PER_WHOLE;
 use bevy::prelude::*;
 use bevy::time::Stopwatch;
 
@@ -29,6 +30,130 @@ use crate::{
     stdb::{SpacetimeDb, SpacetimeDbReady},
 };
 use input::AccumulatedInput;
+
+type PlayerInputStateQuery<'world, 'state> = Query<
+    'world,
+    'state,
+    (
+        &'static mut AccumulatedInput,
+        &'static mut CharacterLook,
+        &'static TacticalCombatState,
+        &'static mut SkeletonState,
+        &'static mut AuthoritativeMovementIntent,
+        Option<&'static mut AuthoritativeInputTick>,
+        &'static mut AuthoritativePostureIntent,
+        &'static mut QuickstepPush,
+        &'static mut MovementPace,
+        &'static mut LinearVelocity,
+        &'static mut Transform,
+        &'static mut Rotation,
+        Has<StartupInputObserved>,
+    ),
+    With<Player>,
+>;
+
+type MovementIntentQuery<'world, 'state> = Query<
+    'world,
+    'state,
+    (
+        &'static AuthoritativeMovementIntent,
+        &'static SkeletonState,
+        &'static AuthoritativePostureIntent,
+        &'static QuickstepPush,
+        Option<&'static CharacterControllerState>,
+        Option<&'static Transform>,
+        &'static mut AccumulatedInput,
+    ),
+    With<Player>,
+>;
+
+type LocomotionQuery<'world, 'state> = Query<
+    'world,
+    'state,
+    (
+        &'static CharacterControllerState,
+        &'static LinearVelocity,
+        &'static mut SkeletonState,
+        &'static mut Transform,
+        &'static mut Rotation,
+        &'static TacticalCombatState,
+        &'static MovementPace,
+        &'static AuthoritativePostureIntent,
+        &'static QuickstepPush,
+        &'static AccumulatedInput,
+        Option<&'static AttackFacing>,
+    ),
+    With<Player>,
+>;
+
+type QuickstepTraceQuery<'world, 'state> = Query<
+    'world,
+    'state,
+    (
+        Entity,
+        &'static SkeletonState,
+        &'static QuickstepPush,
+        &'static Transform,
+        &'static LinearVelocity,
+        &'static CharacterControllerState,
+    ),
+    With<Player>,
+>;
+
+type CharacterMotionSnapshotQuery<'world, 'state> = Query<
+    'world,
+    'state,
+    (
+        &'static Transform,
+        &'static LinearVelocity,
+        &'static CharacterControllerState,
+        &'static AuthoritativeInputTick,
+        &'static QuickstepPush,
+        Option<&'static MeleeLungeMovement>,
+        &'static mut CharacterMotionSnapshot,
+    ),
+    With<Player>,
+>;
+
+type ProjectedPlayerCoreQuery<'world, 'state> = Query<
+    'world,
+    'state,
+    (
+        &'static Name,
+        &'static Player,
+        &'static CharacterId,
+        &'static BestiaryCategories,
+        &'static Skills,
+        &'static Limbs,
+        &'static Attributes,
+        &'static Stats,
+        &'static TacticalCombatState,
+        &'static EquipmentActionState,
+        &'static TacticalCombatSide,
+    ),
+>;
+
+type ProjectedPlayerMotionQuery<'world, 'state> = Query<
+    'world,
+    'state,
+    (
+        &'static Transform,
+        &'static CharacterLook,
+        &'static AuthoritativeMovementIntent,
+        &'static AuthoritativeInputTick,
+        &'static CharacterMotionSnapshot,
+        &'static QuickstepPush,
+        Option<&'static MeleeLungeMovement>,
+        &'static AuthoritativePostureIntent,
+        &'static MovementPace,
+        &'static Mass,
+        &'static LinearVelocity,
+        &'static SkeletonState,
+        &'static MeleeAttackAuthority,
+        Option<&'static PendingMeleeContact>,
+        &'static RangedAttackAuthority,
+    ),
+>;
 
 /// Player projection completes before condition derivation, so a newly loaded
 /// strategically incapacitated character cannot act for one simulation tick
@@ -165,7 +290,10 @@ pub(crate) struct TacticalInventoryItemId(pub u64);
 /// baseline while tactical combat receives mission difficulty/escalation.
 fn mission_enemy_scale(difficulty: i32, combat_scale_bps: u32, countermeasure_bps: u32) -> f32 {
     let difficulty_scale = 1.0 + (difficulty.saturating_sub(1).max(0) as f32 * 0.05);
-    difficulty_scale * (combat_scale_bps as f32 / 10_000.0) * (countermeasure_bps as f32 / 10_000.0)
+    let whole_bps = f32::from(BASIS_POINTS_PER_WHOLE);
+    difficulty_scale
+        * (combat_scale_bps as f32 / whole_bps)
+        * (countermeasure_bps as f32 / whole_bps)
 }
 
 fn mission_enemy_health_scale(combat_scale_bps: u32, projected_scale: f32) -> f32 {
@@ -177,7 +305,10 @@ fn mission_enemy_health_scale(combat_scale_bps: u32, projected_scale: f32) -> f3
 }
 
 #[derive(Component)]
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "opening awareness is projected for reflected tactical inspection before combat consumes it"
+)]
 struct MissionOpeningAwareness {
     party_has_surprise: bool,
 }
@@ -759,7 +890,10 @@ fn spawn_connected_player(
                     accuracy: item.item.accuracy,
                     swing_precision: item.item.swing_precision,
                     stab_precision: item.item.stab_precision,
-                    prefers_stab: item.item.prefers_stab,
+                    prefers_stab: matches!(
+                        item.item.preferred_melee_style,
+                        adventuresim_stdb_client::MeleeAttackStyle::Stab
+                    ),
                     penetration: item.item.penetration,
                     reach: item.item.reach,
                     grip_to_tip_m,
@@ -819,6 +953,10 @@ fn spawn_connected_player(
     );
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Bevy injects each connection resource and projection query as an independent observer parameter"
+)]
 pub(crate) fn on_join_request(
     join: On<FromClient<JoinRequest>>,
     mut commands: Commands,
@@ -959,37 +1097,10 @@ pub(crate) fn on_player_input(
     input: On<FromClient<PlayerInputRequest>>,
     viewer: TacticalPlayerViewer,
     mut commands: Commands,
-    mut players: Query<
-        (
-            &mut AccumulatedInput,
-            &mut CharacterLook,
-            &TacticalCombatState,
-            &mut SkeletonState,
-            &mut AuthoritativeMovementIntent,
-            Option<&mut AuthoritativeInputTick>,
-            &mut AuthoritativePostureIntent,
-            &mut QuickstepPush,
-            &mut MovementPace,
-            &mut LinearVelocity,
-            &mut Transform,
-            &mut Rotation,
-            Has<StartupInputObserved>,
-        ),
-        With<Player>,
-    >,
+    mut players: PlayerInputStateQuery<'_, '_>,
     combat_config: Res<TacticalCombatConfig>,
 ) {
-    let Some(validated) = validate_player_input(
-        input.look,
-        input.movement,
-        input.jump,
-        input.jump_charge,
-        input.downed_align,
-        input.posture,
-        input.pace,
-        input.weapon_guard,
-        input.melee_preparation,
-    ) else {
+    let Some(validated) = validate_player_input(**input) else {
         return;
     };
     let Some(entity) = input.client_id.entity() else {
@@ -1284,17 +1395,19 @@ struct ValidatedPlayerInput {
     melee_preparation: MeleePreparationInput,
 }
 
-fn validate_player_input(
-    look: Vec2,
-    movement: Option<Vec2>,
-    jump: JumpCommand,
-    jump_charge: bool,
-    downed_align: bool,
-    posture: PostureCommand,
-    pace: MovementPace,
-    weapon_guard: WeaponGuardState,
-    melee_preparation: MeleePreparationInput,
-) -> Option<ValidatedPlayerInput> {
+fn validate_player_input(input: PlayerInputRequest) -> Option<ValidatedPlayerInput> {
+    let PlayerInputRequest {
+        simulation_tick: _,
+        look,
+        movement,
+        jump,
+        jump_charge,
+        downed_align,
+        posture,
+        pace,
+        weapon_guard,
+        melee_preparation,
+    } = input;
     if !look.is_finite()
         || movement.is_some_and(|movement| !movement.is_finite())
         || jump
@@ -1524,18 +1637,7 @@ fn advance_downed_facing_for_camera(
 /// complete request before movement runs. Ahoy may clear its accumulator after
 /// every fixed loop without turning a missing network packet into a stop.
 pub(crate) fn restore_authoritative_movement_intent(
-    mut players: Query<
-        (
-            &AuthoritativeMovementIntent,
-            &SkeletonState,
-            &AuthoritativePostureIntent,
-            &QuickstepPush,
-            Option<&CharacterControllerState>,
-            Option<&Transform>,
-            &mut AccumulatedInput,
-        ),
-        With<Player>,
-    >,
+    mut players: MovementIntentQuery<'_, '_>,
     combat_config: Res<TacticalCombatConfig>,
 ) {
     for (
@@ -1591,22 +1693,7 @@ pub(crate) fn restore_authoritative_movement_intent(
 pub(crate) fn update_skeleton_locomotion(
     time: Res<Time<Fixed>>,
     combat_config: Res<TacticalCombatConfig>,
-    mut players: Query<
-        (
-            &CharacterControllerState,
-            &LinearVelocity,
-            &mut SkeletonState,
-            &mut Transform,
-            &mut Rotation,
-            &TacticalCombatState,
-            &MovementPace,
-            &AuthoritativePostureIntent,
-            &QuickstepPush,
-            &AccumulatedInput,
-            Option<&AttackFacing>,
-        ),
-        With<Player>,
-    >,
+    mut players: LocomotionQuery<'_, '_>,
 ) {
     for (
         controller,
@@ -1714,19 +1801,7 @@ pub(crate) fn update_skeleton_locomotion(
 /// Records the controller result after Ahoy has applied collision constraints.
 /// `apply_character_motor` emits the matching pre-collision sample with the
 /// same skeleton and push ticks.
-pub(crate) fn trace_authoritative_quickstep_after_collision(
-    players: Query<
-        (
-            Entity,
-            &SkeletonState,
-            &QuickstepPush,
-            &Transform,
-            &LinearVelocity,
-            &CharacterControllerState,
-        ),
-        With<Player>,
-    >,
-) {
+pub(crate) fn trace_authoritative_quickstep_after_collision(players: QuickstepTraceQuery<'_, '_>) {
     for (entity, skeleton, push, transform, velocity, controller) in &players {
         if !push.active {
             continue;
@@ -1760,20 +1835,7 @@ pub(crate) fn trace_authoritative_quickstep_after_collision(
 /// authoritative facing. This is deliberately distinct from replicated
 /// presentation state so a client can acknowledge, restore, and replay input
 /// by fixed tick.
-pub(crate) fn update_character_motion_snapshots(
-    mut players: Query<
-        (
-            &Transform,
-            &LinearVelocity,
-            &CharacterControllerState,
-            &AuthoritativeInputTick,
-            &QuickstepPush,
-            Option<&MeleeLungeMovement>,
-            &mut CharacterMotionSnapshot,
-        ),
-        With<Player>,
-    >,
-) {
+pub(crate) fn update_character_motion_snapshots(mut players: CharacterMotionSnapshotQuery<'_, '_>) {
     for (transform, velocity, controller, input, quickstep_push, melee_lunge, mut snapshot) in
         &mut players
     {
@@ -1797,39 +1859,15 @@ pub(crate) fn update_character_motion_snapshots(
 /// component while the source is still queryable, then queue only operations
 /// whose inputs are owned values. Aeronet may therefore apply its source
 /// despawn before or after these commands without invalidating them.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Bevy injects each observer resource and query as an independent system parameter"
+)]
 pub(crate) fn on_client_disconnected(
     disconnected: On<Disconnected>,
     query: Query<&ReconnectSession>,
-    projected_core: Query<(
-        &Name,
-        &Player,
-        &CharacterId,
-        &BestiaryCategories,
-        &Skills,
-        &Limbs,
-        &Attributes,
-        &Stats,
-        &TacticalCombatState,
-        &EquipmentActionState,
-        &TacticalCombatSide,
-    )>,
-    projected_motion: Query<(
-        &Transform,
-        &CharacterLook,
-        &AuthoritativeMovementIntent,
-        &AuthoritativeInputTick,
-        &CharacterMotionSnapshot,
-        &QuickstepPush,
-        Option<&MeleeLungeMovement>,
-        &AuthoritativePostureIntent,
-        &MovementPace,
-        &Mass,
-        &LinearVelocity,
-        &SkeletonState,
-        &MeleeAttackAuthority,
-        Option<&PendingMeleeContact>,
-        &RangedAttackAuthority,
-    )>,
+    projected_core: ProjectedPlayerCoreQuery<'_, '_>,
+    projected_motion: ProjectedPlayerMotionQuery<'_, '_>,
     projected_physics: Query<(
         &Collider,
         &CollisionMargin,
@@ -2140,7 +2178,7 @@ pub(crate) fn on_player_added(
 /// so a dump-loaded item never carries it - without this, such an item
 /// exists server-side but never replicates to any client. Called by the two
 /// scene-writing paths (`load_world_dump`, [`bind_dumped_character_on_join`])
-/// right where they already backfill the other things a dump deliberately
+/// right where they add the other things a dump deliberately
 /// omits (see `insert_fresh_combatant_extras`); the live SpacetimeDB spawn
 /// path inserts `Replicated` explicitly at spawn like everything else it
 /// spawns.
@@ -2223,7 +2261,7 @@ pub(crate) fn bind_dumped_character_on_join(world: &mut World) {
                 // else in this same exclusive system reads the entity.
                 world.flush();
                 // `on_player_added`'s generic bundle (fired by the `Player`
-                // insert just above) backfills most "always fresh, never
+                // insert just above) adds most "always fresh, never
                 // dump-captured" extras, but not these two - unlike
                 // `spawn_connected_player`'s normal-join path, which inserts
                 // them explicitly. Their absence doesn't fail loudly: it
@@ -2428,12 +2466,20 @@ mod tests {
     use adventuresim_tactical_netcode::aeronet::io::connection::{DisconnectReason, Disconnected};
     use adventuresim_tactical_netcode::bevy_replicon::prelude::Replicated;
     use adventuresim_tactical_netcode::prelude::{
-        JumpCommand, PostureActionRequest, PostureCommand, ReconnectToken,
+        JumpCommand, PlayerInputRequest, PostureActionRequest, ReconnectToken,
     };
     use bevy::prelude::*;
 
     #[derive(Resource)]
     struct RebindTarget(Entity);
+
+    fn valid_player_input_request() -> PlayerInputRequest {
+        PlayerInputRequest {
+            weapon_guard: WeaponGuardState::Raised,
+            melee_preparation: MeleePreparationInput::Preferred,
+            ..default()
+        }
+    }
 
     fn mark_rebind_target(mut commands: Commands, target: Res<RebindTarget>) {
         queue_replication_rebind(&mut commands, target.0);
@@ -2460,6 +2506,8 @@ mod tests {
                 character_id: CharacterId(7),
                 token: ReconnectToken([7; 32]),
             };
+            let limbs = Limbs::default();
+            let mass = super::Mass(limbs.body_weight_kg);
             let client = app.world_mut().spawn(session).id();
             app.world_mut().entity_mut(client).insert((
                 Name::new("snapshot-player"),
@@ -2467,7 +2515,7 @@ mod tests {
                 CharacterId(7),
                 BestiaryCategories::default(),
                 Skills::default(),
-                Limbs::default(),
+                limbs,
                 Attributes::default(),
                 Stats::default(),
                 TacticalCombatState::default(),
@@ -2480,6 +2528,7 @@ mod tests {
                 AuthoritativeMovementIntent::default(),
                 AuthoritativePostureIntent::default(),
                 MovementPace::default(),
+                mass,
                 LinearVelocity::ZERO,
                 SkeletonState::default(),
                 MeleeAttackAuthority::default(),
@@ -2559,7 +2608,7 @@ mod tests {
             &session
         ));
         assert!(!reconnect_matches(CharacterId(7), None, &session));
-        assert!(RECONNECT_GRACE_SECS > 0.0);
+        const { assert!(RECONNECT_GRACE_SECS > 0.0) };
     }
 
     #[test]
@@ -2665,20 +2714,16 @@ mod tests {
             (Vec2::ZERO, Some(Vec2::new(f32::NEG_INFINITY, 0.0))),
             (Vec2::ZERO, Some(Vec2::new(0.0, f32::NAN))),
         ] {
-            if let Some(validated) = validate_player_input(
+            if let Some(validated) = validate_player_input(PlayerInputRequest {
                 look,
                 movement,
-                JumpCommand {
+                jump: JumpCommand {
                     sequence: 1,
                     ..default()
                 },
-                false,
-                false,
-                PostureCommand::default(),
-                MovementPace::Sprint,
-                WeaponGuardState::Raised,
-                MeleePreparationInput::Preferred,
-            ) {
+                pace: MovementPace::Sprint,
+                ..valid_player_input_request()
+            }) {
                 controller_input = (
                     Vec2::new(validated.yaw, validated.pitch),
                     validated.movement,
@@ -2750,20 +2795,18 @@ mod tests {
 
     #[test]
     fn player_input_normalizes_finite_boundaries_before_controller_state() {
-        let validated = validate_player_input(
-            Vec2::new(std::f32::consts::TAU * 4.0 + 0.25, 99.0),
-            Some(Vec2::splat(10.0)),
-            JumpCommand {
+        let validated = validate_player_input(PlayerInputRequest {
+            look: Vec2::new(std::f32::consts::TAU * 4.0 + 0.25, 99.0),
+            movement: Some(Vec2::splat(10.0)),
+            jump: JumpCommand {
                 sequence: 7,
                 ..default()
             },
-            true,
-            true,
-            PostureCommand::default(),
-            MovementPace::Sprint,
-            WeaponGuardState::Raised,
-            MeleePreparationInput::Preferred,
-        )
+            jump_charge: true,
+            downed_align: true,
+            pace: MovementPace::Sprint,
+            ..valid_player_input_request()
+        })
         .unwrap();
         assert!((validated.yaw - 0.25).abs() < 0.0001);
         assert_eq!(validated.pitch, 1.5);
@@ -2777,37 +2820,29 @@ mod tests {
 
     #[test]
     fn player_input_normalizes_quickstep_direction_and_rejects_non_finite_values() {
-        let validated = validate_player_input(
-            Vec2::ZERO,
-            Some(Vec2::Y),
-            JumpCommand {
+        let validated = validate_player_input(PlayerInputRequest {
+            look: Vec2::ZERO,
+            movement: Some(Vec2::Y),
+            jump: JumpCommand {
                 sequence: 3,
                 quickstep: Some(Vec2::new(4.0, -3.0)),
             },
-            false,
-            false,
-            PostureCommand::default(),
-            MovementPace::Walk,
-            WeaponGuardState::Raised,
-            MeleePreparationInput::Preferred,
-        )
+            pace: MovementPace::Walk,
+            ..valid_player_input_request()
+        })
         .unwrap();
         assert_eq!(validated.jump.quickstep, Some(Vec2::new(0.8, -0.6)));
         assert!(
-            validate_player_input(
-                Vec2::ZERO,
-                None,
-                JumpCommand {
+            validate_player_input(PlayerInputRequest {
+                look: Vec2::ZERO,
+                movement: None,
+                jump: JumpCommand {
                     sequence: 4,
                     quickstep: Some(Vec2::new(f32::NAN, 0.0)),
                 },
-                false,
-                false,
-                PostureCommand::default(),
-                MovementPace::Walk,
-                WeaponGuardState::Raised,
-                MeleePreparationInput::Preferred,
-            )
+                pace: MovementPace::Walk,
+                ..valid_player_input_request()
+            })
             .is_none()
         );
     }

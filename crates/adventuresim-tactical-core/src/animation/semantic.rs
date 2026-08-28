@@ -50,7 +50,10 @@ pub enum SemanticPose {
 }
 
 #[cfg(test)]
-#[allow(clippy::items_after_test_module)]
+#[expect(
+    clippy::items_after_test_module,
+    reason = "the large animation contract suite stays next to its semantic pose declaration"
+)]
 mod contract_tests {
     use super::*;
 

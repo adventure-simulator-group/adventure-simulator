@@ -1,6 +1,9 @@
 // The runtime deliberately deserializes this strict preflight schema without
 // reading its fields; build.rs reads them for semantic validation.
-#![allow(dead_code)]
+#![expect(
+    dead_code,
+    reason = "runtime deserialization validates the complete schema without reading every field"
+)]
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -51,7 +54,7 @@ pub struct AuthoringTopic {
     pub conditions: Condition,
     pub responses: Vec<AuthoringResponse>,
 }
-#[derive(Clone, Copy, Debug, Default, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum TopicCategory {
     Quest,

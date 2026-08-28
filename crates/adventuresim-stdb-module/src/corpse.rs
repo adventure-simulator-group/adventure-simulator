@@ -23,7 +23,10 @@ use crate::{
     outbreak::outbreak_patient_authority,
     settlement_population::{SettlementResidentProfile, settlement_resident_profile},
     social::{character_familiarity, current_affinity},
-    strategic::{settlement, strategic_encounter, strategic_gateway_authority__view},
+    strategic::{
+        StrategicEncounterStatus, settlement, strategic_encounter,
+        strategic_gateway_authority__view,
+    },
     surgery::{limb_injury, retained_projectile},
     time::{advance_character_wait_time, character_time, character_time__view},
 };
@@ -255,7 +258,7 @@ fn require_corpse_access(
         .strategic_encounter()
         .party_id()
         .find(&party_id)
-        .is_some_and(|encounter| encounter.status != "resolved")
+        .is_some_and(|encounter| encounter.status != StrategicEncounterStatus::Resolved)
     {
         return Err("Resolve the active encounter before handling a corpse".into());
     }
@@ -742,6 +745,10 @@ const AUTOPSY_DEMO_RECENT_VICTIM_ID: u64 = u64::MAX - 10_001;
 const AUTOPSY_DEMO_BURIED_VICTIM_ID: u64 = u64::MAX - 10_002;
 const AUTOPSY_DEMO_ENEMY_ID: u64 = u64::MAX - 10_003;
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the autopsy fixture records each authoritative battle fact explicitly"
+)]
 fn persist_autopsy_demo_body(
     ctx: &ReducerContext,
     actor_id: u64,
@@ -861,9 +868,14 @@ pub(crate) fn seed_autopsy_demo(ctx: &ReducerContext, actor_id: u64) -> Result<(
             victim_id.saturating_sub(100),
             attacker_kind,
             12,
-            10_000,
+            u32::from(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE),
         )?;
-        let victim = crate::strategic::autoresolve_enemy(victim_id, victim_kind, 1, 10_000)?;
+        let victim = crate::strategic::autoresolve_enemy(
+            victim_id,
+            victim_kind,
+            1,
+            u32::from(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE),
+        )?;
         adventuresim_core::autopsy::resolve_death_required_incident(
             &[attacker],
             &[victim],
@@ -1084,7 +1096,7 @@ pub(crate) fn persist_character_death_corpse(
             id: format!("{corpse_id}:injury:{sequence}"),
             corpse_id: corpse_id.clone(),
             sequence: sequence as u32,
-            region: injury.limb.slug().replace('-', " "),
+            region: strategic_body_region_label(injury.limb).into(),
             cut_damage: injury.cut_damage,
             blunt_damage: injury.bruise_damage,
             projectile: ctx
@@ -1111,7 +1123,24 @@ fn body_part_label(part: BodyPart) -> &'static str {
     }
 }
 
+fn strategic_body_region_label(region: adventuresim_core::physiology::BodyRegion) -> &'static str {
+    use adventuresim_core::physiology::BodyRegion;
+    match region {
+        BodyRegion::LeftArm => "left arm",
+        BodyRegion::RightArm => "right arm",
+        BodyRegion::LeftLeg => "left leg",
+        BodyRegion::RightLeg => "right leg",
+        BodyRegion::Chest => "chest",
+        BodyRegion::Abdomen => "stomach",
+        BodyRegion::Head => "head",
+    }
+}
+
 #[reducer]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the reducer ABI exposes each independently validated examination input"
+)]
 pub fn examine_corpse(
     ctx: &ReducerContext,
     actor_id: u64,
@@ -1315,7 +1344,7 @@ pub fn open_corpse(
         crate::filth::deposit_now(
             ctx,
             actor_id,
-            crate::filth::FilthSubstance::Blood,
+            adventuresim_core::filth::FilthSubstance::Blood,
             None,
             exposure,
         )?;
@@ -1647,8 +1676,11 @@ pub(crate) fn grant_permission_from_dialogue(
         .id()
         .find(format!("{low_id}:{high_id}"))
         .map_or(0, |row| row.shared_minutes);
-    let familiarity_bps =
-        ((familiarity_minutes.saturating_mul(10_000) / (100 * 60)).min(10_000)) as u16;
+    let familiarity_bps = ((familiarity_minutes
+        .saturating_mul(u64::from(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE))
+        / (100 * 60))
+        .min(u64::from(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE)))
+        as u16;
     let (fame, infamy) = crate::reputation::local_reputation(ctx, actor_id, &corpse.settlement_id);
     let reputation_modifier =
         adventuresim_core::reputation::npc_reaction_modifier(fame, infamy, familiarity_bps);
@@ -1698,7 +1730,9 @@ pub(crate) fn grant_permission_from_dialogue(
     let entropy = adventuresim_core::settlement_population::stable_hash(&format!(
         "corpse-permission:{attempt_id}"
     ));
-    let roll = (entropy % 10_001) as f32 / 10_000.0;
+    let roll = (entropy % (u64::from(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE) + 1))
+        as f32
+        / f32::from(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE);
     let professional_fit = matches!(
         npc.profession.as_str(),
         "cleric" | "physician" | "surgeon" | "local healer"
@@ -1937,7 +1971,7 @@ mod tests {
 
     #[test]
     fn authority_tables_are_private_and_gateway_projection_is_observer_scoped() {
-        let source = include_str!("corpse.rs");
+        let source = crate::production_source(include_str!("corpse.rs"));
         for table in [
             "strategic_corpse",
             "corpse_body_state",
@@ -1957,7 +1991,7 @@ mod tests {
 
     #[test]
     fn reducers_encode_retry_permission_and_location_authority() {
-        let source = include_str!("corpse.rs");
+        let source = crate::production_source(include_str!("corpse.rs"));
         assert!(source.contains("validate_client_action_id(&action_id)"));
         assert!(source.contains(
             "action_receipt_id(\n        actor_id,\n        &corpse_id,\n        \"examine\""
@@ -2000,7 +2034,7 @@ mod tests {
             None
         );
 
-        let source = include_str!("corpse.rs");
+        let source = crate::production_source(include_str!("corpse.rs"));
         assert!(source.matches("permission_kind_for_npc(ctx,").count() >= 2);
         assert!(!source.contains("service_id == \"keep\""));
         assert!(!source.contains("local_role.contains"));
@@ -2023,7 +2057,7 @@ mod tests {
 
     #[test]
     fn permission_uses_relationship_and_local_reputation_inputs() {
-        let source = include_str!("corpse.rs");
+        let source = crate::production_source(include_str!("corpse.rs"));
         assert!(source.contains("local_reputation(ctx, actor_id, &corpse.settlement_id)"));
         assert!(source.contains("npc_reaction_modifier(fame, infamy, familiarity_bps)"));
         assert!(source.contains("resolve_permission_petition"));
@@ -2038,14 +2072,14 @@ mod tests {
             Some((CREMATION_INFAMY, CREMATION_FAMILY_AFFINITY_DELTA))
         );
         assert_eq!(burning_social_penalty(true), None);
-        let source = include_str!("corpse.rs");
-        assert!(source.contains("Ask permission to exhume a buried body"));
+        let source = crate::production_source(include_str!("corpse.rs"));
+        assert!(source.contains("format!(\"{approach_label} to exhume the buried body\")"));
         assert!(!source.contains("Ask permission to exhume {}"));
     }
 
     #[test]
     fn corpse_family_bindings_have_an_explicit_materialization_seam() {
-        let source = include_str!("corpse.rs");
+        let source = crate::production_source(include_str!("corpse.rs"));
         assert!(source.contains("materialize_corpse_family_bindings"));
         assert!(source.contains("family_resident_character_ids: &[u64]"));
         assert!(!source.contains(".household"));

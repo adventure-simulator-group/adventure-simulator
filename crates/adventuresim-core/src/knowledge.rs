@@ -4,6 +4,7 @@
 //! grants no disclosure authority, performs no inference, and has no wire or
 //! persistence format.
 
+use adventuresim_world_schema::BASIS_POINTS_PER_WHOLE;
 use std::{fmt, num::NonZeroU64};
 
 use crate::{
@@ -75,7 +76,7 @@ pub struct KnowledgeConfidence(u16);
 
 impl KnowledgeConfidence {
     pub fn try_new(basis_points: u16) -> Result<Self, KnowledgeError> {
-        if basis_points > 10_000 {
+        if basis_points > BASIS_POINTS_PER_WHOLE {
             Err(KnowledgeError::ConfidenceOutOfRange)
         } else {
             Ok(Self(basis_points))
@@ -204,7 +205,10 @@ impl<
     V: DomainVisibilityRule,
 > KnowledgeEnvelope<S, P, R, V>
 {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "this domain boundary names each independent input explicitly"
+    )]
     pub fn try_new(
         record_id: KnowledgeRecordId,
         observer: CustodyCharacterId,
@@ -351,9 +355,21 @@ impl<
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum ProjectionScope<V: DomainVisibilityRule> {
-    #[allow(dead_code)] // Constructed only by the corresponding trusted mint helper.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "only trusted test fixtures currently mint observer projection grants"
+        )
+    )]
     Observer,
-    #[allow(dead_code)] // Constructed only by the corresponding trusted mint helper.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "only trusted test fixtures currently mint public-disclosure grants"
+        )
+    )]
     PublicDisclosure(V),
 }
 
@@ -367,7 +383,13 @@ pub struct ProjectionGrant<V: DomainVisibilityRule> {
 }
 
 impl<V: DomainVisibilityRule> ProjectionGrant<V> {
-    #[allow(dead_code)] // Reserved for a later authenticated bridge in this crate.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "the trusted observer-grant constructor is currently exercised by boundary tests"
+        )
+    )]
     pub(crate) fn for_authenticated_observer(
         viewer: CustodyCharacterId,
         viewer_personal_minute: u64,
@@ -379,7 +401,13 @@ impl<V: DomainVisibilityRule> ProjectionGrant<V> {
         }
     }
 
-    #[allow(dead_code)] // Reserved for a later authenticated bridge in this crate.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "the trusted disclosure-grant constructor is currently exercised by boundary tests"
+        )
+    )]
     pub(crate) fn for_authenticated_public_disclosure(
         viewer: CustodyCharacterId,
         viewer_personal_minute: u64,
@@ -565,7 +593,6 @@ impl<S: DomainKnowledgeSubject, P: DomainProposition, V: DomainVisibilityRule>
         &self.rule
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn try_recipient_envelope<R: DomainKnowledgeSource>(
         &self,
         record_id: KnowledgeRecordId,

@@ -14,7 +14,7 @@ import json
 import math
 import os
 import secrets
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import re
 import shutil
 import socket
@@ -1355,8 +1355,10 @@ def executable_identity_matches(expected: object, actual: object) -> bool:
     actual_path = str(actual)
     if os.path.normcase(expected_path) == os.path.normcase(actual_path):
         return True
-    expected_name = Path(expected_path).stem.lower()
-    actual_name = Path(actual_path).stem.lower()
+    # PureWindowsPath recognizes both slash styles, so launcher metadata remains
+    # testable without weakening the exact executable-name allowlist on POSIX.
+    expected_name = PureWindowsPath(expected_path).stem.casefold()
+    actual_name = PureWindowsPath(actual_path).stem.casefold()
     return (
         expected_name in {"spacetime", "spacetimedb-cli"}
         and actual_name in {"spacetime-standalone", "spacetimedb-standalone"}

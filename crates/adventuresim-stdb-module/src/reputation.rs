@@ -248,6 +248,10 @@ pub fn aggregate_id(character_id: u64, settlement_id: &str) -> String {
 /// event ID is a successful no-op so reducer retries cannot double-award it.
 /// SpacetimeDB reducers commit the event and every aggregate mutation in one
 /// transaction, so per-destination idempotency rows are unnecessary.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "reputation events expose each immutable event coordinate explicitly"
+)]
 pub fn record_event(
     ctx: &ReducerContext,
     event_id: String,
@@ -410,7 +414,7 @@ pub fn delete_character_reputation(ctx: &ReducerContext, character_id: u64) {
 mod tests {
     #[test]
     fn case_battles_use_public_identity_but_events_keep_canonical_identity() {
-        let source = include_str!("reputation.rs");
+        let source = crate::production_source(include_str!("reputation.rs"));
         let award = source
             .split("pub(crate) fn case_resolution_participant_ids")
             .nth(1)

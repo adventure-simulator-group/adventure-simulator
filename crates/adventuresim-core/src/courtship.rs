@@ -5,6 +5,8 @@
 //! callers advance a long interval in exactly the same way as smaller chunks.
 
 use crate::strategic_time::{MINUTES_PER_DAY, MINUTES_PER_YEAR};
+use adventuresim_world_schema::BASIS_POINTS_PER_WHOLE;
+use serde::{Deserialize, Serialize};
 use std::{fmt, str::FromStr};
 
 pub const ADULT_AGE_YEARS: u16 = 16;
@@ -160,7 +162,8 @@ pub const fn residence_period_charge(
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
 pub enum HousingTier {
     Cheap,
     Moderate,
@@ -169,6 +172,14 @@ pub enum HousingTier {
 
 impl HousingTier {
     pub const ALL: [Self; 3] = [Self::Cheap, Self::Moderate, Self::Fancy];
+
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Cheap => "cheap",
+            Self::Moderate => "moderate",
+            Self::Fancy => "fancy",
+        }
+    }
 
     pub const fn economy(self) -> HousingEconomy {
         match self {
@@ -427,9 +438,10 @@ pub const fn residence_leisure_bonus_milli(
     realized_baseline_milli: u32,
     leisure_morale_basis_points: u16,
 ) -> u32 {
-    let premium_basis_points = leisure_morale_basis_points.saturating_sub(10_000);
+    let premium_basis_points = leisure_morale_basis_points.saturating_sub(BASIS_POINTS_PER_WHOLE);
     min_u64(
-        realized_baseline_milli as u64 * premium_basis_points as u64 / 10_000,
+        realized_baseline_milli as u64 * premium_basis_points as u64
+            / BASIS_POINTS_PER_WHOLE as u64,
         u32::MAX as u64,
     ) as u32
 }

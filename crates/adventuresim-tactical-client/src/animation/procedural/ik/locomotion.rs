@@ -25,6 +25,10 @@ pub(in crate::animation::procedural) fn owns(skeleton: &SkeletonState) -> bool {
 /// FK pose and frame-specific foot weights. This pass only conforms weighted
 /// ankles to terrain, applies one shared hip correction, and solves each leg
 /// once; it never plans a step or changes the authored horizontal trajectory.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Bevy injects each independently borrowed locomotion IK resource and query as a system parameter"
+)]
 pub(in crate::animation) fn apply(
     enabled: Res<super::super::super::TerrainIkEnabled>,
     time: Res<Time>,
@@ -200,13 +204,15 @@ pub(in crate::animation) fn apply(
                 &transforms.p0(),
             );
             if let Some(solution) = solve_two_bone_with_reach(
-                upper_snapshot.global.translation(),
-                lower_snapshot.global.translation(),
-                foot_snapshot.global.translation(),
+                TwoBoneChain::new(
+                    upper_snapshot.global.translation(),
+                    lower_snapshot.global.translation(),
+                    foot_snapshot.global.translation(),
+                    upper_length,
+                    lower_length,
+                    pole,
+                ),
                 target,
-                upper_length,
-                lower_length,
-                pole,
                 maximum_reach(upper_length, lower_length),
             ) {
                 apply_two_bone_solution(upper, lower, foot, solution, &parents, &mut transforms);

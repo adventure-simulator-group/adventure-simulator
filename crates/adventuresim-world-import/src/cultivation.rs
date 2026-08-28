@@ -230,7 +230,13 @@ fn enqueue_fallback(
 
 /// Largest-remainder rounding preserves the rounded global HYDE area and
 /// leaves an absolute residual below half a square kilometre.
-pub fn round_quotas(quotas: &[HydeCropQuota]) -> Result<(BTreeMap<(i16, i16), u32>, f64), String> {
+#[derive(Clone, Debug, PartialEq)]
+pub struct RoundedHydeQuotas {
+    pub by_cell: BTreeMap<(i16, i16), u32>,
+    pub residual_km2: f64,
+}
+
+pub fn round_quotas(quotas: &[HydeCropQuota]) -> Result<RoundedHydeQuotas, String> {
     if quotas
         .iter()
         .any(|quota| !quota.crop_km2.is_finite() || quota.crop_km2 < 0.0)
@@ -261,10 +267,10 @@ pub fn round_quotas(quotas: &[HydeCropQuota]) -> Result<(BTreeMap<(i16, i16), u3
         row.1 += 1;
     }
     let rounded = values.into_iter().map(|row| (row.0, row.1)).collect();
-    Ok((
-        rounded,
-        quotas.iter().map(|quota| quota.crop_km2).sum::<f64>() - target as f64,
-    ))
+    Ok(RoundedHydeQuotas {
+        by_cell: rounded,
+        residual_km2: quotas.iter().map(|quota| quota.crop_km2).sum::<f64>() - target as f64,
+    })
 }
 
 pub fn allocate(
@@ -274,7 +280,10 @@ pub fn allocate(
     if candidates.is_empty() || candidates.len() > MAX_CULTIVATION_CANDIDATES {
         return Err("cultivation candidate grid is empty or exceeds its bound".into());
     }
-    let (mut rounded_quotas, residual_km2) = round_quotas(quotas)?;
+    let RoundedHydeQuotas {
+        by_cell: mut rounded_quotas,
+        residual_km2,
+    } = round_quotas(quotas)?;
     let by_cell = candidates
         .iter()
         .enumerate()

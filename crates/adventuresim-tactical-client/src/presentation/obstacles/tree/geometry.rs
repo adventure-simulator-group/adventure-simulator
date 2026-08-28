@@ -203,6 +203,7 @@ pub(in crate::presentation) const OAK_GNARLING_SHOWCASE: [OakGnarlingParameters;
     EXTREME_OAK_GNARLING,
 ];
 
+#[cfg(test)]
 #[derive(Clone, Copy, Debug)]
 pub(in crate::presentation) struct BarkRecipe {
     pub(in crate::presentation) fissure_depth_metres: f32,
@@ -218,6 +219,7 @@ pub(in crate::presentation) struct BarkRecipe {
     pub(in crate::presentation) branch_depth_attenuation: [f32; 4],
 }
 
+#[cfg(test)]
 pub(in crate::presentation) const ENGLISH_OAK_BARK: BarkRecipe = BarkRecipe {
     fissure_depth_metres: 0.017,
     fissure_width_metres: 0.013,
@@ -230,18 +232,7 @@ pub(in crate::presentation) const ENGLISH_OAK_BARK: BarkRecipe = BarkRecipe {
     branch_depth_attenuation: [1.0, 0.62, 0.24, 0.06],
 };
 
-pub(in crate::presentation) const COMMON_HAZEL_BARK: BarkRecipe = BarkRecipe {
-    fissure_depth_metres: 0.0015,
-    fissure_width_metres: 0.006,
-    lip_height_metres: 0.001,
-    plate_height_metres: 0.001,
-    mature_radius_metres: 0.12,
-    minimum_radius_metres: 0.035,
-    root_lobe_height_metres: 0.0,
-    plate_length_metres: 0.34,
-    branch_depth_attenuation: [0.45, 0.2, 0.05, 0.0],
-};
-
+#[cfg(test)]
 pub(in crate::presentation) const COMMON_BEECH_BARK: BarkRecipe = BarkRecipe {
     fissure_depth_metres: 0.00035,
     fissure_width_metres: 0.009,
@@ -252,30 +243,6 @@ pub(in crate::presentation) const COMMON_BEECH_BARK: BarkRecipe = BarkRecipe {
     root_lobe_height_metres: 0.003,
     plate_length_metres: 1.2,
     branch_depth_attenuation: [0.16, 0.06, 0.01, 0.0],
-};
-
-pub(in crate::presentation) const BLACKTHORN_BARK: BarkRecipe = BarkRecipe {
-    fissure_depth_metres: 0.0018,
-    fissure_width_metres: 0.004,
-    lip_height_metres: 0.0012,
-    plate_height_metres: 0.001,
-    mature_radius_metres: 0.09,
-    minimum_radius_metres: 0.025,
-    root_lobe_height_metres: 0.0,
-    plate_length_metres: 0.22,
-    branch_depth_attenuation: [0.5, 0.22, 0.05, 0.0],
-};
-
-pub(in crate::presentation) const COMMON_HAWTHORN_BARK: BarkRecipe = BarkRecipe {
-    fissure_depth_metres: 0.0028,
-    fissure_width_metres: 0.005,
-    lip_height_metres: 0.0018,
-    plate_height_metres: 0.0015,
-    mature_radius_metres: 0.1,
-    minimum_radius_metres: 0.03,
-    root_lobe_height_metres: 0.0,
-    plate_length_metres: 0.26,
-    branch_depth_attenuation: [0.62, 0.28, 0.06, 0.0],
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -354,10 +321,12 @@ impl TreeCrownBounds {
         (self.minimum + self.maximum) * 0.5
     }
 
+    #[cfg(test)]
     pub(in crate::presentation) fn horizontal_span(self) -> f32 {
         (self.maximum.x - self.minimum.x).max(self.maximum.z - self.minimum.z)
     }
 
+    #[cfg(test)]
     pub(in crate::presentation) fn vertical_span(self) -> f32 {
         self.maximum.y - self.minimum.y
     }

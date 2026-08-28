@@ -187,7 +187,7 @@ impl Scan {
             )?;
             parameters.insert("aux", aux);
 
-            crate::data::gpu::compute::ComputePass::new(
+            crate::data::gpu::compute::ComputePass::execute(
                 context,
                 scan_blocks_pipeline,
                 parameters,
@@ -211,7 +211,7 @@ impl Scan {
             parameters_p1.insert("output", output.clone());
             parameters_p1.insert("aux", aux.clone());
 
-            crate::data::gpu::compute::ComputePass::new(
+            crate::data::gpu::compute::ComputePass::execute(
                 context,
                 scan_blocks_pipeline.clone(),
                 parameters_p1,
@@ -250,7 +250,7 @@ impl Scan {
                 parameters_p2.insert("output", scanned_aux.clone());
                 parameters_p2.insert("aux", next_aux.clone());
 
-                crate::data::gpu::compute::ComputePass::new(
+                crate::data::gpu::compute::ComputePass::execute(
                     context,
                     scan_blocks_pipeline.clone(),
                     parameters_p2,
@@ -276,7 +276,7 @@ impl Scan {
                     parameters_p3.insert("output", output.clone());
                     parameters_p3.insert("aux", current_aux.clone());
 
-                    crate::data::gpu::compute::ComputePass::new(
+                    crate::data::gpu::compute::ComputePass::execute(
                         context,
                         add_aux_pipeline.clone(),
                         parameters_p3,
@@ -290,7 +290,7 @@ impl Scan {
                     parameters_p3.insert("aux", current_aux.clone());
 
                     let target_blocks = (target.size / 4) as u32;
-                    crate::data::gpu::compute::ComputePass::new(
+                    crate::data::gpu::compute::ComputePass::execute(
                         context,
                         add_aux_pipeline.clone(),
                         parameters_p3,

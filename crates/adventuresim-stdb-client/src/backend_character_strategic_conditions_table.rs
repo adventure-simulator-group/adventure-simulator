@@ -3,6 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::character_strategic_condition_type::CharacterStrategicCondition;
+use super::incapacitation_status_type::IncapacitationStatus;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `backend_character_strategic_conditions`.

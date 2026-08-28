@@ -8,7 +8,9 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 use std::{fmt, str::FromStr};
 
-use crate::settlement_economy::{SettlementActionService, Storefront};
+use adventuresim_world_schema::SettlementActionService;
+
+use crate::settlement_economy::Storefront;
 
 const FORMAT_VERSION: &str = "v1";
 pub const MAX_STRATEGIC_ID_COMPONENT_BYTES: usize = 256;

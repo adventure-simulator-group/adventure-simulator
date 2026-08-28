@@ -34,7 +34,7 @@ use consequence::{
     attacker_weapon_contact_matches, defender_equipment_contact_matches, record_party_injury,
 };
 pub(crate) use ingress::apply_defend_intent;
-pub(crate) use ingress::melee_body_part_lunge_delay;
+pub(crate) use ingress::{MeleeLungeRequest, melee_body_part_lunge_delay};
 use ingress::{
     authoritative_line_of_sight, on_defender_response_request, on_melee_action_request,
     on_ranged_action_request, on_ranged_attack_started, resolve_defender_response,

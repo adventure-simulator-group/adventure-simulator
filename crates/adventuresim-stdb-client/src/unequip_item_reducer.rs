@@ -6,41 +6,49 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct BackfillSoloPartiesArgs {}
+pub(super) struct UnequipItemArgs {
+    pub character_id: u64,
+    pub inventory_item_id: u64,
+}
 
-impl From<BackfillSoloPartiesArgs> for super::Reducer {
-    fn from(args: BackfillSoloPartiesArgs) -> Self {
-        Self::BackfillSoloParties
+impl From<UnequipItemArgs> for super::Reducer {
+    fn from(args: UnequipItemArgs) -> Self {
+        Self::UnequipItem {
+            character_id: args.character_id,
+            inventory_item_id: args.inventory_item_id,
+        }
     }
 }
 
-impl __sdk::InModule for BackfillSoloPartiesArgs {
+impl __sdk::InModule for UnequipItemArgs {
     type Module = super::RemoteModule;
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `backfill_solo_parties`.
+/// Extension trait for access to the reducer `unequip_item`.
 ///
 /// Implemented for [`super::RemoteReducers`].
-pub trait backfill_solo_parties {
-    /// Request that the remote module invoke the reducer `backfill_solo_parties` to run as soon as possible.
+pub trait unequip_item {
+    /// Request that the remote module invoke the reducer `unequip_item` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
-    /// /// Use [`backfill_solo_parties:backfill_solo_parties_then`] to run a callback after the reducer completes.
-    fn backfill_solo_parties(&self) -> __sdk::Result<()> {
-        self.backfill_solo_parties_then(|_, _| {})
+    /// /// Use [`unequip_item:unequip_item_then`] to run a callback after the reducer completes.
+    fn unequip_item(&self, character_id: u64, inventory_item_id: u64) -> __sdk::Result<()> {
+        self.unequip_item_then(character_id, inventory_item_id, |_, _| {})
     }
 
-    /// Request that the remote module invoke the reducer `backfill_solo_parties` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `unequip_item` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed with the `callback`.
-    fn backfill_solo_parties_then(
+    fn unequip_item_then(
         &self,
+        character_id: u64,
+        inventory_item_id: u64,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -50,9 +58,11 @@ pub trait backfill_solo_parties {
     ) -> __sdk::Result<()>;
 }
 
-impl backfill_solo_parties for super::RemoteReducers {
-    fn backfill_solo_parties_then(
+impl unequip_item for super::RemoteReducers {
+    fn unequip_item_then(
         &self,
+        character_id: u64,
+        inventory_item_id: u64,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -60,7 +70,12 @@ impl backfill_solo_parties for super::RemoteReducers {
         ) + Send
         + 'static,
     ) -> __sdk::Result<()> {
-        self.imp
-            .invoke_reducer_with_callback(BackfillSoloPartiesArgs {}, callback)
+        self.imp.invoke_reducer_with_callback(
+            UnequipItemArgs {
+                character_id,
+                inventory_item_id,
+            },
+            callback,
+        )
     }
 }

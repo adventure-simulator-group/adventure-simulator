@@ -443,7 +443,7 @@ fn every_route_reveals_then_requires_occupied_site_resolution() {
                         matches!(
                             output,
                             GeneratedActionOutput::Destination {
-                                stage: GeneratedDestinationStage::Exact,
+                                stage: DestinationKnowledgeStage::ExactBelieved,
                                 site_id: Some(_),
                             }
                         )

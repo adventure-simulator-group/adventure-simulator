@@ -17,13 +17,16 @@ const template = [
 const inventoryBrowser = fs.readFileSync(path.join(root, "strategic-web/static/inventory-browser.js"), "utf8");
 
 test("food acquisitions remain independent lots instead of merchant-merged stacks", () => {
-  assert.match(item, /individual = durable \|\| kind == Some\(ItemKind::Medication\) \|\| measured/);
+  assert.match(item, /fn requires_stable_object[\s\S]*food \|\| measured[\s\S]*ItemKind::Medication/);
+  assert.match(item, /individual = requires_stable_object\(definition\.as_ref\(\), food, measured\)/);
   assert.match(strategic, /if !durable\s*&& !food\s*&& let Some\(mut stack\)/);
   assert.match(strategic, /for _ in 0\.\.quantity \{[\s\S]*quantity: 1[\s\S]*create_party_food_lot\(ctx, row\.id, item_id, 1, minute\)/);
 });
 
 test("food reducers require the registered gateway and reject tactical actors", () => {
-  assert.equal((food.match(/crate::strategic::require_strategic_gateway\(ctx\)\?/g) || []).length, 8);
+  const reducerCount = (food.match(/#\[reducer\]/g) || []).length;
+  const gatewayCount = (food.match(/crate::strategic::require_strategic_gateway\(ctx\)\?/g) || []).length;
+  assert.equal(gatewayCount, reducerCount);
   assert.match(strategic, /pub\(crate\) fn require_strategic_gateway[\s\S]*authority\.identity != ctx\.sender\(\)/);
   assert.match(food, /Eating is unavailable during a tactical encounter/);
   assert.match(food, /Cooking is unavailable during a tactical encounter/);

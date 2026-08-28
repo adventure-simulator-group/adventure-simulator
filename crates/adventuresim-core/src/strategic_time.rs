@@ -5,18 +5,79 @@ use crate::{
     strategic_schedule::{DailySchedule, settlement_leisure_outcome},
 };
 
-pub const MINUTES_PER_DAY: u64 = 24 * 60;
-pub const MINUTES_PER_YEAR: u64 = 365 * MINUTES_PER_DAY;
+pub const HOURS_PER_DAY: u16 = 24;
+pub const MINUTES_PER_HOUR: u16 = 60;
+pub const MINUTES_PER_DAY: u64 = HOURS_PER_DAY as u64 * MINUTES_PER_HOUR as u64;
+pub const DAYS_PER_YEAR: u64 = 365;
+pub const MINUTES_PER_YEAR: u64 = DAYS_PER_YEAR * MINUTES_PER_DAY;
+/// Longest settlement rest request accepted by the shared strategic contract.
+pub const MAX_SETTLEMENT_REST_MINUTES: u64 = MINUTES_PER_YEAR;
+const REAL_MICROSECONDS_PER_STRATEGIC_YEAR: u128 = 7 * 24 * 60 * 60 * 1_000_000;
+const DAYLIGHT_START_MINUTE: u16 = 6 * 60;
+const DAYLIGHT_END_MINUTE: u16 = 20 * 60;
 /// August 20 at 00:00 in the shared non-leap strategic calendar.
 pub const WORLD_START_DAY_OF_YEAR: u64 = 231;
 pub const WORLD_START_MINUTE: u64 = WORLD_START_DAY_OF_YEAR * MINUTES_PER_DAY;
 pub const DEFAULT_WALKING_MINUTES_PER_DAY: u16 = 8 * 60;
+/// Default journey-local departure time, at 08:00.
+pub const DEFAULT_JOURNEY_START_MINUTE_OF_DAY: u16 = 8 * 60;
+/// Default journey-local departure time for a night itinerary, at 20:00.
+pub const DEFAULT_NIGHT_JOURNEY_START_MINUTE_OF_DAY: u16 = 20 * 60;
 pub const MIN_WALKING_MINUTES_PER_DAY: u16 = 1;
 pub const MAX_WALKING_MINUTES_PER_DAY: u16 = 24 * 60;
+/// Baseline overland pace used when converting route distance into travel time.
+pub const OVERLAND_WALKING_SPEED_KM_PER_HOUR: u64 = 5;
 pub const LUNAR_CYCLE_MINUTES: u64 = 42_524;
 pub const MAX_ITINERARY_SEGMENTS: usize = 512;
 /// Natural recovery while taking full settlement downtime.
 pub const HEALTH_RECOVERED_PER_DAY: f32 = 0.05;
+
+/// A normalized position within the shared strategic day.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct StrategicMinuteOfDay(u16);
+
+impl StrategicMinuteOfDay {
+    /// Construct a validated position within one strategic day.
+    pub const fn new(minute_of_day: u16) -> Option<Self> {
+        if (minute_of_day as u64) < MINUTES_PER_DAY {
+            Some(Self(minute_of_day))
+        } else {
+            None
+        }
+    }
+
+    /// Construct a validated position from a clock hour and minute.
+    pub const fn from_hour_minute(hour: u16, minute: u16) -> Option<Self> {
+        if hour < HOURS_PER_DAY && minute < MINUTES_PER_HOUR {
+            Some(Self(hour * MINUTES_PER_HOUR + minute))
+        } else {
+            None
+        }
+    }
+
+    /// Normalize an absolute strategic minute to its position within the day.
+    pub const fn from_absolute(absolute_minute: u64) -> Self {
+        Self((absolute_minute % MINUTES_PER_DAY) as u16)
+    }
+
+    pub const fn get(self) -> u16 {
+        self.0
+    }
+
+    /// Whether this minute lies outside the shared daylight window.
+    pub const fn is_night(self) -> bool {
+        self.0 < DAYLIGHT_START_MINUTE || self.0 >= DAYLIGHT_END_MINUTE
+    }
+
+    /// Minutes until night begins, or zero when it is already night.
+    pub const fn minutes_until_night(self) -> u16 {
+        if self.is_night() {
+            0
+        } else {
+            DAYLIGHT_END_MINUTE - self.0
+        }
+    }
+}
 
 /// The fatigue inputs that determine one party member's available marching
 /// time.  Keeping this small and data-only lets both the strategic reducer and
@@ -25,13 +86,6 @@ pub const HEALTH_RECOVERED_PER_DAY: f32 = 0.05;
 pub struct TravelFatigueInputs {
     pub fatigue_capacity: f32,
     pub calories_used: f32,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum CampDurationPolicy {
-    #[default]
-    Auto,
-    FixedMinutes(u16),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -200,7 +254,6 @@ pub fn forecast_itinerary(
     movement_minutes: u64,
     walking_minutes_per_day: u16,
     travel_at_night: bool,
-    _camp_policy: CampDurationPolicy,
     members: &[ItineraryMember],
 ) -> Option<ItineraryForecast> {
     daylight_walking_window(walking_minutes_per_day)?;
@@ -322,8 +375,16 @@ pub fn party_travel_leg_minutes(
 /// Convert real elapsed time to authoritative strategic minutes.
 pub fn elapsed_official_minutes(epoch_micros: i64, now_micros: i64) -> u64 {
     let elapsed_micros = now_micros.saturating_sub(epoch_micros).max(0) as u128;
-    // One real week per 365-day game year: 84/73 seconds per game minute.
-    (elapsed_micros.saturating_mul(73) / 84_000_000) as u64
+    // One real week advances exactly one strategic year.
+    (elapsed_micros.saturating_mul(u128::from(MINUTES_PER_YEAR))
+        / REAL_MICROSECONDS_PER_STRATEGIC_YEAR) as u64
+}
+
+/// Convert an official-minute duration to the wall-clock duration used by the
+/// authoritative strategic clock, rounding up to preserve the requested tick.
+pub fn real_micros_for_official_minutes(elapsed_minutes: u64) -> u128 {
+    (u128::from(elapsed_minutes) * REAL_MICROSECONDS_PER_STRATEGIC_YEAR)
+        .div_ceil(u128::from(MINUTES_PER_YEAR))
 }
 
 /// Convert wall-clock timestamps to the shared absolute strategic calendar.
@@ -337,7 +398,7 @@ pub fn official_minutes(epoch_micros: i64, now_micros: i64) -> u64 {
 /// production conversion rate.
 pub fn epoch_micros_for_official_minute(now_micros: i64, target_minutes: u64) -> Option<i64> {
     let elapsed_minutes = target_minutes.saturating_sub(WORLD_START_MINUTE);
-    let elapsed_micros = (u128::from(elapsed_minutes) * 84_000_000).div_ceil(73);
+    let elapsed_micros = real_micros_for_official_minutes(elapsed_minutes);
     now_micros.checked_sub(i64::try_from(elapsed_micros).ok()?)
 }
 
@@ -408,8 +469,38 @@ mod tests {
     use super::*;
 
     #[test]
+    fn strategic_minute_of_day_owns_the_shared_night_window() {
+        let before_dawn = StrategicMinuteOfDay::from_absolute(u64::from(DAYLIGHT_START_MINUTE - 1));
+        let dawn = StrategicMinuteOfDay::from_absolute(u64::from(DAYLIGHT_START_MINUTE));
+        let before_night = StrategicMinuteOfDay::from_absolute(u64::from(DAYLIGHT_END_MINUTE - 1));
+        let night = StrategicMinuteOfDay::from_absolute(u64::from(DAYLIGHT_END_MINUTE));
+
+        assert!(before_dawn.is_night());
+        assert!(!dawn.is_night());
+        assert_eq!(dawn.minutes_until_night(), 14 * 60);
+        assert_eq!(before_night.minutes_until_night(), 1);
+        assert!(night.is_night());
+        assert_eq!(night.minutes_until_night(), 0);
+    }
+
+    #[test]
+    fn strategic_minute_of_day_validates_clock_input() {
+        assert_eq!(
+            StrategicMinuteOfDay::from_hour_minute(8, 30).map(StrategicMinuteOfDay::get),
+            Some(8 * MINUTES_PER_HOUR + 30)
+        );
+        assert_eq!(
+            StrategicMinuteOfDay::new(0).map(StrategicMinuteOfDay::get),
+            Some(0)
+        );
+        assert!(StrategicMinuteOfDay::new(MINUTES_PER_DAY as u16).is_none());
+        assert!(StrategicMinuteOfDay::from_hour_minute(HOURS_PER_DAY, 0).is_none());
+        assert!(StrategicMinuteOfDay::from_hour_minute(0, MINUTES_PER_HOUR).is_none());
+    }
+
+    #[test]
     fn one_real_week_is_one_game_year() {
-        let one_week_micros = 7 * 24 * 60 * 60 * 1_000_000i64;
+        let one_week_micros = i64::try_from(REAL_MICROSECONDS_PER_STRATEGIC_YEAR).unwrap();
         assert_eq!(
             elapsed_official_minutes(0, one_week_micros),
             MINUTES_PER_YEAR
@@ -564,7 +655,6 @@ mod tests {
             12 * 60,
             8 * 60,
             false,
-            CampDurationPolicy::Auto,
             &[itinerary_member(0.0, 6_000.0)],
         )
         .unwrap();
@@ -591,7 +681,6 @@ mod tests {
             60,
             8 * 60,
             false,
-            CampDurationPolicy::Auto,
             &[
                 itinerary_member(0.0, 6_000.0),
                 itinerary_member(0.0, 12_000.0),
@@ -615,7 +704,6 @@ mod tests {
             600,
             8 * 60,
             false,
-            CampDurationPolicy::Auto,
             &[itinerary_member(5_000.0, 6_000.0)],
         )
         .unwrap();
@@ -629,7 +717,6 @@ mod tests {
             3 * 60,
             8 * 60,
             false,
-            CampDurationPolicy::Auto,
             &[itinerary_member(0.0, 6_000.0)],
         )
         .unwrap();
@@ -649,7 +736,6 @@ mod tests {
             10 * 60,
             8 * 60,
             true,
-            CampDurationPolicy::Auto,
             &[itinerary_member(0.0, 6_000.0)],
         )
         .unwrap();
@@ -698,7 +784,6 @@ mod tests {
             outbound * 2,
             8 * 60,
             false,
-            CampDurationPolicy::Auto,
             &[itinerary_member(0.0, 6_000.0)],
         )
         .unwrap();
@@ -713,7 +798,6 @@ mod tests {
             10 * 60,
             8 * 60,
             false,
-            CampDurationPolicy::FixedMinutes(20 * 60),
             &[itinerary_member(0.0, 6_000.0)],
         )
         .unwrap();
@@ -745,7 +829,6 @@ mod tests {
             u64::MAX,
             MIN_WALKING_MINUTES_PER_DAY,
             false,
-            CampDurationPolicy::Auto,
             &[itinerary_member(0.0, 6_000.0)],
         )
         .unwrap();

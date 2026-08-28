@@ -247,8 +247,9 @@ impl Buffer {
             (Arc::new(staging_buffer), true)
         };
 
-        #[allow(unused_mut)]
-        let (tx, mut rx) = futures_channel::oneshot::channel();
+        let (tx, rx) = futures_channel::oneshot::channel();
+        #[cfg(not(target_arch = "wasm32"))]
+        let mut rx = rx;
 
         // 1. Start mapping
         {

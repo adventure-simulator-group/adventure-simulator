@@ -67,3 +67,6 @@ web-sys = { version = "0.3", features = [
     "Performance",
     "PerformanceTiming",
 ] }
+
+[lints]
+workspace = true

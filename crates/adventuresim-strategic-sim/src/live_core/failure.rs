@@ -118,14 +118,14 @@ impl LiveRunner {
             .and_then(|id| self.observable_medical_quote(character_id, id));
         let visible_inn_full_board_cost = settlement
             .is_some_and(|row| row.economy.services.contains(&SettlementService::Inn))
-            .then(|| adventuresim_core::strategic_economy::inn_full_board_cost(1_440))
+            .then(|| adventuresim_core::strategic_economy::inn_full_board_cost(MINUTES_PER_DAY))
             .flatten();
         let survival = self.public_survival_observation(character_id)?;
         Some(CoreLoopFailureAgent {
             agent_id,
             character_id,
             alive: character.alive,
-            condition_status: condition.status,
+            condition_status: domain_incapacitation_status(condition.status),
             thermal: survival.thermal,
             wetness_bps: survival.wetness_bps,
             thermal_strain: survival.thermal_strain,
@@ -157,7 +157,7 @@ impl LiveRunner {
         &self,
         character_id: u64,
         committed_reserve: u64,
-    ) -> Result<Option<SettlementActivityVenue>, String> {
+    ) -> Result<Option<DomainSettlementActionService>, String> {
         let settlement_id = self
             .connection
             .db
@@ -191,14 +191,17 @@ impl LiveRunner {
             temple_food_covers_one_day(visible_food_kcal),
             self.personal_gold(character_id),
             committed_reserve,
-            adventuresim_core::strategic_economy::inn_full_board_cost(1_440),
+            adventuresim_core::strategic_economy::inn_full_board_cost(MINUTES_PER_DAY),
         ))
     }
 
     /// Non-activity waits retain the ordinary public-service preference. Their
     /// requested duration can be shorter than the one-day activity planner's
     /// supply horizon.
-    pub(super) fn settlement_rest_at_inn(&self, character_id: u64) -> Result<bool, String> {
+    pub(super) fn settlement_rest_service(
+        &self,
+        character_id: u64,
+    ) -> Result<DomainSettlementActionService, String> {
         let settlement_id = self
             .connection
             .db
@@ -226,7 +229,7 @@ impl LiveRunner {
                     .contains(&SettlementService::Temple),
             )
             .ok_or("simulation settlement offers neither an Inn nor a Temple")?;
-        Ok(adventuresim_core::settlement_economy::action_service_at_inn(service))
+        Ok(service)
     }
 
     pub(super) fn party_for(&self, character_id: u64) -> Result<Party, String> {
@@ -340,7 +343,9 @@ impl LiveRunner {
                     CoreLoopEventKind::Death,
                     format!(
                         "terminal=authoritative;cause={cause};source={source:?};source_id={source_id};strategic_minute={strategic_minute};condition={};thermal={:.3};wetness_bps={};thermal_strain={};ammo={};carried_load_kg={:.3};carry_capacity_kg={:.3};encumbrance_remaining_bps={};equipment_ready={};party_tent_quantity={}",
-                        condition.as_ref().map_or("unavailable", |row| row.status.as_str()),
+                        condition.as_ref().map_or("unavailable", |row| {
+                            domain_incapacitation_status(row.status).as_str()
+                        }),
                         survival.map_or(0.0, |row| row.thermal),
                         survival.map_or(0, |row| row.wetness_bps),
                         survival.map_or(0, |row| row.thermal_strain),

@@ -1,4 +1,4 @@
-use crate::data::Vec2;
+use fabelgeist_math::Vec2;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]

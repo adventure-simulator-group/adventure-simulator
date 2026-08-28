@@ -2,19 +2,17 @@
 
 use adventuresim_core::durability::DamageBins;
 use adventuresim_core::durability::{DurabilityProfile, damage_from_impact};
-use adventuresim_core::strategic_place::StrategicPlaceId;
+use adventuresim_core::physical_object::{CarriedInventoryScope, InventoryLocation};
+use adventuresim_core::strategic_time::MINUTES_PER_DAY;
 use spacetimedb::{ReducerContext, Table, reducer, table};
 
 use crate::character::{character, character_equipped_item, equipment_occupancy};
 use crate::item::{inventory_item, item};
 use crate::simulation::simulation_character;
-use crate::strategic::{
-    PartyInventoryItem, PartyItemCondition, party_inventory_item, party_item_condition, settlement,
-};
 use crate::time::character_time;
 use crate::{InventoryItem, ItemKind, inventory_object};
 
-pub const REPAIR_MINUTES_PER_FULL_ITEM: u64 = 2 * 1_440;
+pub const REPAIR_MINUTES_PER_FULL_ITEM: u64 = 2 * MINUTES_PER_DAY;
 
 #[derive(Clone, Debug)]
 #[table(accessor = item_condition, public)]
@@ -130,30 +128,6 @@ pub(crate) fn initialize_item_condition(ctx: &ReducerContext, inventory: &Invent
     });
 }
 
-fn initialize_party_item_condition(ctx: &ReducerContext, inventory: &PartyInventoryItem) {
-    let Some(definition) = ctx.db.item().id().find(&inventory.item_id) else {
-        return;
-    };
-    if !definition.repairable
-        || ctx
-            .db
-            .party_item_condition()
-            .party_inventory_item_id()
-            .find(inventory.id)
-            .is_some()
-    {
-        return;
-    }
-    ctx.db.party_item_condition().insert(PartyItemCondition {
-        party_inventory_item_id: inventory.id,
-        tier_1: 0.0,
-        tier_2: 0.0,
-        tier_3: 0.0,
-        tier_4: 0.0,
-        tier_5: 0.0,
-    });
-}
-
 fn stable_skill(settlement_id: &str, salt: u64) -> u8 {
     let mut hash = 0xcbf29ce484222325_u64 ^ salt;
     for byte in settlement_id.bytes() {
@@ -181,94 +155,6 @@ pub(crate) fn ensure_settlement_smith(
         armourer_skill: stable_skill(settlement_id, 0x4152_4d52),
         tailor_skill: stable_skill(settlement_id, 0x5441_494c),
     })
-}
-
-#[reducer]
-pub fn backfill_equipment_condition_and_smiths(ctx: &ReducerContext) {
-    for mut inventory in ctx.db.inventory_item().iter().collect::<Vec<_>>() {
-        let durable = ctx
-            .db
-            .item()
-            .id()
-            .find(&inventory.item_id)
-            .is_some_and(|item| item.repairable);
-        if durable
-            && adventuresim_core::durability::legacy_durable_row_is_invalid(inventory.quantity)
-        {
-            crate::character::unequip_wearable(ctx, inventory.id);
-            let _ = crate::capability::refresh_character_capability(ctx, inventory.character_id);
-            let _ = crate::condition::refresh_character_strategic_condition(
-                ctx,
-                inventory.character_id,
-            );
-            ctx.db
-                .item_condition()
-                .inventory_item_id()
-                .delete(inventory.id);
-            ctx.db.inventory_item().id().delete(inventory.id);
-            continue;
-        }
-        let additional = if durable {
-            adventuresim_core::durability::durable_stack_split_count(inventory.quantity)
-        } else {
-            0
-        };
-        if additional > 0 {
-            // Keep this stable inventory-instance ID.
-            inventory.quantity = 1;
-            ctx.db.inventory_item().id().update(inventory.clone());
-            for _ in 0..additional {
-                let split = ctx.db.inventory_item().insert(InventoryItem {
-                    id: 0,
-                    character_id: inventory.character_id,
-                    item_id: inventory.item_id.clone(),
-                    quantity: 1,
-                });
-                initialize_item_condition(ctx, &split);
-            }
-        }
-        initialize_item_condition(ctx, &inventory);
-    }
-    for mut inventory in ctx.db.party_inventory_item().iter().collect::<Vec<_>>() {
-        let durable = ctx
-            .db
-            .item()
-            .id()
-            .find(&inventory.item_id)
-            .is_some_and(|item| item.repairable);
-        if durable
-            && adventuresim_core::durability::legacy_durable_row_is_invalid(inventory.quantity)
-        {
-            ctx.db
-                .party_item_condition()
-                .party_inventory_item_id()
-                .delete(inventory.id);
-            ctx.db.party_inventory_item().id().delete(inventory.id);
-            continue;
-        }
-        let additional = if durable {
-            adventuresim_core::durability::durable_stack_split_count(inventory.quantity)
-        } else {
-            0
-        };
-        if additional > 0 {
-            inventory.quantity = 1;
-            ctx.db.party_inventory_item().id().update(inventory.clone());
-            for _ in 0..additional {
-                let split = ctx.db.party_inventory_item().insert(PartyInventoryItem {
-                    id: 0,
-                    party_id: inventory.party_id.clone(),
-                    item_id: inventory.item_id.clone(),
-                    quantity: 1,
-                });
-                initialize_party_item_condition(ctx, &split);
-            }
-        }
-        initialize_party_item_condition(ctx, &inventory);
-    }
-    for settlement in ctx.db.settlement().iter() {
-        ensure_settlement_smith(ctx, &settlement.id);
-    }
 }
 
 fn service_skill(ctx: &ReducerContext, settlement_id: &str, kind: ItemKind) -> Result<u8, String> {
@@ -377,19 +263,18 @@ fn submit(
     } else {
         Vec::new()
     };
-    if let Some(mut object) =
-        crate::inventory_container::object_for_row(ctx, "personal", inventory_item_id)?
-    {
+    if let Some(mut object) = crate::inventory_container::object_for_row(
+        ctx,
+        CarriedInventoryScope::Personal,
+        inventory_item_id,
+    )? {
         crate::inventory_container::detach_if_nested(ctx, object.id)?;
-        object.location_kind = "repair".into();
-        object.location_owner = StrategicPlaceId::settlement(settlement_id)
-            .map_err(|_| "Repair settlement identity is invalid")?
-            .to_string();
+        object.location = InventoryLocation::repair(settlement_id, inventory_item_id);
         ctx.db.inventory_object().id().update(object);
     } else {
         crate::inventory_container::reconcile_consumed_row(
             ctx,
-            "personal",
+            CarriedInventoryScope::Personal,
             inventory_item_id,
             true,
         )?;
@@ -554,21 +439,28 @@ fn retrieve(ctx: &ReducerContext, character_id: u64, order_id: u64) -> Result<()
     let mut escrow_objects = ctx
         .db
         .inventory_object()
-        .location_and_row()
-        .filter(("repair", order.inventory_item_id))
+        .iter()
+        .filter(|object| {
+            matches!(
+                &object.location,
+                InventoryLocation::Repair(location)
+                    if location.row_id == order.inventory_item_id
+            )
+        })
         .collect::<Vec<_>>();
     if escrow_objects.len() > 1 {
         return Err("Repair escrow has duplicate physical object identities".into());
     }
     if let Some(mut object) = escrow_objects.pop() {
-        let expected_place = StrategicPlaceId::settlement(&order.settlement_id)
-            .map_err(|_| "Repair settlement identity is invalid")?
-            .to_string();
-        if object.location_owner != expected_place || object.item_id != order.item_id {
+        let correct_escrow = matches!(
+            &object.location,
+            InventoryLocation::Repair(location)
+                if location.settlement_id == order.settlement_id
+        );
+        if !correct_escrow || object.item_id != order.item_id {
             return Err("Repair escrow physical object does not match its order".into());
         }
-        object.location_kind = "personal".into();
-        object.location_owner = character_id.to_string();
+        object.location = InventoryLocation::personal(character_id, order.inventory_item_id);
         ctx.db.inventory_object().id().update(object);
     }
     if let Some(placement_id) = order.equipped_placement_id.as_deref() {
@@ -799,6 +691,7 @@ pub fn seed_simulation_equipment_damage(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use adventuresim_core::item_catalog::EquipmentChannel;
 
     #[test]
     fn repair_service_kinds_remain_explicit() {
@@ -834,7 +727,7 @@ mod tests {
                 location: None,
                 parent_inventory_item_id: Some(parent),
                 attachment_point_id: Some(point.into()),
-                channel: crate::item::EquipmentChannel::Mount,
+                channel: EquipmentChannel::Mount,
                 order: requirement_index,
                 requirement_index,
                 capacity_index: 0,
@@ -860,7 +753,7 @@ mod tests {
 
     #[test]
     fn repair_submission_preserves_stable_object_in_explicit_escrow() {
-        let source = include_str!("repair.rs");
+        let source = crate::production_source(include_str!("repair.rs"));
         let submit = source
             .split("fn submit(")
             .nth(1)
@@ -868,7 +761,7 @@ mod tests {
             .split("fn saved_attachment_targets")
             .next()
             .unwrap();
-        assert!(submit.contains("object.location_kind = \"repair\".into()"));
+        assert!(submit.contains("InventoryLocation::repair"));
         assert!(submit.contains("detach_if_nested"));
     }
 }

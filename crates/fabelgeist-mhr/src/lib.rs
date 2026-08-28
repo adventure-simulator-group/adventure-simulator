@@ -29,10 +29,6 @@
 
 pub mod character;
 pub mod correctives;
-// The FBX container reader lives in its own crate so an asset pipeline can
-// read FBX without pulling in a tensor runtime. Re-exported so `fabelgeist_mhr::fbx`
-// keeps working.
-pub use fabelgeist_fbx as fbx;
 pub mod math;
 pub mod model;
 pub mod model_def;

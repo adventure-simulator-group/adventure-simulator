@@ -2,7 +2,6 @@
 
 pub const STRATEGIC_TRAVEL_KCAL_PER_DAY: f32 = 6_000.0;
 pub const STRATEGIC_TRAVEL_WATER_ML_PER_DAY: f32 = 4_000.0;
-pub use crate::item_references::{STANDARD_TRAVEL_RATION_ID, STANDARD_WATERSKIN_ID};
 
 pub fn shared_then_personal_units(requested: u32, shared: u32, personal: u32) -> (u32, u32) {
     let shared_used = requested.min(shared);
@@ -10,22 +9,6 @@ pub fn shared_then_personal_units(requested: u32, shared: u32, personal: u32) ->
         shared_used,
         requested.saturating_sub(shared_used).min(personal),
     )
-}
-
-pub fn shared_then_personal_volume(requested: f32, shared: f32, personal: f32) -> (f32, f32) {
-    let shared_used = requested.max(0.0).min(shared.max(0.0));
-    (
-        shared_used,
-        (requested - shared_used).max(0.0).min(personal.max(0.0)),
-    )
-}
-
-pub fn departure_water_volume(current_ml: f32, capacity_ml: u32, from_settlement: bool) -> f32 {
-    if from_settlement {
-        capacity_ml as f32
-    } else {
-        current_ml.max(0.0).min(capacity_ml as f32)
-    }
 }
 
 /// Aggregate party supplies used by the travel preview and provisioning draft.
@@ -38,7 +21,6 @@ pub struct PartyProvisioningInputs {
     /// Useful calories across every carried/shared food lot.
     pub food_lot_kcal: f32,
     pub water_reserve_ml: f32,
-    pub ration_count: u32,
     pub waterskin_count: u32,
     pub ration_kcal: f32,
     pub waterskin_capacity_ml: u32,
@@ -61,8 +43,7 @@ impl PartyProvisioningInputs {
         let members = self.living_members.max(1) as f32;
         let food_per_day = members * STRATEGIC_TRAVEL_KCAL_PER_DAY;
         let water_per_day = members * STRATEGIC_TRAVEL_WATER_ML_PER_DAY;
-        let legacy_rations = self.ration_count as f32 * self.ration_kcal.max(0.0);
-        let food = (self.food_reserve_kcal + self.food_lot_kcal.max(legacy_rations)).max(0.0);
+        let food = (self.food_reserve_kcal + self.food_lot_kcal).max(0.0);
         let ordinary_water = (self.water_reserve_ml
             + self.waterskin_count as f32 * self.waterskin_capacity_ml as f32)
             .max(0.0);
@@ -119,30 +100,19 @@ mod tests {
     #[test]
     fn communal_supplies_are_consumed_before_personal_supplies() {
         assert_eq!(shared_then_personal_units(3, 2, 4), (2, 1));
-        assert_eq!(
-            shared_then_personal_volume(3_000.0, 2_500.0, 4_000.0),
-            (2_500.0, 500.0)
-        );
     }
 
     #[test]
-    fn food_lot_calories_cover_mixed_provisions_without_double_counting_rations() {
+    fn food_lot_calories_are_the_authoritative_carried_food_total() {
         let forecast = PartyProvisioningInputs {
             planning_minutes: 24 * 60,
             living_members: 1,
             food_lot_kcal: 4_000.0,
-            ration_count: 1,
             ration_kcal: 3_000.0,
             ..Default::default()
         }
         .forecast();
         assert_eq!(forecast.rations_to_buy, 1);
         assert!((forecast.food_days - (4_000.0 / STRATEGIC_TRAVEL_KCAL_PER_DAY)).abs() < 0.001);
-    }
-
-    #[test]
-    fn water_refills_only_on_settlement_departure() {
-        assert_eq!(departure_water_volume(750.0, 4_000, true), 4_000.0);
-        assert_eq!(departure_water_volume(750.0, 4_000, false), 750.0);
     }
 }

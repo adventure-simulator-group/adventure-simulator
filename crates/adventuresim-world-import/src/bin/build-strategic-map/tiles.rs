@@ -1,3 +1,4 @@
+use fabelgeist_determinism::{inclusive_unit_f64, mix64, unit_f64};
 use image::{ExtendedColorType, ImageEncoder, codecs::avif::AvifEncoder};
 use rayon::prelude::*;
 use sha2::{Digest, Sha256};
@@ -20,6 +21,38 @@ const NATIVE_DETAIL_BOUNDS: [f64; 4] = adventuresim_world_schema::PLAYABLE_BOUND
 const FOREST_CANOPY_THRESHOLD_PERCENT: f64 = 20.0;
 const CANOPY_CELLS_PER_DEGREE: usize = 1_000;
 const RELIEF_STEP_DEGREES: f64 = 0.01;
+const FRACTAL_OCTAVE_SEED_STRIDE: u64 = 0x9e37_79b9;
+const NOISE_X_STRIDE: u64 = 0x9e37_79b9_7f4a_7c15;
+const NOISE_Y_STRIDE: u64 = 0xbf58_476d_1ce4_e5b9;
+
+#[derive(Clone, Copy)]
+struct TileProjection {
+    map_bounds: [f64; 4],
+    scale: f64,
+    origin: (f64, f64),
+    tile_bounds: [f64; 4],
+}
+
+#[derive(Clone, Copy)]
+struct PathStyle {
+    shade: [u8; 4],
+    width: f32,
+}
+
+#[derive(Clone, Copy)]
+struct PolygonStyle {
+    fill: Option<[u8; 4]>,
+    stroke: Option<([u8; 4], f32)>,
+    smooth_boundary: bool,
+}
+
+#[derive(Clone, Copy)]
+struct LandCoverFields<'a> {
+    native_terrain: Option<&'a adventuresim_terrain::TerrainPack>,
+    forest: Option<&'a ForestField>,
+    canopy: Option<&'a CanopyPyramid>,
+    relief: Option<&'a ReliefField>,
+}
 
 #[derive(Debug)]
 struct ForestField {
@@ -520,7 +553,10 @@ fn render(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 fn render_with_forest_field(
     package: &Package,
     native_terrain: Option<&adventuresim_terrain::TerrainPack>,
@@ -548,17 +584,23 @@ fn render_with_forest_field(
         (origin.0 + f64::from(render_size)) / scale,
         (origin.1 + f64::from(render_size)) / scale,
     ];
+    let projection = TileProjection {
+        map_bounds: package.bounds,
+        scale,
+        origin,
+        tile_bounds: logical_bounds,
+    };
     draw_parchment_texture(&mut pixmap, scale, origin, palette);
 
     draw_land_cover(
         &mut pixmap,
-        native_terrain,
-        forest_field,
-        canopy_pyramid,
-        relief_field,
-        package.bounds,
-        scale,
-        origin,
+        LandCoverFields {
+            native_terrain,
+            forest: forest_field,
+            canopy: canopy_pyramid,
+            relief: relief_field,
+        },
+        projection,
         palette,
     )?;
     // Cultivation is painted from the same exact final-pack squares used by
@@ -567,39 +609,36 @@ fn render_with_forest_field(
         stroke_and_fill_source_polygon(
             &mut pixmap,
             polygon,
-            package.bounds,
-            scale,
-            origin,
-            logical_bounds,
-            Some(palette.cultivated),
-            Some((palette.cultivated_edge, 0.42)),
-            false,
+            projection,
+            PolygonStyle {
+                fill: Some(palette.cultivated),
+                stroke: Some((palette.cultivated_edge, 0.42)),
+                smooth_boundary: false,
+            },
         );
     }
     for polygon in &package.wetlands {
         stroke_and_fill_source_polygon(
             &mut pixmap,
             polygon,
-            package.bounds,
-            scale,
-            origin,
-            logical_bounds,
-            Some(palette.wetland),
-            Some((palette.wetland_edge, 0.65)),
-            true,
+            projection,
+            PolygonStyle {
+                fill: Some(palette.wetland),
+                stroke: Some((palette.wetland_edge, 0.65)),
+                smooth_boundary: true,
+            },
         );
     }
     for polygon in &package.water {
         stroke_and_fill_source_polygon(
             &mut pixmap,
             polygon,
-            package.bounds,
-            scale,
-            origin,
-            logical_bounds,
-            Some(palette.water),
-            Some((palette.water_edge, 1.1)),
-            false,
+            projection,
+            PolygonStyle {
+                fill: Some(palette.water),
+                stroke: Some((palette.water_edge, 1.1)),
+                smooth_boundary: false,
+            },
         );
     }
     for road in &package.roads {
@@ -609,12 +648,8 @@ fn render_with_forest_field(
         stroke_source_path(
             &mut pixmap,
             &road.points,
-            package.bounds,
-            scale,
-            origin,
-            logical_bounds,
-            shade,
-            width,
+            projection,
+            PathStyle { shade, width },
         );
     }
     let output_rect = IntRect::from_xywh(
@@ -701,15 +736,22 @@ fn road_style(importance: u8, scale: f64, kind: &str, palette: Palette) -> Optio
 
 fn draw_land_cover(
     pixmap: &mut Pixmap,
-    native_terrain: Option<&adventuresim_terrain::TerrainPack>,
-    forest_field: Option<&ForestField>,
-    canopy_pyramid: Option<&CanopyPyramid>,
-    relief_field: Option<&ReliefField>,
-    [west, south, east, north]: [f64; 4],
-    scale: f64,
-    origin: (f64, f64),
+    fields: LandCoverFields<'_>,
+    projection: TileProjection,
     palette: Palette,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let LandCoverFields {
+        native_terrain,
+        forest: forest_field,
+        canopy: canopy_pyramid,
+        relief: relief_field,
+    } = fields;
+    let TileProjection {
+        map_bounds: [west, south, east, north],
+        scale,
+        origin,
+        ..
+    } = projection;
     let width = pixmap.width() as usize;
     let height = pixmap.height() as usize;
     let data = pixmap.data_mut();
@@ -808,7 +850,8 @@ fn fractal_noise(mut x: f64, mut y: f64, seed: u64) -> f64 {
     let mut total = 0.0;
     let mut weight = 0.0;
     for octave in 0_u64..4 {
-        total += value_noise(x, y, seed.wrapping_add(octave * 0x9e37_79b9)) * amplitude;
+        total +=
+            value_noise(x, y, seed.wrapping_add(octave * FRACTAL_OCTAVE_SEED_STRIDE)) * amplitude;
         weight += amplitude;
         x = x * 2.03 + 17.7;
         y = y * 2.03 - 11.3;
@@ -836,13 +879,14 @@ fn value_noise(x: f64, y: f64, seed: u64) -> f64 {
 }
 
 fn lattice_noise(x: i64, y: i64, seed: u64) -> f64 {
-    let mut value = seed
-        ^ (x as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15)
-        ^ (y as u64).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-    value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-    value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-    value ^= value >> 31;
-    (value >> 11) as f64 / (1_u64 << 53) as f64 * 2.0 - 1.0
+    let value = mix64(
+        seed ^ (x as u64).wrapping_mul(NOISE_X_STRIDE) ^ (y as u64).wrapping_mul(NOISE_Y_STRIDE),
+    );
+    signed_unit_f64(value)
+}
+
+fn signed_unit_f64(value: u64) -> f64 {
+    unit_f64(value) * 2.0 - 1.0
 }
 
 fn smoothstep(value: f64) -> f64 {
@@ -898,36 +942,26 @@ fn next_unit(state: &mut u64) -> f64 {
 fn stroke_source_path(
     pixmap: &mut Pixmap,
     points: &[Point],
-    map_bounds: [f64; 4],
-    scale: f64,
-    origin: (f64, f64),
-    tile_bounds: [f64; 4],
-    shade: [u8; 4],
-    width: f32,
+    projection: TileProjection,
+    style: PathStyle,
 ) {
     let raw: Vec<_> = points.iter().map(|point| point.0).collect();
-    stroke_raw_path(
-        pixmap,
-        &raw,
-        map_bounds,
-        scale,
-        origin,
-        tile_bounds,
-        shade,
-        width,
-    );
+    stroke_raw_path(pixmap, &raw, projection, style);
 }
 
 fn stroke_raw_path(
     pixmap: &mut Pixmap,
     points: &[[f64; 2]],
-    map_bounds: [f64; 4],
-    scale: f64,
-    origin: (f64, f64),
-    tile_bounds: [f64; 4],
-    shade: [u8; 4],
-    width: f32,
+    projection: TileProjection,
+    style: PathStyle,
 ) {
+    let TileProjection {
+        map_bounds,
+        scale,
+        origin,
+        tile_bounds,
+    } = projection;
+    let PathStyle { shade, width } = style;
     let projected: Vec<_> = points
         .iter()
         .map(|point| project(point[0], point[1], map_bounds))
@@ -950,14 +984,20 @@ fn stroke_raw_path(
 fn stroke_and_fill_source_polygon(
     pixmap: &mut Pixmap,
     polygon: &super::WaterPolygon,
-    map_bounds: [f64; 4],
-    scale: f64,
-    origin: (f64, f64),
-    tile_bounds: [f64; 4],
-    fill: Option<[u8; 4]>,
-    stroke: Option<([u8; 4], f32)>,
-    smooth_boundary: bool,
+    projection: TileProjection,
+    style: PolygonStyle,
 ) {
+    let TileProjection {
+        map_bounds,
+        scale,
+        origin,
+        tile_bounds,
+    } = projection;
+    let PolygonStyle {
+        fill,
+        stroke,
+        smooth_boundary,
+    } = style;
     let projected: Vec<Vec<_>> = polygon
         .rings
         .iter()
@@ -1080,13 +1120,9 @@ fn organic_closed_ring(points: &[(f64, f64)]) -> Vec<(f64, f64)> {
 fn organic_vertex_noise(point: (f64, f64)) -> f64 {
     let x = (point.0 * 16.0).round() as i64 as u64;
     let y = (point.1 * 16.0).round() as i64 as u64;
-    let mut value = x.wrapping_mul(0x9e37_79b9_7f4a_7c15) ^ y.wrapping_mul(0xbf58_476d_1ce4_e5b9);
-    value ^= value >> 30;
-    value = value.wrapping_mul(0xbf58_476d_1ce4_e5b9);
-    value ^= value >> 27;
-    value = value.wrapping_mul(0x94d0_49bb_1331_11eb);
-    value ^= value >> 31;
-    (value >> 11) as f64 / ((1_u64 << 53) - 1) as f64
+    inclusive_unit_f64(mix64(
+        x.wrapping_mul(NOISE_X_STRIDE) ^ y.wrapping_mul(NOISE_Y_STRIDE),
+    ))
 }
 
 fn tile_path(points: &[(f64, f64)], scale: f64, origin: (f64, f64), close: bool) -> Option<Path> {

@@ -8,6 +8,10 @@ use std::collections::HashSet;
 
 use adventuresim_world_schema::OfficialReligion;
 
+use crate::personality::{
+    Courtship, Inclination, Mirth, Presentation, SelfKnowledge, Transparency,
+};
+
 pub const AFFINITY_MIN: f32 = -100.0;
 pub const AFFINITY_MAX: f32 = 100.0;
 pub const AFFINITY_HALF_LIFE_MINUTES: u64 = 30 * 24 * 60;
@@ -127,7 +131,8 @@ pub enum SocialTopic {
     Filth,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
 pub enum PersonalityAxis {
     Nerve,
     Drive,
@@ -313,34 +318,6 @@ pub const fn discovery_supported(axis: PersonalityAxis, context: DiscoveryContex
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Mirth {
-    Neutral,
-    Merry,
-    Grave,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Courtship {
-    Neutral,
-    Amorous,
-    Proper,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Transparency {
-    Neutral,
-    Open,
-    Guarded,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SelfKnowledge {
-    Neutral,
-    Introspective,
-    SelfDeceiving,
-}
-
 pub const fn self_knowledge_insight_modifier(value: SelfKnowledge) -> f32 {
     match value {
         SelfKnowledge::Neutral => 0.0,
@@ -364,21 +341,6 @@ pub const fn discovery_training_split(transparency: Transparency) -> (f32, f32) 
 pub fn should_replace_belief(existing_confidence: f32, new_confidence: f32) -> bool {
     new_confidence.is_finite()
         && (!existing_confidence.is_finite() || new_confidence >= existing_confidence)
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Inclination {
-    Men,
-    Either,
-    Women,
-    Neither,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Presentation {
-    Man,
-    Ambiguous,
-    Woman,
 }
 
 /// Ambiguous presentation is compatible only with `Either`; a directional

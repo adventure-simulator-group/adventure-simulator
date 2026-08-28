@@ -1,5 +1,20 @@
 use super::*;
 
+type DefensiveBotQuery<'world, 'state> = Query<
+    'world,
+    'state,
+    (
+        Entity,
+        &'static CharacterLook,
+        &'static Transform,
+        &'static TacticalCombatSide,
+        &'static TacticalCombatState,
+        Option<&'static ReactiveDefenseAi>,
+        Option<&'static DefenseChances>,
+    ),
+    With<MissionEnemy>,
+>;
+
 /// Per-bot chance (each out of 1.0) that a reflex defense (see
 /// `try_start_reaction`) resolves to a parry or dodge. Inserted by a reactive
 /// defense behavior package with balance-tuned defaults; BRP tests
@@ -42,29 +57,27 @@ pub(super) struct PendingBotReaction {
     choice: DefendRequest,
 }
 
+struct BotReactionAttempt<'a> {
+    defender: Entity,
+    attacker_look: &'a CharacterLook,
+    defender_look: &'a CharacterLook,
+    defense: ReactiveDefenseAi,
+    chances: DefenseChances,
+    windup_seconds: f32,
+}
+
 /// Predicts whether the nearest opposing AI facing a client attacker notices
 /// the untargeted client windup and decides to dodge or parry it.
 ///
 /// A bot has no real reflexes: its package controls whether facing is required
 /// and how often it reads the attack correctly. A decision to react is
-/// committed only after a random delay (see [`REACTION_DELAY_SECS`]).
+/// committed only after a random delay.
 pub(super) fn on_attack_started(
     event: On<FromClient<MeleeActionRequest>>,
     mut cmd: Commands,
     q_character: Query<(&CharacterLook, &Transform, &TacticalCombatSide)>,
     viewer: TacticalPlayerViewer,
-    q_bots: Query<
-        (
-            Entity,
-            &CharacterLook,
-            &Transform,
-            &TacticalCombatSide,
-            &TacticalCombatState,
-            Option<&ReactiveDefenseAi>,
-            Option<&DefenseChances>,
-        ),
-        With<MissionEnemy>,
-    >,
+    q_bots: DefensiveBotQuery<'_, '_>,
     combat_config: Res<TacticalCombatConfig>,
 ) {
     let MeleeActionRequest {
@@ -99,15 +112,17 @@ pub(super) fn on_attack_started(
     };
     try_start_reaction(
         &mut cmd,
-        bot,
-        attacker_look,
-        bot_look,
-        *defense,
-        chances.copied().unwrap_or_default(),
-        viewer
-            .get_for_attack(attacker, hand)
-            .map(|view| attack_preparation_secs(&view, strike_family.melee_style()))
-            .unwrap_or(0.3),
+        BotReactionAttempt {
+            defender: bot,
+            attacker_look,
+            defender_look: bot_look,
+            defense: *defense,
+            chances: chances.copied().unwrap_or_default(),
+            windup_seconds: viewer
+                .get_for_attack(attacker, hand)
+                .map(|view| attack_preparation_secs(&view, strike_family.melee_style()))
+                .unwrap_or(0.3),
+        },
         &combat_config.ai.ordinary.defense,
     );
 }
@@ -135,12 +150,14 @@ pub(super) fn on_targeted_attack_started(
     {
         try_start_reaction(
             &mut cmd,
-            target,
-            attacker_look,
-            defender_look,
-            *defense,
-            chances.copied().unwrap_or_default(),
-            event.windup.as_secs_f32(),
+            BotReactionAttempt {
+                defender: target,
+                attacker_look,
+                defender_look,
+                defense: *defense,
+                chances: chances.copied().unwrap_or_default(),
+                windup_seconds: event.windup.as_secs_f32(),
+            },
             &combat_config.ai.ordinary.defense,
         );
     }
@@ -169,45 +186,43 @@ pub(super) fn on_targeted_ranged_attack_started(
     {
         try_start_reaction(
             &mut cmd,
-            target,
-            attacker_look,
-            defender_look,
-            *defense,
-            chances.copied().unwrap_or_default(),
-            event.animation_windup.as_secs_f32(),
+            BotReactionAttempt {
+                defender: target,
+                attacker_look,
+                defender_look,
+                defense: *defense,
+                chances: chances.copied().unwrap_or_default(),
+                windup_seconds: event.animation_windup.as_secs_f32(),
+            },
             &combat_config.ai.ordinary.defense,
         );
     }
 }
 
-pub(super) fn try_start_reaction(
+fn try_start_reaction(
     cmd: &mut Commands,
-    defender: Entity,
-    attacker_look: &CharacterLook,
-    defender_look: &CharacterLook,
-    defense: ReactiveDefenseAi,
-    chances: DefenseChances,
-    windup_secs: f32,
+    attempt: BotReactionAttempt<'_>,
     config: &AiDefenseConfig,
 ) {
-    let (a2, a1) = attacker_look.yaw.sin_cos();
-    let (d2, d1) = defender_look.yaw.sin_cos();
-    if defense.requires_facing
+    let (a2, a1) = attempt.attacker_look.yaw.sin_cos();
+    let (d2, d1) = attempt.defender_look.yaw.sin_cos();
+    if attempt.defense.requires_facing
         && flanking_from_dir((a1, a2), (d1, d2)) > config.frontal_flanking_max
     {
         return;
     }
-    let Some(choice) = roll_defend_choice(chances) else {
+    let Some(choice) = roll_defend_choice(attempt.chances) else {
         return;
     };
-    let delay = if chances.dodge_chance >= 1.0 && chances.parry_chance <= f64::EPSILON {
-        // The authored test dodger is deliberately anticipatory. Leave enough
-        // of even a fast fist windup for the quickstep's launch phase.
-        (windup_secs - 0.16).clamp(0.02, 0.12)
-    } else {
-        rand::random_range(config.reaction_delay_min_seconds..config.reaction_delay_max_seconds)
-    };
-    cmd.entity(defender).insert(PendingBotReaction {
+    let delay =
+        if attempt.chances.dodge_chance >= 1.0 && attempt.chances.parry_chance <= f64::EPSILON {
+            // The authored test dodger is deliberately anticipatory. Leave enough
+            // of even a fast fist windup for the quickstep's launch phase.
+            (attempt.windup_seconds - 0.16).clamp(0.02, 0.12)
+        } else {
+            rand::random_range(config.reaction_delay_min_seconds..config.reaction_delay_max_seconds)
+        };
+    cmd.entity(attempt.defender).insert(PendingBotReaction {
         timer: Timer::from_seconds(delay, TimerMode::Once),
         choice,
     });

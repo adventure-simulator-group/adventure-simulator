@@ -1,11 +1,12 @@
 //! Bounded, deterministic escalation, normalized combat power, and public
 //! public-awareness math for unresolved recurring hostile cases.
 
+use adventuresim_world_schema::BASIS_POINTS_PER_WHOLE;
 use serde::{Deserialize, Serialize};
 
 pub const PUBLIC_THRESHOLD_BPS: u16 = 6_500;
 pub const AWARENESS_GROWTH_BPS: u16 = 3_500;
-pub const COMBAT_SCALE_BPS: u32 = 10_000;
+pub const COMBAT_SCALE_BPS: u32 = BASIS_POINTS_PER_WHOLE as u32;
 /// One baseline orc is 10,000 normalized power. No generated hostile group may
 /// escalate past thirty baseline-orc equivalents.
 pub const BASELINE_ORC_POWER: u32 = 10_000;
@@ -71,15 +72,15 @@ pub fn asymptotic_step(current: u16, cap: u16, rate_bps: u16) -> u16 {
     }
     let remaining = u32::from(cap - current);
     let increase = remaining
-        .saturating_mul(u32::from(rate_bps.min(10_000)))
-        .saturating_add(9_999)
-        / 10_000;
+        .saturating_mul(u32::from(rate_bps.min(BASIS_POINTS_PER_WHOLE)))
+        .saturating_add(u32::from(BASIS_POINTS_PER_WHOLE - 1))
+        / u32::from(BASIS_POINTS_PER_WHOLE);
     current.saturating_add(increase as u16).min(cap)
 }
 
 pub fn progress_for_follow_ups(follow_up_count: u16, growth_rate_bps: u16) -> u16 {
     (0..follow_up_count).fold(0, |progress, _| {
-        asymptotic_step(progress, 10_000, growth_rate_bps)
+        asymptotic_step(progress, BASIS_POINTS_PER_WHOLE, growth_rate_bps)
     })
 }
 
@@ -127,7 +128,8 @@ fn interpolated_u32(base: u32, cap: u32, progress_bps: u16) -> u32 {
         return base;
     }
     base.saturating_add(
-        (u64::from(cap - base) * u64::from(progress_bps) / 10_000).min(u64::from(u32::MAX)) as u32,
+        (u64::from(cap - base) * u64::from(progress_bps) / u64::from(BASIS_POINTS_PER_WHOLE))
+            .min(u64::from(u32::MAX)) as u32,
     )
 }
 
@@ -164,7 +166,7 @@ pub fn combat_for_incident(
         .saturating_mul(u64::from(baseline_enemy_power))
         .min(u64::from(MAX_ORC_EQUIVALENT_POWER)) as u32;
     let progress = if base_power >= MAX_ORC_EQUIVALENT_POWER {
-        10_000
+        BASIS_POINTS_PER_WHOLE
     } else {
         progress_for_follow_ups(incident_ordinal.saturating_sub(1), profile.growth_rate_bps)
     };
@@ -227,11 +229,14 @@ pub fn combat_training_multiplier(combat_scale_bps: u32) -> f32 {
 /// countermeasure. Unlike escalation scale, values below baseline are
 /// meaningful here and therefore must not be clamped back to 10_000.
 pub fn combat_countermeasure_physical_multiplier(multiplier_bps: u32) -> f32 {
-    (multiplier_bps.clamp(5_000, 10_000) as f32 / 10_000.0).sqrt()
+    (multiplier_bps.clamp(5_000, u32::from(BASIS_POINTS_PER_WHOLE)) as f32
+        / f32::from(BASIS_POINTS_PER_WHOLE))
+    .sqrt()
 }
 
 pub fn combat_countermeasure_training_multiplier(multiplier_bps: u32) -> f32 {
-    multiplier_bps.clamp(5_000, 10_000) as f32 / 10_000.0
+    multiplier_bps.clamp(5_000, u32::from(BASIS_POINTS_PER_WHOLE)) as f32
+        / f32::from(BASIS_POINTS_PER_WHOLE)
 }
 
 /// The paired multipliers consumed by both tactical and autoresolve enemies.

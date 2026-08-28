@@ -3,7 +3,9 @@ pub(super) struct EncumbranceRows {
     attributes: Vec<CharacterAttributes>,
     limbs: Vec<CharacterLimbs>,
     conditions: Vec<CharacterCondition>,
-    needs: Vec<CharacterNeeds>,
+    objects: Vec<InventoryObject>,
+    containment: Vec<InventoryContainment>,
+    liquids: Vec<ContainerLiquid>,
 }
 
 pub(super) const ENCUMBRANCE_QUERY_CONCURRENCY: usize = 4;
@@ -14,7 +16,10 @@ pub(super) struct InventoryEncumbranceSummaries {
     pub(super) party: EncumbranceSummary,
 }
 
-pub(super) fn encumbrance_query_ids(members: &[Character], active_character_id: u64) -> (Vec<u64>, Vec<u64>) {
+pub(super) fn encumbrance_query_ids(
+    members: &[Character],
+    active_character_id: u64,
+) -> (Vec<u64>, Vec<u64>) {
     let living_ids: std::collections::BTreeSet<u64> = members
         .iter()
         .filter(|member| member.alive)
@@ -37,7 +42,11 @@ pub(super) async fn inventory_encumbrance_summaries(
     items: &[ItemDefinition],
     include_party: bool,
 ) -> InventoryEncumbranceSummaries {
-    let aggregate_members = if include_party { members } else { Default::default() };
+    let aggregate_members = if include_party {
+        members
+    } else {
+        Default::default()
+    };
     let (member_ids, encumbrance_ids) =
         encumbrance_query_ids(aggregate_members, active_character.id);
     let all_inventories = stream::iter(member_ids)
@@ -74,7 +83,11 @@ pub(super) async fn inventory_encumbrance_summaries(
             &food_lots,
             &rows,
         ),
-        party: if include_party { party_encumbrance(members, &all_inventories, pooled, items, &food_lots, &rows) } else { Default::default() },
+        party: if include_party {
+            party_encumbrance(members, &all_inventories, pooled, items, &food_lots, &rows)
+        } else {
+            Default::default()
+        },
     }
 }
 
@@ -83,7 +96,7 @@ impl EncumbranceRows {
         let unique_ids: std::collections::BTreeSet<u64> = character_ids.iter().copied().collect();
         let lookups = stream::iter(unique_ids)
             .map(|character_id| async move {
-                // Keep each member's four lookups sequential so the outer
+                // Keep each member's lookups sequential so the outer
                 // buffer is a bound on actual in-flight database calls.
                 let attributes = query_single::<CharacterAttributes>(
                     state,
@@ -92,24 +105,39 @@ impl EncumbranceRows {
                 )
                 .await;
                 let limbs =
-                    query_single::<CharacterLimbs>(state, "backend_character_limbs", character_id).await;
-                let condition =
-                    query_single::<CharacterCondition>(state, "backend_character_conditions", character_id)
+                    query_single::<CharacterLimbs>(state, "backend_character_limbs", character_id)
                         .await;
-                let needs =
-                    query_single::<CharacterNeeds>(state, "backend_character_needs", character_id).await;
-                (attributes, limbs, condition, needs)
+                let condition = query_single::<CharacterCondition>(
+                    state,
+                    "backend_character_conditions",
+                    character_id,
+                )
+                .await;
+                (attributes, limbs, condition)
             })
             .buffer_unordered(ENCUMBRANCE_QUERY_CONCURRENCY)
             .collect::<Vec<_>>()
             .await;
         let mut rows = Self::default();
-        for (attributes, limbs, condition, needs) in lookups {
+        for (attributes, limbs, condition) in lookups {
             rows.attributes.extend(attributes);
             rows.limbs.extend(limbs);
             rows.conditions.extend(condition);
-            rows.needs.extend(needs);
         }
+        let (objects, containment, liquids) = tokio::join!(
+            state
+                .db
+                .query::<InventoryObject>("SELECT * FROM inventory_object"),
+            state
+                .db
+                .query::<InventoryContainment>("SELECT * FROM inventory_containment"),
+            state
+                .db
+                .query::<ContainerLiquid>("SELECT * FROM container_liquid"),
+        );
+        rows.objects = objects.unwrap_or_default();
+        rows.containment = containment.unwrap_or_default();
+        rows.liquids = liquids.unwrap_or_default();
         rows
     }
 }
@@ -135,11 +163,18 @@ pub(super) fn personal_encumbrance(
         .iter()
         .find(|row| row.character_id == character_id)
         .map_or(0.0, |row| row.body_weight_kg.max(0.0));
-    let water_weight = rows
-        .needs
-        .iter()
-        .find(|row| row.character_id == character_id)
-        .map_or(0.0, |row| row.carried_water_ml.max(0.0) / 1_000.0);
+    let water_weight = adventuresim_core::physical_object::OperationalCustody::character(
+        character_id,
+    )
+    .map_or(0.0, |custody| {
+        super::contained_water_ml_for_custody(
+            &rows.objects,
+            &rows.containment,
+            &rows.liquids,
+            &custody,
+        ) as f32
+            / 1_000.0
+    });
     let inventory_weight = inventory
         .iter()
         .filter(|row| row.character_id == character_id)
@@ -148,7 +183,7 @@ pub(super) fn personal_encumbrance(
                 .iter()
                 .find(|lot| lot.inventory_item_id == Some(row.id))
                 .map_or_else(
-                    || item_stack_weight_kg(&row.item_id, row.qty, items),
+                    || item_stack_weight_kg(&row.item_id, row.quantity, items),
                     |lot| lot.mass_kg.max(0.0),
                 )
         })
@@ -205,7 +240,22 @@ pub(super) fn party_encumbrance(
                 )
         })
         .sum::<f32>();
-    member_summary.combined(EncumbranceSummary::new(pooled_weight, 0.0))
+    let water_weight = members
+        .iter()
+        .find_map(|member| member.party_id.as_deref())
+        .and_then(|party_id| {
+            adventuresim_core::physical_object::OperationalCustody::party(party_id).ok()
+        })
+        .map_or(0.0, |custody| {
+            super::contained_water_ml_for_custody(
+                &rows.objects,
+                &rows.containment,
+                &rows.liquids,
+                &custody,
+            ) as f32
+                / 1_000.0
+        });
+    member_summary.combined(EncumbranceSummary::new(pooled_weight + water_weight, 0.0))
 }
 
 pub(super) async fn get_active_character(
@@ -272,7 +322,7 @@ pub(crate) async fn get_combat_training_profile(
     let mut hands = Vec::new();
     for inventory_id in occupancies
         .iter()
-        .filter(|row| row.channel == crate::spacetimedb::EquipmentChannel::Held)
+        .filter(|row| row.channel == adventuresim_stdb_client::EquipmentChannel::Held)
         .map(|row| row.inventory_item_id)
     {
         let inventory = state
@@ -315,10 +365,7 @@ pub(crate) async fn get_active_party_members(
         "SELECT * FROM party_member WHERE party_id = {}",
         sql_string_literal(party_id)
     );
-    let party_sql = format!(
-        "SELECT * FROM party WHERE id = {}",
-        sql_string_literal(party_id)
-    );
+    let party_sql = crate::spacetimedb::party_by_id(party_id);
     let (memberships, party) = tokio::join!(
         state.db.query::<PartyMember>(&memberships_sql),
         state.db.query::<Party>(&party_sql),
@@ -349,11 +396,9 @@ pub(crate) async fn get_active_party_members(
         let visibility = join_all(members.iter().map(|member| async move {
             (
                 member.id,
-                super::super::data::character_not_ahead_of_observer(
-                    state, member.id, actor.id,
-                )
-                .await
-                .unwrap_or(false),
+                super::super::data::character_not_ahead_of_observer(state, member.id, actor.id)
+                    .await
+                    .unwrap_or(false),
             )
         }))
         .await;
@@ -362,12 +407,8 @@ pub(crate) async fn get_active_party_members(
             .filter_map(|(id, visible)| visible.then_some(id))
             .collect::<HashSet<_>>();
         members.retain(|member| visible_ids.contains(&member.id));
-        if let Err(error) = super::super::data::project_alive_as_observed(
-            state,
-            actor.id,
-            &mut members,
-        )
-        .await
+        if let Err(error) =
+            super::super::data::project_alive_as_observed(state, actor.id, &mut members).await
         {
             // A failed chronology read must not disclose or act on broad
             // current death state from beyond the selected character's date.

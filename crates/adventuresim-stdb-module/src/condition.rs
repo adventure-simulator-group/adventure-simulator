@@ -1,4 +1,9 @@
 use adventuresim_core::prelude::*;
+use adventuresim_core::{
+    item_references::STANDARD_WATERSKIN_ID,
+    physical_object::CarriedInventoryScope,
+    provisioning::{STRATEGIC_TRAVEL_KCAL_PER_DAY, STRATEGIC_TRAVEL_WATER_ML_PER_DAY},
+};
 use spacetimedb::{ReducerContext, Table, reducer, table};
 use std::collections::BTreeMap;
 
@@ -8,30 +13,22 @@ use crate::filth::character_filth;
 use crate::investigation::case_site_authority;
 use crate::item::item;
 use crate::strategic::{
-    PartyJourneyRoute, hostile_group_authority, party_authority, party_inventory_item,
-    party_journey_authority, party_journey_route_authority, settlement,
+    PartyJourneyRoute, hostile_group_authority, party_authority, party_journey_authority,
+    party_journey_route_authority, settlement,
 };
-use crate::surgery::LimbRegion;
 use crate::{
     CharacterAttributes, CharacterLimbs, CharacterSkills, CharacterStats, character_attributes,
     character_limbs, character_skills, character_stats, character_time,
     character_training_schedule, inventory_item,
 };
+use adventuresim_core::physiology::BodyRegion;
 
 pub const DEFAULT_BODY_WEIGHT_KG: f32 = 70.0;
 pub const BLOOD_ML_PER_KG: f32 = 70.0;
-pub const BLOOD_RECOVERY_FRACTION_PER_DAY: f32 = 0.01;
 pub const RECENT_MORALE_DURATION_MINUTES: u64 = 7 * 24 * 60;
 const LEISURE_MORALE_SOURCE_ID: &str = "settlement-leisure";
 const MASTERY_MORALE_SOURCE_ID: &str = "mastery-enjoyment";
 const INJURY_MORALE_PER_HEALTH_DEFICIT: f32 = 5.0;
-pub const TRAVEL_CALORIES_PER_DAY: f32 = STRATEGIC_TRAVEL_KCAL_PER_DAY;
-pub const TRAVEL_WATER_ML_PER_DAY: f32 = STRATEGIC_TRAVEL_WATER_ML_PER_DAY;
-pub const FOOD_RESERVE_KCAL: f32 = TRAVEL_CALORIES_PER_DAY;
-pub const HYDRATION_RESERVE_ML: f32 = TRAVEL_WATER_ML_PER_DAY;
-pub const TRAVEL_RATION_ID: &str = STANDARD_TRAVEL_RATION_ID;
-pub const WATERSKIN_ID: &str = STANDARD_WATERSKIN_ID;
-
 fn enemy_fear_multiplier(enemy_type: &str) -> Result<f32, String> {
     enemy_type
         .parse::<adventuresim_core::bestiary::ThreatId>()
@@ -60,7 +57,6 @@ pub struct CharacterNeeds {
     pub character_id: u64,
     pub food_balance_kcal: f32,
     pub water_balance_ml: f32,
-    pub carried_water_ml: f32,
 }
 
 /// Durable strategic coating and temperature state. Wetness is intentionally
@@ -123,7 +119,7 @@ pub struct CharacterStrategicCondition {
     pub water_capacity_ml: u32,
     pub incapacitation: f32,
     pub check_multiplier: f32,
-    pub status: String,
+    pub status: IncapacitationStatus,
 }
 
 /// A signed contribution to the character's current projected morale.
@@ -187,9 +183,8 @@ pub fn initialize_character_condition(
     {
         ctx.db.character_needs().insert(CharacterNeeds {
             character_id,
-            food_balance_kcal: FOOD_RESERVE_KCAL,
-            water_balance_ml: HYDRATION_RESERVE_ML,
-            carried_water_ml: 0.0,
+            food_balance_kcal: STRATEGIC_TRAVEL_KCAL_PER_DAY,
+            water_balance_ml: STRATEGIC_TRAVEL_WATER_ML_PER_DAY,
         });
     }
     if ctx
@@ -213,7 +208,7 @@ enum ExposureLocation {
     Fixed(i32, i32, i16),
     Route {
         route: PartyJourneyRoute,
-        completed_minutes: u64,
+        completed_movement_minutes: u64,
     },
 }
 
@@ -223,10 +218,10 @@ impl ExposureLocation {
             Self::Fixed(latitude, longitude, elevation) => (*latitude, *longitude, *elevation),
             Self::Route {
                 route,
-                completed_minutes,
+                completed_movement_minutes,
             } => crate::strategic::route_position_at_minute(
                 route,
-                completed_minutes.saturating_add(movement_offset),
+                completed_movement_minutes.saturating_add(movement_offset),
             )
             .map(|(longitude, latitude)| {
                 (
@@ -271,7 +266,7 @@ fn exposure_location(ctx: &ReducerContext, character_id: u64) -> ExposureLocatio
         ) {
             return ExposureLocation::Route {
                 route,
-                completed_minutes: journey.completed_minutes,
+                completed_movement_minutes: journey.completed_movement_minutes,
             };
         }
     }
@@ -286,7 +281,7 @@ pub fn apply_weather_exposure(
     starting_minute: u64,
     elapsed_minutes: u64,
     moving: bool,
-    shelter: adventuresim_core::survival::FieldShelter,
+    shelter: adventuresim_core::survival::ExposureShelter,
 ) -> Result<(), String> {
     initialize_character_condition(ctx, character_id)?;
     if elapsed_minutes == 0 {
@@ -358,10 +353,10 @@ pub fn apply_weather_exposure(
             event_minute,
         );
         let limb = [
-            LimbRegion::LeftArm,
-            LimbRegion::RightArm,
-            LimbRegion::LeftLeg,
-            LimbRegion::RightLeg,
+            BodyRegion::LeftArm,
+            BodyRegion::RightArm,
+            BodyRegion::LeftLeg,
+            BodyRegion::RightLeg,
         ][peripheral];
         crate::surgery::commit_frostbite_injury(
             ctx,
@@ -408,18 +403,22 @@ fn inventory_quantity(ctx: &ReducerContext, character_id: u64, item_id: &str) ->
         .character_and_item_id()
         .filter((character_id, item_id))
         .filter(|entry| {
-            !crate::inventory_container::row_is_fireplace_rooted(ctx, "personal", entry.id)
+            !crate::inventory_container::row_is_fireplace_rooted(
+                ctx,
+                CarriedInventoryScope::Personal,
+                entry.id,
+            )
         })
         .map(|entry| entry.quantity)
         .sum()
 }
 
 fn food_reserve_days(needs: &CharacterNeeds) -> f32 {
-    needs.food_balance_kcal.max(0.0) / TRAVEL_CALORIES_PER_DAY
+    needs.food_balance_kcal.max(0.0) / STRATEGIC_TRAVEL_KCAL_PER_DAY
 }
 
 fn water_reserve_days(needs: &CharacterNeeds) -> f32 {
-    needs.water_balance_ml.max(0.0) / TRAVEL_WATER_ML_PER_DAY
+    needs.water_balance_ml.max(0.0) / STRATEGIC_TRAVEL_WATER_ML_PER_DAY
 }
 
 pub(crate) fn water_capacity_ml(ctx: &ReducerContext, character_id: u64) -> u32 {
@@ -427,27 +426,10 @@ pub(crate) fn water_capacity_ml(ctx: &ReducerContext, character_id: u64) -> u32 
         .db
         .item()
         .id()
-        .find(WATERSKIN_ID.to_string())
+        .find(STANDARD_WATERSKIN_ID.to_string())
         .map_or(0, |item| item.water_capacity_ml);
-    inventory_quantity(ctx, character_id, WATERSKIN_ID).saturating_mul(capacity_per_container)
-}
-
-pub(crate) fn party_water_capacity_ml(ctx: &ReducerContext, party_id: &str) -> u32 {
-    let capacity = ctx
-        .db
-        .item()
-        .id()
-        .find(WATERSKIN_ID.to_string())
-        .map_or(0, |item| item.water_capacity_ml);
-    ctx.db
-        .party_inventory_item()
-        .party_id()
-        .filter(party_id)
-        .filter(|row| row.item_id == WATERSKIN_ID)
-        .filter(|row| !crate::inventory_container::row_is_fireplace_rooted(ctx, "party", row.id))
-        .map(|row| row.quantity)
-        .sum::<u32>()
-        .saturating_mul(capacity)
+    inventory_quantity(ctx, character_id, STANDARD_WATERSKIN_ID)
+        .saturating_mul(capacity_per_container)
 }
 
 pub fn prepare_party_waterskins(
@@ -455,33 +437,11 @@ pub fn prepare_party_waterskins(
     party_id: &str,
     from_settlement: bool,
 ) -> Result<(), String> {
-    let capacity = ctx
-        .db
-        .item()
-        .id()
-        .find(WATERSKIN_ID.to_string())
-        .map_or(0, |item| item.water_capacity_ml);
-    let skins: u32 = ctx
-        .db
-        .party_inventory_item()
-        .party_id()
-        .filter(party_id)
-        .filter(|row| row.item_id == WATERSKIN_ID)
-        .filter(|row| !crate::inventory_container::row_is_fireplace_rooted(ctx, "party", row.id))
-        .map(|row| row.quantity)
-        .sum();
-    let mut party = ctx
-        .db
-        .party_authority()
-        .id()
-        .find(party_id.to_string())
-        .ok_or("Party not found")?;
-    party.pooled_water_ml = departure_water_volume(
-        party.pooled_water_ml,
-        skins.saturating_mul(capacity),
-        from_settlement,
-    );
-    ctx.db.party_authority().id().update(party);
+    if from_settlement {
+        let custody = adventuresim_core::physical_object::OperationalCustody::party(party_id)
+            .map_err(|error| error.to_string())?;
+        crate::inventory_container::fill_carried_waterskins(ctx, &custody)?;
+    }
     Ok(())
 }
 
@@ -491,18 +451,12 @@ pub fn prepare_character_waterskins(
     from_settlement: bool,
 ) -> Result<(), String> {
     initialize_character_condition(ctx, character_id)?;
-    let mut needs = ctx
-        .db
-        .character_needs()
-        .character_id()
-        .find(character_id)
-        .ok_or("Character needs not found")?;
-    needs.carried_water_ml = departure_water_volume(
-        needs.carried_water_ml,
-        water_capacity_ml(ctx, character_id),
-        from_settlement,
-    );
-    ctx.db.character_needs().character_id().update(needs);
+    if from_settlement {
+        let custody =
+            adventuresim_core::physical_object::OperationalCustody::character(character_id)
+                .map_err(|error| error.to_string())?;
+        crate::inventory_container::fill_carried_waterskins(ctx, &custody)?;
+    }
     Ok(())
 }
 
@@ -520,9 +474,11 @@ pub fn replenish_needs_at_settlement(
     // Arrival grants no free provisions and clears any travel surplus so the
     // character can immediately eat a deliberate dinner.
     needs.food_balance_kcal = needs.food_balance_kcal.min(0.0);
-    needs.water_balance_ml = HYDRATION_RESERVE_ML;
-    needs.carried_water_ml = water_capacity_ml(ctx, character_id) as f32;
+    needs.water_balance_ml = STRATEGIC_TRAVEL_WATER_ML_PER_DAY;
     ctx.db.character_needs().character_id().update(needs);
+    let custody = adventuresim_core::physical_object::OperationalCustody::character(character_id)
+        .map_err(|error| error.to_string())?;
+    crate::inventory_container::fill_carried_waterskins(ctx, &custody)?;
     Ok(())
 }
 
@@ -539,27 +495,44 @@ pub fn apply_elapsed_needs(
     )
 }
 
-/// Applies settlement-rest needs exactly once. Every settlement provides
-/// ordinary drinking water; paid inn stays additionally provide food.
-pub fn apply_settlement_rest_elapsed_needs(
+/// Applies settlement-rest needs exactly once. Every settlement provision
+/// supplies water; inn board and a residence additionally supply food.
+pub(crate) fn apply_settlement_rest_elapsed_needs(
     ctx: &ReducerContext,
     character_id: u64,
     elapsed_minutes: u64,
-    at_inn: bool,
+    provision: crate::time::SettlementRestProvision,
 ) -> Result<(), String> {
-    let provision = if at_inn {
-        ElapsedNeedsProvision::InnBoard
-    } else {
-        ElapsedNeedsProvision::SettlementWater
-    };
-    apply_elapsed_needs_with_provision(ctx, character_id, elapsed_minutes, provision)
+    apply_elapsed_needs_with_provision(
+        ctx,
+        character_id,
+        elapsed_minutes,
+        settlement_rest_elapsed_needs_provision(provision),
+    )
+}
+
+fn settlement_rest_elapsed_needs_provision(
+    provision: crate::time::SettlementRestProvision,
+) -> ElapsedNeedsProvision {
+    match provision {
+        crate::time::SettlementRestProvision::PublicService(
+            adventuresim_world_schema::SettlementActionService::Inn,
+        )
+        | crate::time::SettlementRestProvision::Residence => ElapsedNeedsProvision::FullBoard,
+        crate::time::SettlementRestProvision::PublicService(
+            adventuresim_world_schema::SettlementActionService::Temple,
+        )
+        | crate::time::SettlementRestProvision::PrivateDowntime => {
+            ElapsedNeedsProvision::SettlementWater
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ElapsedNeedsProvision {
     PersonalSupplies,
     SettlementWater,
-    InnBoard,
+    FullBoard,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -581,10 +554,10 @@ fn elapsed_needs_plan(
             let elapsed_days = elapsed_minutes as f32 / (24.0 * 60.0);
             ElapsedNeedsPlan {
                 food_balance_kcal: starting_food_balance_kcal
-                    - elapsed_days * TRAVEL_CALORIES_PER_DAY,
+                    - elapsed_days * STRATEGIC_TRAVEL_KCAL_PER_DAY,
                 consume_stored_food: true,
                 water_balance_ml: starting_water_balance_ml
-                    - elapsed_days * TRAVEL_WATER_ML_PER_DAY,
+                    - elapsed_days * STRATEGIC_TRAVEL_WATER_ML_PER_DAY,
                 consume_stored_water: true,
             }
         }
@@ -595,7 +568,7 @@ fn elapsed_needs_plan(
             let elapsed_days = elapsed_minutes as f32 / (24.0 * 60.0);
             ElapsedNeedsPlan {
                 food_balance_kcal: starting_food_balance_kcal
-                    - elapsed_days * TRAVEL_CALORIES_PER_DAY,
+                    - elapsed_days * STRATEGIC_TRAVEL_KCAL_PER_DAY,
                 consume_stored_food: true,
                 water_balance_ml: starting_water_balance_ml.max(0.0),
                 consume_stored_water: false,
@@ -604,7 +577,7 @@ fn elapsed_needs_plan(
         // Full board covers the elapsed interval and brings an underfed guest
         // back to neutral, without creating surplus fullness or consuming
         // provisions carried by the guest or party.
-        ElapsedNeedsProvision::InnBoard => ElapsedNeedsPlan {
+        ElapsedNeedsProvision::FullBoard => ElapsedNeedsPlan {
             food_balance_kcal: starting_food_balance_kcal.max(0.0),
             consume_stored_food: false,
             water_balance_ml: starting_water_balance_ml.max(0.0),
@@ -656,53 +629,25 @@ fn apply_elapsed_needs_with_provision(
             .id()
             .find(character_id)
             .and_then(|row| row.party_id)
-            && let Some(mut party) = ctx.db.party_authority().id().find(&party_id)
         {
-            let (pooled_drunk, _) = shared_then_personal_volume(
-                -needs.water_balance_ml,
-                party.pooled_water_ml,
-                needs.carried_water_ml,
-            );
-            let pooled_drunk = (pooled_drunk.max(0.0) * 1_000.0).floor() / 1_000.0;
-            crate::outbreak::consume_water_holding_contributions(
-                ctx,
-                "party",
-                &party_id,
-                party.pooled_water_ml,
-                pooled_drunk,
-                character_id,
-            )?;
-            party.pooled_water_ml -= pooled_drunk;
-            ctx.db.party_authority().id().update(party);
-            needs.water_balance_ml += pooled_drunk;
+            let party_custody =
+                adventuresim_core::physical_object::OperationalCustody::party(party_id.clone())
+                    .map_err(|error| error.to_string())?;
             let contained = crate::inventory_container::consume_contained_water(
                 ctx,
                 character_id,
-                "party",
-                &party_id,
+                &party_custody,
                 (-needs.water_balance_ml).max(0.0).ceil() as u64,
             )?;
             needs.water_balance_ml += contained as f32;
         }
-        let drunk = (-needs.water_balance_ml)
-            .max(0.0)
-            .min(needs.carried_water_ml);
-        let drunk = (drunk * 1_000.0).floor() / 1_000.0;
-        crate::outbreak::consume_water_holding_contributions(
-            ctx,
-            "personal",
-            &character_id.to_string(),
-            needs.carried_water_ml,
-            drunk,
-            character_id,
-        )?;
-        needs.carried_water_ml -= drunk;
-        needs.water_balance_ml += drunk;
+        let personal_custody =
+            adventuresim_core::physical_object::OperationalCustody::character(character_id)
+                .map_err(|error| error.to_string())?;
         let contained = crate::inventory_container::consume_contained_water(
             ctx,
             character_id,
-            "personal",
-            &character_id.to_string(),
+            &personal_custody,
             (-needs.water_balance_ml).max(0.0).ceil() as u64,
         )?;
         needs.water_balance_ml += contained as f32;
@@ -1383,22 +1328,15 @@ fn evaluate_strategic_condition(
     let blood_loss =
         blood_loss_incapacitation(condition.current_blood_ml, condition.maximum_blood_ml);
     let fatigue_ratio = stats.fatigue_by_parts(&attributes, &limbs);
-    let mut needs = ctx
+    let needs = ctx
         .db
         .character_needs()
         .character_id()
         .find(character_id)
         .ok_or("Character needs not found")?;
     let water_capacity = water_capacity_ml(ctx, character_id);
-    if needs.carried_water_ml > water_capacity as f32 {
-        needs.carried_water_ml = water_capacity as f32;
-        ctx.db
-            .character_needs()
-            .character_id()
-            .update(needs.clone());
-    }
-    let hunger = hunger_incapacitation(needs.food_balance_kcal, TRAVEL_CALORIES_PER_DAY);
-    let thirst = thirst_incapacitation(needs.water_balance_ml, TRAVEL_WATER_ML_PER_DAY);
+    let hunger = hunger_incapacitation(needs.food_balance_kcal, STRATEGIC_TRAVEL_KCAL_PER_DAY);
+    let thirst = thirst_incapacitation(needs.water_balance_ml, STRATEGIC_TRAVEL_WATER_ML_PER_DAY);
     let exposure = ctx
         .db
         .character_exposure()
@@ -1415,11 +1353,7 @@ fn evaluate_strategic_condition(
         thirst,
         thermal,
     };
-    let status = match incapacitation.status() {
-        IncapacitationStatus::Ready => "ready",
-        IncapacitationStatus::Staggered => "staggered",
-        IncapacitationStatus::Incapacitated => "incapacitated",
-    };
+    let status = incapacitation.status();
     Ok((
         CharacterStrategicCondition {
             character_id,
@@ -1441,7 +1375,7 @@ fn evaluate_strategic_condition(
             water_capacity_ml: water_capacity,
             incapacitation: incapacitation.total(),
             check_multiplier: incapacitation.check_multiplier(),
-            status: status.into(),
+            status,
         },
         sources,
     ))
@@ -1969,7 +1903,7 @@ pub fn apply_travel_condition(
         .character_id()
         .find(character_id)
         .ok_or("Character stats not found")?;
-    stats.calories_used += elapsed_minutes as f32 / (24.0 * 60.0) * TRAVEL_CALORIES_PER_DAY;
+    stats.calories_used += elapsed_minutes as f32 / (24.0 * 60.0) * STRATEGIC_TRAVEL_KCAL_PER_DAY;
     ctx.db.character_stats().character_id().update(stats);
 
     refuse_expired_holy_day_demands(ctx, character_id, true)?;
@@ -2183,7 +2117,7 @@ pub fn apply_camp_rest_recovery_condition(
         .character_id()
         .find(character_id)
         .ok_or("Character stats not found")?;
-    stats.calories_used = (stats.calories_used - TRAVEL_CALORIES_PER_DAY * days).max(0.0);
+    stats.calories_used = (stats.calories_used - STRATEGIC_TRAVEL_KCAL_PER_DAY * days).max(0.0);
     ctx.db.character_stats().character_id().update(stats);
     refresh_character_strategic_condition(ctx, character_id).map(|_| ())
 }
@@ -2261,7 +2195,7 @@ pub fn set_blood_fraction(
 pub fn require_character_ready(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
     crate::character::require_living_character(ctx, character_id)?;
     let condition = refresh_character_strategic_condition(ctx, character_id)?;
-    if condition.status == "incapacitated" {
+    if condition.status == IncapacitationStatus::Incapacitated {
         Err("Character is incapacitated and must recover before acting".into())
     } else {
         Ok(())
@@ -2275,7 +2209,7 @@ pub fn require_characters_ready(ctx: &ReducerContext, character_ids: &[u64]) -> 
     let conditions = refresh_party_strategic_condition_projection(ctx, character_ids)?;
     for condition in &conditions {
         ensure_holy_day_demand(ctx, condition)?;
-        if condition.status == "incapacitated" {
+        if condition.status == IncapacitationStatus::Incapacitated {
             return Err("A party member is incapacitated and must recover before acting".into());
         }
     }
@@ -2340,9 +2274,8 @@ pub fn set_character_religion(
 fn require_profession_service(
     profile: &adventuresim_world_schema::SettlementEconomyProfile,
 ) -> Result<(), String> {
-    use adventuresim_core::settlement_economy::{
-        SettlementActionService, action_service_available,
-    };
+    use adventuresim_core::settlement_economy::action_service_available;
+    use adventuresim_world_schema::SettlementActionService;
     if action_service_available(profile, SettlementActionService::Temple) {
         Ok(())
     } else {
@@ -2353,13 +2286,38 @@ fn require_profession_service(
 #[cfg(test)]
 mod tests {
     use super::{
-        CharacterNeeds, ElapsedNeedsProvision, ProjectedMoraleSource, TRAVEL_CALORIES_PER_DAY,
-        TRAVEL_WATER_ML_PER_DAY, accumulated_leisure_morale, condition_projection_member_ids,
-        elapsed_needs_plan, food_reserve_days, holy_day_demand_has_expired, leisure_morale_effect,
-        rank_morale_sources, religion_cohort_pressure, require_profession_service,
-        water_reserve_days,
+        CharacterNeeds, ElapsedNeedsProvision, ProjectedMoraleSource,
+        STRATEGIC_TRAVEL_KCAL_PER_DAY, STRATEGIC_TRAVEL_WATER_ML_PER_DAY,
+        accumulated_leisure_morale, condition_projection_member_ids, elapsed_needs_plan,
+        food_reserve_days, holy_day_demand_has_expired, leisure_morale_effect, rank_morale_sources,
+        religion_cohort_pressure, require_profession_service,
+        settlement_rest_elapsed_needs_provision, water_reserve_days,
     };
     use std::collections::BTreeMap;
+
+    #[test]
+    fn settlement_rest_needs_preserve_public_and_private_provisions() {
+        use adventuresim_world_schema::SettlementActionService;
+
+        for provision in [
+            crate::time::SettlementRestProvision::PublicService(SettlementActionService::Inn),
+            crate::time::SettlementRestProvision::Residence,
+        ] {
+            assert_eq!(
+                settlement_rest_elapsed_needs_provision(provision),
+                ElapsedNeedsProvision::FullBoard
+            );
+        }
+        for provision in [
+            crate::time::SettlementRestProvision::PublicService(SettlementActionService::Temple),
+            crate::time::SettlementRestProvision::PrivateDowntime,
+        ] {
+            assert_eq!(
+                settlement_rest_elapsed_needs_provision(provision),
+                ElapsedNeedsProvision::SettlementWater
+            );
+        }
+    }
 
     #[test]
     fn profession_requires_an_available_temple_service() {
@@ -2409,7 +2367,6 @@ mod tests {
             character_id: 1,
             food_balance_kcal: 3_000.0,
             water_balance_ml: 1_000.0,
-            carried_water_ml: 40_000.0,
         };
 
         assert_eq!(food_reserve_days(&needs), 0.5);
@@ -2422,7 +2379,7 @@ mod tests {
             -1_450.0,
             -900.0,
             MINUTES_PER_DAY,
-            ElapsedNeedsProvision::InnBoard,
+            ElapsedNeedsProvision::FullBoard,
         );
 
         assert_eq!(plan.food_balance_kcal, 0.0);
@@ -2437,7 +2394,7 @@ mod tests {
             250.0,
             375.0,
             MINUTES_PER_DAY * 3,
-            ElapsedNeedsProvision::InnBoard,
+            ElapsedNeedsProvision::FullBoard,
         );
 
         assert_eq!(plan.food_balance_kcal, 250.0);
@@ -2455,8 +2412,14 @@ mod tests {
             ElapsedNeedsProvision::PersonalSupplies,
         );
 
-        assert_eq!(plan.food_balance_kcal, -500.0 - TRAVEL_CALORIES_PER_DAY);
-        assert_eq!(plan.water_balance_ml, 250.0 - TRAVEL_WATER_ML_PER_DAY);
+        assert_eq!(
+            plan.food_balance_kcal,
+            -500.0 - STRATEGIC_TRAVEL_KCAL_PER_DAY
+        );
+        assert_eq!(
+            plan.water_balance_ml,
+            250.0 - STRATEGIC_TRAVEL_WATER_ML_PER_DAY
+        );
         assert!(plan.consume_stored_food);
         assert!(plan.consume_stored_water);
     }
@@ -2470,7 +2433,10 @@ mod tests {
             ElapsedNeedsProvision::SettlementWater,
         );
 
-        assert_eq!(plan.food_balance_kcal, -500.0 - TRAVEL_CALORIES_PER_DAY);
+        assert_eq!(
+            plan.food_balance_kcal,
+            -500.0 - STRATEGIC_TRAVEL_KCAL_PER_DAY
+        );
         assert_eq!(plan.water_balance_ml, 0.0);
         assert!(plan.consume_stored_food);
         assert!(!plan.consume_stored_water);

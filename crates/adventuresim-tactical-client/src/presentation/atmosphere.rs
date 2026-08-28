@@ -77,6 +77,10 @@ pub(in crate::presentation) fn install_atmosphere_cleanup_backport(app: &mut App
     );
 }
 
+#[expect(
+    clippy::type_complexity,
+    reason = "the render-world extraction query pairs camera entities with their optional atmosphere settings"
+)]
 fn cleanup_removed_atmosphere_settings(
     mut commands: Commands,
     cameras: Extract<Query<(RenderEntity, Option<&AtmosphereSettings>), With<Camera3d>>>,
@@ -104,6 +108,10 @@ fn cleanup_removed_atmosphere_settings(
 /// Convert the one generated atmosphere cube into a visible skybox and
 /// static IBL, then retire every public producer component. The
 /// global `Atmosphere` remains as the inert owner of its scattering asset.
+#[expect(
+    clippy::type_complexity,
+    reason = "the Bevy query observes both generated and installed environment-map consumers on the bake probe"
+)]
 pub(in crate::presentation) fn freeze_initialized_atmosphere(
     mut commands: Commands,
     celestial: Res<PresentedCelestialLighting>,
@@ -253,7 +261,7 @@ mod tests {
             );
         let scene = app
             .world_mut()
-            .spawn(legacy_scene_environment(&SceneId("freeze-test".into())))
+            .spawn(SceneEnvironmentFixture::TemperateHills.snapshot("freeze-test"))
             .id();
         app.world_mut().resource_mut::<ActiveTacticalScene>().entity = Some(scene);
         let camera = app

@@ -4,7 +4,7 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::starting_age_tier_coordinate_type::StartingAgeTierCoordinate;
+use super::starting_age_tier_type::StartingAgeTier;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -12,7 +12,7 @@ pub(super) struct CreateStartingCharacterArgs {
     pub owner_key: String,
     pub generator_version: u16,
     pub seed: String,
-    pub age_tier: StartingAgeTierCoordinate,
+    pub age_tier: StartingAgeTier,
     pub slot: u8,
 }
 
@@ -48,7 +48,7 @@ pub trait create_starting_character {
         owner_key: String,
         generator_version: u16,
         seed: String,
-        age_tier: StartingAgeTierCoordinate,
+        age_tier: StartingAgeTier,
         slot: u8,
     ) -> __sdk::Result<()> {
         self.create_starting_character_then(
@@ -72,7 +72,7 @@ pub trait create_starting_character {
         owner_key: String,
         generator_version: u16,
         seed: String,
-        age_tier: StartingAgeTierCoordinate,
+        age_tier: StartingAgeTier,
         slot: u8,
 
         callback: impl FnOnce(
@@ -89,7 +89,7 @@ impl create_starting_character for super::RemoteReducers {
         owner_key: String,
         generator_version: u16,
         seed: String,
-        age_tier: StartingAgeTierCoordinate,
+        age_tier: StartingAgeTier,
         slot: u8,
 
         callback: impl FnOnce(

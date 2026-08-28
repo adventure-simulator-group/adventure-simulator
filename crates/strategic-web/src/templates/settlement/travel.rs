@@ -18,14 +18,18 @@ use super::{
 use crate::routes::travel::{TravelDestination, TravelProvisionForecast};
 use crate::spacetimedb::{
     BackendRoadChallenge, ChallengePresenterCatalogId, Character, ContractPresentation,
-    JourneyPrecipitation, JourneyTerrainKind, Party, PartyJourney, PartyJourneyItinerary,
-    PartyJourneyRoute, Settlement, StrategicEncounter,
+    JourneyPrecipitation, JourneyTerrainKind, Party, PartyJourney, PartyJourneyRoute, Settlement,
+    StrategicEncounter, StrategicEncounterStatus,
 };
 use crate::templates::{
     camp_location_layout_with_session, decorative_game_icon, empty_state, game_icon,
     settlement_layout_with_session, sidebar_section,
 };
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the map page boundary composes independent settlement, route, quest, and session projections"
+)]
 pub fn settlement_map_page(
     settlement: &Settlement,
     settlements: &[Settlement],
@@ -282,6 +286,10 @@ pub(crate) fn travel_preferences_form(party: &Party, action: &str) -> Markup {
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the destination renderer combines independent selection, route, and action projections"
+)]
 pub(crate) fn map_destination_detail(
     selected: Option<&TravelDestination>,
     selected_settlement: Option<&Settlement>,
@@ -375,8 +383,8 @@ pub(crate) fn map_destination_detail(
                         @if let Some(summary) = &destination.summary { (summary) " · " }
                         (format_distance(destination.distance_m))
                         " · " (format_journey_time(destination.journey_minutes))
-                        @if destination.route_fallback {
-                            span class="travel-route-estimate-warning" { " · Legacy straight-line estimate" }
+                        @if destination.uses_straight_line_estimate {
+                            span class="travel-route-estimate-warning" { " · Straight-line estimate (terrain routing unavailable)" }
                         }
                     }
                 }))
@@ -454,6 +462,10 @@ fn quest_destination_tooltip(destination: &TravelDestination) -> Option<String> 
     })
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the planner form mirrors independent destination, schedule, and route fields"
+)]
 pub(crate) fn travel_planner_bar_for(
     destination_name: &str,
     destination_description: &str,
@@ -474,31 +486,40 @@ pub(crate) fn travel_planner_bar_for(
     let journey_destination_name = journey.map_or("", |item| item.destination.name());
     let journey_turnaround_minutes = journey
         .filter(|item| item.destination.case_site_id().is_some())
-        .map_or(0, |item| item.total_minutes);
-    let journey_total_minutes = journey.map_or(0, |item| {
+        .map_or(0, |item| item.total_movement_minutes);
+    let journey_total_movement_minutes = journey.map_or(0, |item| {
         if item.destination.case_site_id().is_some() {
-            item.total_minutes.saturating_add(
+            item.total_movement_minutes.saturating_add(
                 journey_route
                     .and_then(|route| route.return_route.as_ref())
-                    .map_or(item.total_minutes, |route| route.minutes),
+                    .map_or(item.total_movement_minutes, |route| route.minutes),
             )
         } else {
-            item.total_minutes
+            item.total_movement_minutes
         }
     });
-    let journey_completed_minutes = journey.map_or(0, |item| item.completed_minutes);
+    let journey_completed_movement_minutes =
+        journey.map_or(0, |item| item.completed_movement_minutes);
     let journey_camp_stops = journey.map_or_else(String::new, |item| {
-        format_camp_stops(&item.camp_stop_minutes)
+        format_camp_stops(&item.reached_camp_movement_minutes)
     });
     let journey_forecast_stops = journey.map_or_else(String::new, |item| {
-        let mut stops = item.forecast_camp_stop_minutes.clone();
+        let mut stops = item
+            .forecast_camp_intervals
+            .iter()
+            .map(|interval| interval.movement_minute)
+            .collect::<Vec<_>>();
         if item.destination.case_site_id().is_some() {
             stops.extend(
-                item.camp_stop_minutes
+                item.reached_camp_movement_minutes
                     .iter()
-                    .chain(item.forecast_camp_stop_minutes.iter())
+                    .chain(
+                        item.forecast_camp_intervals
+                            .iter()
+                            .map(|interval| &interval.movement_minute),
+                    )
                     .rev()
-                    .map(|minute| journey_total_minutes.saturating_sub(*minute)),
+                    .map(|minute| journey_total_movement_minutes.saturating_sub(*minute)),
             );
         }
         format_camp_stops(&stops)
@@ -514,9 +535,9 @@ pub(crate) fn travel_planner_bar_for(
             data-selected-camp-forecasts=(camp_forecasts)
             data-journey-origin-name=(journey_origin_name)
             data-journey-destination-name=(journey_destination_name)
-            data-journey-total-minutes=(journey_total_minutes)
+            data-journey-total-movement-minutes=(journey_total_movement_minutes)
             data-journey-turnaround-minutes=(journey_turnaround_minutes)
-            data-journey-completed-minutes=(journey_completed_minutes)
+            data-journey-completed-movement-minutes=(journey_completed_movement_minutes)
             data-departure-minute=(journey.map_or(preview_departure_minute, |item| item.departure_minute))
             data-total-elapsed-minutes=(journey.map_or(preview_elapsed_minutes, |item| item.total_elapsed_minutes))
             data-completed-elapsed-minutes=(journey.map_or(0, |item| item.completed_elapsed_minutes))
@@ -673,14 +694,14 @@ fn format_itinerary_segments(segments: &[ItinerarySegment]) -> String {
         .join("|")
 }
 
-fn format_persisted_itinerary(journey: &PartyJourney, itinerary: &PartyJourneyItinerary) -> String {
-    let mut camps: Vec<_> = itinerary
+fn format_persisted_itinerary(journey: &PartyJourney) -> String {
+    let mut camps: Vec<_> = journey
         .actual_camp_intervals
         .iter()
         .cloned()
         .map(|camp| (camp, true, false))
         .chain(
-            itinerary
+            journey
                 .forecast_camp_intervals
                 .iter()
                 .cloned()
@@ -714,9 +735,9 @@ fn format_persisted_itinerary(journey: &PartyJourney, itinerary: &PartyJourneyIt
         }
     }
     let total_movement = if journey.destination.case_site_id().is_some() {
-        journey.total_minutes.saturating_mul(2)
+        journey.total_movement_minutes.saturating_mul(2)
     } else {
-        journey.total_minutes
+        journey.total_movement_minutes
     };
     let mut output = Vec::new();
     let mut elapsed_cursor = 0;
@@ -776,18 +797,6 @@ fn format_persisted_itinerary(journey: &PartyJourney, itinerary: &PartyJourneyIt
     output.join("|")
 }
 
-fn format_legacy_persisted_itinerary(journey: &PartyJourney) -> String {
-    let total_movement = if journey.destination.case_site_id().is_some() {
-        journey.total_minutes.saturating_mul(2)
-    } else {
-        journey.total_minutes
-    };
-    format!(
-        "w,0,{},{},{},0.0000,0.0000,0.0000,0",
-        journey.total_elapsed_minutes, 0, total_movement
-    )
-}
-
 pub(crate) struct CampTravelDestination {
     pub id: String,
     pub name: String,
@@ -795,17 +804,16 @@ pub(crate) struct CampTravelDestination {
     pub current: bool,
 }
 
-fn camp_fire_is_lit(
-    journey: Option<&PartyJourney>,
-    itinerary: Option<&PartyJourneyItinerary>,
-) -> bool {
+fn camp_fire_is_lit(journey: Option<&PartyJourney>) -> bool {
     !matches!(
-        (journey, itinerary),
-        (Some(journey), Some(itinerary))
-            if itinerary
+        journey,
+        Some(journey)
+            if journey
                 .actual_camp_intervals
                 .last()
-                .is_some_and(|interval| interval.movement_minute == journey.completed_minutes)
+                .is_some_and(|interval| {
+                    interval.movement_minute == journey.completed_movement_minutes
+                })
     )
 }
 
@@ -814,10 +822,13 @@ fn camp_forage_href(has_active_character: bool) -> Option<&'static str> {
     has_active_character.then_some("/camp?forage=true")
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the camp page boundary composes independent journey, party, encounter, and session projections"
+)]
 pub fn camp_page(
     party: &Party,
     journey: Option<&PartyJourney>,
-    itinerary: Option<&PartyJourneyItinerary>,
     terrain_route: Option<&PartyJourneyRoute>,
     destination_name: &str,
     active_character: Option<&Character>,
@@ -837,7 +848,7 @@ pub fn camp_page(
     foraging_dialog: Option<Markup>,
     logged_in_as: Option<&str>,
 ) -> Markup {
-    let camp_fire_lit = camp_fire_is_lit(journey, itinerary);
+    let camp_fire_lit = camp_fire_is_lit(journey);
     let forage_href = camp_forage_href(active_character.is_some());
     let content = html! {
         aside class="left-sidebar map-rest-sidebar" {
@@ -869,7 +880,7 @@ pub fn camp_page(
                 }))
             }
             }
-            @if encounter.is_none_or(|encounter| encounter.status != "awaiting_choice") {
+            @if encounter.is_none_or(|encounter| encounter.status != StrategicEncounterStatus::AwaitingChoice) {
                 section class="rest-service-menu camp-rest-menu" aria-label="Camp rest" {
                     (party_rest_menu(
                         "/camp/rest",
@@ -941,7 +952,7 @@ pub fn camp_page(
             }
         }
         aside class="right-sidebar camp-journey-sidebar" {
-            @if let Some(encounter) = encounter.filter(|encounter| encounter.status == "awaiting_choice") {
+            @if let Some(encounter) = encounter.filter(|encounter| encounter.status == StrategicEncounterStatus::AwaitingChoice) {
                 (strategic_encounter_panel(encounter, counterparties))
             }
             div class="sidebar-section camp-journey-section" {
@@ -953,7 +964,7 @@ pub fn camp_page(
                     (format_journey_time(party.wilderness_elapsed_minutes)) " elapsed since setting out"
                 }
                 div class="travel-planner-vertical" {
-                    (travel_planner_bar_for(destination_name, "", false, party.camp_remaining_minutes, "", "", party.camp_fatigue_percent, journey, terrain_route, provision_forecast, journey.map_or(0, |item| item.departure_minute), journey.map_or(party.camp_remaining_minutes, |item| item.total_elapsed_minutes), &match (journey, itinerary) { (Some(journey), Some(itinerary)) => format_persisted_itinerary(journey, itinerary), (Some(journey), None) => format_legacy_persisted_itinerary(journey), _ => String::new() }, &format_persisted_terrain_spans(terrain_route)))
+                    (travel_planner_bar_for(destination_name, "", false, party.camp_remaining_minutes, "", "", party.camp_fatigue_percent, journey, terrain_route, provision_forecast, journey.map_or(0, |item| item.departure_minute), journey.map_or(party.camp_remaining_minutes, |item| item.total_elapsed_minutes), &journey.map_or_else(String::new, format_persisted_itinerary), &format_persisted_terrain_spans(terrain_route)))
                 }
                 (camp_continue_control(continue_block_reason))
                 p class="travel-action-status" data-travel-action-status role="alert" hidden {}
@@ -1278,7 +1289,7 @@ mod tests {
             party_aware: false,
             enemy_aware: true,
             available_choices: vec!["attack".into(), "surrender".into()],
-            status: "awaiting_choice".into(),
+            status: StrategicEncounterStatus::AwaitingChoice,
             revision: 4,
             selected_choice: None,
             selection_explanation: "deterministic awareness".into(),
@@ -1505,19 +1516,17 @@ mod tests {
                     name: "Quest".into(),
                 },
             ),
-            total_minutes: 720,
-            completed_minutes: 480,
-            camp_stop_minutes: vec![480],
-            forecast_camp_stop_minutes: vec![480],
+            total_movement_minutes: 720,
+            completed_movement_minutes: 480,
+            reached_camp_movement_minutes: vec![480],
+            actual_camp_intervals: Vec::new(),
+            forecast_camp_intervals: Vec::new(),
             fatigue_percent: 50,
-            plan_version: 1,
             departure_minute: 10_000,
             total_elapsed_minutes: 2_040,
             completed_elapsed_minutes: 780,
             walking_minutes_per_day: 480,
             travel_at_night: false,
-            camp_duration_mode: crate::spacetimedb::CampDurationMode::Auto,
-            fixed_camp_minutes: 0,
         };
         let camp = |start, duration, from, to| crate::spacetimedb::JourneyCampInterval {
             movement_minute: 480,
@@ -1527,22 +1536,19 @@ mod tests {
             average_fatigue_end: to,
             maximum_fatigue_end: to,
         };
-        let itinerary = PartyJourneyItinerary {
-            party_id: "party".into(),
-            actual_camp_intervals: vec![camp(480, 300, 0.5, 0.2)],
-            forecast_camp_intervals: vec![camp(780, 300, 0.2, 0.0)],
-        };
+        journey.actual_camp_intervals = vec![camp(480, 300, 0.5, 0.2)];
+        journey.forecast_camp_intervals = vec![camp(780, 300, 0.2, 0.0)];
         assert!(
-            !camp_fire_is_lit(Some(&journey), Some(&itinerary)),
+            !camp_fire_is_lit(Some(&journey)),
             "resting at the current movement checkpoint leaves smoke-only embers"
         );
-        journey.completed_minutes = 600;
+        journey.completed_movement_minutes = 600;
         assert!(
-            camp_fire_is_lit(Some(&journey), Some(&itinerary)),
+            camp_fire_is_lit(Some(&journey)),
             "reaching a later camp relights the fire"
         );
-        journey.completed_minutes = 480;
-        let encoded = format_persisted_itinerary(&journey, &itinerary);
+        journey.completed_movement_minutes = 480;
+        let encoded = format_persisted_itinerary(&journey);
         assert!(encoded.contains("w,0,480,0,480"));
         assert!(encoded.contains("m,480,600,480,0"));
         assert!(encoded.contains("w,1080,960,480,960"));

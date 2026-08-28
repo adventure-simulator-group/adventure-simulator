@@ -7,6 +7,7 @@
 #[cfg(test)]
 pub(crate) const LIVE_CORE_SOURCE: &str = concat!(
     include_str!("model.rs"),
+    include_str!("failure_projection.rs"),
     include_str!("policy.rs"),
     include_str!("survival.rs"),
     include_str!("failure.rs"),
@@ -20,8 +21,12 @@ pub(crate) const LIVE_CORE_SOURCE: &str = concat!(
 );
 
 include!("model.rs");
+include!("failure_projection.rs");
 include!("policy.rs");
 include!("survival.rs");
+
+mod schema_types;
+use schema_types::{domain_body_region, domain_incapacitation_status, reducer_intervention_route};
 
 mod failure {
     use super::*;

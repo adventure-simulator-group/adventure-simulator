@@ -1,5 +1,5 @@
 use super::TextStyle;
-use crate::data::vector::Vec4;
+use fabelgeist_math::Vec4;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -39,40 +39,6 @@ impl Default for TextInputStyling {
             hover_text_color: Vec4::new(1.0, 1.0, 1.0, 1.0),
             focused_text_color: Vec4::new(1.0, 1.0, 1.0, 1.0),
             placeholder_text_color: Vec4::new(0.70, 0.70, 0.75, 1.0),
-        }
-    }
-}
-
-impl TextInputStyling {
-    pub fn new(
-        normal_fill_color: Vec4,
-        hover_fill_color: Vec4,
-        focused_fill_color: Vec4,
-        normal_stroke_color: Vec4,
-        hover_stroke_color: Vec4,
-        focused_stroke_color: Vec4,
-        stroke_thickness: f32,
-        corner_radius: f32,
-        text_style: TextStyle,
-        normal_text_color: Vec4,
-        hover_text_color: Vec4,
-        focused_text_color: Vec4,
-        placeholder_text_color: Vec4,
-    ) -> Self {
-        Self {
-            normal_fill_color,
-            hover_fill_color,
-            focused_fill_color,
-            normal_stroke_color,
-            hover_stroke_color,
-            focused_stroke_color,
-            stroke_thickness,
-            corner_radius,
-            text_style,
-            normal_text_color,
-            hover_text_color,
-            focused_text_color,
-            placeholder_text_color,
         }
     }
 }

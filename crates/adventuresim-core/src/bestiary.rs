@@ -1,7 +1,7 @@
 //! Shared, deterministic authority for threat identity, combat profiles, and
 //! investigation-facing evidence. Stable IDs, never display text, drive rules.
 
-pub use adventuresim_world_schema::{BestiaryCategory, BestiaryHours};
+pub use adventuresim_world_schema::{BASIS_POINTS_PER_WHOLE, BestiaryCategory, BestiaryHours};
 use core::str::FromStr;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, sync::OnceLock};
@@ -47,6 +47,10 @@ fn catalog_threats() -> Vec<ThreatId> {
         .collect()
 }
 
+#[expect(
+    non_upper_case_globals,
+    reason = "PascalCase associated constants form the enum-like threat identity API"
+)]
 impl ThreatId {
     const fn from_static(value: &str) -> Self {
         let source = value.as_bytes();
@@ -83,55 +87,30 @@ impl ThreatId {
         core::str::from_utf8(&self.bytes[..usize::from(self.len)]).expect("validated ASCII ID")
     }
 
-    #[allow(non_upper_case_globals)]
     pub const Bandit: Self = Self::from_static("bandit");
-    #[allow(non_upper_case_globals)]
     pub const Deserter: Self = Self::from_static("deserter");
-    #[allow(non_upper_case_globals)]
     pub const Poacher: Self = Self::from_static("poacher");
-    #[allow(non_upper_case_globals)]
     pub const Smuggler: Self = Self::from_static("smuggler");
-    #[allow(non_upper_case_globals)]
     pub const Cultist: Self = Self::from_static("cultist");
-    #[allow(non_upper_case_globals)]
     pub const GraveRobber: Self = Self::from_static("grave_robber");
-    #[allow(non_upper_case_globals)]
     pub const TownWatch: Self = Self::from_static("town_watch");
-    #[allow(non_upper_case_globals)]
     pub const ArmedRetainer: Self = Self::from_static("armed_retainer");
-    #[allow(non_upper_case_globals)]
     pub const AngryMob: Self = Self::from_static("angry_mob");
-    #[allow(non_upper_case_globals)]
     pub const Wolf: Self = Self::from_static("wolf");
-    #[allow(non_upper_case_globals)]
     pub const Boar: Self = Self::from_static("boar");
-    #[allow(non_upper_case_globals)]
     pub const Bear: Self = Self::from_static("bear");
-    #[allow(non_upper_case_globals)]
     pub const FeralDog: Self = Self::from_static("feral_dog");
-    #[allow(non_upper_case_globals)]
     pub const TrainedDog: Self = Self::from_static("trained_dog");
-    #[allow(non_upper_case_globals)]
     pub const Goblin: Self = Self::from_static("goblin");
-    #[allow(non_upper_case_globals)]
     pub const Orc: Self = Self::from_static("orc");
-    #[allow(non_upper_case_globals)]
     pub const Skeleton: Self = Self::from_static("skeleton");
-    #[allow(non_upper_case_globals)]
     pub const Ghoul: Self = Self::from_static("ghoul");
-    #[allow(non_upper_case_globals)]
     pub const Revenant: Self = Self::from_static("revenant");
-    #[allow(non_upper_case_globals)]
     pub const Werewolf: Self = Self::from_static("werewolf");
-    #[allow(non_upper_case_globals)]
     pub const Alp: Self = Self::from_static("alp");
-    #[allow(non_upper_case_globals)]
     pub const Kobold: Self = Self::from_static("kobold");
-    #[allow(non_upper_case_globals)]
     pub const WildMan: Self = Self::from_static("wild_man");
-    #[allow(non_upper_case_globals)]
     pub const SpectralHound: Self = Self::from_static("spectral_hound");
-    #[allow(non_upper_case_globals)]
     pub const Nachzehrer: Self = Self::from_static("nachzehrer");
 
     pub fn profile(self) -> ThreatProfile {
@@ -255,22 +234,18 @@ pub enum WitnessCapability {
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ReportDescription(ThreatId);
+#[expect(
+    non_upper_case_globals,
+    reason = "PascalCase associated constants form the enum-like report vocabulary"
+)]
 impl ReportDescription {
-    #[allow(non_upper_case_globals)]
     pub const ArmedPeople: Self = Self(ThreatId::from_static("armed_people"));
-    #[allow(non_upper_case_globals)]
     pub const SmallUprightFigures: Self = Self(ThreatId::from_static("small_upright_figures"));
-    #[allow(non_upper_case_globals)]
     pub const LargeUprightBeast: Self = Self(ThreatId::from_static("large_upright_beast"));
-    #[allow(non_upper_case_globals)]
     pub const GauntHuman: Self = Self(ThreatId::from_static("gaunt_human"));
-    #[allow(non_upper_case_globals)]
     pub const WalkingDead: Self = Self(ThreatId::from_static("walking_dead"));
-    #[allow(non_upper_case_globals)]
     pub const LargeAnimal: Self = Self(ThreatId::from_static("large_animal"));
-    #[allow(non_upper_case_globals)]
     pub const DoglikeBeast: Self = Self(ThreatId::from_static("doglike_beast"));
-    #[allow(non_upper_case_globals)]
     pub const UnseenNightVisitor: Self = Self(ThreatId::from_static("unseen_night_visitor"));
     pub fn try_new(value: &str) -> Result<Self, UnknownThreatId> {
         ThreatId::try_new(value).map(Self)
@@ -297,46 +272,30 @@ impl<'de> Deserialize<'de> for ReportDescription {
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct EvidenceKind(ThreatId);
+#[expect(
+    non_upper_case_globals,
+    reason = "PascalCase associated constants form the enum-like evidence vocabulary"
+)]
 impl EvidenceKind {
-    #[allow(non_upper_case_globals)]
     pub const BootPrints: Self = Self(ThreatId::from_static("boot_prints"));
-    #[allow(non_upper_case_globals)]
     pub const SmallBareTracks: Self = Self(ThreatId::from_static("small_bare_tracks"));
-    #[allow(non_upper_case_globals)]
     pub const Hoofprints: Self = Self(ThreatId::from_static("hoofprints"));
-    #[allow(non_upper_case_globals)]
     pub const Pawprints: Self = Self(ThreatId::from_static("pawprints"));
-    #[allow(non_upper_case_globals)]
     pub const ClawMarks: Self = Self(ThreatId::from_static("claw_marks"));
-    #[allow(non_upper_case_globals)]
     pub const GnawedBones: Self = Self(ThreatId::from_static("gnawed_bones"));
-    #[allow(non_upper_case_globals)]
     pub const GraveSoil: Self = Self(ThreatId::from_static("grave_soil"));
-    #[allow(non_upper_case_globals)]
     pub const NoBreath: Self = Self(ThreatId::from_static("no_breath"));
-    #[allow(non_upper_case_globals)]
     pub const WeaponCuts: Self = Self(ThreatId::from_static("weapon_cuts"));
-    #[allow(non_upper_case_globals)]
     pub const ArrowShafts: Self = Self(ThreatId::from_static("arrow_shafts"));
-    #[allow(non_upper_case_globals)]
     pub const CorpseOdor: Self = Self(ThreatId::from_static("corpse_odor"));
-    #[allow(non_upper_case_globals)]
     pub const SulfurOdor: Self = Self(ThreatId::from_static("sulfur_odor"));
-    #[allow(non_upper_case_globals)]
     pub const ColdPatch: Self = Self(ThreatId::from_static("cold_patch"));
-    #[allow(non_upper_case_globals)]
     pub const MissingBlood: Self = Self(ThreatId::from_static("missing_blood"));
-    #[allow(non_upper_case_globals)]
     pub const DisturbedGoods: Self = Self(ThreatId::from_static("disturbed_goods"));
-    #[allow(non_upper_case_globals)]
     pub const HumanSpeech: Self = Self(ThreatId::from_static("human_speech"));
-    #[allow(non_upper_case_globals)]
     pub const AnimalOdor: Self = Self(ThreatId::from_static("animal_odor"));
-    #[allow(non_upper_case_globals)]
     pub const BrokenFoliage: Self = Self(ThreatId::from_static("broken_foliage"));
-    #[allow(non_upper_case_globals)]
     pub const BiteWounds: Self = Self(ThreatId::from_static("bite_wounds"));
-    #[allow(non_upper_case_globals)]
     pub const BluntDamage: Self = Self(ThreatId::from_static("blunt_damage"));
     pub fn try_new(value: &str) -> Result<Self, UnknownThreatId> {
         ThreatId::try_new(value).map(Self)
@@ -1113,14 +1072,18 @@ pub fn distribution_summary(
         .into_iter()
         .map(|item| CandidateMarginal {
             id: item.id,
-            plausibility_basis_points: ((item.score.saturating_mul(10_000) / plausibility_total)
-                .min(10_000)) as u16,
+            plausibility_basis_points: ((item
+                .score
+                .saturating_mul(u64::from(BASIS_POINTS_PER_WHOLE))
+                / plausibility_total)
+                .min(u64::from(BASIS_POINTS_PER_WHOLE)))
+                as u16,
             curated_basis_points: ((item
                 .score
                 .saturating_mul(u64::from(profile(item.id).curation_weight))
-                .saturating_mul(10_000)
+                .saturating_mul(u64::from(BASIS_POINTS_PER_WHOLE))
                 / curated_total)
-                .min(10_000)) as u16,
+                .min(u64::from(BASIS_POINTS_PER_WHOLE))) as u16,
         })
         .collect()
 }
@@ -1183,7 +1146,7 @@ pub fn validate_catalog() -> Vec<CatalogDiagnostic> {
             || has_duplicates(p.investigation.odors)
             || p.investigation.investigability > 100
             || p.combat.escalation.growth_rate_bps == 0
-            || p.combat.escalation.growth_rate_bps > 10_000
+            || p.combat.escalation.growth_rate_bps > BASIS_POINTS_PER_WHOLE
             || !(crate::threat_escalation::MIN_BASELINE_ENEMY_POWER
                 ..=crate::threat_escalation::MAX_ORC_EQUIVALENT_POWER)
                 .contains(&p.combat.escalation.baseline_enemy_power)
@@ -1276,9 +1239,9 @@ pub fn diagnose_scores(scores: &[CandidateScore]) -> Vec<CatalogDiagnostic> {
         });
     }
     if total > 0
-        && scores
-            .iter()
-            .any(|item| item.score.saturating_mul(10_000) / total > 9_500)
+        && scores.iter().any(|item| {
+            item.score.saturating_mul(u64::from(BASIS_POINTS_PER_WHOLE)) / total > 9_500
+        })
     {
         out.push(CatalogDiagnostic {
             message: "over-dominant distribution".into(),

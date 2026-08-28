@@ -47,6 +47,10 @@ pub(crate) struct TacticalUiRoot;
 /// Pins the primary egui context to the gameplay camera. The automatic
 /// first-camera adoption is disabled in `UiPlugin::build`, so cameras that
 /// render offscreen never receive UI passes.
+#[expect(
+    clippy::type_complexity,
+    reason = "the Bevy camera filter selects newly added gameplay cameras without cloud or existing egui contexts"
+)]
 fn attach_primary_egui_context(
     mut commands: Commands,
     cameras: Query<
@@ -136,6 +140,10 @@ fn enemy_incapacitation_wheel_visible(side: TacticalCombatSide, incapacitation: 
     side == TacticalCombatSide::Enemy && incapacitation > 0.0
 }
 
+#[expect(
+    clippy::type_complexity,
+    reason = "the Bevy enemy query selects every combat and presentation input needed by the incapacitation wheel"
+)]
 fn draw_incapacitation_wheel(
     mut contexts: EguiContexts,
     player: Single<(Entity, &TacticalCombatState, &Limbs), With<ClientPlayer>>,
@@ -797,6 +805,10 @@ fn on_tactical_outcome_display(
     *banner.2 = ClassList::new(class);
 }
 
+#[expect(
+    clippy::type_complexity,
+    reason = "the Bevy ParamSet borrows distinct HUD text spans without aliasing mutable UI components"
+)]
 fn update_stats_ui(
     diagnostics: Res<DiagnosticsStore>,
     player: Single<(Ref<Transform>, &CharacterId), With<ClientPlayer>>,
@@ -822,6 +834,10 @@ fn update_stats_ui(
     }
 }
 
+#[expect(
+    clippy::type_complexity,
+    reason = "the Bevy query updates skills only for the changed local-player snapshot"
+)]
 fn update_skills_ui(
     player: Single<(&Skills, &CharacterId), (With<ClientPlayer>, Changed<Skills>)>,
     mut spans: Query<(&mut TextSpan, &SkillSpan)>,
@@ -867,6 +883,10 @@ fn update_skills_ui(
     }
 }
 
+#[expect(
+    clippy::type_complexity,
+    reason = "the Bevy ParamSet borrows each independently addressed limb HUD span"
+)]
 fn update_limbs_ui(
     player: Single<(&Limbs, &CharacterId), (With<ClientPlayer>, Changed<Limbs>)>,
     mut spans: ParamSet<(
@@ -893,6 +913,10 @@ fn update_limbs_ui(
 /// Mirrors the "wheel" incapacitation meter from `wiki/tactical/combat.md` as
 /// a segmented bar (pain/blood loss/imbalance) plus a total/status readout,
 /// since the current HUD has no radial-gauge rendering path.
+#[expect(
+    clippy::type_complexity,
+    reason = "the Bevy queries bind the changed local combat snapshot to its segmented HUD outputs"
+)]
 fn update_incapacitation_ui(
     player: Single<
         (Entity, &TacticalCombatState, &Limbs, &CharacterId),
@@ -993,6 +1017,10 @@ fn update_items_ui(
     }
 }
 
+#[expect(
+    clippy::type_complexity,
+    reason = "the Bevy ParamSet borrows independent server, client, and status HUD spans"
+)]
 fn update_connection_ui(
     player: Single<(
         &AdventureSimulatorClient,

@@ -5,9 +5,8 @@
 use std::collections::BTreeMap;
 
 use adventuresim_core::courtship::{
-    HOUSING_BILLING_PERIOD_MINUTES, HousingTier as CoreHousingTier, RESIDENCE_MORALE_SPEC,
-    RefreshableMorale, refresh_bounded_leisure_morale, residence_leisure_bonus_milli,
-    residence_period_charge,
+    HOUSING_BILLING_PERIOD_MINUTES, HousingTier, RESIDENCE_MORALE_SPEC, RefreshableMorale,
+    refresh_bounded_leisure_morale, residence_leisure_bonus_milli, residence_period_charge,
 };
 use adventuresim_core::strategic_place::StrategicPlaceId;
 use adventuresim_core::strategic_presence::{PresenceFrontier, StrategicPresence, are_co_present};
@@ -21,33 +20,6 @@ use crate::time::{character_time, character_time__view};
 
 pub const RESIDENCE_BILLING_PERIOD_MINUTES: u64 = HOUSING_BILLING_PERIOD_MINUTES;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
-pub enum ResidenceTier {
-    Cheap,
-    Moderate,
-    Fancy,
-}
-
-impl ResidenceTier {
-    pub const ALL: [Self; 3] = [Self::Cheap, Self::Moderate, Self::Fancy];
-
-    const fn core(self) -> CoreHousingTier {
-        match self {
-            Self::Cheap => CoreHousingTier::Cheap,
-            Self::Moderate => CoreHousingTier::Moderate,
-            Self::Fancy => CoreHousingTier::Fancy,
-        }
-    }
-
-    pub const fn id(self) -> &'static str {
-        match self {
-            Self::Cheap => "cheap",
-            Self::Moderate => "moderate",
-            Self::Fancy => "fancy",
-        }
-    }
-}
-
 #[derive(Clone, Debug)]
 #[table(accessor = settlement_residence_offer, public)]
 pub struct SettlementResidenceOffer {
@@ -55,7 +27,7 @@ pub struct SettlementResidenceOffer {
     pub id: String,
     #[index(btree)]
     pub settlement_id: String,
-    pub tier: ResidenceTier,
+    pub tier: HousingTier,
     pub purchase_price: u32,
     pub rent_per_period: u32,
     pub owner_maintenance_per_period: u32,
@@ -89,7 +61,7 @@ pub struct ResidenceHolding {
     pub owner_character_id: u64,
     #[index(btree)]
     pub settlement_id: String,
-    pub tier: ResidenceTier,
+    pub tier: HousingTier,
     pub tenure: ResidenceTenure,
     pub status: ResidenceHoldingStatus,
     pub acquired_ordinal: u64,
@@ -186,7 +158,7 @@ pub struct BackendCharacterResidenceStatus {
     pub holding_id: String,
     pub owner_character_id: u64,
     pub settlement_id: String,
-    pub tier: ResidenceTier,
+    pub tier: HousingTier,
     pub tenure: ResidenceTenure,
     pub active: bool,
     pub primary: bool,
@@ -377,14 +349,14 @@ pub fn backend_character_residence_statuses(
         .collect()
 }
 
-pub fn offer_id(settlement_id: &str, tier: ResidenceTier) -> String {
+pub fn offer_id(settlement_id: &str, tier: HousingTier) -> String {
     format!("residence:{settlement_id}:{}", tier.id())
 }
 
 fn holding_id(
     owner_character_id: u64,
     settlement_id: &str,
-    tier: ResidenceTier,
+    tier: HousingTier,
     acquired_ordinal: u64,
 ) -> String {
     format!(
@@ -436,12 +408,12 @@ pub fn ensure_settlement_residence_offers(
     {
         return Err("Settlement not found".into());
     }
-    for tier in ResidenceTier::ALL {
+    for tier in HousingTier::ALL {
         let id = offer_id(settlement_id, tier);
         if ctx.db.settlement_residence_offer().id().find(&id).is_some() {
             continue;
         }
-        let economy = tier.core().economy();
+        let economy = tier.economy();
         ctx.db
             .settlement_residence_offer()
             .insert(SettlementResidenceOffer {
@@ -470,7 +442,7 @@ fn residence_now(ctx: &ReducerContext, character_id: u64) -> Result<u64, String>
 fn offer(
     ctx: &ReducerContext,
     settlement_id: &str,
-    tier: ResidenceTier,
+    tier: HousingTier,
 ) -> Result<SettlementResidenceOffer, String> {
     ctx.db
         .settlement_residence_offer()
@@ -1066,7 +1038,7 @@ fn period_charge(
         adults,
         dependents,
         residence_period_charge(
-            holding.tier.core().economy(),
+            holding.tier.economy(),
             holding.tenure == ResidenceTenure::Owner,
             adults,
             dependents,
@@ -1295,7 +1267,7 @@ fn acquire_residence_internal(
     ctx: &ReducerContext,
     character_id: u64,
     settlement_id: &str,
-    tier: ResidenceTier,
+    tier: HousingTier,
     tenure: ResidenceTenure,
 ) -> Result<String, String> {
     let character = crate::character::require_living_character(ctx, character_id)?;
@@ -1361,7 +1333,7 @@ fn acquire_residence(
     ctx: &ReducerContext,
     character_id: u64,
     settlement_id: &str,
-    tier: ResidenceTier,
+    tier: HousingTier,
     tenure: ResidenceTenure,
 ) -> Result<(), String> {
     crate::strategic::require_strategic_character_authority(ctx, character_id)?;
@@ -1373,7 +1345,7 @@ pub fn rent_residence(
     ctx: &ReducerContext,
     character_id: u64,
     settlement_id: String,
-    tier: ResidenceTier,
+    tier: HousingTier,
 ) -> Result<(), String> {
     acquire_residence(
         ctx,
@@ -1389,7 +1361,7 @@ pub fn buy_residence(
     ctx: &ReducerContext,
     character_id: u64,
     settlement_id: String,
-    tier: ResidenceTier,
+    tier: HousingTier,
 ) -> Result<(), String> {
     acquire_residence(
         ctx,
@@ -1478,7 +1450,7 @@ fn recover_owned_residence_internal(
 pub(crate) enum NpcResidenceOutcome {
     AlreadyOccupant,
     RecoveredOwner,
-    Rented(ResidenceTier),
+    Rented(HousingTier),
     NoAffordableOffer,
     NotAtHome,
 }
@@ -1534,16 +1506,16 @@ pub(crate) fn settle_npc_residence(
     }
     ensure_settlement_residence_offers(ctx, home_settlement_id)?;
     let available = crate::item::personal_currency_total(ctx, character_id);
-    let mut resolved = Vec::with_capacity(ResidenceTier::ALL.len());
-    for tier in ResidenceTier::ALL {
+    let mut resolved = Vec::with_capacity(HousingTier::ALL.len());
+    for tier in HousingTier::ALL {
         let row = offer(ctx, home_settlement_id, tier)?;
         resolved.push((
             tier,
             adventuresim_core::npc_policy::NpcHouseOffer {
                 rank: match tier {
-                    ResidenceTier::Cheap => 0,
-                    ResidenceTier::Moderate => 1,
-                    ResidenceTier::Fancy => 2,
+                    HousingTier::Cheap => 0,
+                    HousingTier::Moderate => 1,
+                    HousingTier::Fancy => 2,
                 },
                 initial_cost: u64::from(row.rent_per_period),
                 recurring_cost: u64::from(row.rent_per_period),
@@ -1623,20 +1595,20 @@ mod tests {
 
     #[test]
     fn offers_and_holding_ids_are_stable() {
-        assert_eq!(ResidenceTier::ALL.len(), 3);
+        assert_eq!(HousingTier::ALL.len(), 3);
         assert_ne!(
-            offer_id("lubeck", ResidenceTier::Cheap),
-            offer_id("lubeck", ResidenceTier::Fancy)
+            offer_id("lubeck", HousingTier::Cheap),
+            offer_id("lubeck", HousingTier::Fancy)
         );
         assert_ne!(
-            holding_id(1, "lubeck", ResidenceTier::Cheap, 0),
-            holding_id(1, "lubeck", ResidenceTier::Cheap, 1)
+            holding_id(1, "lubeck", HousingTier::Cheap, 0),
+            holding_id(1, "lubeck", HousingTier::Cheap, 1)
         );
     }
 
     #[test]
     fn schema_separates_many_holdings_from_one_primary_and_one_occupancy() {
-        let source = include_str!("residence.rs");
+        let source = crate::production_source(include_str!("residence.rs"));
         assert!(source.contains("#[table(accessor = residence_holding)]"));
         assert!(source.contains("pub struct PrimaryResidence"));
         assert!(source.contains("pub struct ResidenceOccupant"));
@@ -1647,7 +1619,7 @@ mod tests {
 
     #[test]
     fn acquisition_preserves_owned_property_and_replaces_only_a_rental() {
-        let source = include_str!("residence.rs");
+        let source = crate::production_source(include_str!("residence.rs"));
         let acquisition = source
             .split("fn acquire_residence_internal")
             .nth(1)
@@ -1663,7 +1635,7 @@ mod tests {
 
     #[test]
     fn billing_covers_all_holdings_and_audits_household_line_items() {
-        let source = include_str!("residence.rs");
+        let source = crate::production_source(include_str!("residence.rs"));
         let billing = source
             .split("pub fn settle_residence_billing")
             .nth(1)
@@ -1683,7 +1655,7 @@ mod tests {
 
     #[test]
     fn necessities_use_effective_age_and_promote_adult_children() {
-        let source = include_str!("residence.rs");
+        let source = crate::production_source(include_str!("residence.rs"));
         let counts = source
             .split("fn supported_occupant_counts_at")
             .nth(1)
@@ -1698,7 +1670,7 @@ mod tests {
 
     #[test]
     fn gateway_projection_keeps_nonprimary_owned_holdings_manageable() {
-        let source = include_str!("residence.rs");
+        let source = crate::production_source(include_str!("residence.rs"));
         let projection = source
             .split("pub fn backend_character_residence_statuses")
             .nth(1)
@@ -1712,13 +1684,15 @@ mod tests {
         assert!(
             projection.contains("let owns_holding = holding.owner_character_id == character_id")
         );
-        assert!(projection.contains("owns_holding.then_some(holding.last_billed_minute)"));
-        assert!(projection.contains("owns_holding.then_some(holding.next_due_minute)"));
+        assert!(projection.contains("last_billed_minute: if owns_holding"));
+        assert!(projection.contains("holding.last_billed_minute"));
+        assert!(projection.contains("next_due_minute: if owns_holding"));
+        assert!(projection.contains("holding.next_due_minute"));
     }
 
     #[test]
     fn effective_guest_removal_preserves_newer_current_occupancy() {
-        let source = include_str!("residence.rs");
+        let source = crate::production_source(include_str!("residence.rs"));
         let removal = source
             .split("pub(crate) fn remove_nonowned_occupancy_effective")
             .nth(1)
@@ -1755,7 +1729,7 @@ mod tests {
         );
         assert_eq!(funds, 0);
 
-        let source = include_str!("residence.rs");
+        let source = crate::production_source(include_str!("residence.rs"));
         let one_period = source
             .split("fn settle_one_holding_period")
             .nth(1)
@@ -1768,7 +1742,7 @@ mod tests {
 
     #[test]
     fn specific_relinquishment_resolves_occupants_without_deleting_history() {
-        let source = include_str!("residence.rs");
+        let source = crate::production_source(include_str!("residence.rs"));
         let relinquish = source
             .split("fn relinquish_holding_at")
             .nth(1)

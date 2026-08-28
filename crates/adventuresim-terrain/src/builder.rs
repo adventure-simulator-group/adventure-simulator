@@ -242,7 +242,10 @@ fn feature_digest<T: serde::Serialize>(value: &T) -> crate::Result<String> {
     Ok(hex_sha(&serde_json::to_vec(value)?))
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 fn chunk_intersects_bounds(
     south: i16,
     west: i16,

@@ -1,4 +1,7 @@
-use adventuresim_core::strategic_time::MINUTES_PER_DAY;
+use adventuresim_core::{
+    simulation_security::MAX_SIMULATION_SKILL_HOURS,
+    strategic_time::{DAYS_PER_YEAR, MINUTES_PER_DAY},
+};
 use adventuresim_strategic_sim::*;
 use std::process::Command;
 
@@ -28,7 +31,7 @@ fn fixed_seed_is_reproducible_and_other_seed_differs() {
 
 #[test]
 fn recorded_manifest_replays_to_same_digest() {
-    let original = run(config(7, 3, 365)).unwrap();
+    let original = run(config(7, 3, DAYS_PER_YEAR as u32)).unwrap();
     let replayed = replay(original.manifest.clone()).unwrap();
     assert_eq!(original.canonical_digest, replayed.canonical_digest);
     assert_eq!(digest(&replayed).unwrap(), replayed.canonical_digest);
@@ -89,14 +92,14 @@ fn matched_pair_changes_only_declared_activity_fields() {
     assert_eq!(labor, normalized);
     let mut thief = thief;
     thief.agent_id = 1;
-    let report = run_profiles(config(9, 2, 365), vec![labor, thief]).unwrap();
+    let report = run_profiles(config(9, 2, DAYS_PER_YEAR as u32), vec![labor, thief]).unwrap();
     assert_eq!(report.metrics[0].infamy, 0.0);
     assert!(report.metrics[1].infamy > 0.0);
 }
 
 #[test]
 fn multi_year_smoke_tracks_time_allocation_and_finite_metrics() {
-    let report = run(config(99, 16, 365 * 5)).unwrap();
+    let report = run(config(99, 16, DAYS_PER_YEAR as u32 * 5)).unwrap();
     for (profile, metrics) in report.manifest.profiles.iter().zip(&report.metrics) {
         assert!(metrics.skill_hours.is_finite());
         assert!(metrics.infamy.is_finite());
@@ -115,9 +118,9 @@ fn multi_year_smoke_tracks_time_allocation_and_finite_metrics() {
                     .into_iter()
                     .map(u64::from)
                     .sum::<u64>())
-                    * 365
+                    * DAYS_PER_YEAR
                     * 5,
-            MINUTES_PER_DAY * 365 * 5
+            MINUTES_PER_DAY * DAYS_PER_YEAR * 5
         );
     }
 }
@@ -148,7 +151,7 @@ fn generated_profiles_exclude_raiding_and_custom_raiding_is_rejected() {
 #[test]
 fn extreme_skill_hours_and_oversized_report_vectors_are_rejected() {
     let mut profile = generate_profile(1, 0);
-    profile.initial_skills.sword = MAX_INITIAL_SKILL_HOURS + 1.0;
+    profile.initial_skills.sword = MAX_SIMULATION_SKILL_HOURS + 1.0;
     assert!(run_profiles(config(1, 1, 1), vec![profile]).is_err());
 
     let mut bounded = config(2, 1, 1);
@@ -161,7 +164,12 @@ fn extreme_skill_hours_and_oversized_report_vectors_are_rejected() {
 
 #[test]
 fn individual_religion_fields_must_be_finite_and_bounded() {
-    for invalid in [-1.0, f32::NAN, f32::INFINITY, MAX_INITIAL_SKILL_HOURS + 1.0] {
+    for invalid in [
+        -1.0,
+        f32::NAN,
+        f32::INFINITY,
+        MAX_SIMULATION_SKILL_HOURS + 1.0,
+    ] {
         let mut profile = generate_profile(1, 0);
         profile.initial_skills.religion.judaism = invalid;
         assert!(
@@ -188,44 +196,44 @@ fn faithless_prayer_adds_no_religion_study() {
 fn bounded_skill_state_remains_finite_for_maximum_duration() {
     let mut profile = generate_profile(88, 0);
     profile.initial_skills = adventuresim_core::strategic_schedule::SkillHours {
-        polearm: MAX_INITIAL_SKILL_HOURS,
-        axe: MAX_INITIAL_SKILL_HOURS,
-        bludgeon: MAX_INITIAL_SKILL_HOURS,
-        sword: MAX_INITIAL_SKILL_HOURS,
-        knife: MAX_INITIAL_SKILL_HOURS,
-        dodge: MAX_INITIAL_SKILL_HOURS,
-        block: MAX_INITIAL_SKILL_HOURS,
-        bow: MAX_INITIAL_SKILL_HOURS,
-        crossbow: MAX_INITIAL_SKILL_HOURS,
-        firearm: MAX_INITIAL_SKILL_HOURS,
-        throw: MAX_INITIAL_SKILL_HOURS,
-        will: MAX_INITIAL_SKILL_HOURS,
-        insight: MAX_INITIAL_SKILL_HOURS,
-        charm: MAX_INITIAL_SKILL_HOURS,
-        command: MAX_INITIAL_SKILL_HOURS,
-        deception: MAX_INITIAL_SKILL_HOURS,
-        physiology: MAX_INITIAL_SKILL_HOURS,
-        herbalism: MAX_INITIAL_SKILL_HOURS,
+        polearm: MAX_SIMULATION_SKILL_HOURS,
+        axe: MAX_SIMULATION_SKILL_HOURS,
+        bludgeon: MAX_SIMULATION_SKILL_HOURS,
+        sword: MAX_SIMULATION_SKILL_HOURS,
+        knife: MAX_SIMULATION_SKILL_HOURS,
+        dodge: MAX_SIMULATION_SKILL_HOURS,
+        block: MAX_SIMULATION_SKILL_HOURS,
+        bow: MAX_SIMULATION_SKILL_HOURS,
+        crossbow: MAX_SIMULATION_SKILL_HOURS,
+        firearm: MAX_SIMULATION_SKILL_HOURS,
+        throw: MAX_SIMULATION_SKILL_HOURS,
+        will: MAX_SIMULATION_SKILL_HOURS,
+        insight: MAX_SIMULATION_SKILL_HOURS,
+        charm: MAX_SIMULATION_SKILL_HOURS,
+        command: MAX_SIMULATION_SKILL_HOURS,
+        deception: MAX_SIMULATION_SKILL_HOURS,
+        physiology: MAX_SIMULATION_SKILL_HOURS,
+        herbalism: MAX_SIMULATION_SKILL_HOURS,
         religion: adventuresim_world_schema::ReligionHours {
-            roman_catholic: MAX_INITIAL_SKILL_HOURS,
+            roman_catholic: MAX_SIMULATION_SKILL_HOURS,
             ..Default::default()
         },
         bestiary: adventuresim_world_schema::BestiaryHours {
             human: adventuresim_world_schema::BESTIARY_MASTERY_HOURS,
             ..Default::default()
         },
-        stealth: MAX_INITIAL_SKILL_HOURS,
-        balance: MAX_INITIAL_SKILL_HOURS,
-        surgery: MAX_INITIAL_SKILL_HOURS,
-        terrain_plains: MAX_INITIAL_SKILL_HOURS,
-        terrain_forest: MAX_INITIAL_SKILL_HOURS,
-        terrain_hills: MAX_INITIAL_SKILL_HOURS,
-        terrain_wetlands: MAX_INITIAL_SKILL_HOURS,
-        terrain_urban: MAX_INITIAL_SKILL_HOURS,
-        terrain_snow: MAX_INITIAL_SKILL_HOURS,
-        tailoring: MAX_INITIAL_SKILL_HOURS,
-        smithing: MAX_INITIAL_SKILL_HOURS,
-        cooking: MAX_INITIAL_SKILL_HOURS,
+        stealth: MAX_SIMULATION_SKILL_HOURS,
+        balance: MAX_SIMULATION_SKILL_HOURS,
+        surgery: MAX_SIMULATION_SKILL_HOURS,
+        terrain_plains: MAX_SIMULATION_SKILL_HOURS,
+        terrain_forest: MAX_SIMULATION_SKILL_HOURS,
+        terrain_hills: MAX_SIMULATION_SKILL_HOURS,
+        terrain_wetlands: MAX_SIMULATION_SKILL_HOURS,
+        terrain_urban: MAX_SIMULATION_SKILL_HOURS,
+        terrain_snow: MAX_SIMULATION_SKILL_HOURS,
+        tailoring: MAX_SIMULATION_SKILL_HOURS,
+        smithing: MAX_SIMULATION_SKILL_HOURS,
+        cooking: MAX_SIMULATION_SKILL_HOURS,
     };
     let report = run_profiles(config(88, 1, MAX_DAYS), vec![profile]).unwrap();
     assert!(report.metrics[0].skill_hours.is_finite());

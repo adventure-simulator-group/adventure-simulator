@@ -131,7 +131,7 @@ impl Node {
     /// Look up an entry of this node's `Properties70` block by name.
     ///
     /// Mirrors OpenFBX `resolveProperty`: a `P` record whose first property is
-    /// the requested name; values start at index 4 (index 3 for legacy P60).
+    /// the requested name; values start at index 4.
     pub fn property70(&self, name: &str) -> Option<&Node> {
         let props = self.child("Properties70")?;
         props.children.iter().find(|p| {

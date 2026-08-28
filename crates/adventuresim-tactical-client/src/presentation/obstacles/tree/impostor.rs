@@ -2,6 +2,7 @@ mod card_mesh;
 mod raster;
 
 use card_mesh::*;
+use fabelgeist_determinism::splitmix64;
 use raster::*;
 
 use super::super::super::*;
@@ -226,11 +227,13 @@ pub(in crate::presentation) fn bake_tree_lod_with_style(
             branches,
             leaves,
             lod,
-            tile_size,
-            atlas_width,
-            atlas_height,
-            tile_x,
-            tile_y,
+            TreeAtlasRegion {
+                tile_size,
+                atlas_width,
+                atlas_height,
+                tile_x,
+                tile_y,
+            },
             &mut pixels,
             style,
         );
@@ -256,22 +259,26 @@ pub(in crate::presentation) fn bake_tree_lod_with_style(
                 (uv_min, uv_max)
             };
             append_tree_card_with_uv(
-                card.center,
-                card.right,
-                card.up,
-                card.width
-                    * match lod {
-                        1 => style.lod1_runtime_width_scale,
-                        4 => WHOLE_TREE_RUNTIME_WIDTH_SCALE,
-                        _ => 1.0,
-                    },
-                card.height,
-                mesh_uv_min,
-                mesh_uv_max,
-                &mut positions,
-                &mut normals,
-                &mut uvs,
-                &mut indices,
+                TreeCardGeometry {
+                    center: card.center,
+                    right: card.right,
+                    up: card.up,
+                    width: card.width
+                        * match lod {
+                            1 => style.lod1_runtime_width_scale,
+                            4 => WHOLE_TREE_RUNTIME_WIDTH_SCALE,
+                            _ => 1.0,
+                        },
+                    height: card.height,
+                    uv_min: mesh_uv_min,
+                    uv_max: mesh_uv_max,
+                },
+                TreeCardMeshBuffers {
+                    positions: &mut positions,
+                    normals: &mut normals,
+                    uvs: &mut uvs,
+                    indices: &mut indices,
+                },
             );
         }
         records.push(TreeImpostorBakeRecord {
@@ -296,7 +303,7 @@ pub(in crate::presentation) fn bake_tree_lod_with_style(
         // The aggregate crown has fewer overlapping depth layers than LOD3.
         // A bounded bake-space exposure restores comparable interior depth
         // without a runtime material multiplier or changing alpha coverage.
-        for pixel in pixels.chunks_exact_mut(4) {
+        for pixel in pixels.as_chunks_mut::<4>().0 {
             if pixel[3] != 0 {
                 pixel[0] = (f32::from(pixel[0]) * WHOLE_TREE_BAKE_EXPOSURE) as u8;
                 pixel[1] = (f32::from(pixel[1]) * WHOLE_TREE_BAKE_EXPOSURE) as u8;
@@ -432,6 +439,7 @@ fn tree_tile_alpha_stats(
     (count, sum / count.max(1) as f32)
 }
 
+#[cfg(test)]
 pub(in crate::presentation) fn tree_bake_cards(
     seed: u64,
     branches: &[TreeBranchSegment],
@@ -661,7 +669,10 @@ fn crown_group_right(branches: &[TreeBranchSegment], group: u8) -> Vec3 {
         .unwrap_or(Vec3::X)
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 pub(in crate::presentation) fn fit_tree_bake_card(
     branches: &[TreeBranchSegment],
     leaves: &[TreeLeaf],
@@ -776,7 +787,6 @@ pub(in crate::presentation) fn tree_source_geometry_hash(
     hash
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(in crate::presentation) fn tree_impostor_material(
     seed: u64,
     lod: u8,

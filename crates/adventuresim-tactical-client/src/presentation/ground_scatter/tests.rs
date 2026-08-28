@@ -1,5 +1,5 @@
 use super::*;
-use crate::presentation::legacy_scene_environment;
+use adventuresim_tactical_core::prelude::SceneEnvironmentFixture;
 use bevy::{
     color::ColorToComponents,
     prelude::{App, Update},
@@ -55,7 +55,7 @@ fn grass_density_favors_open_meadow_and_thins_under_closed_canopy() {
 
 #[test]
 fn terminal_grass_pigment_compensates_for_foliage_optical_darkening() {
-    let environment = legacy_scene_environment(&SceneId("terminal-grass-pigment".into()));
+    let environment = SceneEnvironmentFixture::TemperateHills.snapshot("terminal-grass-pigment");
     let blade = grass_pigment(&environment).0.to_linear().to_f32_array();
     let terminal = grass_terminal_pigment(&environment)
         .to_linear()

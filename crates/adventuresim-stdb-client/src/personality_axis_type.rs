@@ -33,6 +33,10 @@ pub enum PersonalityAxis {
     Transparency,
 
     SelfKnowledge,
+
+    Inclination,
+
+    Presentation,
 }
 
 impl __sdk::InModule for PersonalityAxis {

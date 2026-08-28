@@ -12,7 +12,7 @@ mod social_notification_query_tests {
             social_action_error_feedback(
                 "SpacetimeDB error: That approach needs time before it can be tried again"
             ),
-            "cooldown"
+            "unavailable"
         );
         assert_eq!(
             social_action_error_feedback("transport details that must not reach the browser"),

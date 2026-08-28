@@ -8,9 +8,9 @@ use adventuresim_core::courtship::{
     FORMAL_FATHER_APPROVAL_AFFINITY, GESTATION_MINUTES, LeisureInterval, MinuteSpan,
     SPOUSE_LEISURE_MORALE_SPEC, WEDDING_NOTICE_MINUTES, coded_courtship_rejection,
     conception_quantum_plan, deterministic_child_seeds, informal_affinity_threshold,
-    joint_leisure_minutes, refresh_bounded_leisure_morale, select_daily_location_target,
-    spouse_leisure_earned_milli, stable_lifecycle_hash, succeeds_daily_trial,
-    uncovered_minute_spans,
+    joint_leisure_minutes, parse_courtship_rejection, refresh_bounded_leisure_morale,
+    select_daily_location_target, spouse_leisure_earned_milli, stable_lifecycle_hash,
+    succeeds_daily_trial, uncovered_minute_spans,
 };
 use adventuresim_core::strategic_schedule::{DailySchedule, restorative_leisure_spans};
 use adventuresim_core::strategic_time::{MINUTES_PER_DAY, MINUTES_PER_YEAR};
@@ -2287,7 +2287,8 @@ fn settle_spouse_leisure_pair(
             let entropy = (stable_lifecycle_hash(
                 "spouse-conception",
                 &[&first_id.to_string(), &second_id.to_string(), &ordinal],
-            ) % 10_000) as u16;
+            ) % u64::from(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE))
+                as u16;
             let parents = conception_parents(ctx, first_id, second_id, minute)?;
             let succeeded = parents.is_some()
                 && succeeds_daily_trial(entropy, CONCEPTION_CHANCE_PER_TEN_THOUSAND)
@@ -2417,20 +2418,6 @@ pub fn apply_spouse_leisure_conception(
         }
     }
     settle_spouse_leisure_pair(ctx, character_id, spouse_id)
-}
-
-/// Colocated spouses refresh a durable morale benefit from qualifying Leisure.
-/// The source is pair-stable, so repeated leisure refreshes rather than stacks
-/// unbounded events and remains independent of a residence comfort bonus.
-pub fn apply_spouse_leisure_morale(
-    _ctx: &ReducerContext,
-    _character_id: u64,
-    _interval_end: u64,
-    _qualifying_leisure_minutes: u64,
-) -> Result<(), String> {
-    // Compatibility seam: conception registration now settles the conserved
-    // overlap and refreshes the bounded benefit for both spouses exactly once.
-    Ok(())
 }
 
 /// Materialize due children as ordinary full Characters under NPC policy.
@@ -3319,8 +3306,10 @@ pub fn settle_secret_courtship_discovery_for_pair(
         }
         let insight = baseline.observer_insight;
         let deception = courtship.weaker_deception_baseline;
-        let entropy =
-            ((first ^ second ^ observer_id ^ day.rotate_left(19)) % 10_000) as f32 / 10_000.0;
+        let entropy = ((first ^ second ^ observer_id ^ day.rotate_left(19))
+            % u64::from(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE))
+            as f32
+            / f32::from(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE);
         let discovery_chance = ((insight - deception) * 0.08 + 0.15).clamp(0.02, 0.85);
         let succeeded = entropy < discovery_chance;
         ctx.db.courtship_discovery().insert(CourtshipDiscovery {
@@ -3829,7 +3818,16 @@ pub fn begin_formal_courtship(
     partner_id: u64,
 ) -> Result<(), String> {
     crate::strategic::require_strategic_character_authority(ctx, suitor_id)?;
-    let minute = validate_canonical_courtship_pair(ctx, suitor_id, partner_id)?;
+    let minute = match validate_canonical_courtship_pair(ctx, suitor_id, partner_id) {
+        Ok(minute) => minute,
+        Err(error)
+            if parse_courtship_rejection(&error)
+                == Some(CourtshipRejectionCode::ExclusiveCommitment) =>
+        {
+            return Ok(());
+        }
+        Err(error) => return Err(error),
+    };
     let suitor = ctx
         .db
         .character_personality()
@@ -3905,11 +3903,7 @@ pub fn prepare_development_courtship(
         .and_then(|character| character.current_settlement_id)
         .ok_or("Development courtship requires a current settlement")?;
     crate::item::credit_personal_currency(ctx, suitor_id, &settlement_id, 10_000)?;
-    let minute = match validate_canonical_courtship_pair(ctx, suitor_id, partner_id) {
-        Ok(minute) => minute,
-        Err(error) if error.contains("exclusive romantic commitment") => return Ok(()),
-        Err(error) => return Err(error),
-    };
+    let minute = validate_canonical_courtship_pair(ctx, suitor_id, partner_id)?;
     crate::social::put_affinity_at(ctx, partner_id, suitor_id, 100.0, minute);
     if let Some(father_id) = father_of_at(ctx, partner_id, minute)? {
         crate::social::put_affinity_at(ctx, father_id, suitor_id, 100.0, minute);
@@ -4251,7 +4245,7 @@ mod tests {
 
     #[test]
     fn npc_policy_uses_the_single_character_clock_and_central_lifecycle_hook() {
-        let source = include_str!("relationship.rs");
+        let source = crate::production_source(include_str!("relationship.rs"));
         assert!(!source.contains("struct NpcPersonalTime"));
         assert!(!source.contains("npc_personal_time()"));
         let advancement = source
@@ -4275,7 +4269,7 @@ mod tests {
 
     #[test]
     fn relationship_projection_is_effective_dated_by_personal_frontier() {
-        let source = include_str!("relationship.rs");
+        let source = crate::production_source(include_str!("relationship.rs"));
         let projection = source
             .split("pub fn backend_character_relationship_statuses")
             .nth(1)
@@ -4292,7 +4286,7 @@ mod tests {
 
     #[test]
     fn soft_scope_never_reads_or_synchronizes_the_target_clock() {
-        let source = include_str!("relationship.rs");
+        let source = crate::production_source(include_str!("relationship.rs"));
         let guard = source
             .split("pub fn enforce_temporal_scope")
             .nth(1)
@@ -4313,7 +4307,7 @@ mod tests {
 
     #[test]
     fn exclusive_scope_and_weddings_use_canonical_world_time() {
-        let source = include_str!("relationship.rs");
+        let source = crate::production_source(include_str!("relationship.rs"));
         let guard = source
             .split("pub fn enforce_temporal_scope")
             .nth(1)
@@ -4337,7 +4331,7 @@ mod tests {
 
     #[test]
     fn seeded_family_contract_has_unique_roles_and_canonical_edges() {
-        let source = include_str!("relationship.rs");
+        let source = crate::production_source(include_str!("relationship.rs"));
         let seed = source
             .split("pub fn ensure_seeded_family_households")
             .nth(1)
@@ -4352,12 +4346,14 @@ mod tests {
         assert!(seed.contains("KinshipKind::Sibling"));
         assert!(seed.contains("ensure_character_family_role"));
         assert!(seed.contains("seeded:{settlement_id}:{cohort}"));
-        assert!(seed.contains("character_personality().character_id().update"));
+        assert!(seed.contains(".character_personality()"));
+        assert!(seed.contains(".character_id()"));
+        assert!(seed.contains(".update(personality)"));
     }
 
     #[test]
     fn marriage_preserves_birth_family_and_birth_copies_it_to_the_child() {
-        let source = include_str!("relationship.rs");
+        let source = crate::production_source(include_str!("relationship.rs"));
         let wedding = source
             .split("pub fn settle_due_weddings")
             .nth(1)
@@ -4380,7 +4376,7 @@ mod tests {
 
     #[test]
     fn every_commitment_terminal_transition_releases_reservations_and_audits() {
-        let source = include_str!("relationship.rs");
+        let source = crate::production_source(include_str!("relationship.rs"));
         let transition = source
             .split("fn transition_commitment_terminal")
             .nth(1)
@@ -4398,7 +4394,7 @@ mod tests {
 
     #[test]
     fn wedding_contract_uses_effective_history_and_records_one_dowry_outcome() {
-        let source = include_str!("relationship.rs");
+        let source = crate::production_source(include_str!("relationship.rs"));
         let wedding = source
             .split("pub fn settle_due_weddings")
             .nth(1)
@@ -4419,7 +4415,7 @@ mod tests {
 
     #[test]
     fn discovery_attempts_use_frozen_observers_and_weaker_deception() {
-        let source = include_str!("relationship.rs");
+        let source = crate::production_source(include_str!("relationship.rs"));
         let discovery = source
             .split("pub fn settle_secret_courtship_discovery_for_pair")
             .nth(1)
@@ -4438,7 +4434,7 @@ mod tests {
 
     #[test]
     fn courtship_thresholds_use_opinion_at_the_effective_minute() {
-        let source = include_str!("relationship.rs");
+        let source = crate::production_source(include_str!("relationship.rs"));
         let projection = source
             .split("fn affinity_at")
             .nth(1)
@@ -4459,7 +4455,7 @@ mod tests {
 
     #[test]
     fn birth_uses_reserved_identity_and_constructs_age_zero() {
-        let source = include_str!("relationship.rs");
+        let source = crate::production_source(include_str!("relationship.rs"));
         let birth = source
             .split("pub fn settle_due_births")
             .nth(1)
@@ -4483,7 +4479,7 @@ mod tests {
 
     #[test]
     fn spouse_leisure_is_simultaneous_conserved_and_idempotent() {
-        let source = include_str!("relationship.rs");
+        let source = crate::production_source(include_str!("relationship.rs"));
         let settlement = source
             .split("fn settle_spouse_leisure_pair")
             .nth(1)
@@ -4494,13 +4490,14 @@ mod tests {
         assert!(settlement.contains("joint_leisure_minutes("));
         assert!(settlement.contains("conception_quantum_plan("));
         assert!(settlement.contains("spouse_leisure_overlap().id().find"));
-        assert!(settlement.contains("conception_trial_receipt().id().find"));
+        assert!(settlement.contains(".conception_trial_receipt()"));
+        assert!(settlement.contains(".find(&receipt_id)"));
         assert!(settlement.contains("refresh_spouse_pair_morale"));
     }
 
     #[test]
     fn spouse_morale_is_awarded_to_both_and_respects_combined_cap() {
-        let source = include_str!("relationship.rs");
+        let source = crate::production_source(include_str!("relationship.rs"));
         let morale = source
             .split("fn refresh_spouse_pair_morale")
             .nth(1)
@@ -4509,13 +4506,13 @@ mod tests {
             .next()
             .unwrap();
         assert!(morale.contains("for character_id in [first_id, second_id]"));
-        assert!(morale.contains("LEISURE_MORALE_STACK_CAP_MILLI"));
+        assert!(morale.contains("refresh_bounded_leisure_morale"));
         assert!(morale.contains("SPOUSE_LEISURE_MORALE_SPEC"));
     }
 
     #[test]
     fn wedding_resolution_uses_the_scheduled_effective_minute() {
-        let source = include_str!("relationship.rs");
+        let source = crate::production_source(include_str!("relationship.rs"));
         let wedding = source
             .split("pub fn settle_due_weddings")
             .nth(1)
@@ -4529,7 +4526,7 @@ mod tests {
 
     #[test]
     fn secret_facade_is_daily_independent_and_stops_on_exposure() {
-        let source = include_str!("relationship.rs");
+        let source = crate::production_source(include_str!("relationship.rs"));
         let daily = source
             .split("pub fn settle_secret_courtship_discovery_for_character")
             .nth(1)
@@ -4560,7 +4557,7 @@ mod tests {
 
     #[test]
     fn socializing_receipts_are_actor_day_target_cumulative_and_party_safe() {
-        let source = include_str!("relationship.rs");
+        let source = crate::production_source(include_str!("relationship.rs"));
         let socializing = source
             .split("pub fn apply_scheduled_socializing")
             .nth(1)
@@ -4592,7 +4589,7 @@ mod tests {
 
     #[test]
     fn scheduled_socializing_splits_at_availability_boundaries() {
-        let source = include_str!("relationship.rs");
+        let source = crate::production_source(include_str!("relationship.rs"));
         let boundaries = source
             .split("fn next_socializing_boundary")
             .nth(1)
@@ -4621,7 +4618,7 @@ mod tests {
 
     #[test]
     fn formal_route_uses_living_father_and_retry_is_explicit() {
-        let source = include_str!("relationship.rs");
+        let source = crate::production_source(include_str!("relationship.rs"));
         let formal = source
             .split("pub fn begin_formal_courtship")
             .nth(1)
@@ -4643,7 +4640,7 @@ mod tests {
 
     #[test]
     fn player_courtship_rejections_carry_stable_typed_codes() {
-        let source = include_str!("relationship.rs");
+        let source = crate::production_source(include_str!("relationship.rs"));
         for reducer in [
             "pub fn begin_formal_courtship",
             "pub fn begin_informal_courtship",
@@ -4663,7 +4660,7 @@ mod tests {
 
     #[test]
     fn marriage_cleanup_releases_household_and_guest_occupancy() {
-        let source = include_str!("relationship.rs");
+        let source = crate::production_source(include_str!("relationship.rs"));
         let resolution = source
             .split("fn resolve_marriage")
             .nth(1)
@@ -4679,7 +4676,7 @@ mod tests {
 
     #[test]
     fn delayed_discovery_penalty_uses_the_observer_current_anchor() {
-        let source = include_str!("relationship.rs");
+        let source = crate::production_source(include_str!("relationship.rs"));
         let discovery = source
             .split("pub fn settle_secret_courtship_discovery_for_pair")
             .nth(1)
@@ -4694,7 +4691,7 @@ mod tests {
 
     #[test]
     fn discovery_projection_is_gateway_and_observer_scoped() {
-        let source = include_str!("relationship.rs");
+        let source = crate::production_source(include_str!("relationship.rs"));
         let projection = source
             .split("pub fn backend_courtship_discoveries")
             .nth(1)
@@ -4740,7 +4737,7 @@ mod tests {
 
     #[test]
     fn global_lifecycle_selection_is_stable_non_starving_and_poison_tolerant() {
-        let source = include_str!("relationship.rs");
+        let source = crate::production_source(include_str!("relationship.rs"));
         let queue = source
             .split("pub fn settle_due_lifecycle_events_global")
             .nth(1)
@@ -4761,7 +4758,7 @@ mod tests {
 
     #[test]
     fn effective_history_remains_authoritative_after_marker_cleanup() {
-        let source = include_str!("relationship.rs");
+        let source = crate::production_source(include_str!("relationship.rs"));
         let conflicts = source
             .split("fn relationship_conflicts_at")
             .nth(1)
@@ -4777,7 +4774,7 @@ mod tests {
 
     #[test]
     fn birth_and_discovery_wait_for_authoritative_personal_frontiers() {
-        let source = include_str!("relationship.rs");
+        let source = crate::production_source(include_str!("relationship.rs"));
         let birth = source
             .split("pub fn settle_due_births")
             .nth(1)
@@ -4802,7 +4799,7 @@ mod tests {
 
     #[test]
     fn death_releases_future_relationship_and_pregnancy_state() {
-        let source = include_str!("relationship.rs");
+        let source = crate::production_source(include_str!("relationship.rs"));
         let cleanup = source
             .split("pub(crate) fn settle_relationship_lifecycle_for_death")
             .nth(1)
@@ -4817,10 +4814,10 @@ mod tests {
         assert!(cleanup.contains("child_identity_reservation()"));
 
         let death = include_str!("character.rs")
-            .split("pub fn transition_character_to_dead")
+            .split("pub fn transition_character_to_dead_at")
             .nth(1)
             .unwrap()
-            .split("/// Non-destructive upgrade path")
+            .split("/// [`Character`] attributes")
             .next()
             .unwrap();
         assert!(death.contains("settle_relationship_lifecycle_for_death"));
@@ -4828,7 +4825,7 @@ mod tests {
 
     #[test]
     fn dead_fiance_is_processable_without_reaching_the_ceremony() {
-        let source = include_str!("relationship.rs");
+        let source = crate::production_source(include_str!("relationship.rs"));
         let wedding = source
             .split("pub fn settle_due_weddings")
             .nth(1)
@@ -4852,7 +4849,7 @@ mod tests {
 
     #[test]
     fn dowry_is_escrowed_when_the_wedding_is_reserved_and_refunded_on_failure() {
-        let source = include_str!("relationship.rs");
+        let source = crate::production_source(include_str!("relationship.rs"));
         let reservation = source
             .split("pub fn reserve_wedding")
             .nth(1)
@@ -4878,7 +4875,7 @@ mod tests {
 
     #[test]
     fn cancellation_only_applies_to_future_reserved_weddings() {
-        let source = include_str!("relationship.rs");
+        let source = crate::production_source(include_str!("relationship.rs"));
         let cancel = source
             .split("pub fn cancel_wedding")
             .nth(1)
@@ -4892,7 +4889,7 @@ mod tests {
 
     #[test]
     fn born_child_projection_is_not_an_active_pregnancy_projection() {
-        let source = include_str!("relationship.rs");
+        let source = crate::production_source(include_str!("relationship.rs"));
         let projection = source
             .split("pub fn backend_character_relationship_statuses")
             .nth(1)
@@ -4916,7 +4913,7 @@ mod tests {
         ] {
             assert!(source.contains("enforce_temporal_scope"));
         }
-        let dialogue = include_str!("strategic/dialogue_sessions.rs");
+        let dialogue = crate::production_source(include_str!("strategic/dialogue_sessions.rs"));
         let guarded = dialogue
             .split("pub fn start_dialogue")
             .nth(1)

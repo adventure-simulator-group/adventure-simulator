@@ -11,10 +11,7 @@ pub(super) async fn resolve_location(state: &AppState, kind: &str, id: &str) -> 
     let location = match kind {
         LocationKind::Settlement => state
             .db
-            .query_one::<Settlement>(&format!(
-                "SELECT * FROM settlement WHERE id = {}",
-                sql_string_literal(id)
-            ))
+            .query_one::<Settlement>(&crate::spacetimedb::settlement_by_id(id))
             .await
             .map(|row| {
                 row.map(|settlement| {
@@ -85,7 +82,10 @@ pub(super) async fn party_personal(
     .await
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 pub(super) async fn render_party_personal(
     state: &AppState,
     kind: &str,
@@ -183,20 +183,14 @@ pub(super) async fn render_party_personal(
     let settlement = if location.kind == LocationKind::Settlement {
         state
             .db
-            .query_one::<Settlement>(&format!(
-                "SELECT * FROM settlement WHERE id = {}",
-                sql_string_literal(&location.id)
-            ))
+            .query_one::<Settlement>(&crate::spacetimedb::settlement_by_id(&location.id))
             .await
             .ok()
             .flatten()
     } else if let Some(site) = case_site.as_ref() {
         state
             .db
-            .query_one::<Settlement>(&format!(
-                "SELECT * FROM settlement WHERE id = {}",
-                sql_string_literal(&site.origin_settlement_id)
-            ))
+            .query_one::<Settlement>(&crate::spacetimedb::settlement_by_id(&site.origin_settlement_id))
             .await
             .ok()
             .flatten()
@@ -222,7 +216,10 @@ pub(super) async fn render_party_personal(
         attributes.first(),
         skills.first(),
         settlement.as_ref(),
-        active_inventory.iter().filter(|item| item.qty > 0).map(|item| item.item_id.as_str()),
+        active_inventory
+            .iter()
+            .filter(|item| item.quantity > 0)
+            .map(|item| item.item_id.as_str()),
     );
     let activity_location = match location.kind {
         LocationKind::Settlement => adventuresim_core::activity::ActivityLocation::Settlement {

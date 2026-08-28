@@ -4,14 +4,14 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::residence_tier_type::ResidenceTier;
+use super::housing_tier_type::HousingTier;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct SettlementResidenceOffer {
     pub id: String,
     pub settlement_id: String,
-    pub tier: ResidenceTier,
+    pub tier: HousingTier,
     pub purchase_price: u32,
     pub rent_per_period: u32,
     pub owner_maintenance_per_period: u32,
@@ -29,7 +29,7 @@ impl __sdk::InModule for SettlementResidenceOffer {
 pub struct SettlementResidenceOfferCols {
     pub id: __sdk::__query_builder::Col<SettlementResidenceOffer, String>,
     pub settlement_id: __sdk::__query_builder::Col<SettlementResidenceOffer, String>,
-    pub tier: __sdk::__query_builder::Col<SettlementResidenceOffer, ResidenceTier>,
+    pub tier: __sdk::__query_builder::Col<SettlementResidenceOffer, HousingTier>,
     pub purchase_price: __sdk::__query_builder::Col<SettlementResidenceOffer, u32>,
     pub rent_per_period: __sdk::__query_builder::Col<SettlementResidenceOffer, u32>,
     pub owner_maintenance_per_period: __sdk::__query_builder::Col<SettlementResidenceOffer, u32>,

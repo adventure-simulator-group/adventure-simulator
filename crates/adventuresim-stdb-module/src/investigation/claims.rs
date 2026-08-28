@@ -46,7 +46,7 @@ fn sanitize_lead(
     row: InvestigationLead,
     correction: Option<&InvestigationLead>,
 ) -> BackendInvestigationLead {
-    let exact = matches!(row.destination_stage.as_str(), "exact_believed" | "visited");
+    let exact = row.destination_stage.is_exact();
     let corrected_by = safe_correction_label(&row, correction);
     BackendInvestigationLead {
         owner_character_id: row.owner_character_id,
@@ -90,12 +90,17 @@ fn bounded_optional(value: &str) -> Result<(), String> {
     }
 }
 fn bps(value: u16) -> Result<(), String> {
-    (value <= 10_000)
+    (value <= adventuresim_world_schema::BASIS_POINTS_PER_WHOLE)
         .then_some(())
         .ok_or_else(|| "Confidence must be at most 10000 basis points".into())
 }
-fn validate_destination(stage: &str, id: &str, lat: i32, lon: i32) -> Result<(), String> {
-    let exact = matches!(stage, "exact_believed" | "visited");
+fn validate_destination(
+    stage: DestinationKnowledgeStage,
+    id: &str,
+    lat: i32,
+    lon: i32,
+) -> Result<(), String> {
+    let exact = stage.is_exact();
     if exact
         && (id.is_empty()
             || !(-900_000_000..=900_000_000).contains(&lat)
@@ -437,8 +442,8 @@ fn grant_generated_witness_referral(
                 npc.name, witness.visible_description, location
             ),
             source_label: "witness referral".into(),
-            confidence_bps: 10_000,
-            destination_stage: "textual".into(),
+            confidence_bps: adventuresim_world_schema::BASIS_POINTS_PER_WHOLE,
+            destination_stage: DestinationKnowledgeStage::Textual,
             directions: location.clone(),
             exact_location_id: String::new(),
             latitude_e7: 0,
@@ -696,9 +701,11 @@ fn receive_local_problem_rumor_impl(
                 && witness.expected_location == receipt.expected_location_id
         })
         .ok_or("Generated rumor referral has no authoritative witness")?;
-    let referral_location_label = Some(str::to_owned(adventuresim_core::quest_generation::referral_display_location(referred_witness)))
-        .filter(|label| !label.is_empty())
-        .ok_or("Generated rumor referral has no player-visible tab label")?;
+    let referral_location_label = Some(str::to_owned(
+        adventuresim_core::quest_generation::referral_display_location(referred_witness),
+    ))
+    .filter(|label| !label.is_empty())
+    .ok_or("Generated rumor referral has no player-visible tab label")?;
     grant_generated_witness_referral(
         ctx,
         character_id,
@@ -719,11 +726,10 @@ fn receive_local_problem_rumor_impl(
             source_label: "local rumor".into(),
             confidence_bps: 5_000,
             destination_stage: if receipt.expected_location_id.is_empty() {
-                "unknown"
+                DestinationKnowledgeStage::Unknown
             } else {
-                "textual"
-            }
-            .into(),
+                DestinationKnowledgeStage::Textual
+            },
             directions: referral_location_label.clone(),
             exact_location_id: String::new(),
             latitude_e7: 0,
@@ -770,6 +776,10 @@ fn process_investigation_pipeline(
         .map_err(|error| format!("Invalid investigation pipeline at report processing: {error:?}"))
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "claim staging records each immutable evidence coordinate explicitly"
+)]
 pub(crate) fn stage_investigation_claim(
     ctx: &ReducerContext,
     character_id: u64,
@@ -915,7 +925,7 @@ fn validate_generated_testimony_site(
     draft: &adventuresim_core::quest_generation::TestimonyDraft,
     site: Option<&CaseSiteAuthority>,
 ) -> Result<(), &'static str> {
-    if draft.destination_stage != "exact_believed" {
+    if draft.destination_stage != DestinationKnowledgeStage::ExactBelieved {
         return Ok(());
     }
     let site_id = draft
@@ -1019,9 +1029,9 @@ pub(crate) fn persist_generated_testimony(
                     || text.chars().count() > 1_024
                     || text.chars().any(char::is_control)
             }))
-        {
-            return Err("Generated testimony presentation text is invalid".into());
-        }
+    {
+        return Err("Generated testimony presentation text is invalid".into());
+    }
     for draft in &projection_plan {
         let site = draft
             .site_id
@@ -1122,7 +1132,7 @@ pub(crate) fn persist_generated_testimony(
             .site_id
             .as_ref()
             .and_then(|site_id| ctx.db.case_site_authority().id_key().find(&site_id.0));
-        let exact = draft.destination_stage == "exact_believed";
+        let exact = draft.destination_stage == DestinationKnowledgeStage::ExactBelieved;
         let lead_id = inv::compound_id(&[
             "lead",
             "generated-testimony",
@@ -1147,7 +1157,7 @@ pub(crate) fn persist_generated_testimony(
                 // Generated testimony uses one observer-facing band for every
                 // hidden reliability state.
                 confidence_bps: 6_000,
-                destination_stage: draft.destination_stage.clone(),
+                destination_stage: draft.destination_stage,
                 directions: if exact {
                     String::new()
                 } else {
@@ -1364,6 +1374,10 @@ pub fn receive_investigation_claim(
 }
 
 #[reducer]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the reducer ABI exposes each independently validated lead field"
+)]
 pub fn stage_investigation_lead(
     ctx: &ReducerContext,
     character_id: u64,
@@ -1372,7 +1386,7 @@ pub fn stage_investigation_lead(
     summary: String,
     safe_source_label: String,
     confidence_bps: u16,
-    destination_stage: String,
+    destination_stage: DestinationKnowledgeStage,
     directions: String,
     exact_location_id: String,
     latitude_e7: i32,
@@ -1381,13 +1395,7 @@ pub fn stage_investigation_lead(
     correction_of_lead_id: String,
 ) -> Result<(), String> {
     require_actor(ctx, character_id)?;
-    for value in [
-        &receipt_id,
-        &public_case_id,
-        &summary,
-        &safe_source_label,
-        &destination_stage,
-    ] {
+    for value in [&receipt_id, &public_case_id, &summary, &safe_source_label] {
         bounded(value)?;
     }
     bps(confidence_bps)?;
@@ -1395,25 +1403,13 @@ pub fn stage_investigation_lead(
     bounded_optional(&exact_location_id)?;
     bounded_optional(&conflict_group)?;
     bounded_optional(&correction_of_lead_id)?;
-    if !matches!(
-        destination_stage.as_str(),
-        "unknown"
-            | "textual"
-            | "landmark"
-            | "approximate_area"
-            | "route_segment"
-            | "exact_believed"
-            | "visited"
-    ) {
-        return Err("Unknown destination knowledge stage".into());
-    }
     validate_destination(
-        &destination_stage,
+        destination_stage,
         &exact_location_id,
         latitude_e7,
         longitude_e7,
     )?;
-    if matches!(destination_stage.as_str(), "exact_believed" | "visited") {
+    if destination_stage.is_exact() {
         let site = ctx
             .db
             .case_site_authority()
@@ -1479,10 +1475,7 @@ pub fn discover_investigation_lead(
     if receipt.owner_character_id != character_id || !receipt.consumed_by.is_empty() {
         return Err("Safe lead receipt is stale or belongs to another observer".into());
     }
-    if matches!(
-        receipt.destination_stage.as_str(),
-        "exact_believed" | "visited"
-    ) {
+    if receipt.destination_stage.is_exact() {
         let site = ctx
             .db
             .case_site_authority()
@@ -1523,7 +1516,7 @@ pub fn discover_investigation_lead(
         summary: receipt.summary.clone(),
         source_label: receipt.safe_source_label.clone(),
         confidence_bps: receipt.confidence_bps,
-        destination_stage: receipt.destination_stage.clone(),
+        destination_stage: receipt.destination_stage,
         directions: receipt.directions.clone(),
         exact_location_id: receipt.exact_location_id.clone(),
         latitude_e7: receipt.latitude_e7,
@@ -1591,7 +1584,7 @@ pub fn share_investigation_lead(
         &source.summary,
         &source.source_label,
         &source.confidence_bps.to_string(),
-        &source.destination_stage,
+        source.destination_stage.as_str(),
         &source.directions,
         &source.exact_location_id,
         &source.latitude_e7.to_string(),

@@ -202,24 +202,46 @@ class WorkflowTests(unittest.TestCase):
             dev_stack.spacetime_auth_token()
         self.assertNotIn("unexpected secret output", str(error.exception))
 
-    @mock.patch.object(dev_stack, "run_checked")
-    def test_seed_propagates_reducer_failure(self, run_checked):
-        run_checked.return_value = mock.Mock(returncode=7, stdout="reducer rejected\n")
-        self.assertEqual(dev_stack.seed("http://localhost:1", "db", "a" * 64), 7)
+    @mock.patch.object(dev_stack, "_SeedHttpClient")
+    def test_seed_propagates_reducer_failure(self, client_type):
+        client = client_type.return_value
+        client.call.return_value = 1
 
-    @mock.patch.object(dev_stack, "run_checked")
-    def test_seed_includes_sick_demo_character(self, run_checked):
-        run_checked.return_value = mock.Mock(returncode=0, stdout="")
+        self.assertEqual(dev_stack.seed("http://localhost:1", "db", "a" * 64), 1)
+        client_type.assert_called_once_with("http://localhost:1", "db", "a" * 64)
+        client.call.assert_called_once_with("dev_bootstrap_base")
+        client.count.assert_not_called()
+        client.close.assert_called_once_with()
+
+    @mock.patch.object(dev_stack, "_SeedHttpClient")
+    def test_seed_includes_sick_demo_character(self, client_type):
+        client = client_type.return_value
+        client.call.return_value = 0
+        client.count.side_effect = [0, 0, 0]
 
         self.assertEqual(dev_stack.seed("http://localhost:1", "db", "a" * 64), 0)
-        self.assertEqual(run_checked.call_args.args[0][-2:], ["bootstrap_development_world", "a" * 64])
+        client.call.assert_any_call("dev_bootstrap_finalize")
+        client.close.assert_called_once_with()
 
-    @mock.patch.object(dev_stack, "run_checked")
-    def test_seed_has_no_optional_visual_fixture_flag(self, run_checked):
-        run_checked.return_value = mock.Mock(returncode=0, stdout="")
+    @mock.patch.object(dev_stack, "_SeedHttpClient")
+    def test_seed_has_no_optional_visual_fixture_flag(self, client_type):
+        client = client_type.return_value
+        client.call.return_value = 0
+        client.count.side_effect = [2, 0, 0]
 
         self.assertEqual(dev_stack.seed("http://localhost:1", "db", "a" * 64), 0)
-        self.assertEqual(run_checked.call_args.args[0][-2:], ["bootstrap_development_world", "a" * 64])
+        self.assertEqual(
+            [call.args for call in client.call.call_args_list],
+            [
+                ("dev_bootstrap_base",),
+                ("dev_bootstrap_settlement_activity", 0),
+                ("dev_bootstrap_settlement_activity", 1),
+                ("dev_bootstrap_finalize",),
+                ("dev_bootstrap_gallery", 0, 8),
+                ("dev_bootstrap_gallery_validate",),
+            ],
+        )
+        client.close.assert_called_once_with()
 
     @mock.patch.object(dev_stack, "run_checked")
     def test_publish_messages_distinguish_reset(self, run_checked):

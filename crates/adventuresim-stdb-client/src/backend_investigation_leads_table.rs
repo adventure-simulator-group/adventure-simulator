@@ -3,6 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::backend_investigation_lead_type::BackendInvestigationLead;
+use super::destination_knowledge_stage_type::DestinationKnowledgeStage;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `backend_investigation_leads`.

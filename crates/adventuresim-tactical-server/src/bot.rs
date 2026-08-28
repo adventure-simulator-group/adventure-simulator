@@ -901,11 +901,13 @@ mod tests {
             .init_resource::<RecordedAttacks>()
             .add_observer(record_attack)
             .add_observer(apply_deterministic_test_hit)
+            .add_observer(crate::combat::on_melee_attack_started)
             .add_systems(
                 Update,
                 (
                     crate::combat::update_tactical_combat_state,
                     drive_offensive_combat_ai,
+                    crate::combat::resolve_pending_melee_contacts,
                 )
                     .chain(),
             );

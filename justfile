@@ -45,15 +45,6 @@ spacetime-version-check:
 caddy-preflight:
     @{{ python_bin }} scripts/just_tasks.py caddy check --config {{ quote(caddy_config) }}
 
-# Start the canonical server-rendered browser stack.
-dev: web
-
-# Full dev with WASM game built
-dev-full: web
-
-# Start only the persistent strategic layer and its browser UI.
-dev-strategic: web-strategic
-
 # Start the local browser stack.
 web: preflight spacetime-start publish build-wasm build-tactical
     @{{ python_bin }} scripts/just_tasks.py web --spacetime-url {{ spacetime_url }} --database {{ spacetime_module }} --bind-address 127.0.0.1:{{ web_port }} --static-dir {{ quote(strategic_web_dir + "/static") }} --tactical-static-dir {{ quote(strategic_static) }} --tactical-web-port {{ tactical_web_port }}
@@ -267,17 +258,9 @@ compile-world: build-base-terrain
 build-strategic-map: compile-world
     @cargo run --package adventuresim-world-import --features strategic-map-renderer --bin build-strategic-map --
 
-# Compatibility name for the former Python normalizer.
-normalise-viabundus: compile-world
-
 # Destructively recreate the selected local database with the current module,
 # then download and load the pinned compiled world runtime.
 load-world server=spacetime_url database=spacetime_module: spacetime-version-check init-world-runtime
-    @{{ python_bin }} scripts/just_tasks.py recreate-world-database --server {{ server }} --database {{ database }} --module-dir {{ quote(strategic_dir) }}
-    @cargo run --package adventuresim-world-import --bin adventuresim-world-import -- --input target/world-1544.json --load --server {{ server }} --database {{ database }}
-
-# Compatibility name for the former Viabundus-only loader.
-load-viabundus-world server=spacetime_url database=spacetime_module: spacetime-version-check init-world-runtime
     @{{ python_bin }} scripts/just_tasks.py recreate-world-database --server {{ server }} --database {{ database }} --module-dir {{ quote(strategic_dir) }}
     @cargo run --package adventuresim-world-import --bin adventuresim-world-import -- --input target/world-1544.json --load --server {{ server }} --database {{ database }}
 
@@ -594,8 +577,8 @@ test-dev-stack:
     @{{ python_bin }} -B -m unittest scripts.tests.test_dev_stack scripts.tests.test_just_tasks -v
 
 # Run a deterministic sample strategic NPC population.
-strategic-sim seed="42" population="100" days="1095":
-    @cargo run -p adventuresim-strategic-sim -- run --seed {{ seed }} --population {{ population }} --days {{ days }}
+strategic-sim seed="42" population="100" days="":
+    @cargo run -p adventuresim-strategic-sim -- run --seed {{ seed }} --population {{ population }} {{ if days == "" { "" } else { "--days " + days } }}
 
 # Credential-free offline generator/content analysis. These artifacts are not
 # reducer-authoritative gameplay evidence.
@@ -627,13 +610,13 @@ quest-web-eval output_dir base_url="http://127.0.0.1:24301" start_path="/charact
 
 # Own one nonce-named local database for the duration of the command. There is
 # intentionally no database or server override.
-strategic-sim-core-loop output_dir seed="42" population="4" cycles="100" duration_days="365" party_size="2": spacetime-version-check spacetime-start
-    @{{ python_bin }} scripts/just_tasks.py strategic-sim-core-loop {{ seed }} {{ population }} {{ cycles }} {{ duration_days }} {{ party_size }} {{ quote(output_dir) }} --spacetime-url {{ spacetime_url }} --module-dir {{ quote(strategic_dir) }} --require-quest-coverage
+strategic-sim-core-loop output_dir seed="42" population="4" cycles="100" duration_days="" party_size="2": spacetime-version-check spacetime-start
+    @{{ python_bin }} scripts/just_tasks.py strategic-sim-core-loop {{ seed }} {{ population }} {{ cycles }} {{ party_size }} {{ quote(output_dir) }} {{ if duration_days == "" { "" } else { "--duration-days " + duration_days } }} --spacetime-url {{ spacetime_url }} --module-dir {{ quote(strategic_dir) }} --require-quest-coverage
 
 # Run the authoritative core loop against the pinned compiled 1544 world.
 # output_dir must not exist; the launcher always deletes its nonce database.
-strategic-sim-core-loop-world output_dir seed="42" population="4" cycles="100" duration_days="365" party_size="2": spacetime-version-check spacetime-start init-world-runtime
-    @{{ python_bin }} scripts/just_tasks.py strategic-sim-core-loop {{ seed }} {{ population }} {{ cycles }} {{ duration_days }} {{ party_size }} {{ quote(output_dir) }} --spacetime-url {{ spacetime_url }} --module-dir {{ quote(strategic_dir) }} --world-input target/world-1544.json
+strategic-sim-core-loop-world output_dir seed="42" population="4" cycles="100" duration_days="" party_size="2": spacetime-version-check spacetime-start init-world-runtime
+    @{{ python_bin }} scripts/just_tasks.py strategic-sim-core-loop {{ seed }} {{ population }} {{ cycles }} {{ party_size }} {{ quote(output_dir) }} {{ if duration_days == "" { "" } else { "--duration-days " + duration_days } }} --spacetime-url {{ spacetime_url }} --module-dir {{ quote(strategic_dir) }} --world-input target/world-1544.json
 
 test: test-chat test-schedule test-dev-stack build-strategic
     @cargo test --workspace --exclude adventuresim-stdb-module
@@ -641,16 +624,21 @@ test: test-chat test-schedule test-dev-stack build-strategic
 fmt:
     @cargo fmt --all
     @cargo fmt --manifest-path crates/adventuresim-character-creator/Cargo.toml
+    @cargo fmt --manifest-path crates/fabelgeist-mhr/Cargo.toml
+    @cargo fmt --manifest-path crates/fabelgeist-numpy-storage/Cargo.toml
 
 fmt-check:
     @cargo fmt --all -- --check
     @cargo fmt --manifest-path crates/adventuresim-character-creator/Cargo.toml -- --check
+    @cargo fmt --manifest-path crates/fabelgeist-mhr/Cargo.toml -- --check
+    @cargo fmt --manifest-path crates/fabelgeist-numpy-storage/Cargo.toml -- --check
 
-lint:
-    # Keep warnings denied; these are legacy feature-gated/restriction diagnostics
-    # tracked separately from correctness and ordinary style regressions.
-    @cargo clippy --workspace --all-targets --all-features -- -D warnings -A dead_code -A unused_imports -A deprecated -A clippy::chunks-exact-to-as-chunks -A clippy::items-after-test-module -A clippy::assertions-on-constants -A clippy::field-reassign-with-default -A clippy::useless-vec -A clippy::unnecessary-cast -A clippy::obfuscated-if-else
-    @cargo clippy --manifest-path crates/adventuresim-character-creator/Cargo.toml --all-targets --all-features -- -D warnings -A dead_code -A unused_imports -A deprecated -A clippy::chunks-exact-to-as-chunks -A clippy::items-after-test-module -A clippy::assertions-on-constants -A clippy::field-reassign-with-default -A clippy::useless-vec -A clippy::unnecessary-cast -A clippy::obfuscated-if-else
+lint: verify-db-client
+    @cargo clippy --package adventuresim-tactical-client --lib --target wasm32-unknown-unknown -- -D warnings
+    @cargo clippy --workspace --all-targets --all-features -- -D warnings
+    @cargo clippy --manifest-path crates/adventuresim-character-creator/Cargo.toml --all-targets --all-features -- -D warnings
+    @cargo clippy --manifest-path crates/fabelgeist-mhr/Cargo.toml --all-targets --all-features -- -D warnings
+    @cargo clippy --manifest-path crates/fabelgeist-numpy-storage/Cargo.toml --all-targets --all-features -- -D warnings
 
 clean:
     @cargo clean

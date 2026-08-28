@@ -1,3 +1,5 @@
+const MISSION_CANDIDATE_ENTROPY_STRIDE: u64 = 0x9e37_79b9_7f4a_7c15;
+
 #[reducer]
 pub fn report_contract(
     ctx: &ReducerContext,
@@ -213,7 +215,7 @@ pub fn autoresolve_mission(
                 &hostile_group.enemy_type,
                 mission.enemy_difficulty,
                 mission.enemy_combat_scale_bps,
-                10_000,
+                u32::from(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE),
             )
         })
         .collect::<Result<Vec<_>, String>>()?;
@@ -483,17 +485,17 @@ fn configure_animation_lab_enemies(
     ctx: &ReducerContext,
     hostile_group_id: &str,
 ) -> Result<(), String> {
-    use crate::item::ItemSlot;
+    use adventuresim_core::starting_character::StartingSlot;
     use adventuresim_core::tactical_fixture::AnimationLabEnemyRole;
 
-    const PADDED_BASE: &[(&str, ItemSlot)] = &[
-        ("quilted_sleeve", ItemSlot::LeftArm),
-        ("quilted_sleeve", ItemSlot::RightArm),
-        ("arming_cap", ItemSlot::Head),
-        ("arming_doublet", ItemSlot::Chest),
-        ("padded_skirt", ItemSlot::Stomach),
-        ("padded_chausses", ItemSlot::LeftLeg),
-        ("padded_chausses", ItemSlot::RightLeg),
+    const PADDED_BASE: &[(&str, StartingSlot)] = &[
+        ("quilted_sleeve", StartingSlot::LeftArm),
+        ("quilted_sleeve", StartingSlot::RightArm),
+        ("arming_cap", StartingSlot::Head),
+        ("arming_doublet", StartingSlot::Chest),
+        ("padded_skirt", StartingSlot::Stomach),
+        ("padded_chausses", StartingSlot::LeftLeg),
+        ("padded_chausses", StartingSlot::RightLeg),
     ];
 
     let enemy_ids = crate::world_actor::context_character_ids(ctx, hostile_group_id);
@@ -518,15 +520,15 @@ fn configure_animation_lab_enemies(
         match role {
             AnimationLabEnemyRole::Passive | AnimationLabEnemyRole::Dodger => {}
             AnimationLabEnemyRole::ShieldBlocker => {
-                loadout.push(("buckler", ItemSlot::LeftHolding));
+                loadout.push(("buckler", StartingSlot::LeftHand));
             }
             AnimationLabEnemyRole::DemiLancer => {
                 loadout.extend([
-                    ("morion", ItemSlot::Head),
-                    ("cuirass", ItemSlot::Chest),
-                    ("tassets", ItemSlot::Stomach),
-                    ("vambrace", ItemSlot::LeftArm),
-                    ("vambrace", ItemSlot::RightArm),
+                    ("morion", StartingSlot::Head),
+                    ("cuirass", StartingSlot::Chest),
+                    ("tassets", StartingSlot::Stomach),
+                    ("vambrace", StartingSlot::LeftArm),
+                    ("vambrace", StartingSlot::RightArm),
                 ]);
             }
         }
@@ -603,6 +605,13 @@ pub fn seed_standalone_tactical_mission(
     {
         existing
     } else {
+        let coordinates_are_geographic = settlement.source_node_id.is_some();
+        let coordinate = encode_position_e7(
+            settlement.coord_x,
+            settlement.coord_y,
+            coordinates_are_geographic,
+        )
+        .ok_or("Standalone tactical site is not a valid WGS84 coordinate")?;
         ctx.db.case_site_authority().insert(CaseSiteAuthority {
             id_key: case_site_id.value.clone(),
             id: case_site_id.clone(),
@@ -611,9 +620,9 @@ pub fn seed_standalone_tactical_mission(
             name: "Standalone Tactical Test".into(),
             description: "Seeded for isolated tactical testing".into(),
             scene_key: scene_key.clone(),
-            longitude_e7: (settlement.coord_x * 10_000_000.0).round() as i32,
-            latitude_e7: (settlement.coord_y * 10_000_000.0).round() as i32,
-            coordinates_are_geographic: settlement.source_node_id.is_some(),
+            longitude_e7: coordinate.longitude_e7,
+            latitude_e7: coordinate.latitude_e7,
+            coordinates_are_geographic,
             distance_m: 0,
         })
     };
@@ -641,7 +650,7 @@ pub fn seed_standalone_tactical_mission(
                 difficulty: 1,
                 escalation_incident_ordinal: 1,
                 escalation_progress_bps: 0,
-                combat_scale_bps: 10_000,
+                combat_scale_bps: u32::from(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE),
                 normalized_combat_power: required_enemy_kills
                     .clamp(1, adventuresim_core::threat_escalation::MAX_MOB_COUNT)
                     .saturating_mul(10_000),
@@ -687,13 +696,13 @@ pub fn seed_standalone_tactical_mission(
         };
         ctx.db.case_authority().insert(CaseAuthority {
             id: case_id.clone(),
-            provenance_kind: "manual".into(),
+            provenance_kind: InvestigationProvenanceKind::Manual,
             generated_case_id: String::new(),
             investigation_case_id: format!("investigation:standalone:{mission_id}"),
             local_problem_id: None,
             objective_expression_json: serde_json::to_string(&expression)
                 .map_err(|_| "Standalone tactical objective serialization failed")?,
-            resolution_status: CaseResolutionStatus::Open,
+            resolution_status: CaseStatus::Open,
             resolved_by_party_id: None,
         });
     }
@@ -832,7 +841,9 @@ pub fn seed_standalone_tactical_mission(
             required_enemy_kills,
             enemy_difficulty: mission.enemy_difficulty,
             enemy_combat_scale_bps: mission.enemy_combat_scale_bps,
-            countermeasure_multiplier_bps: 10_000,
+            countermeasure_multiplier_bps: u32::from(
+                adventuresim_world_schema::BASIS_POINTS_PER_WHOLE,
+            ),
             normalized_combat_power: mission.normalized_combat_power,
             enemy_character_ids: mission.enemy_character_ids.clone(),
             party_has_surprise: !mission.contacted_before_combat,
@@ -1201,7 +1212,7 @@ fn ensure_settlement_activity_batched(
                 .case_authority()
                 .id()
                 .find(&contract.case_id)
-                .is_some_and(|case| case.resolution_status != CaseResolutionStatus::Open)
+                .is_some_and(|case| case.resolution_status != CaseStatus::Open)
         })
         .collect::<Vec<_>>()
     {
@@ -1251,7 +1262,7 @@ fn ensure_settlement_activity_batched(
                             .id()
                             .find(&authority.case_id)
                             .is_some_and(|case| {
-                                case.resolution_status == CaseResolutionStatus::Open
+                                case.resolution_status == CaseStatus::Open
                             }),
                     ),
             )
@@ -1377,6 +1388,7 @@ fn ensure_npc_recruiting_parties(ctx: &ReducerContext, settlement_id: &str) -> R
         let armor = ctx.random::<u64>() % 3;
         requirements.quarter_armor = armor == 1;
         requirements.half_armor = armor == 2;
+        requirements.weapon_precision = (ctx.random::<u64>() % 4) as f32 * 0.5;
         ctx.db
             .party_recruitment_role()
             .insert(PartyRecruitmentRole {
@@ -1389,7 +1401,6 @@ fn ensure_npc_recruiting_parties(ctx: &ReducerContext, settlement_id: &str) -> R
                 },
                 requirements,
                 quantity: 3,
-                weapon_precision: (ctx.random::<u64>() % 4) as f32 * 0.5,
             });
         let source_key = format!("settlement-recruiter:{}", npc.character_id);
         let offer_key = format!("recruitment-offer:{source_key}");
@@ -1404,14 +1415,15 @@ fn ensure_npc_recruiting_parties(ctx: &ReducerContext, settlement_id: &str) -> R
             leader_id,
             status: RecruitmentOfferStatus::Open,
             created_at_minute: now,
-            expires_at_minute: now.saturating_add(7 * 1_440),
+            expires_at_minute: now
+                .saturating_add(7 * adventuresim_core::strategic_time::MINUTES_PER_DAY),
         });
     }
     Ok(())
 }
 
 fn renewed_recruitment_offer_expiry(now: u64) -> u64 {
-    now.saturating_add(7 * 1_440)
+    now.saturating_add(7 * adventuresim_core::strategic_time::MINUTES_PER_DAY)
 }
 
 fn generated_witness_visible_description(
@@ -1812,7 +1824,8 @@ fn materialize_simulation_acceptance_outbreak(
     let now_minute = crate::time::refresh_clock(ctx)?.max(4_000);
     let entropy = character_id ^ policy_seed ^ 0x4143_4345_5054_414e;
     for candidate in 0..MAX_CANDIDATES {
-        let candidate_entropy = entropy ^ u64::from(candidate).wrapping_mul(0x9e37_79b9_7f4a_7c15);
+        let candidate_entropy =
+            entropy ^ u64::from(candidate).wrapping_mul(MISSION_CANDIDATE_ENTROPY_STRIDE);
         let context = qg::GenerationContext {
             seed: candidate_entropy.rotate_left(11),
             observer_entropy_hi: candidate_entropy.rotate_left(23),
@@ -1911,12 +1924,11 @@ fn seed_outbreak_demo(ctx: &ReducerContext, character_id: u64) -> Result<String,
         .filter(character_id)
         .find(|row| row.item_id == "cooking_pot")
         .ok_or("Outbreak demo cooking pot was not materialized")?;
-    crate::inventory_container::ensure_object(
+    crate::inventory_container::require_object(
         ctx,
         character_id,
-        "personal",
+        adventuresim_core::physical_object::CarriedInventoryScope::Personal,
         cooking_pot.id,
-        false,
     )?;
 
     materialize_preferred_generated_fixture(
@@ -1936,7 +1948,8 @@ pub(crate) struct SimulationQuestFixtureSeed {
 
 const SIMULATION_QUEST_ENEMY_TYPE: &str = "cultist";
 const SIMULATION_QUEST_ENEMY_DIFFICULTY: i32 = 1;
-const SIMULATION_QUEST_ENEMY_COMBAT_SCALE_BPS: u32 = 10_000;
+const SIMULATION_QUEST_ENEMY_COMBAT_SCALE_BPS: u32 =
+    adventuresim_world_schema::BASIS_POINTS_PER_WHOLE as u32;
 pub(crate) fn simulation_quest_fixture_enemy_power() -> Result<u64, String> {
     autoresolve_enemy(
         u64::MAX,
@@ -2121,12 +2134,12 @@ pub(crate) fn seed_simulation_quest_fixture_inner(
     ctx.db.case_authority().insert(CaseAuthority {
         id: case_id.clone(),
         investigation_case_id: format!("investigation:simulation-acceptance-direct:{suffix}"),
-        provenance_kind: "manual".into(),
+        provenance_kind: InvestigationProvenanceKind::Manual,
         generated_case_id: String::new(),
         local_problem_id: None,
         objective_expression_json: serde_json::to_string(&objective)
             .map_err(|_| "Could not encode direct quest fixture objective")?,
-        resolution_status: CaseResolutionStatus::Open,
+        resolution_status: CaseStatus::Open,
         resolved_by_party_id: None,
     });
     let geographic = settlement.source_node_id.is_some();
@@ -2135,6 +2148,12 @@ pub(crate) fn seed_simulation_quest_fixture_inner(
     } else {
         (0.0, 2.0)
     };
+    let site_coordinate = encode_position_e7(
+        settlement.coord_x + offset_x,
+        settlement.coord_y + offset_y,
+        geographic,
+    )
+    .ok_or("Simulation quest site is not a valid WGS84 coordinate")?;
     let site = CaseSiteAuthority {
         id_key: case_site_id.clone(),
         id: CaseSiteId::from(case_site_id),
@@ -2143,8 +2162,8 @@ pub(crate) fn seed_simulation_quest_fixture_inner(
         name: "A Nearby Robbers' Camp".into(),
         description: "A small bandit camp lies a short march from the settlement.".into(),
         scene_key: "forest-clearing".into(),
-        longitude_e7: ((settlement.coord_x + offset_x) * 10_000_000.0).round() as i32,
-        latitude_e7: ((settlement.coord_y + offset_y) * 10_000_000.0).round() as i32,
+        longitude_e7: site_coordinate.longitude_e7,
+        latitude_e7: site_coordinate.latitude_e7,
         coordinates_are_geographic: geographic,
         distance_m: 2_000,
     };
@@ -2214,12 +2233,12 @@ fn materialize_generated_quest(
     ctx.db.case_authority().insert(CaseAuthority {
         id: generated.canonical_case_id.clone(),
         investigation_case_id: generated.canonical_case_id.clone(),
-        provenance_kind: "generated".into(),
+        provenance_kind: InvestigationProvenanceKind::Generated,
         generated_case_id: generated.canonical_case_id.clone(),
         local_problem_id: Some(generated.problem_id.clone()),
         objective_expression_json: serde_json::to_string(&generated.objectives)
             .map_err(|_| "Could not encode generated objectives")?,
-        resolution_status: CaseResolutionStatus::Open,
+        resolution_status: CaseStatus::Open,
         resolved_by_party_id: None,
     });
     ctx.db.investigation_case_authority().insert(
@@ -2259,6 +2278,9 @@ fn materialize_generated_quest(
     }
 
     let geographic = settlement.source_node_id.is_some();
+    let settlement_coordinate =
+        encode_position_e7(settlement.coord_x, settlement.coord_y, geographic)
+            .ok_or("Generated investigation center is not a valid WGS84 coordinate")?;
     let mut site_rows = BTreeMap::new();
     for (index, site) in generated.sites.iter().enumerate() {
         let distance_m = fixture_site_distance_m
@@ -2277,6 +2299,12 @@ fn materialize_generated_quest(
         } else {
             (angle.cos() * distance_km, angle.sin() * distance_km)
         };
+        let site_coordinate = encode_position_e7(
+            settlement.coord_x + offset_x,
+            settlement.coord_y + offset_y,
+            geographic,
+        )
+        .ok_or("Generated case site is not a valid WGS84 coordinate")?;
         let row = CaseSiteAuthority {
             id_key: site.id.0.clone(),
             id: CaseSiteId::from(site.id.0.clone()),
@@ -2285,8 +2313,8 @@ fn materialize_generated_quest(
             name: site.safe_label.clone(),
             description: format!("You arrive at {}.", site.safe_label),
             scene_key: generated_scene_key(site.kind).into(),
-            longitude_e7: ((settlement.coord_x + offset_x) * 10_000_000.0).round() as i32,
-            latitude_e7: ((settlement.coord_y + offset_y) * 10_000_000.0).round() as i32,
+            longitude_e7: site_coordinate.longitude_e7,
+            latitude_e7: site_coordinate.latitude_e7,
             coordinates_are_geographic: geographic,
             distance_m,
         };
@@ -2315,8 +2343,8 @@ fn materialize_generated_quest(
                 case_id: generated.canonical_case_id.clone(),
                 origin_settlement_id: settlement_id.into(),
                 safe_label: area.safe_label.clone(),
-                center_longitude_e7: (settlement.coord_x * 10_000_000.0).round() as i32,
-                center_latitude_e7: (settlement.coord_y * 10_000_000.0).round() as i32,
+                center_longitude_e7: settlement_coordinate.longitude_e7,
+                center_latitude_e7: settlement_coordinate.latitude_e7,
                 radius_m: 5_000,
                 coordinates_are_geographic: geographic,
                 terrain: serde_json::to_string(&area.terrain)
@@ -2400,7 +2428,7 @@ fn materialize_generated_quest(
             id: format!("finale:{}:{path_index}", generated.canonical_case_id),
             case_id: generated.canonical_case_id.clone(),
             kind: FinaleKind::RecordResolution,
-            resolution_status: CaseResolutionStatus::Resolved,
+            resolution_status: CaseStatus::Resolved,
             eligible_path_index: Some(path_index as u16),
             priority: 100u16.saturating_sub(path_index as u16),
             status: FinaleStatus::Available,
@@ -2410,7 +2438,7 @@ fn materialize_generated_quest(
         id: format!("finale:{}:problem", generated.canonical_case_id),
         case_id: generated.canonical_case_id.clone(),
         kind: FinaleKind::ResolveLocalProblem,
-        resolution_status: CaseResolutionStatus::Resolved,
+        resolution_status: CaseStatus::Resolved,
         eligible_path_index: None,
         priority: 1,
         status: FinaleStatus::Available,
@@ -2602,7 +2630,7 @@ mod developer_quest_source_tests {
             )
         );
 
-        let source = include_str!("mission_bootstrap.rs");
+        let source = crate::production_source(include_str!("mission_bootstrap.rs"));
         let seed = source
             .split("fn seed_world_rows")
             .nth(1)
@@ -2620,7 +2648,7 @@ mod developer_quest_source_tests {
             .find("ensure_settlement_activity_inner")
             .expect("canonical representative population seeding");
         assert!(canonical_chapter < settlement_insert && settlement_insert < population);
-        let population_source = include_str!("../settlement_population.rs");
+        let population_source = crate::production_source(include_str!("../settlement_population.rs"));
         let representative_seed = population_source
             .split("for organization in adventuresim_core::organization::organizations_for_chapter")
             .nth(1)
@@ -2697,11 +2725,11 @@ mod developer_quest_source_tests {
             include_str!("../simulation.rs").contains("crate::strategic::seed_world(ctx, false)")
         );
 
-        let challenges = include_str!("challenges.rs");
-        let gallery = include_str!("development_scenarios.rs");
+        let challenges = crate::production_source(include_str!("challenges.rs"));
+        let gallery = crate::production_source(include_str!("development_scenarios.rs"));
         assert!(!challenges.contains("pub fn load_puzzle_demo"));
         assert!(gallery.contains("ErrantryLaunch::DirectDemoCamp(kind)"));
-        assert!(gallery.contains("ErrantryPuzzleKind::ResourceAllocation"));
+        assert!(gallery.contains("PuzzleKind::ResourceAllocation"));
         let materializer = challenges
             .split("fn materialize_order_errantry")
             .nth(1)
@@ -2861,7 +2889,7 @@ mod developer_quest_source_tests {
 
     #[test]
     fn hearing_referred_testimony_triggers_passive_insight_after_persistence() {
-        let source = STRATEGIC_SOURCE;
+        let source = crate::production_source(include_str!("dialogue_effects.rs"));
         let effect = source
             .split("adventuresim_dialogue::Effect::ReceiveReferredTestimony =>")
             .nth(1)
@@ -2921,7 +2949,7 @@ mod developer_quest_source_tests {
 
     #[test]
     fn organization_effects_resolve_only_from_the_bound_live_representative() {
-        let source = STRATEGIC_SOURCE;
+        let source = crate::production_source(include_str!("dialogue_effects.rs"));
         let resolver = source
             .split("fn exact_organization_representative")
             .nth(1)
@@ -2932,7 +2960,7 @@ mod developer_quest_source_tests {
         assert!(resolver.contains("organization_representative_id"));
         assert!(resolver.contains("session.settlement_id"));
         assert!(resolver.contains("session.location_id"));
-        assert!(resolver.contains("\"organization-representative\""));
+        assert!(resolver.contains("exact_representative_fields_match"));
 
         let effects = source
             .split("adventuresim_dialogue::Effect::JoinOrganization =>")

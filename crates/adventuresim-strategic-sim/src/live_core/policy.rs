@@ -43,7 +43,7 @@ enum MedicalChoice {
 struct PublicInterventionOffer {
     preparation_id: String,
     profile_version: u16,
-    route: String,
+    route: adventuresim_core::physiology::InterventionRoute,
     public_score_micropoints: i64,
     storefront_quote: Option<u64>,
     inventory_item_id: Option<u64>,
@@ -54,7 +54,10 @@ fn public_chart_is_fresh(patient_minute: u64, observed_at: u64) -> bool {
         && patient_minute.saturating_sub(observed_at) <= MAX_ACTIONABLE_PHYSIOLOGY_CHART_AGE_MINUTES
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 fn compare_public_chart_rank(
     left_confidence: u16,
     left_observed_at: u64,
@@ -130,18 +133,6 @@ fn public_intervention_score(
     ((benefit - burden) * 1_000_000.0).round() as i64
 }
 
-fn intervention_route_name(
-    route: adventuresim_core::physiology::InterventionRoute,
-) -> &'static str {
-    use adventuresim_core::physiology::InterventionRoute;
-    match route {
-        InterventionRoute::Oral => "oral",
-        InterventionRoute::Topical => "topical",
-        InterventionRoute::Inhaled => "inhaled",
-        InterventionRoute::Injected => "injected",
-    }
-}
-
 fn public_confidence_band(confidence_bps: u16) -> &'static str {
     match confidence_bps {
         0..=2_999 => "low",
@@ -150,17 +141,30 @@ fn public_confidence_band(confidence_bps: u16) -> &'static str {
     }
 }
 
-fn choose_medical_action(
-    condition_status: &str,
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct MedicalActionContext {
+    condition_status: DomainIncapacitationStatus,
     symptomatic: bool,
     at_settlement: bool,
     intervention_available: bool,
     purse: u64,
     observable_quote: Option<u64>,
-    natural_rest_venue: Option<bool>,
-    medicated_rest_venue: Option<bool>,
-) -> (MedicalChoice, &'static str) {
-    if condition_status == "ready" && !symptomatic {
+    natural_rest_venue: Option<DomainSettlementActionService>,
+    medicated_rest_venue: Option<DomainSettlementActionService>,
+}
+
+fn choose_medical_action(context: MedicalActionContext) -> (MedicalChoice, &'static str) {
+    let MedicalActionContext {
+        condition_status,
+        symptomatic,
+        at_settlement,
+        intervention_available,
+        purse,
+        observable_quote,
+        natural_rest_venue,
+        medicated_rest_venue,
+    } = context;
+    if condition_status == DomainIncapacitationStatus::Ready && !symptomatic {
         return (MedicalChoice::Ready, "ready_without_symptoms");
     }
     if !at_settlement {
@@ -196,12 +200,13 @@ fn affordable_medical_rest_venue(
     temple_food_covers_day: bool,
     purse: u64,
     committed_cost: u64,
-) -> Option<bool> {
+) -> Option<DomainSettlementActionService> {
     if temple_available && temple_food_covers_day && purse >= committed_cost {
-        return Some(false);
+        return Some(DomainSettlementActionService::Temple);
     }
-    let inn_cost = adventuresim_core::strategic_economy::inn_full_board_cost(1_440)?;
-    (inn_available && purse >= committed_cost.saturating_add(inn_cost)).then_some(true)
+    let inn_cost = adventuresim_core::strategic_economy::inn_full_board_cost(MINUTES_PER_DAY)?;
+    (inn_available && purse >= committed_cost.saturating_add(inn_cost))
+        .then_some(DomainSettlementActionService::Inn)
 }
 
 fn temple_food_covers_one_day(visible_food_kcal: f32) -> bool {
@@ -413,8 +418,10 @@ fn activity_schedule_plan(
         if prayer_minutes > 0 {
             schedule.labor_minutes = prayer_minutes;
         } else {
+            let daily_minutes = u16::try_from(MINUTES_PER_DAY)
+                .expect("strategic day length must fit the persisted schedule width");
             let discretionary_minutes =
-                1_440_u16.saturating_sub(schedule_allocated_minutes(&schedule));
+                daily_minutes.saturating_sub(schedule_allocated_minutes(&schedule));
             schedule.labor_minutes = discretionary_minutes.min(480);
         }
         if schedule.labor_minutes > 0 {
@@ -455,94 +462,118 @@ fn medical_rest_schedule() -> ScheduleAllocation {
     }
 }
 
-fn live_personality(character_id: u64, p: &crate::Personality) -> CharacterPersonality {
+fn live_personality(character_id: u64, p: &core_personality::Personality) -> CharacterPersonality {
     CharacterPersonality {
         character_id,
         projection_character_id: character_id,
         nerve: match p.nerve {
-            crate::Nerve::Neutral => adventuresim_stdb_client::Nerve::Neutral,
-            crate::Nerve::Brave => adventuresim_stdb_client::Nerve::Brave,
-            crate::Nerve::Fearful => adventuresim_stdb_client::Nerve::Fearful,
+            core_personality::Nerve::Neutral => adventuresim_stdb_client::Nerve::Neutral,
+            core_personality::Nerve::Brave => adventuresim_stdb_client::Nerve::Brave,
+            core_personality::Nerve::Fearful => adventuresim_stdb_client::Nerve::Fearful,
         },
         drive: match p.drive {
-            crate::Drive::Neutral => adventuresim_stdb_client::Drive::Neutral,
-            crate::Drive::Ambitious => adventuresim_stdb_client::Drive::Ambitious,
-            crate::Drive::Content => adventuresim_stdb_client::Drive::Content,
+            core_personality::Drive::Neutral => adventuresim_stdb_client::Drive::Neutral,
+            core_personality::Drive::Ambitious => adventuresim_stdb_client::Drive::Ambitious,
+            core_personality::Drive::Content => adventuresim_stdb_client::Drive::Content,
         },
         outlook: match p.outlook {
-            crate::Outlook::Neutral => adventuresim_stdb_client::Outlook::Neutral,
-            crate::Outlook::Sanguine => adventuresim_stdb_client::Outlook::Sanguine,
-            crate::Outlook::Brooding => adventuresim_stdb_client::Outlook::Brooding,
+            core_personality::Outlook::Neutral => adventuresim_stdb_client::Outlook::Neutral,
+            core_personality::Outlook::Sanguine => adventuresim_stdb_client::Outlook::Sanguine,
+            core_personality::Outlook::Brooding => adventuresim_stdb_client::Outlook::Brooding,
         },
         sociability: match p.sociability {
-            crate::Sociability::Neutral => adventuresim_stdb_client::Sociability::Neutral,
-            crate::Sociability::Gregarious => adventuresim_stdb_client::Sociability::Gregarious,
-            crate::Sociability::Solitary => adventuresim_stdb_client::Sociability::Solitary,
+            core_personality::Sociability::Neutral => {
+                adventuresim_stdb_client::Sociability::Neutral
+            }
+            core_personality::Sociability::Gregarious => {
+                adventuresim_stdb_client::Sociability::Gregarious
+            }
+            core_personality::Sociability::Solitary => {
+                adventuresim_stdb_client::Sociability::Solitary
+            }
         },
         conscience: match p.conscience {
-            crate::Conscience::Neutral => adventuresim_stdb_client::Conscience::Neutral,
-            crate::Conscience::Compassionate => adventuresim_stdb_client::Conscience::Compassionate,
-            crate::Conscience::Callous => adventuresim_stdb_client::Conscience::Callous,
-            crate::Conscience::Cruel => adventuresim_stdb_client::Conscience::Cruel,
+            core_personality::Conscience::Neutral => adventuresim_stdb_client::Conscience::Neutral,
+            core_personality::Conscience::Compassionate => {
+                adventuresim_stdb_client::Conscience::Compassionate
+            }
+            core_personality::Conscience::Callous => adventuresim_stdb_client::Conscience::Callous,
+            core_personality::Conscience::Cruel => adventuresim_stdb_client::Conscience::Cruel,
         },
         self_regard: match p.self_regard {
-            crate::SelfRegard::Neutral => adventuresim_stdb_client::SelfRegard::Neutral,
-            crate::SelfRegard::Proud => adventuresim_stdb_client::SelfRegard::Proud,
-            crate::SelfRegard::Humble => adventuresim_stdb_client::SelfRegard::Humble,
+            core_personality::SelfRegard::Neutral => adventuresim_stdb_client::SelfRegard::Neutral,
+            core_personality::SelfRegard::Proud => adventuresim_stdb_client::SelfRegard::Proud,
+            core_personality::SelfRegard::Humble => adventuresim_stdb_client::SelfRegard::Humble,
         },
         conviction: match p.conviction {
-            crate::Conviction::Neutral => adventuresim_stdb_client::Conviction::Neutral,
-            crate::Conviction::Zealous => adventuresim_stdb_client::Conviction::Zealous,
-            crate::Conviction::Irreverent => adventuresim_stdb_client::Conviction::Irreverent,
+            core_personality::Conviction::Neutral => adventuresim_stdb_client::Conviction::Neutral,
+            core_personality::Conviction::Zealous => adventuresim_stdb_client::Conviction::Zealous,
+            core_personality::Conviction::Irreverent => {
+                adventuresim_stdb_client::Conviction::Irreverent
+            }
         },
         hygiene: match p.hygiene {
-            crate::Hygiene::Neutral => adventuresim_stdb_client::Hygiene::Neutral,
-            crate::Hygiene::Slovenly => adventuresim_stdb_client::Hygiene::Slovenly,
-            crate::Hygiene::Cleanly => adventuresim_stdb_client::Hygiene::Cleanly,
+            core_personality::Hygiene::Neutral => adventuresim_stdb_client::Hygiene::Neutral,
+            core_personality::Hygiene::Slovenly => adventuresim_stdb_client::Hygiene::Slovenly,
+            core_personality::Hygiene::Cleanly => adventuresim_stdb_client::Hygiene::Cleanly,
         },
         temperance: match p.temperance {
-            crate::Temperance::Neutral => adventuresim_stdb_client::Temperance::Neutral,
-            crate::Temperance::Temperate => adventuresim_stdb_client::Temperance::Temperate,
-            crate::Temperance::Drunkard => adventuresim_stdb_client::Temperance::Drunkard,
+            core_personality::Temperance::Neutral => adventuresim_stdb_client::Temperance::Neutral,
+            core_personality::Temperance::Temperate => {
+                adventuresim_stdb_client::Temperance::Temperate
+            }
+            core_personality::Temperance::Drunkard => {
+                adventuresim_stdb_client::Temperance::Drunkard
+            }
         },
         mirth: match p.mirth {
-            crate::Mirth::Neutral => adventuresim_stdb_client::Mirth::Neutral,
-            crate::Mirth::Merry => adventuresim_stdb_client::Mirth::Merry,
-            crate::Mirth::Grave => adventuresim_stdb_client::Mirth::Grave,
+            core_personality::Mirth::Neutral => adventuresim_stdb_client::Mirth::Neutral,
+            core_personality::Mirth::Merry => adventuresim_stdb_client::Mirth::Merry,
+            core_personality::Mirth::Grave => adventuresim_stdb_client::Mirth::Grave,
         },
         courtship: match p.courtship {
-            crate::Courtship::Neutral => adventuresim_stdb_client::Courtship::Neutral,
-            crate::Courtship::Amorous => adventuresim_stdb_client::Courtship::Amorous,
-            crate::Courtship::Proper => adventuresim_stdb_client::Courtship::Proper,
+            core_personality::Courtship::Neutral => adventuresim_stdb_client::Courtship::Neutral,
+            core_personality::Courtship::Amorous => adventuresim_stdb_client::Courtship::Amorous,
+            core_personality::Courtship::Proper => adventuresim_stdb_client::Courtship::Proper,
         },
         transparency: match p.transparency {
-            crate::Transparency::Neutral => adventuresim_stdb_client::Transparency::Neutral,
-            crate::Transparency::Open => adventuresim_stdb_client::Transparency::Open,
-            crate::Transparency::Guarded => adventuresim_stdb_client::Transparency::Guarded,
+            core_personality::Transparency::Neutral => {
+                adventuresim_stdb_client::Transparency::Neutral
+            }
+            core_personality::Transparency::Open => adventuresim_stdb_client::Transparency::Open,
+            core_personality::Transparency::Guarded => {
+                adventuresim_stdb_client::Transparency::Guarded
+            }
         },
         self_knowledge: match p.self_knowledge {
-            crate::SelfKnowledge::Neutral => adventuresim_stdb_client::SelfKnowledge::Neutral,
-            crate::SelfKnowledge::Introspective => {
+            core_personality::SelfKnowledge::Neutral => {
+                adventuresim_stdb_client::SelfKnowledge::Neutral
+            }
+            core_personality::SelfKnowledge::Introspective => {
                 adventuresim_stdb_client::SelfKnowledge::Introspective
             }
-            crate::SelfKnowledge::SelfDeceiving => {
+            core_personality::SelfKnowledge::SelfDeceiving => {
                 adventuresim_stdb_client::SelfKnowledge::SelfDeceiving
             }
         },
         inclination: match p.inclination {
-            crate::Inclination::Men => adventuresim_stdb_client::Inclination::Men,
-            crate::Inclination::Either => adventuresim_stdb_client::Inclination::Either,
-            crate::Inclination::Women => adventuresim_stdb_client::Inclination::Women,
-            crate::Inclination::Neither => adventuresim_stdb_client::Inclination::Neither,
+            core_personality::Inclination::Men => adventuresim_stdb_client::Inclination::Men,
+            core_personality::Inclination::Either => adventuresim_stdb_client::Inclination::Either,
+            core_personality::Inclination::Women => adventuresim_stdb_client::Inclination::Women,
+            core_personality::Inclination::Neither => {
+                adventuresim_stdb_client::Inclination::Neither
+            }
         },
         presentation: match p.presentation {
-            crate::Presentation::Man => adventuresim_stdb_client::Presentation::Man,
-            crate::Presentation::Ambiguous => adventuresim_stdb_client::Presentation::Ambiguous,
-            crate::Presentation::Woman => adventuresim_stdb_client::Presentation::Woman,
+            core_personality::Presentation::Man => adventuresim_stdb_client::Presentation::Man,
+            core_personality::Presentation::Ambiguous => {
+                adventuresim_stdb_client::Presentation::Ambiguous
+            }
+            core_personality::Presentation::Woman => adventuresim_stdb_client::Presentation::Woman,
         },
         sex: match p.sex {
-            crate::Sex::Female => adventuresim_stdb_client::Sex::Female,
-            crate::Sex::Male => adventuresim_stdb_client::Sex::Male,
+            core_personality::Sex::Female => adventuresim_stdb_client::Sex::Female,
+            core_personality::Sex::Male => adventuresim_stdb_client::Sex::Male,
         },
     }
 }

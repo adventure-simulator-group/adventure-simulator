@@ -11,8 +11,6 @@ pub(super) struct SetPartyTravelItineraryArgs {
     pub walking_minutes_per_day: u16,
     pub travel_at_night: bool,
     pub journey_start_minute_of_day: u16,
-    pub automatic_camp_duration: bool,
-    pub fixed_camp_minutes: u16,
 }
 
 impl From<SetPartyTravelItineraryArgs> for super::Reducer {
@@ -22,8 +20,6 @@ impl From<SetPartyTravelItineraryArgs> for super::Reducer {
             walking_minutes_per_day: args.walking_minutes_per_day,
             travel_at_night: args.travel_at_night,
             journey_start_minute_of_day: args.journey_start_minute_of_day,
-            automatic_camp_duration: args.automatic_camp_duration,
-            fixed_camp_minutes: args.fixed_camp_minutes,
         }
     }
 }
@@ -49,16 +45,12 @@ pub trait set_party_travel_itinerary {
         walking_minutes_per_day: u16,
         travel_at_night: bool,
         journey_start_minute_of_day: u16,
-        automatic_camp_duration: bool,
-        fixed_camp_minutes: u16,
     ) -> __sdk::Result<()> {
         self.set_party_travel_itinerary_then(
             character_id,
             walking_minutes_per_day,
             travel_at_night,
             journey_start_minute_of_day,
-            automatic_camp_duration,
-            fixed_camp_minutes,
             |_, _| {},
         )
     }
@@ -75,8 +67,6 @@ pub trait set_party_travel_itinerary {
         walking_minutes_per_day: u16,
         travel_at_night: bool,
         journey_start_minute_of_day: u16,
-        automatic_camp_duration: bool,
-        fixed_camp_minutes: u16,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -93,8 +83,6 @@ impl set_party_travel_itinerary for super::RemoteReducers {
         walking_minutes_per_day: u16,
         travel_at_night: bool,
         journey_start_minute_of_day: u16,
-        automatic_camp_duration: bool,
-        fixed_camp_minutes: u16,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -108,8 +96,6 @@ impl set_party_travel_itinerary for super::RemoteReducers {
                 walking_minutes_per_day,
                 travel_at_night,
                 journey_start_minute_of_day,
-                automatic_camp_duration,
-                fixed_camp_minutes,
             },
             callback,
         )

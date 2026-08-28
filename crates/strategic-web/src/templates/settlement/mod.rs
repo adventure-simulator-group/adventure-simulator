@@ -113,7 +113,7 @@ pub(super) mod test_support {
             provision_forecast: None,
             terrain_route: None,
             return_terrain_route: None,
-            route_fallback: true,
+            uses_straight_line_estimate: true,
         }
     }
 }

@@ -1,14 +1,18 @@
-use adventuresim_core::starting_character::{
-    StartingAgeTier, StartingCharacterSpec, StartingInclination, StartingPersonalityTrait,
-    StartingPresentation, StartingSex, StartingSlot,
+use adventuresim_core::{
+    item_catalog::EquipmentChannel,
+    starting_character::{
+        StartingAgeTier, StartingCharacterSpec, StartingInclination, StartingPersonalityTrait,
+        StartingPresentation, StartingSex, StartingSlot,
+    },
 };
+use fabelgeist_determinism::splitmix64;
 use spacetimedb::{
     Identity, ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view,
 };
 use std::hash::{DefaultHasher, Hash, Hasher};
 
 use crate::{
-    ItemSlot, Settlement, add_inventory_item,
+    Settlement, add_inventory_item,
     alcohol::alcohol_consumption,
     capability::{character_capability, character_capability__view},
     condition::{
@@ -42,6 +46,9 @@ use crate::{
     },
 };
 
+const NPC_LIFE_AGE_DOMAIN: u64 = 0x6c69_6665_2d61_6765;
+const NPC_SETTLEMENT_SELECTION_DOMAIN: u64 = 0x7365_7474_6c65_6d65;
+
 /// General character info
 #[derive(Clone, Debug)]
 #[table(accessor = character)]
@@ -54,7 +61,6 @@ pub struct Character {
     pub name: String,
     pub xp: u32,
     pub level: u32,
-    pub gold: u32,
     pub current_settlement_id: Option<String>,
     pub party_id: Option<String>,
     #[index(btree)]
@@ -221,24 +227,6 @@ pub fn backend_character_morale_sources(
 }
 
 /// Durable receipt for an idempotent first-character confirmation.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
-pub enum StartingAgeTierCoordinate {
-    Young,
-    Adult,
-    Old,
-}
-
-impl StartingAgeTierCoordinate {
-    fn core(self) -> StartingAgeTier {
-        match self {
-            Self::Young => StartingAgeTier::Young,
-            Self::Adult => StartingAgeTier::Adult,
-            Self::Old => StartingAgeTier::Old,
-        }
-    }
-}
-
-/// Durable receipt for an idempotent first-character confirmation.
 #[derive(Clone, Debug)]
 #[table(accessor = starting_character_claim)]
 pub struct StartingCharacterClaim {
@@ -250,7 +238,7 @@ pub struct StartingCharacterClaim {
     pub owner_key: String,
     pub generator_version: u16,
     pub seed: String,
-    pub age_tier: StartingAgeTierCoordinate,
+    pub age_tier: StartingAgeTier,
     pub slot: u8,
 }
 
@@ -427,38 +415,6 @@ pub fn transition_character_to_dead_at(
     Ok(death)
 }
 
-/// Non-destructive upgrade path for legacy rows that predate durable death
-/// context and standing vote normalization.
-#[reducer]
-pub fn backfill_character_deaths_and_leadership(ctx: &ReducerContext) -> Result<(), String> {
-    let dead_ids: Vec<_> = ctx
-        .db
-        .character()
-        .iter()
-        .filter(|character| !character.alive)
-        .map(|character| character.id)
-        .collect();
-    for character_id in dead_ids {
-        transition_character_to_dead(
-            ctx,
-            character_id,
-            DeathCause::Other,
-            DeathSource::Strategic,
-            Some("legacy-backfill".into()),
-        )?;
-    }
-    let party_ids: Vec<_> = ctx
-        .db
-        .party_authority()
-        .iter()
-        .map(|party| party.id)
-        .collect();
-    for party_id in party_ids {
-        crate::strategic::normalize_and_elect_party_leader(ctx, &party_id)?;
-    }
-    Ok(())
-}
-
 /// [`Character`] attributes
 #[derive(Clone, Debug)]
 #[table(accessor = character_attributes)]
@@ -590,10 +546,10 @@ pub struct EquipmentOccupancy {
     pub character_id: u64,
     pub inventory_item_id: u64,
     pub anchor_kind: EquipmentAnchorKind,
-    pub location: Option<crate::item::EquipmentLocation>,
+    pub location: Option<adventuresim_core::item_catalog::EquipmentLocation>,
     pub parent_inventory_item_id: Option<u64>,
     pub attachment_point_id: Option<String>,
-    pub channel: crate::item::EquipmentChannel,
+    pub channel: EquipmentChannel,
     pub order: u16,
     pub requirement_index: u16,
     pub capacity_index: u16,
@@ -601,9 +557,9 @@ pub struct EquipmentOccupancy {
 
 fn character_occupancy_id(
     character_id: u64,
-    channel: crate::item::EquipmentChannel,
+    channel: EquipmentChannel,
     order: u16,
-    location: crate::item::EquipmentLocation,
+    location: adventuresim_core::item_catalog::EquipmentLocation,
 ) -> String {
     let order = if channel.singleton_per_location() {
         0
@@ -784,9 +740,11 @@ pub(crate) fn unequip_wearable(ctx: &ReducerContext, inventory_item_id: u64) {
         .delete(inventory_item_id);
 }
 
-fn runtime_body_part(part: crate::item::EquipmentBodyPart) -> adventuresim_core::body::BodyPart {
-    use crate::item::EquipmentBodyPart as E;
+fn runtime_body_part(
+    part: adventuresim_core::item_catalog::EquipmentBodyPart,
+) -> adventuresim_core::body::BodyPart {
     use adventuresim_core::body::BodyPart as B;
+    use adventuresim_core::item_catalog::EquipmentBodyPart as E;
     match part {
         E::LeftArm => B::LeftArm,
         E::RightArm => B::RightArm,
@@ -1052,7 +1010,11 @@ fn delete_character_data(
         .filter(character.id)
         .collect::<Vec<_>>();
     for row in inventory {
-        if crate::inventory_container::delete_carried_object_for_row(ctx, "personal", row.id)? {
+        if crate::inventory_container::delete_carried_object_for_row(
+            ctx,
+            adventuresim_core::physical_object::CarriedInventoryScope::Personal,
+            row.id,
+        )? {
             continue;
         }
         if ctx
@@ -1194,6 +1156,24 @@ fn delete_character_data(
         .delete(character.id);
     crate::reputation::delete_character_reputation(ctx, character.id);
     crate::strategic::delete_activity_incident_entropy(ctx, character.id);
+    for injury in ctx
+        .db
+        .limb_injury()
+        .character_id()
+        .filter(character.id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.limb_injury().id().delete(injury.id);
+    }
+    for projectile in ctx
+        .db
+        .retained_projectile()
+        .character_id()
+        .filter(character.id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.retained_projectile().id().delete(projectile.id);
+    }
     ctx.db.character_limbs().character_id().delete(character.id);
     for row in ctx
         .db
@@ -1323,12 +1303,10 @@ pub fn create_starting_character(
     owner_key: String,
     generator_version: u16,
     seed: String,
-    age_tier: StartingAgeTierCoordinate,
+    age_tier: StartingAgeTier,
     slot: u8,
 ) -> Result<(), String> {
     crate::strategic::require_strategic_gateway(ctx)?;
-    let coordinate = age_tier;
-    let age_tier = coordinate.core();
     let spec =
         adventuresim_core::starting_character::generate(generator_version, &seed, age_tier, slot)
             .map_err(str::to_owned)?;
@@ -1371,7 +1349,7 @@ pub fn create_starting_character(
             owner_key: owner_key.clone(),
             generator_version,
             seed,
-            age_tier: coordinate,
+            age_tier,
             slot,
         });
     crate::browser_session::grant_browser_character_internal(
@@ -1430,7 +1408,7 @@ pub fn create_default_character(ctx: &ReducerContext, owner_key: String) -> Resu
             owner_key: owner_key.clone(),
             generator_version: version,
             seed: owner_key.clone(),
-            age_tier: StartingAgeTierCoordinate::Adult,
+            age_tier: StartingAgeTier::Adult,
             slot: 0,
         });
     crate::browser_session::grant_browser_character_internal(
@@ -1478,15 +1456,7 @@ pub(crate) fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String>
     ctx.db.character_limbs().character_id().update(limbs);
 
     for character_id in [DAMAGED_CHARACTER_ID, 9_000_001, 9_000_002] {
-        for injury in ctx
-            .db
-            .limb_injury()
-            .character_id()
-            .filter(character_id)
-            .collect::<Vec<_>>()
-        {
-            ctx.db.limb_injury().id().delete(injury.id);
-        }
+        crate::surgery::reset_character_injuries(ctx, character_id);
         for projectile in ctx
             .db
             .retained_projectile()
@@ -1500,7 +1470,7 @@ pub(crate) fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String>
     crate::surgery::commit_hit_injury(
         ctx,
         DAMAGED_CHARACTER_ID,
-        crate::surgery::LimbRegion::LeftArm,
+        adventuresim_core::physiology::BodyRegion::LeftArm,
         0.22,
         0.05,
         Some(crate::surgery::ProjectileKind::Arrowhead),
@@ -1508,7 +1478,7 @@ pub(crate) fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String>
     crate::surgery::commit_hit_injury(
         ctx,
         DAMAGED_CHARACTER_ID,
-        crate::surgery::LimbRegion::RightArm,
+        adventuresim_core::physiology::BodyRegion::RightArm,
         0.18,
         0.0,
         None,
@@ -1516,7 +1486,7 @@ pub(crate) fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String>
     let mut bandaged = crate::surgery::injury_for(
         ctx,
         DAMAGED_CHARACTER_ID,
-        crate::surgery::LimbRegion::RightArm,
+        adventuresim_core::physiology::BodyRegion::RightArm,
     );
     bandaged.bandaged = true;
     bandaged.stitched = true;
@@ -1525,7 +1495,7 @@ pub(crate) fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String>
     crate::surgery::commit_hit_injury(
         ctx,
         DAMAGED_CHARACTER_ID,
-        crate::surgery::LimbRegion::LeftLeg,
+        adventuresim_core::physiology::BodyRegion::LeftLeg,
         0.0,
         0.42,
         None,
@@ -1533,14 +1503,14 @@ pub(crate) fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String>
     let mut splinted = crate::surgery::injury_for(
         ctx,
         DAMAGED_CHARACTER_ID,
-        crate::surgery::LimbRegion::LeftLeg,
+        adventuresim_core::physiology::BodyRegion::LeftLeg,
     );
     splinted.splint_owner_id = Some(DAMAGED_CHARACTER_ID);
     ctx.db.limb_injury().id().update(splinted);
     crate::surgery::commit_hit_injury(
         ctx,
         DAMAGED_CHARACTER_ID,
-        crate::surgery::LimbRegion::Chest,
+        adventuresim_core::physiology::BodyRegion::Chest,
         0.15,
         0.08,
         Some(crate::surgery::ProjectileKind::Ball),
@@ -1591,7 +1561,7 @@ pub(crate) fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String>
     crate::surgery::commit_hit_injury(
         ctx,
         9_000_002,
-        crate::surgery::LimbRegion::RightLeg,
+        adventuresim_core::physiology::BodyRegion::RightLeg,
         0.36,
         0.08,
         Some(crate::surgery::ProjectileKind::Arrowhead),
@@ -1599,7 +1569,7 @@ pub(crate) fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String>
     crate::surgery::commit_hit_injury(
         ctx,
         9_000_002,
-        crate::surgery::LimbRegion::LeftArm,
+        adventuresim_core::physiology::BodyRegion::LeftArm,
         0.04,
         0.50,
         None,
@@ -2004,20 +1974,13 @@ impl NpcLifeFacts {
     /// reducer RNG. Authored organization and literacy can be overlaid by the
     /// population importer before creation.
     pub(crate) fn from_stable_seed(stable_seed: u64) -> Self {
-        let draw = stable_mix(stable_seed ^ 0x6c69_6665_2d61_6765);
+        let draw = splitmix64(stable_seed ^ NPC_LIFE_AGE_DOMAIN);
         Self {
             age_years: 18 + (draw % 43) as u16,
             organization_id: None,
             literacy: None,
         }
     }
-}
-
-fn stable_mix(mut value: u64) -> u64 {
-    value = value.wrapping_add(0x9e37_79b9_7f4a_7c15);
-    value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-    value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-    value ^ (value >> 31)
 }
 
 pub(crate) fn insert_new_npc_character(
@@ -2228,7 +2191,7 @@ pub(crate) fn insert_character_with_origin(
     let selector = starting.map_or_else(
         || {
             if npc {
-                stable_mix(options.stable_seed ^ 0x7365_7474_6c65_6d65)
+                splitmix64(options.stable_seed ^ NPC_SETTLEMENT_SELECTION_DOMAIN)
             } else {
                 ctx.random::<u64>()
             }
@@ -2276,9 +2239,6 @@ pub(crate) fn insert_character_with_origin(
         name,
         xp: 0,
         level: 1,
-        // Legacy scalar retained only for schema compatibility. Currency is
-        // authoritative in inventory.
-        gold: 0,
         current_settlement_id: (!options.field_actor).then(|| start_settlement.id.clone()),
         party_id: None,
         server: Identity::ZERO,
@@ -2550,6 +2510,7 @@ pub(crate) fn insert_character_with_origin(
         chest_health: 1.0,
         stomach_health: 1.0,
     });
+    crate::surgery::initialize_character_injuries(ctx, character.id);
     crate::condition::initialize_character_condition(ctx, character.id)?;
     if let Some(starting) = starting {
         let mut personality = crate::personality::CharacterPersonality::neutral(id);
@@ -2643,42 +2604,7 @@ pub(crate) fn insert_character_with_origin(
     if let Some(spec) = starting {
         for item in &spec.inventory {
             if let Some(slot) = item.equipped {
-                if matches!(slot, StartingSlot::LeftFoot | StartingSlot::RightFoot) {
-                    let inventory_item_id = add_inventory_item(ctx, character.id, &item.item_id, 1)
-                        .ok_or_else(|| format!("Could not add starting item {}", item.item_id))?;
-                    let placement_id = match slot {
-                        StartingSlot::LeftFoot => "left",
-                        StartingSlot::RightFoot => "right",
-                        _ => unreachable!(),
-                    };
-                    let placement = authored_placement_index(ctx, &item.item_id, placement_id)?;
-                    equip_equipment_internal(
-                        ctx,
-                        character.id,
-                        inventory_item_id,
-                        placement,
-                        Vec::new(),
-                        false,
-                        false,
-                    )?;
-                    if item.quantity > 1 {
-                        add_inventory_item(ctx, character.id, &item.item_id, item.quantity - 1);
-                    }
-                    continue;
-                }
-                let destination = match slot {
-                    StartingSlot::LeftHand => ItemSlot::LeftHolding,
-                    StartingSlot::RightHand => ItemSlot::RightHolding,
-                    StartingSlot::LeftArm => ItemSlot::LeftArm,
-                    StartingSlot::RightArm => ItemSlot::RightArm,
-                    StartingSlot::LeftLeg => ItemSlot::LeftLeg,
-                    StartingSlot::RightLeg => ItemSlot::RightLeg,
-                    StartingSlot::LeftFoot | StartingSlot::RightFoot => unreachable!(),
-                    StartingSlot::Head => ItemSlot::Head,
-                    StartingSlot::Chest => ItemSlot::Chest,
-                    StartingSlot::Stomach => ItemSlot::Stomach,
-                };
-                add_and_equip_item(ctx, character.id, &item.item_id, destination)?;
+                add_and_equip_starting_item(ctx, character.id, &item.item_id, slot)?;
                 if item.quantity > 1 {
                     add_inventory_item(ctx, character.id, &item.item_id, item.quantity - 1);
                 }
@@ -2691,17 +2617,17 @@ pub(crate) fn insert_character_with_origin(
         add_inventory_item(ctx, character.id, "bandage", 3);
         add_and_equip_basic_clothing(ctx, character.id)?;
         for (item, slot) in [
-            ("buckler", ItemSlot::LeftHolding),
-            ("katzbalger", ItemSlot::RightHolding),
-            ("quilted_sleeve", ItemSlot::LeftArm),
-            ("quilted_sleeve", ItemSlot::RightArm),
-            ("arming_cap", ItemSlot::Head),
-            ("arming_doublet", ItemSlot::Chest),
-            ("padded_skirt", ItemSlot::Stomach),
-            ("padded_chausses", ItemSlot::LeftLeg),
-            ("padded_chausses", ItemSlot::RightLeg),
+            ("buckler", StartingSlot::LeftHand),
+            ("katzbalger", StartingSlot::RightHand),
+            ("quilted_sleeve", StartingSlot::LeftArm),
+            ("quilted_sleeve", StartingSlot::RightArm),
+            ("arming_cap", StartingSlot::Head),
+            ("arming_doublet", StartingSlot::Chest),
+            ("padded_skirt", StartingSlot::Stomach),
+            ("padded_chausses", StartingSlot::LeftLeg),
+            ("padded_chausses", StartingSlot::RightLeg),
         ] {
-            add_and_equip_item(ctx, character.id, item, slot)?;
+            add_and_equip_starting_item(ctx, character.id, item, slot)?;
         }
     }
     if !newborn && options.materialize_generated_carry {
@@ -2776,8 +2702,7 @@ pub(crate) fn insert_character_with_origin(
 }
 
 /// Verify the ordinary durable component set shared by player characters and
-/// persistent NPCs. This is deliberately a runtime invariant rather than a
-/// migration/link-table shim: population import must create real Characters.
+/// persistent NPCs. Population import must create complete Characters.
 pub(crate) fn validate_full_character_components(
     ctx: &ReducerContext,
     character_id: u64,
@@ -2821,6 +2746,16 @@ pub(crate) fn validate_full_character_components(
         .is_none()
     {
         missing.push("limbs");
+    }
+    if ctx
+        .db
+        .limb_injury()
+        .character_id()
+        .filter(character_id)
+        .count()
+        != adventuresim_core::physiology::BodyRegion::ALL.len()
+    {
+        missing.push("injuries");
     }
     if ctx
         .db
@@ -2905,26 +2840,15 @@ pub(crate) fn validate_full_character_components(
 }
 
 #[reducer]
-pub fn equip_item(
+pub fn unequip_item(
     ctx: &ReducerContext,
     character_id: u64,
     inventory_item_id: u64,
-    destination: ItemSlot,
 ) -> Result<(), String> {
     crate::strategic::require_strategic_character_authority(ctx, character_id)?;
-    equip_item_internal(ctx, character_id, inventory_item_id, destination, true)
-}
-
-fn equip_item_internal(
-    ctx: &ReducerContext,
-    character_id: u64,
-    inventory_item_id: u64,
-    destination: ItemSlot,
-    enforce_law: bool,
-) -> Result<(), String> {
     crate::strategic::require_character_no_unresolved_encounter(ctx, character_id)?;
     require_living_character(ctx, character_id)?;
-    let inventory = ctx
+    ctx
         .db
         .inventory_item()
         .character_and_id()
@@ -2932,98 +2856,18 @@ fn equip_item_internal(
         .next()
         .ok_or_else(|| {
             format!(
-            "Can't equip item: InventoryItem@{inventory_item_id} doesn't exist for Character@{character_id}"
+                "Can't unequip item: InventoryItem@{inventory_item_id} doesn't exist for Character@{character_id}"
             )
         })?;
-    let definition = ctx
-        .db
-        .item()
-        .id()
-        .find(&inventory.item_id)
-        .ok_or_else(|| format!("Can't equip unknown item {}", inventory.item_id))?;
-    if destination == ItemSlot::None {
-        require_no_equipped_children(ctx, inventory_item_id)?;
-        unequip_wearable(ctx, inventory_item_id);
-        refresh_equipment_dependents(ctx, character_id)?;
-        return Ok(());
-    }
-    let placement_index = equipment_placement_for_legacy_destination(
-        ctx,
-        character_id,
-        inventory_item_id,
-        &definition,
-        destination,
-    )
-    .ok_or_else(|| {
-        format!(
-            "Can't equip {} at {destination:?}; choose one of its authored placements",
-            inventory.item_id
-        )
-    })?;
-    equip_equipment_internal(
-        ctx,
-        character_id,
-        inventory_item_id,
-        placement_index,
-        Vec::new(),
-        enforce_law,
-        false,
-    )
-}
-
-fn equipment_placement_for_legacy_destination(
-    ctx: &ReducerContext,
-    character_id: u64,
-    inventory_item_id: u64,
-    item: &crate::Item,
-    destination: ItemSlot,
-) -> Option<u16> {
-    use crate::item::EquipmentChannel as C;
-    use crate::item::EquipmentLocation as L;
-    let accepts = |requirement: &crate::item::EquipmentOccupancyRequirement| match destination {
-        ItemSlot::LeftArm => requirement.location == L::LeftArm,
-        ItemSlot::RightArm => requirement.location == L::RightArm,
-        ItemSlot::AnyArm => matches!(requirement.location, L::LeftArm | L::RightArm),
-        ItemSlot::LeftLeg => requirement.location == L::LeftLeg,
-        ItemSlot::RightLeg => requirement.location == L::RightLeg,
-        ItemSlot::AnyLeg => matches!(requirement.location, L::LeftLeg | L::RightLeg),
-        ItemSlot::Head => requirement.location == L::Head,
-        ItemSlot::Chest => requirement.location == L::Chest,
-        ItemSlot::Stomach => requirement.location == L::Stomach,
-        ItemSlot::LeftHolding => {
-            requirement.location == L::LeftHand && requirement.channel == C::Held
-        }
-        ItemSlot::RightHolding => {
-            requirement.location == L::RightHand && requirement.channel == C::Held
-        }
-        ItemSlot::AnyHolding => requirement.channel == C::Held,
-        _ => false,
-    };
-    item.equipment_placements
-        .iter()
-        .position(|placement| {
-            placement.parents.is_empty()
-                && !placement.occupancy.is_empty()
-                && placement.occupancy.iter().any(accepts)
-                && conflicting_root_requirements(
-                    &placement.occupancy,
-                    inventory_item_id,
-                    |requirement| {
-                        ctx.db
-                            .equipment_occupancy()
-                            .id()
-                            .find(character_occupancy_id(
-                                character_id,
-                                requirement.channel,
-                                requirement.order,
-                                requirement.location,
-                            ))
-                            .map(|row| row.inventory_item_id)
-                    },
-                )
-                .is_empty()
-        })
-        .and_then(|index| u16::try_from(index).ok())
+    ctx.db
+        .character_equipped_item()
+        .inventory_item_id()
+        .find(inventory_item_id)
+        .filter(|equipped| equipped.character_id == character_id)
+        .ok_or("Can't unequip item: item is not equipped by this character")?;
+    require_no_equipped_children(ctx, inventory_item_id)?;
+    unequip_wearable(ctx, inventory_item_id);
+    refresh_equipment_dependents(ctx, character_id)
 }
 
 #[reducer]
@@ -3149,7 +2993,11 @@ fn equip_equipment_internal(
     if enforce_law {
         crate::equipment_law::require_item_legal(ctx, character_id, inventory_item_id)?;
     }
-    crate::inventory_container::detach_row_for_action(ctx, "personal", inventory_item_id)?;
+    crate::inventory_container::detach_row_for_action(
+        ctx,
+        adventuresim_core::physical_object::CarriedInventoryScope::Personal,
+        inventory_item_id,
+    )?;
     let root_occupancies = placement
         .occupancy
         .iter()
@@ -3416,9 +3264,10 @@ fn hand_only_placement_is_held_root(placement: &crate::item::EquipmentPlacement)
         && placement.occupancy.len() == 1
         && matches!(
             placement.occupancy[0].location,
-            crate::item::EquipmentLocation::LeftHand | crate::item::EquipmentLocation::RightHand
+            adventuresim_core::item_catalog::EquipmentLocation::LeftHand
+                | adventuresim_core::item_catalog::EquipmentLocation::RightHand
         )
-        && placement.occupancy[0].channel == crate::item::EquipmentChannel::Held
+        && placement.occupancy[0].channel == EquipmentChannel::Held
         && placement.occupancy[0].order == 0
 }
 
@@ -3563,17 +3412,58 @@ fn select_sheath_compatible_parent_placement(
         .iter()
         .position(|placement| {
             placement.parents.len() == 1
-                && placement.parents[0].channel == crate::item::EquipmentChannel::Containment
+                && placement.parents[0].channel == EquipmentChannel::Containment
                 && placement.parents[0].order == 0
         })
         .and_then(|index| u16::try_from(index).ok())
 }
 
-pub fn add_and_equip_item(
+fn starting_item_placement_index(
+    ctx: &ReducerContext,
+    item_id: &str,
+    slot: StartingSlot,
+) -> Result<u16, String> {
+    use adventuresim_core::item_catalog::EquipmentLocation;
+
+    let location = match slot {
+        StartingSlot::LeftHand => EquipmentLocation::LeftHand,
+        StartingSlot::RightHand => EquipmentLocation::RightHand,
+        StartingSlot::LeftArm => EquipmentLocation::LeftArm,
+        StartingSlot::RightArm => EquipmentLocation::RightArm,
+        StartingSlot::LeftLeg => EquipmentLocation::LeftLeg,
+        StartingSlot::RightLeg => EquipmentLocation::RightLeg,
+        StartingSlot::LeftFoot => EquipmentLocation::LeftFoot,
+        StartingSlot::RightFoot => EquipmentLocation::RightFoot,
+        StartingSlot::Head => EquipmentLocation::Head,
+        StartingSlot::Chest => EquipmentLocation::Chest,
+        StartingSlot::Stomach => EquipmentLocation::Stomach,
+    };
+    let definition = ctx
+        .db
+        .item()
+        .id()
+        .find(item_id.to_owned())
+        .ok_or_else(|| format!("Starting item {item_id} is missing"))?;
+    definition
+        .equipment_placements
+        .iter()
+        .position(|placement| {
+            placement.parents.is_empty()
+                && placement.occupancy.iter().any(|requirement| {
+                    requirement.location == location
+                        && (!matches!(slot, StartingSlot::LeftHand | StartingSlot::RightHand)
+                            || requirement.channel == EquipmentChannel::Held)
+                })
+        })
+        .and_then(|index| u16::try_from(index).ok())
+        .ok_or_else(|| format!("Starting item {item_id} lacks a root placement for {slot:?}"))
+}
+
+fn add_and_equip_starting_item(
     ctx: &ReducerContext,
     character_id: u64,
     item_id: &str,
-    destination: ItemSlot,
+    slot: StartingSlot,
 ) -> Result<(), String> {
     let id = add_inventory_item(ctx, character_id, item_id, 1)
         .ok_or_else(|| "Can't add item to inventory".to_string())?;
@@ -3581,7 +3471,15 @@ pub fn add_and_equip_item(
     // completed character runs the ordinary compliance pass once every starter
     // item is present, avoiding partial creation when its initial settlement
     // restricts arms or armor.
-    equip_item_internal(ctx, character_id, id, destination, false)
+    equip_equipment_internal(
+        ctx,
+        character_id,
+        id,
+        starting_item_placement_index(ctx, item_id, slot)?,
+        Vec::new(),
+        false,
+        false,
+    )
 }
 
 pub(crate) fn add_and_equip_basic_clothing(
@@ -3589,24 +3487,12 @@ pub(crate) fn add_and_equip_basic_clothing(
     character_id: u64,
 ) -> Result<(), String> {
     for (item, slot) in [
-        ("linen_tunic", ItemSlot::Chest),
-        ("linen_breeches", ItemSlot::LeftLeg),
+        ("linen_tunic", StartingSlot::Chest),
+        ("linen_breeches", StartingSlot::LeftLeg),
+        ("leather_boot", StartingSlot::LeftFoot),
+        ("leather_boot", StartingSlot::RightFoot),
     ] {
-        add_and_equip_item(ctx, character_id, item, slot)?;
-    }
-    for (item, placement_id) in [("leather_boot", "left"), ("leather_boot", "right")] {
-        let inventory_item_id = add_inventory_item(ctx, character_id, item, 1)
-            .ok_or_else(|| format!("Could not add starting item {item}"))?;
-        let placement = authored_placement_index(ctx, item, placement_id)?;
-        equip_equipment_internal(
-            ctx,
-            character_id,
-            inventory_item_id,
-            placement,
-            Vec::new(),
-            false,
-            false,
-        )?;
+        add_and_equip_starting_item(ctx, character_id, item, slot)?;
     }
     Ok(())
 }
@@ -3618,7 +3504,7 @@ pub(crate) fn add_and_equip_basic_clothing(
 pub(crate) fn replace_development_loadout(
     ctx: &ReducerContext,
     character_id: u64,
-    loadout: &[(&str, ItemSlot)],
+    loadout: &[(&str, StartingSlot)],
 ) -> Result<(), String> {
     for inventory_item_id in equipped_wearable_ids(ctx, character_id) {
         unequip_wearable(ctx, inventory_item_id);
@@ -3636,7 +3522,15 @@ pub(crate) fn replace_development_loadout(
             .or_else(|| add_inventory_item(ctx, character_id, item_id, 1))
             .ok_or_else(|| format!("Failed to add {item_id} to development loadout"))?;
         selected.insert(inventory_item_id);
-        equip_item_internal(ctx, character_id, inventory_item_id, *destination, false)?;
+        equip_equipment_internal(
+            ctx,
+            character_id,
+            inventory_item_id,
+            starting_item_placement_index(ctx, item_id, *destination)?,
+            Vec::new(),
+            false,
+            false,
+        )?;
     }
     Ok(())
 }
@@ -3650,9 +3544,10 @@ mod starting_character_boundary_tests {
         initial_membership_minutes, select_sheath_compatible_parent_placement,
     };
     use crate::item::{
-        EquipmentAttachmentPoint, EquipmentChannel, EquipmentLocation,
-        EquipmentOccupancyRequirement, EquipmentParentRequirement, EquipmentPlacement,
+        EquipmentAttachmentPoint, EquipmentOccupancyRequirement, EquipmentParentRequirement,
+        EquipmentPlacement,
     };
+    use adventuresim_core::item_catalog::{EquipmentChannel, EquipmentLocation};
 
     #[test]
     fn membership_period_is_anchored_to_current_character_time() {
@@ -3668,7 +3563,7 @@ mod starting_character_boundary_tests {
 
     #[test]
     fn herbalism_foraging_demo_resets_mutually_exclusive_presence() {
-        let source = include_str!("character.rs");
+        let source = crate::production_source(include_str!("character.rs"));
         let fixture = source
             .split("pub(crate) fn seed_herbalism_demo_character")
             .nth(1)
@@ -3701,7 +3596,8 @@ mod starting_character_boundary_tests {
             validation < first_reset,
             "party ownership must be validated first"
         );
-        let scenarios = include_str!("strategic/development_scenarios.rs");
+        let scenarios =
+            crate::production_source(include_str!("strategic/development_scenarios.rs"));
         let settlement = scenarios
             .split("pub(crate) fn ensure_foraging_demo_settlement")
             .nth(1)
@@ -3739,7 +3635,7 @@ mod starting_character_boundary_tests {
         assert!(!CharacterCreationMode::Newborn.temporary());
         assert!(CharacterCreationMode::Newborn.newborn());
 
-        let source = include_str!("character.rs");
+        let source = crate::production_source(include_str!("character.rs"));
         let persistent = source
             .split("pub(crate) fn insert_persistent_npc_character")
             .nth(1)
@@ -3755,7 +3651,7 @@ mod starting_character_boundary_tests {
 
     #[test]
     fn full_character_rows_are_gateway_only() {
-        let source = include_str!("character.rs");
+        let source = crate::production_source(include_str!("character.rs"));
         assert!(source.contains("#[table(accessor = character)]"));
         assert!(!source.contains("#[table(accessor = character, public)]"));
         for component in [
@@ -3790,14 +3686,14 @@ mod starting_character_boundary_tests {
         }
         assert!(source.contains("#[table(accessor = character_death)]"));
         assert!(!source.contains("#[table(accessor = character_death, public)]"));
-        let condition_source = include_str!("condition.rs");
+        let condition_source = crate::production_source(include_str!("condition.rs"));
         assert!(condition_source.contains("#[table(accessor = character_morale_source)]"));
         assert!(!condition_source.contains("#[table(accessor = character_morale_source, public)]"));
     }
 
     #[test]
     fn newborns_have_full_components_without_an_adult_starter_package() {
-        let source = include_str!("character.rs");
+        let source = crate::production_source(include_str!("character.rs"));
         let insertion = source
             .split("pub(crate) fn insert_character_with_origin")
             .nth(1)
@@ -3813,7 +3709,7 @@ mod starting_character_boundary_tests {
 
     #[test]
     fn completed_creation_checks_the_full_component_invariant() {
-        let source = include_str!("character.rs");
+        let source = crate::production_source(include_str!("character.rs"));
         let insertion = source
             .split("pub(crate) fn insert_character_with_origin")
             .nth(1)
@@ -3827,6 +3723,7 @@ mod starting_character_boundary_tests {
             "character_attributes",
             "character_skills",
             "character_limbs",
+            "limb_injury",
             "character_personality",
             "character_time",
             "character_training_schedule",
@@ -3845,7 +3742,7 @@ mod starting_character_boundary_tests {
 
     #[test]
     fn active_non_newborn_materialization_adds_one_authored_belt_sheath_kit() {
-        let source = include_str!("character.rs");
+        let source = crate::production_source(include_str!("character.rs"));
         let insertion = source
             .split("pub(crate) fn insert_character_with_origin")
             .nth(1)
@@ -3860,7 +3757,7 @@ mod starting_character_boundary_tests {
             .split("fn provision_generated_weapon_carry")
             .nth(1)
             .unwrap()
-            .split("pub fn add_and_equip_item")
+            .split("fn starting_item_placement_index")
             .next()
             .unwrap();
         for evidence in [
@@ -3869,18 +3766,28 @@ mod starting_character_boundary_tests {
             "recommended_holder",
             "scabbard",
             "weapon_loop",
-            "attachment_point_id: \"left\"",
-            "attachment_point_id: \"right\"",
-            "attachment_point_id: \"blade\"",
-            "if !initially_held",
+            "zip([\"right\", \"left\"])",
+            "attachment_point_id: hip.into()",
+            "attachment_point_id: \"blade\".into()",
+            "place_unheld_weapon_in_sheath",
         ] {
             assert!(helper.contains(evidence), "missing {evidence}");
         }
+        let unheld_helper = helper
+            .split("fn place_unheld_weapon_in_sheath")
+            .nth(1)
+            .unwrap()
+            .split("fn authored_placement_index")
+            .next()
+            .unwrap();
+        assert!(unheld_helper.contains("character_equipped_item()"));
+        assert!(unheld_helper.contains(".find(weapon.id)"));
+        assert!(unheld_helper.contains("return Ok(())"));
     }
 
     #[test]
     fn creation_initializes_condition_before_capability_dependent_side_effects() {
-        let source = include_str!("character.rs");
+        let source = crate::production_source(include_str!("character.rs"));
         let insertion = source
             .split("pub(crate) fn insert_character_with_origin")
             .nth(1)
@@ -3891,6 +3798,9 @@ mod starting_character_boundary_tests {
         let condition = insertion
             .find("crate::condition::initialize_character_condition(ctx, character.id)?")
             .unwrap();
+        let injuries = insertion
+            .find("crate::surgery::initialize_character_injuries(ctx, character.id)")
+            .unwrap();
         let currency = insertion
             .find("crate::item::credit_personal_currency(")
             .unwrap();
@@ -3900,6 +3810,10 @@ mod starting_character_boundary_tests {
         let capability = insertion
             .find("crate::capability::refresh_character_capability(ctx, character.id)?")
             .unwrap();
+        assert!(
+            injuries < condition,
+            "injury rows must exist before systems can observe the new character"
+        );
         assert!(
             condition < capability,
             "capability refresh loads the character condition and must run after initialization"
@@ -3916,7 +3830,7 @@ mod starting_character_boundary_tests {
 
     #[test]
     fn public_starting_character_reducer_requires_the_gateway() {
-        let source = include_str!("character.rs");
+        let source = crate::production_source(include_str!("character.rs"));
         let reducer = source
             .split("pub fn create_starting_character")
             .nth(1)
@@ -3951,12 +3865,12 @@ mod starting_character_boundary_tests {
 
     #[test]
     fn equipment_mutation_preflights_before_deleting_the_old_graph_rows() {
-        let source = include_str!("character.rs");
+        let source = crate::production_source(include_str!("character.rs"));
         let reducer = source
             .split("fn equip_equipment_internal")
             .nth(1)
             .unwrap()
-            .split("pub fn add_and_equip_item")
+            .split("fn starting_item_placement_index")
             .next()
             .unwrap();
         let conflict_check = reducer
@@ -4073,7 +3987,7 @@ mod starting_character_boundary_tests {
 
     #[test]
     fn strategic_slot_swaps_use_the_explicit_atomic_reducer() {
-        let source = include_str!("character.rs");
+        let source = crate::production_source(include_str!("character.rs"));
         let reducer = source
             .split("pub fn replace_item_at_placement")
             .nth(1)
@@ -4153,7 +4067,7 @@ mod starting_character_boundary_tests {
 
     #[test]
     fn normalized_equipment_mutations_refresh_capability_and_condition() {
-        let source = include_str!("character.rs");
+        let source = crate::production_source(include_str!("character.rs"));
         let helper = source
             .split("fn refresh_equipment_dependents")
             .nth(1)
@@ -4167,7 +4081,7 @@ mod starting_character_boundary_tests {
             .split("fn equip_equipment_internal")
             .nth(1)
             .unwrap()
-            .split("pub fn add_and_equip_item")
+            .split("fn starting_item_placement_index")
             .next()
             .unwrap();
         assert!(reducer.contains("refresh_equipment_dependents(ctx, character_id)"));
@@ -4175,12 +4089,12 @@ mod starting_character_boundary_tests {
 
     #[test]
     fn production_full_characters_simulate_life_but_tactical_fixtures_keep_authored_overrides() {
-        let source = include_str!("character.rs");
+        let source = crate::production_source(include_str!("character.rs"));
         let insertion = source
             .split("fn insert_character_with_origin")
             .nth(1)
             .unwrap()
-            .split("#[reducer]\npub fn equip_item")
+            .split("#[reducer]\npub fn unequip_item")
             .next()
             .unwrap();
         assert!(insertion.contains("starting.is_none() && (!temporary || npc)"));
@@ -4198,7 +4112,7 @@ mod starting_character_boundary_tests {
 
     #[test]
     fn creation_persists_only_the_current_skill_projection() {
-        let source = include_str!("character.rs");
+        let source = crate::production_source(include_str!("character.rs"));
         assert!(source.contains("character_skills().insert"));
         for forbidden in [
             concat!("CharacterTraining", "History"),

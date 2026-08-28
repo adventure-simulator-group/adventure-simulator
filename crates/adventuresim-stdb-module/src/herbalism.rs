@@ -1,6 +1,9 @@
 //! Authoritative bounded herbal preparation.
 
-use adventuresim_core::prelude::{PlayerSkills, Skill, apply_direct_training};
+use adventuresim_core::{
+    food::FoodPreparation,
+    prelude::{PlayerSkills, Skill, apply_direct_training},
+};
 use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view};
 
 use crate::{
@@ -193,12 +196,15 @@ pub(crate) fn consume_food_medicine(
     }
     for mut row in rows {
         let used = row.potency_units * fraction;
+        let dose =
+            adventuresim_core::physiology::DoseMilliunits::try_from_standard_doses_rounded(used)
+                .map_err(|_| "Medicinal food dose is outside the supported range")?;
         crate::disease::administer_intervention_component(
             ctx,
             patient_id,
             &row.intervention_profile_id,
             row.profile_version,
-            (used * 1_000.0).round().max(0.0) as u32,
+            dose,
         )?;
         if fraction >= 0.999_999 {
             ctx.db.medicinal_component().key().delete(row.key);
@@ -388,16 +394,21 @@ pub fn start_poppy_tincture(
     {
         return Err("This tincture recipe requires carried poppy".into());
     }
+    let adventuresim_core::physical_object::InventoryLocation::Personal(ingredient_location) =
+        &ingredient.location
+    else {
+        return Err("Tincture ingredient has no personal inventory backing".into());
+    };
     let inventory = ctx
         .db
         .inventory_item()
         .id()
-        .find(ingredient.inventory_row_id)
+        .find(ingredient_location.row_id)
         .ok_or("Poppy inventory row is missing")?;
-    let lot = crate::food::personal_lot(ctx, ingredient.inventory_row_id)
+    let lot = crate::food::personal_lot(ctx, ingredient_location.row_id)
         .ok_or("Poppy measured lot is missing")?;
     if inventory.quantity != 1
-        || lot.preparation != crate::FoodPreparation::Ground
+        || lot.preparation != FoodPreparation::Ground
         || (lot.mass_kg - 0.05).abs() > 0.000_1
     {
         return Err("Poppy tincture requires one exact 50 g ground-poppy lot".into());
@@ -495,11 +506,15 @@ pub fn administer_tincture_from_container(
     actor_id: u64,
     patient_id: u64,
     object_id: u64,
-    amount_milliunits: u32,
+    dose_milliunits: u32,
 ) -> Result<(), String> {
     crate::strategic::require_strategic_gateway(ctx)?;
     crate::disease::require_intervention_relationship(ctx, actor_id, patient_id)?;
-    if amount_milliunits == 0 || amount_milliunits > 1_000 {
+    let tincture_dose = adventuresim_core::physiology::DoseMilliunits::try_new(dose_milliunits)
+        .map_err(|_| "Tincture dose must be between 1 and 1000 milliunits")?;
+    if tincture_dose.is_zero()
+        || tincture_dose > adventuresim_core::physiology::DoseMilliunits::STANDARD
+    {
         return Err("Tincture dose must be between 1 and 1000 milliunits".into());
     }
     let object = require_tincture_vessel(ctx, object_id)?;
@@ -527,16 +542,24 @@ pub fn administer_tincture_from_container(
         .key()
         .find(key.clone())
         .ok_or("Mature tincture has no medicinal component")?;
-    let fraction = amount_milliunits as f32 / 1_000.0;
-    let dose = component.potency_units * fraction;
+    let fraction = tincture_dose.as_standard_doses();
+    let standard_doses = component.potency_units * fraction;
+    let mut administered_dose =
+        adventuresim_core::physiology::DoseMilliunits::try_from_standard_doses_rounded(
+            standard_doses,
+        )
+        .map_err(|_| "Tincture potency is outside the supported dose range")?;
+    if administered_dose.is_zero() {
+        administered_dose = adventuresim_core::physiology::DoseMilliunits::MINIMUM_NONZERO;
+    }
     crate::disease::administer_intervention_component(
         ctx,
         patient_id,
         &component.intervention_profile_id,
         component.profile_version,
-        (dose * 1_000.0).round().max(1.0) as u32,
+        administered_dose,
     )?;
-    component.potency_units -= dose;
+    component.potency_units -= standard_doses;
     let mut liquid = ctx
         .db
         .container_liquid()
@@ -567,7 +590,7 @@ pub fn administer_tincture_from_container(
 mod tests {
     #[test]
     fn tincture_lifecycle_is_private_pinned_consuming_and_transfer_safe() {
-        let source = include_str!("herbalism.rs");
+        let source = crate::production_source(include_str!("herbalism.rs"));
         assert!(source.contains("started_at_world_minute"));
         assert!(source.contains("pinned_potency_units"));
         assert!(source.contains("ingredient_object_id"));

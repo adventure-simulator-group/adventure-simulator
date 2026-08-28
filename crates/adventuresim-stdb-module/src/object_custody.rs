@@ -1,9 +1,8 @@
 //! Schema adapters for stable physical-object identity and operational custody.
 //!
-//! The current `InventoryObject` location columns remain the persistence ABI.
-//! This module is the single strict conversion boundary from those columns,
-//! inventory scopes, containment edges, and exact strategic fixtures into the
-//! dependency-light core custody vocabulary. Custody is not legal ownership.
+//! This module validates persisted inventory locations, containment edges, and
+//! exact strategic fixtures against the dependency-light core custody
+//! vocabulary. Custody is not legal ownership.
 
 use std::{collections::BTreeSet, str::FromStr};
 
@@ -90,11 +89,13 @@ pub(crate) fn canonical_custody_binding(custody: &OperationalCustody) -> String 
 pub(crate) fn carried_scope_custody(
     ctx: &ReducerContext,
     actor: &Character,
-    inventory_scope: &str,
+    inventory_scope: adventuresim_core::physical_object::CarriedInventoryScope,
 ) -> Result<OperationalCustody, String> {
     match inventory_scope {
-        "personal" => OperationalCustody::character(actor.id).map_err(|error| error.to_string()),
-        "party" => {
+        adventuresim_core::physical_object::CarriedInventoryScope::Personal => {
+            OperationalCustody::character(actor.id).map_err(|error| error.to_string())
+        }
+        adventuresim_core::physical_object::CarriedInventoryScope::Party => {
             let party_id = actor
                 .party_id
                 .as_ref()
@@ -110,45 +111,40 @@ pub(crate) fn carried_scope_custody(
             }
             OperationalCustody::party(party_id.clone()).map_err(|error| error.to_string())
         }
-        _ => Err("Invalid inventory scope".into()),
     }
 }
 
 pub(crate) fn carried_location_custody(
-    location_kind: &str,
-    location_owner: &str,
+    location: &adventuresim_core::physical_object::InventoryLocation,
 ) -> Result<OperationalCustody, String> {
-    match location_kind {
-        "personal" => {
-            let character_id = location_owner
-                .parse::<u64>()
-                .map_err(|_| "Inventory object character custody is malformed")?;
-            if location_owner != character_id.to_string() {
-                return Err("Inventory object character custody is not canonical".into());
-            }
-            OperationalCustody::character(character_id).map_err(|error| error.to_string())
+    match location {
+        adventuresim_core::physical_object::InventoryLocation::Personal(location) => {
+            OperationalCustody::character(location.character_id).map_err(|error| error.to_string())
         }
-        "party" => {
-            OperationalCustody::party(location_owner.to_string()).map_err(|error| error.to_string())
+        adventuresim_core::physical_object::InventoryLocation::Party(location) => {
+            OperationalCustody::party(location.party_id.clone()).map_err(|error| error.to_string())
         }
-        _ => Err("Custody is not a carried inventory".into()),
+        adventuresim_core::physical_object::InventoryLocation::Fireplace(_)
+        | adventuresim_core::physical_object::InventoryLocation::Repair(_) => {
+            Err("Custody is not a carried inventory".into())
+        }
     }
 }
 
 pub(crate) fn carried_destination(
     custody: &PersistedOperationalCustody,
     expected_character_id: u64,
-) -> Result<(&'static str, String), String> {
+) -> Result<OperationalCustody, String> {
     match decode_custody(custody)? {
         OperationalCustody::Character(character_id)
             if character_id.get() == expected_character_id =>
         {
-            Ok(("personal", character_id.get().to_string()))
+            Ok(OperationalCustody::Character(character_id))
         }
         OperationalCustody::Character(_) => {
             Err("Personal custody conflicts with the acting character".into())
         }
-        OperationalCustody::Party(party_id) => Ok(("party", party_id.as_str().into())),
+        OperationalCustody::Party(party_id) => Ok(OperationalCustody::Party(party_id)),
         OperationalCustody::Container(_)
         | OperationalCustody::Place(_)
         | OperationalCustody::Fixture(_) => {
@@ -165,28 +161,27 @@ fn persisted_location_custody(
     ctx: &ReducerContext,
     object: &InventoryObject,
 ) -> Result<OperationalCustody, String> {
-    match object.location_kind.as_str() {
-        "personal" => {
-            let character_id = object
-                .location_owner
-                .parse::<u64>()
-                .map_err(|_| "Inventory object character custody is malformed")?;
-            if object.location_owner != character_id.to_string() {
-                return Err("Inventory object character custody is not canonical".into());
-            }
-            let custody =
-                OperationalCustody::character(character_id).map_err(|error| error.to_string())?;
-            if ctx.db.character().id().find(character_id).is_none() {
+    match &object.location {
+        adventuresim_core::physical_object::InventoryLocation::Personal(location) => {
+            let custody = OperationalCustody::character(location.character_id)
+                .map_err(|error| error.to_string())?;
+            if ctx
+                .db
+                .character()
+                .id()
+                .find(location.character_id)
+                .is_none()
+            {
                 return Err("Inventory object character custody is unavailable".into());
             }
             let row = ctx
                 .db
                 .inventory_item()
                 .id()
-                .find(object.inventory_row_id)
+                .find(location.row_id)
                 .ok_or("Inventory object personal row is missing")?;
             require_unique_backing_object(ctx, object)?;
-            if row.character_id != character_id
+            if row.character_id != location.character_id
                 || row.item_id != object.item_id
                 || row.quantity != 1
             {
@@ -194,14 +189,14 @@ fn persisted_location_custody(
             }
             Ok(custody)
         }
-        "party" => {
-            let custody = OperationalCustody::party(object.location_owner.clone())
+        adventuresim_core::physical_object::InventoryLocation::Party(location) => {
+            let custody = OperationalCustody::party(location.party_id.clone())
                 .map_err(|error| error.to_string())?;
             if ctx
                 .db
                 .party_authority()
                 .id()
-                .find(object.location_owner.clone())
+                .find(location.party_id.clone())
                 .is_none()
             {
                 return Err("Inventory object party custody is unavailable".into());
@@ -210,10 +205,10 @@ fn persisted_location_custody(
                 .db
                 .party_inventory_item()
                 .id()
-                .find(object.inventory_row_id)
+                .find(location.row_id)
                 .ok_or("Inventory object party row is missing")?;
             require_unique_backing_object(ctx, object)?;
-            if row.party_id != object.location_owner
+            if row.party_id != location.party_id
                 || row.item_id != object.item_id
                 || row.quantity != 1
             {
@@ -221,47 +216,40 @@ fn persisted_location_custody(
             }
             Ok(custody)
         }
-        "fireplace" => {
-            if object.inventory_row_id != 0 {
-                return Err("Fixture-held object cannot retain a root inventory row".into());
-            }
-            let fixture = StrategicFixtureId::from_str(&object.location_owner)
+        adventuresim_core::physical_object::InventoryLocation::Fireplace(location) => {
+            let fixture = StrategicFixtureId::from_str(&location.fixture_id)
                 .map_err(|_| "Inventory object fireplace fixture is not canonical")?;
             if !matches!(fixture, StrategicFixtureId::Fireplace { .. }) {
                 return Err("Inventory object fireplace custody names another fixture kind".into());
             }
             Ok(OperationalCustody::Fixture(fixture))
         }
-        "repair" => {
-            let place = StrategicPlaceId::from_str(&object.location_owner)
+        adventuresim_core::physical_object::InventoryLocation::Repair(location) => {
+            let place = StrategicPlaceId::settlement(&location.settlement_id)
                 .map_err(|_| "Inventory object repair place is not canonical")?;
-            let settlement_id = place
-                .settlement_id()
-                .ok_or("Inventory object repair custody is not at a settlement")?;
             let row = ctx
                 .db
                 .inventory_item()
                 .id()
-                .find(object.inventory_row_id)
+                .find(location.row_id)
                 .ok_or("Inventory object repair row is missing")?;
             require_unique_backing_object(ctx, object)?;
             let order = ctx
                 .db
                 .repair_order()
                 .inventory_item_id()
-                .find(object.inventory_row_id)
+                .find(location.row_id)
                 .ok_or("Inventory object repair order is missing")?;
             if row.character_id != 0
                 || row.item_id != object.item_id
                 || row.quantity != 1
                 || order.item_id != object.item_id
-                || order.settlement_id != settlement_id
+                || order.settlement_id != location.settlement_id
             {
                 return Err("Inventory object conflicts with its repair escrow custody".into());
             }
             Ok(OperationalCustody::Place(place))
         }
-        _ => Err("Inventory object has an unknown custody location".into()),
     }
 }
 
@@ -273,13 +261,31 @@ fn require_unique_backing_object(
         .db
         .inventory_object()
         .iter()
-        .filter(|candidate| {
-            candidate.location_kind == object.location_kind
-                && candidate.inventory_row_id == object.inventory_row_id
-        })
+        .filter(|candidate| same_backing_row(&candidate.location, &object.location))
         .take(2)
         .count();
     require_exactly_one_backing_alias(aliases)
+}
+
+fn same_backing_row(
+    left: &adventuresim_core::physical_object::InventoryLocation,
+    right: &adventuresim_core::physical_object::InventoryLocation,
+) -> bool {
+    use adventuresim_core::physical_object::InventoryLocation;
+
+    match (left, right) {
+        (InventoryLocation::Personal(left), InventoryLocation::Personal(right)) => {
+            left.row_id == right.row_id
+        }
+        (InventoryLocation::Party(left), InventoryLocation::Party(right)) => {
+            left.row_id == right.row_id
+        }
+        (InventoryLocation::Repair(left), InventoryLocation::Repair(right)) => {
+            left.row_id == right.row_id
+        }
+        (InventoryLocation::Fireplace(_), InventoryLocation::Fireplace(_)) => false,
+        _ => false,
+    }
 }
 
 fn require_exactly_one_backing_alias(aliases: usize) -> Result<(), String> {
@@ -439,7 +445,7 @@ mod tests {
         let party = encode_custody(&OperationalCustody::party("party-before").unwrap());
         assert_eq!(
             carried_destination(&party, 7),
-            Ok(("party", "party-before".into()))
+            OperationalCustody::party("party-before").map_err(|error| error.to_string())
         );
         let personal = encode_custody(&OperationalCustody::character(7).unwrap());
         assert!(carried_destination(&personal, 8).is_err());

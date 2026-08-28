@@ -14,7 +14,6 @@ fn generated_runner_subscribes_only_to_public_projection_inventory() {
         ".backend_investigation_action_outcomes()",
         ".backend_case_site_pins()",
         ".party_journey()",
-        ".party_journey_itinerary()",
         ".inventory_object()",
         ".inventory_containment()",
         ".inventory_item_amount()",
@@ -50,7 +49,7 @@ fn activity_detail_exposes_public_pre_post_values_and_signed_deltas() {
     schedule.labor_minutes = 480;
     let before = ActivityObservation {
         personal_gold_coin: 4,
-        condition_status: "ready".into(),
+        condition_status: DomainIncapacitationStatus::Ready,
         hunger: 0.125,
         thirst: 0.25,
         food_days: 1.0,
@@ -61,7 +60,7 @@ fn activity_detail_exposes_public_pre_post_values_and_signed_deltas() {
     };
     let after = ActivityObservation {
         personal_gold_coin: 9,
-        condition_status: "recovering".into(),
+        condition_status: DomainIncapacitationStatus::Staggered,
         hunger: 0.5,
         thirst: 0.125,
         food_days: 0.0,
@@ -70,30 +69,22 @@ fn activity_detail_exposes_public_pre_post_values_and_signed_deltas() {
         visible_water_ml: 500.0,
         elapsed_minutes: 2_880,
     };
+    let diagnostic = ActivityExecutionDiagnostic {
+        plan: ActivityPlanDiagnostic {
+            preferred_activity: "Thievery",
+            effective_activity: "Labor",
+            schedule: &schedule,
+            fallback_reason: "crime_disabled_to_labor",
+            committed_reserve: 2,
+        },
+        venue: DomainSettlementActionService::Temple,
+    };
     assert_eq!(
-        format_activity_detail(
-            "Thievery",
-            "Labor",
-            &schedule,
-            SettlementActivityVenue::Temple,
-            "crime_disabled_to_labor",
-            2,
-            &before,
-            &after,
-        ),
-        "outcome=completed;preferred=Thievery;effective=Labor;fallback=crime_disabled_to_labor;venue=temple;committed_reserve=2;schedule=combat:0,carousing:0,apprenticeship:0,profession:0,labor:480,prayer:0,thievery:0,raiding:0;purse_before=4;purse_after=9;purse_delta=+5;condition_before=ready;condition_after=recovering;hunger_before=0.125;hunger_after=0.500;hunger_delta=+0.375;thirst_before=0.250;thirst_after=0.125;thirst_delta=-0.125;food_kcal_before=2000;food_kcal_after=0;food_kcal_delta=-2000.000;water_ml_before=4000;water_ml_after=500;water_ml_delta=-3500.000;elapsed_before=1440;elapsed_after=2880;elapsed_delta=+1440"
+        format_activity_detail(diagnostic, &before, &after),
+        "outcome=completed;preferred=Thievery;effective=Labor;fallback=crime_disabled_to_labor;venue=temple;committed_reserve=2;schedule=combat:0,carousing:0,apprenticeship:0,profession:0,labor:480,prayer:0,thievery:0,raiding:0;purse_before=4;purse_after=9;purse_delta=+5;condition_before=ready;condition_after=staggered;hunger_before=0.125;hunger_after=0.500;hunger_delta=+0.375;thirst_before=0.250;thirst_after=0.125;thirst_delta=-0.125;food_kcal_before=2000;food_kcal_after=0;food_kcal_delta=-2000.000;water_ml_before=4000;water_ml_after=500;water_ml_delta=-3500.000;elapsed_before=1440;elapsed_after=2880;elapsed_delta=+1440"
     );
     assert_eq!(
-        format_failed_activity_detail(
-            "Thievery",
-            "Labor",
-            &schedule,
-            SettlementActivityVenue::Temple,
-            "crime_disabled_to_labor",
-            2,
-            &before,
-            "insufficient_visible_resources",
-        ),
+        format_failed_activity_detail(diagnostic, &before, "insufficient_visible_resources",),
         "outcome=failed;stage=rest_at_settlement;error_category=insufficient_visible_resources;preferred=Thievery;effective=Labor;fallback=crime_disabled_to_labor;venue=temple;committed_reserve=2;schedule=combat:0,carousing:0,apprenticeship:0,profession:0,labor:480,prayer:0,thievery:0,raiding:0;requested_minutes=1440;purse_before=4;condition_before=ready;hunger_before=0.125;thirst_before=0.250;food_kcal_before=2000;water_ml_before=4000;elapsed_before=1440"
     );
 }
@@ -118,16 +109,21 @@ fn effective_activity_distinguishes_authored_policy_from_safe_fallback() {
 fn failed_activity_error_classification_never_echoes_raw_backend_text() {
     let raw = "Not enough coin: secret internal reducer context";
     let category = safe_core_loop_failure(raw).0;
+    let schedule = medical_rest_schedule();
     let detail = format_failed_activity_detail(
-        "Prayer",
-        "Prayer",
-        &medical_rest_schedule(),
-        SettlementActivityVenue::Temple,
-        "none",
-        0,
+        ActivityExecutionDiagnostic {
+            plan: ActivityPlanDiagnostic {
+                preferred_activity: "Prayer",
+                effective_activity: "Prayer",
+                schedule: &schedule,
+                fallback_reason: "none",
+                committed_reserve: 0,
+            },
+            venue: DomainSettlementActionService::Temple,
+        },
         &ActivityObservation {
             personal_gold_coin: 0,
-            condition_status: "ready".into(),
+            condition_status: DomainIncapacitationStatus::Ready,
             hunger: 0.0,
             thirst: 0.0,
             food_days: 0.0,
@@ -138,11 +134,11 @@ fn failed_activity_error_classification_never_echoes_raw_backend_text() {
         },
         category,
     );
-    assert!(detail.contains("error_category=insufficient_visible_resources"));
+    assert!(detail.contains("error_category=core_loop_error"));
     assert!(!detail.contains("secret internal reducer context"));
     assert_eq!(
         safe_core_loop_failure("simulation settlement offers neither an Inn nor a Temple").0,
-        "rest_service_unavailable"
+        "core_loop_error"
     );
 }
 
@@ -154,7 +150,7 @@ fn equipment_trade_failure_is_classified_without_backend_text() {
     assert_eq!(category, "equipment_purchase_failed");
     assert_eq!(
         safe_failure_operation(raw),
-        Some("purchase_personal_storefront_with_party_stake")
+        Some(FailureOperation::PurchasePersonalStorefrontWithPartyStake)
     );
     assert_eq!(
         safe_failure_reason_code(raw, category),
@@ -251,7 +247,7 @@ fn quest_coverage_report() -> CoreLoopReport {
             gold: 0,
             equipment_item_ids: Vec::new(),
             capability_summary: "ready".into(),
-            condition_status: "ready".into(),
+            condition_status: DomainIncapacitationStatus::Ready,
             thermal: 0.0,
             wetness_bps: 0,
             thermal_strain: 0,
@@ -348,15 +344,19 @@ fn quest_coverage_failure_artifact_names_unmet_metric() {
 
 #[test]
 fn expected_investigation_failure_is_allowlisted_without_raw_text() {
-    let raw = "perform_investigation_action failed: The learned pattern requires acting during the nighttime window; hidden authority";
-    let (category, message) = safe_core_loop_failure(raw);
+    let coded = adventuresim_core::reducer_error::coded_reducer_error(
+        ReducerErrorCode::InvestigationNightWindow,
+        "hidden authority with freely changeable wording",
+    );
+    let raw = format!("perform_investigation_action failed: {coded}");
+    let (category, message) = safe_core_loop_failure(&raw);
     assert_eq!(category, "investigation_temporally_unavailable");
     assert_eq!(
-        safe_failure_operation(raw),
-        Some("perform_investigation_action")
+        safe_failure_operation(&raw),
+        Some(FailureOperation::PerformInvestigationAction)
     );
     assert_eq!(
-        safe_failure_reason_code(raw, category),
+        safe_failure_reason_code(&raw, category),
         "investigation_night_window"
     );
     assert!(!message.contains("hidden authority"));
@@ -364,30 +364,46 @@ fn expected_investigation_failure_is_allowlisted_without_raw_text() {
 
 #[test]
 fn invalid_investigation_route_is_allowlisted_without_raw_text() {
-    let raw = "perform_investigation_action failed: Investigation track origin no longer matches the projected route; hidden canonical action";
-    let (category, message) = safe_core_loop_failure(raw);
+    let coded = adventuresim_core::reducer_error::coded_reducer_error(
+        ReducerErrorCode::InvestigationRouteInvalid,
+        "hidden canonical action with freely changeable wording",
+    );
+    let raw = format!("perform_investigation_action failed: {coded}");
+    let (category, message) = safe_core_loop_failure(&raw);
     assert_eq!(category, "invalid_investigation_route");
     assert_eq!(
-        safe_failure_operation(raw),
-        Some("perform_investigation_action")
+        safe_failure_operation(&raw),
+        Some(FailureOperation::PerformInvestigationAction)
     );
     assert_eq!(
-        safe_failure_reason_code(raw, category),
+        safe_failure_reason_code(&raw, category),
         "invalid_investigation_route"
     );
     assert!(!message.contains("hidden canonical action"));
-    assert!(!message.contains(raw));
+    assert!(!message.contains(&raw));
 }
 
 #[test]
 fn victim_cohort_state_changes_are_narrowly_classified_without_raw_text() {
-    for detail in VICTIM_COHORT_STATE_CHANGED_DETAILS {
-        let raw = format!("perform_investigation_action failed: {detail}");
+    for detail in [
+        "Victim cohort authority no longer exists",
+        "Victim cohort target is unavailable",
+        "Victim cohort target moved from the learned location",
+        "Victim cohort profile no longer matches its authority",
+        "Victim cohort NPC no longer exists",
+        "Victim cohort NPC no longer has a visible demographic",
+        "Victim cohort target moved, changed, or is unavailable",
+    ] {
+        let coded = adventuresim_core::reducer_error::coded_reducer_error(
+            ReducerErrorCode::VictimCohortStateChanged,
+            detail,
+        );
+        let raw = format!("perform_investigation_action failed: {coded}");
         let (category, message) = safe_core_loop_failure(&raw);
         assert_eq!(category, "investigation_state_changed");
         assert_eq!(
             safe_failure_operation(&raw),
-            Some("perform_investigation_action")
+            Some(FailureOperation::PerformInvestigationAction)
         );
         assert_eq!(
             safe_failure_reason_code(&raw, category),
@@ -395,12 +411,16 @@ fn victim_cohort_state_changes_are_narrowly_classified_without_raw_text() {
         );
         assert!(!message.contains(detail));
     }
-    assert!(!victim_cohort_state_changed_failure(
-        "perform_investigation_action failed: Victim cohort belongs to another case"
-    ));
-    assert!(!victim_cohort_state_changed_failure(
-        "choose_dialogue_topic failed: Victim cohort target is unavailable"
-    ));
+    assert_eq!(
+        parse_reducer_error(
+            "perform_investigation_action failed: Victim cohort belongs to another case"
+        ),
+        None
+    );
+    assert_eq!(
+        parse_reducer_error("choose_dialogue_topic failed: Victim cohort target is unavailable"),
+        None
+    );
 }
 
 #[test]
@@ -413,7 +433,10 @@ fn generated_action_trace_uses_subject_and_public_attempt_evidence() {
     let advance = source
         .split("fn advance_generated_case_inner")
         .nth(1)
-        .and_then(|tail| tail.split("pub(super) fn turn_in_ready_direct_contract").next())
+        .and_then(|tail| {
+            tail.split("pub(super) fn turn_in_ready_direct_contract")
+                .next()
+        })
         .expect("generated case driver");
     assert!(advance.contains("emit_generated_investigation_attempt"));
     assert!(source.contains(
@@ -436,7 +459,7 @@ fn discovery_contact_failures_are_sanitized_without_reducer_text() {
     assert_eq!(category, "discovery_contact_failed");
     assert_eq!(
         safe_failure_operation(raw),
-        Some("start_discovery_dialogue")
+        Some(FailureOperation::StartDiscoveryDialogue)
     );
     assert_eq!(
         safe_failure_reason_code(raw, category),
@@ -447,31 +470,35 @@ fn discovery_contact_failures_are_sanitized_without_reducer_text() {
 
 #[test]
 fn journey_camp_failures_are_allowlisted_without_raw_text() {
-    let temporal = "continue_camp_travel failed: Rest until the party reaches its next daylight walking window; hidden route authority";
-    let (category, message) = safe_core_loop_failure(temporal);
+    let coded = adventuresim_core::reducer_error::coded_reducer_error(
+        ReducerErrorCode::JourneyDaylightWindowRequired,
+        "hidden route authority with freely changeable wording",
+    );
+    let temporal = format!("continue_camp_travel failed: {coded}");
+    let (category, message) = safe_core_loop_failure(&temporal);
     assert_eq!(category, "journey_temporally_unavailable");
     assert_eq!(
-        safe_failure_operation(temporal),
-        Some("continue_camp_travel")
+        safe_failure_operation(&temporal),
+        Some(FailureOperation::ContinueCampTravel)
     );
     assert_eq!(
         safe_failure_operation(
             "rest_at_camp failed: journey camp projection is incoherent; hidden details"
         ),
-        Some("rest_at_camp")
+        Some(FailureOperation::RestAtCamp)
     );
     assert_eq!(
-        safe_failure_reason_code(temporal, category),
+        safe_failure_reason_code(&temporal, category),
         "journey_daylight_window_rest_required"
     );
     assert!(!message.contains("hidden route authority"));
 
     let incoherent = "journey camp projection is incoherent: hidden itinerary implementation";
     let (category, message) = safe_core_loop_failure(incoherent);
-    assert_eq!(category, "journey_projection_inconsistent");
+    assert_eq!(category, "core_loop_error");
     assert_eq!(
         safe_failure_reason_code(incoherent, category),
-        "journey_projection_inconsistent"
+        "unclassified_core_loop_error"
     );
     assert!(!message.contains("hidden itinerary implementation"));
 
@@ -480,7 +507,7 @@ fn journey_camp_failures_are_allowlisted_without_raw_text() {
     assert_eq!(category, "journey_provision_purchase_failed");
     assert_eq!(
         safe_failure_operation(purchase),
-        Some("purchase_journey_provisions")
+        Some(FailureOperation::PurchaseJourneyProvisions)
     );
     assert_eq!(
         safe_failure_reason_code(purchase, category),
@@ -490,18 +517,24 @@ fn journey_camp_failures_are_allowlisted_without_raw_text() {
 
     let held = "travel_camps failed: journey has no ready, asymptomatic, noncritical actor; hidden health authority";
     let (category, message) = safe_core_loop_failure(held);
-    assert_eq!(category, "journey_held_no_actionable_actor");
-    assert_eq!(safe_failure_operation(held), Some("travel_camps"));
+    assert_eq!(category, "journey_travel_failed");
+    assert_eq!(
+        safe_failure_operation(held),
+        Some(FailureOperation::TravelCamps)
+    );
     assert_eq!(
         safe_failure_reason_code(held, category),
-        "journey_held_no_actionable_actor"
+        "journey_travel_reducer_failed"
     );
     assert!(!message.contains("hidden health authority"));
 
     let travel = "return_to_settlement failed: hidden journey authority panic";
     let (category, message) = safe_core_loop_failure(travel);
     assert_eq!(category, "journey_travel_failed");
-    assert_eq!(safe_failure_operation(travel), Some("return_to_settlement"));
+    assert_eq!(
+        safe_failure_operation(travel),
+        Some(FailureOperation::ReturnToSettlement)
+    );
     assert_eq!(
         safe_failure_reason_code(travel, category),
         "journey_travel_reducer_failed"

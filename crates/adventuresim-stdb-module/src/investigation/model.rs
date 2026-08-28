@@ -26,6 +26,7 @@ use crate::{
 use adventuresim_core::investigation as inv;
 use adventuresim_core::investigation_action as action;
 use adventuresim_core::skill::{PlayerSkills, Skill};
+use inv::{DestinationKnowledgeStage, InvestigationProvenanceKind};
 use serde::{Deserialize, Serialize};
 use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
@@ -52,9 +53,7 @@ impl CaseSiteId {
         &self.value
     }
 
-    pub(crate) fn to_place(
-        &self,
-    ) -> Option<adventuresim_core::strategic_place::StrategicPlaceId> {
+    pub(crate) fn to_place(&self) -> Option<adventuresim_core::strategic_place::StrategicPlaceId> {
         adventuresim_core::strategic_place::StrategicPlaceId::case_site(self.value.clone()).ok()
     }
 }
@@ -577,7 +576,6 @@ fn bestiary_lore_results(
     ))
 }
 
-#[allow(dead_code)] // Owning investigation actions call this as evidence types are added.
 pub(crate) fn record_evidence_knowledge(
     ctx: &ReducerContext,
     owner_character_id: u64,
@@ -897,7 +895,7 @@ pub struct InvestigationLead {
     pub summary: String,
     pub source_label: String,
     pub confidence_bps: u16,
-    pub destination_stage: String,
+    pub destination_stage: DestinationKnowledgeStage,
     pub directions: String,
     pub exact_location_id: String,
     pub latitude_e7: i32,
@@ -966,7 +964,7 @@ pub struct InvestigationActionCapability {
     pub case_id: String,
     /// Immutable private provenance. Generated capabilities never fall back to
     /// manual semantics when their generation authority is damaged or absent.
-    pub provenance_kind: String,
+    pub provenance_kind: InvestigationProvenanceKind,
     pub generated_case_id: String,
     pub method: String,
     pub version: u32,
@@ -1123,7 +1121,7 @@ pub(crate) fn set_character_case_site(
         Some(value) => {
             let value = CaseSiteId::try_new(value)?;
             Some(value)
-        },
+        }
         None => None,
     };
     let minute = ctx
@@ -1144,9 +1142,7 @@ pub(crate) fn set_character_case_site(
         return Err("Character has conflicting active case-site occupancy".into());
     }
     let current = current_rows.pop();
-    let previous_site = current
-        .as_ref()
-        .map(|row| row.case_site_id.value.clone());
+    let previous_site = current.as_ref().map(|row| row.case_site_id.value.clone());
     if previous_site.as_deref() == case_site_id.as_ref().map(CaseSiteId::as_str) {
         return Ok(());
     }
@@ -1297,7 +1293,7 @@ pub struct InvestigationSafeLeadReceipt {
     pub summary: String,
     pub safe_source_label: String,
     pub confidence_bps: u16,
-    pub destination_stage: String,
+    pub destination_stage: DestinationKnowledgeStage,
     pub directions: String,
     pub exact_location_id: String,
     pub latitude_e7: i32,

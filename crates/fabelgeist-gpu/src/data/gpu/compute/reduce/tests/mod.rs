@@ -131,7 +131,7 @@ async fn min_texture2d() -> Result<()> {
 
     let texture = crate::data::gpu::texture::Texture2d::create(
         &context,
-        crate::data::Vec2::new(width as f32, height as f32),
+        fabelgeist_math::Vec2::new(width as f32, height as f32),
         crate::data::gpu::texture::TextureFormat::R32Float,
     )?;
     texture.write(&context, &input_data)?;

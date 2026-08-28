@@ -1,8 +1,12 @@
 (() => {
-  const ACCRUAL_SCALE = 1440;
+  const calendar = typeof window === 'undefined'
+    ? globalThis.strategicCalendar
+    : window.strategicCalendar;
+  const { minutesPerDay: DAY_MINUTES } = calendar;
+  const ACCRUAL_SCALE = DAY_MINUTES;
   const FOCUSABLE_SELECTOR = 'button:not(:disabled), input:not([type="hidden"]):not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])';
   const clock = (minutes) => {
-    const wrapped = ((minutes % 1440) + 1440) % 1440;
+    const wrapped = ((minutes % DAY_MINUTES) + DAY_MINUTES) % DAY_MINUTES;
     return `${String(Math.floor(wrapped / 60)).padStart(2, '0')}:${String(wrapped % 60).padStart(2, '0')}`;
   };
   const rounded = (kind, value) => kind === 'gold' ? Math.round(value) : Number(value.toFixed(1));

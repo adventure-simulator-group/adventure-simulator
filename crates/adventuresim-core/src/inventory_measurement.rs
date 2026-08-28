@@ -4,23 +4,92 @@
 //! implemented yet. This module is the small arithmetic boundary reducers can
 //! adopt when that schema lands.
 
-/// Canonical fixed-point magnitude of one full consumable unit.
-pub const FULL_AMOUNT_MILLIUNITS: u32 = 1_000_000;
+/// One-millionth fixed-point fraction of a whole consumable item.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ConsumableFractionMicros(u32);
 
-pub fn amount_for_fraction(numerator: u64, denominator: u64) -> Result<u32, MeasurementError> {
-    if denominator == 0 {
-        return Err(MeasurementError::ZeroCapacity);
+impl ConsumableFractionMicros {
+    pub const MICROS_PER_WHOLE: u32 = 1_000_000;
+    pub const MINIMUM_NONZERO: Self = Self(1);
+    pub const ZERO: Self = Self(0);
+    pub const WHOLE: Self = Self(Self::MICROS_PER_WHOLE);
+
+    pub const fn try_new(fraction_micros: u32) -> Result<Self, MeasurementError> {
+        if fraction_micros > Self::MICROS_PER_WHOLE {
+            return Err(MeasurementError::FractionExceedsWhole);
+        }
+        Ok(Self(fraction_micros))
     }
-    let amount = u128::from(FULL_AMOUNT_MILLIUNITS)
-        .checked_mul(u128::from(numerator))
-        .ok_or(MeasurementError::Overflow)?
-        .div_ceil(u128::from(denominator));
-    u32::try_from(amount.min(u128::from(FULL_AMOUNT_MILLIUNITS)))
-        .map_err(|_| MeasurementError::Overflow)
+
+    pub const fn whole_divided_by(parts: u32) -> Self {
+        assert!(parts > 0, "a whole cannot be divided into zero parts");
+        Self(Self::MICROS_PER_WHOLE / parts)
+    }
+
+    pub fn try_from_ratio(numerator: u64, denominator: u64) -> Result<Self, MeasurementError> {
+        if denominator == 0 {
+            return Err(MeasurementError::ZeroCapacity);
+        }
+        let fraction_micros = u128::from(Self::MICROS_PER_WHOLE)
+            .checked_mul(u128::from(numerator))
+            .ok_or(MeasurementError::Overflow)?
+            .div_ceil(u128::from(denominator));
+        let fraction_micros =
+            u32::try_from(fraction_micros.min(u128::from(Self::MICROS_PER_WHOLE)))
+                .map_err(|_| MeasurementError::Overflow)?;
+        Ok(Self(fraction_micros))
+    }
+
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+
+    pub const fn is_zero(self) -> bool {
+        self.0 == 0
+    }
+
+    pub fn as_unit_f32(self) -> f32 {
+        self.0 as f32 / Self::MICROS_PER_WHOLE as f32
+    }
+
+    pub fn scale_floor(self, whole: u64) -> u64 {
+        ((u128::from(whole) * u128::from(self.0)) / u128::from(Self::MICROS_PER_WHOLE)) as u64
+    }
+
+    pub fn try_scaled_floor(self, factor: f32) -> Result<Self, MeasurementError> {
+        if !factor.is_finite() || !(0.0..=1.0).contains(&factor) {
+            return Err(MeasurementError::InvalidFractionScale);
+        }
+        Self::try_new((self.0 as f32 * factor).floor() as u32)
+    }
+
+    pub const fn checked_sub(self, other: Self) -> Option<Self> {
+        match self.0.checked_sub(other.0) {
+            Some(value) => Some(Self(value)),
+            None => None,
+        }
+    }
+
+    pub const fn checked_mul(self, multiplier: u32) -> Option<Self> {
+        match self.0.checked_mul(multiplier) {
+            Some(value) if value <= Self::MICROS_PER_WHOLE => Some(Self(value)),
+            _ => None,
+        }
+    }
 }
 
-pub fn scaled_by_amount(full: u64, amount_milliunits: u32) -> u64 {
-    ((u128::from(full) * u128::from(amount_milliunits)) / u128::from(FULL_AMOUNT_MILLIUNITS)) as u64
+impl TryFrom<u32> for ConsumableFractionMicros {
+    type Error = MeasurementError;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        Self::try_new(value)
+    }
+}
+
+impl From<ConsumableFractionMicros> for u32 {
+    fn from(value: ConsumableFractionMicros) -> Self {
+        value.get()
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -86,6 +155,8 @@ pub enum MeasurementError {
     MissingInstanceBasis,
     UnexpectedInstanceBasis,
     AmountExceedsCapacity,
+    FractionExceedsWhole,
+    InvalidFractionScale,
     InvalidPricingFactor,
     Overflow,
 }
@@ -298,19 +369,45 @@ mod tests {
 
     #[test]
     fn fixed_point_fraction_rounds_up_and_caps_at_one_unit() {
-        assert_eq!(amount_for_fraction(1, 25), Ok(40_000));
-        assert_eq!(amount_for_fraction(25, 100), Ok(250_000));
-        assert_eq!(amount_for_fraction(2, 1), Ok(FULL_AMOUNT_MILLIUNITS));
         assert_eq!(
-            amount_for_fraction(1, 0),
+            ConsumableFractionMicros::try_from_ratio(1, 25),
+            ConsumableFractionMicros::try_new(40_000)
+        );
+        assert_eq!(
+            ConsumableFractionMicros::try_from_ratio(25, 100),
+            ConsumableFractionMicros::try_new(250_000)
+        );
+        assert_eq!(
+            ConsumableFractionMicros::try_from_ratio(2, 1),
+            Ok(ConsumableFractionMicros::WHOLE)
+        );
+        assert_eq!(
+            ConsumableFractionMicros::try_from_ratio(1, 0),
             Err(MeasurementError::ZeroCapacity)
+        );
+        assert_eq!(
+            ConsumableFractionMicros::try_new(1_000_001),
+            Err(MeasurementError::FractionExceedsWhole)
         );
     }
 
     #[test]
     fn fixed_point_scaling_rounds_down() {
-        assert_eq!(scaled_by_amount(425, 500_000), 212);
-        assert_eq!(scaled_by_amount(30, FULL_AMOUNT_MILLIUNITS), 30);
+        assert_eq!(
+            ConsumableFractionMicros::try_new(500_000)
+                .unwrap()
+                .scale_floor(425),
+            212
+        );
+        assert_eq!(ConsumableFractionMicros::WHOLE.scale_floor(30), 30);
+        assert_eq!(
+            ConsumableFractionMicros::WHOLE.try_scaled_floor(0.25),
+            ConsumableFractionMicros::try_new(250_000)
+        );
+        assert_eq!(
+            ConsumableFractionMicros::WHOLE.try_scaled_floor(1.1),
+            Err(MeasurementError::InvalidFractionScale)
+        );
     }
 
     fn bottle() -> MeasurementProfile {

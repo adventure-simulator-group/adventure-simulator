@@ -49,7 +49,9 @@ pub(crate) fn character_is_publicly_ready_party_member(
             .character_strategic_condition()
             .character_id()
             .find(character_id)
-            .is_some_and(|condition| condition.status == "ready")
+            .is_some_and(|condition| {
+                condition.status == adventuresim_core::morale::IncapacitationStatus::Ready
+            })
         && !ctx
             .db
             .character_illness_status()
@@ -102,7 +104,9 @@ fn party_leader_is_publicly_ready(ctx: &ReducerContext, party: &Party) -> bool {
         .character_strategic_condition()
         .character_id()
         .find(party.leader_id)
-        .is_some_and(|condition| condition.status == "ready");
+        .is_some_and(|condition| {
+            condition.status == adventuresim_core::morale::IncapacitationStatus::Ready
+        });
 
     leader_is_alive
         && leader_condition_ready

@@ -54,7 +54,10 @@ fn parse_action_terrain(value: &str) -> Result<action::Terrain, String> {
 
 /// Trusted generator seam. The opaque id is the only authority returned to a
 /// browser. Hidden targets, seeds, and consequences remain private.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 fn validate_investigation_action_text(
     id: &str,
     case_id: &str,
@@ -83,13 +86,16 @@ fn validate_investigation_action_text(
     bounded_optional(required_action_id)
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 pub(crate) fn issue_investigation_action_capability(
     ctx: &ReducerContext,
     id: String,
     owner_character_id: u64,
     case_id: String,
-    provenance_kind: String,
+    provenance_kind: InvestigationProvenanceKind,
     generated_case_id: String,
     kind: action::InvestigationActionKind,
     target_kind: String,
@@ -104,9 +110,9 @@ pub(crate) fn issue_investigation_action_capability(
     required_action_id: String,
     alternate_route_action_id: String,
 ) -> Result<(), String> {
-    match provenance_kind.as_str() {
-        "manual" if generated_case_id.is_empty() => {}
-        "generated" if !generated_case_id.is_empty() => {}
+    match provenance_kind {
+        InvestigationProvenanceKind::Manual if generated_case_id.is_empty() => {}
+        InvestigationProvenanceKind::Generated if !generated_case_id.is_empty() => {}
         _ => return Err("Investigation capability provenance is invalid".into()),
     }
     validate_investigation_action_text(
@@ -520,8 +526,11 @@ fn capability_has_live_support_reducer(
         return false;
     }
     if kind == action::InvestigationActionKind::InspectSite && capability.target_kind == "site" {
-        let Some((site, lead, generated_aliases)) =
-            exact_action_case_site_for_observer(ctx, capability)
+        let Some(ExactActionCaseSite {
+            site,
+            lead,
+            generated_aliases,
+        }) = exact_action_case_site_for_observer(ctx, capability)
         else {
             return false;
         };
@@ -530,7 +539,7 @@ fn capability_has_live_support_reducer(
             &capability.target_id,
             &lead.case_id,
             &lead.exact_location_id,
-            &lead.destination_stage,
+            lead.destination_stage,
             &lead.corrected_by,
             &site.case_id,
             &site.id.value,
@@ -567,7 +576,7 @@ fn capability_has_live_support_reducer(
             .filter(capability.owner_character_id)
             .any(|lead| {
                 lead.case_id == observer_case_id
-                    && lead.destination_stage == "approximate_area"
+                    && lead.destination_stage == DestinationKnowledgeStage::ApproximateArea
                     && lead.corrected_by.is_empty()
             })
     {
@@ -675,7 +684,7 @@ fn validate_referred_contact_authority(
         return Err("Referred contact capability is not an authored root".into());
     }
     validate_capability_blueprint_reducer(ctx, root)?;
-    if root.provenance_kind != "generated" {
+    if root.provenance_kind != InvestigationProvenanceKind::Generated {
         return Err("Generated referred contact root has invalid provenance".into());
     }
     let authority = generated_authority_reducer(ctx, root)
@@ -814,7 +823,7 @@ fn complete_referred_contact_action(
     }
     let completed_at = character_strategic_minute(ctx, owner_character_id);
     let attempt_name = format!("dialogue:{dialogue_action_id}:{}", capability.id);
-    let attempt_id = if capability.provenance_kind == "generated" {
+    let attempt_id = if capability.provenance_kind == InvestigationProvenanceKind::Generated {
         generated_observer_id(ctx, canonical_case_id, "attempt", &attempt_name)
             .ok_or("Generated contact action lacks observer-id authority")?
     } else {
@@ -848,7 +857,7 @@ fn complete_referred_contact_action(
         .investigation_action_capability()
         .id()
         .update(capability.clone());
-    let outcome_id = if capability.provenance_kind == "generated" {
+    let outcome_id = if capability.provenance_kind == InvestigationProvenanceKind::Generated {
         generated_observer_id(ctx, canonical_case_id, "outcome", &attempt_id)
             .ok_or("Generated contact action lacks observer-id authority")?
     } else {
@@ -1078,7 +1087,7 @@ fn issue_rumor_action_graph(
                 capability_id,
                 owner_character_id,
                 case_id.to_string(),
-                "generated".into(),
+                InvestigationProvenanceKind::Generated,
                 manifest.canonical_case_id.clone(),
                 generated.kind,
                 generated.target_kind.clone(),
@@ -1322,7 +1331,7 @@ fn issue_rumor_action_graph(
             id,
             owner_character_id,
             case_id.to_string(),
-            "manual".into(),
+            InvestigationProvenanceKind::Manual,
             String::new(),
             kind,
             kind_name.into(),

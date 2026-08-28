@@ -1,18 +1,24 @@
 use super::*;
 
+type CombatStateQuery<'world, 'state> = Query<
+    'world,
+    'state,
+    (
+        Entity,
+        &'static mut TacticalCombatState,
+        Option<&'static mut input::AccumulatedInput>,
+        Option<&'static mut AuthoritativeMovementIntent>,
+        Option<&'static MovementPace>,
+        Option<&'static SkeletonState>,
+    ),
+>;
+
 pub(crate) fn update_tactical_combat_state(
     mut cmd: Commands,
     time: Res<Time<()>>,
     viewer: TacticalPlayerViewer,
     limbs: Query<&Limbs>,
-    mut states: Query<(
-        Entity,
-        &mut TacticalCombatState,
-        Option<&mut input::AccumulatedInput>,
-        Option<&mut AuthoritativeMovementIntent>,
-        Option<&MovementPace>,
-        Option<&SkeletonState>,
-    )>,
+    mut states: CombatStateQuery<'_, '_>,
 ) {
     for (entity, mut state, mut input, mut movement_intent, pace, skeleton) in &mut states {
         let Ok(view) = viewer.get(entity) else {

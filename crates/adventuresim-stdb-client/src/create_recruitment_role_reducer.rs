@@ -13,7 +13,6 @@ pub(super) struct CreateRecruitmentRoleArgs {
     pub name: String,
     pub quantity: u32,
     pub requirements: RecruitmentRequirements,
-    pub weapon_precision: f32,
     pub save_role: bool,
 }
 
@@ -24,7 +23,6 @@ impl From<CreateRecruitmentRoleArgs> for super::Reducer {
             name: args.name,
             quantity: args.quantity,
             requirements: args.requirements,
-            weapon_precision: args.weapon_precision,
             save_role: args.save_role,
         }
     }
@@ -51,7 +49,6 @@ pub trait create_recruitment_role {
         name: String,
         quantity: u32,
         requirements: RecruitmentRequirements,
-        weapon_precision: f32,
         save_role: bool,
     ) -> __sdk::Result<()> {
         self.create_recruitment_role_then(
@@ -59,7 +56,6 @@ pub trait create_recruitment_role {
             name,
             quantity,
             requirements,
-            weapon_precision,
             save_role,
             |_, _| {},
         )
@@ -77,7 +73,6 @@ pub trait create_recruitment_role {
         name: String,
         quantity: u32,
         requirements: RecruitmentRequirements,
-        weapon_precision: f32,
         save_role: bool,
 
         callback: impl FnOnce(
@@ -95,7 +90,6 @@ impl create_recruitment_role for super::RemoteReducers {
         name: String,
         quantity: u32,
         requirements: RecruitmentRequirements,
-        weapon_precision: f32,
         save_role: bool,
 
         callback: impl FnOnce(
@@ -110,7 +104,6 @@ impl create_recruitment_role for super::RemoteReducers {
                 name,
                 quantity,
                 requirements,
-                weapon_precision,
                 save_role,
             },
             callback,

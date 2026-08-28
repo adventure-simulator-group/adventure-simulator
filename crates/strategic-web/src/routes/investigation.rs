@@ -105,14 +105,8 @@ async fn journal_response(
     }
 }
 
-fn safe_investigation_action_error(error: &str) -> &'static str {
-    if error.contains("incapacitated") {
-        "An incapacitated party member must recover before the party can investigate."
-    } else if error.contains("occupy the action's authoritative site") {
-        "Travel to the known investigation site before attempting that action."
-    } else {
-        "That investigation route is no longer available. The journal now shows the routes supported by your current leads."
-    }
+fn safe_investigation_action_error(_error: &str) -> &'static str {
+    "That investigation route is no longer available. The journal now shows the routes supported by your current leads."
 }
 
 #[derive(Deserialize)]
@@ -180,17 +174,18 @@ mod tests {
 
     #[test]
     fn rejected_actions_map_to_visible_player_safe_feedback() {
+        let generic = "That investigation route is no longer available. The journal now shows the routes supported by your current leads.";
         assert_eq!(
             safe_investigation_action_error(
                 "An incapacitated party member must recover before the party can act"
             ),
-            "An incapacitated party member must recover before the party can investigate."
+            generic
         );
         assert_eq!(
             safe_investigation_action_error(
                 "The party must occupy the action's authoritative site"
             ),
-            "Travel to the known investigation site before attempting that action."
+            generic
         );
         assert!(!safe_investigation_action_error("private target id 123").contains("123"));
     }

@@ -7,7 +7,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use adventuresim_world_schema::{CanopyDensity, DominantLeafType, ForestCover, Woodland};
+use adventuresim_world_schema::{
+    BASIS_POINTS_PER_WHOLE, CanopyDensity, DominantLeafType, ForestCover, Woodland,
+};
 use serde::Deserialize;
 use tiff::{
     decoder::{Decoder, DecodingResult},
@@ -155,7 +157,8 @@ fn forest_cover(
         if natural_basis_points < 500 {
             return (ForestCover::Open, true);
         }
-        let inferred = ((u32::from(natural_basis_points) * 60) / 10_000).clamp(5, 60) as u8;
+        let inferred = ((u32::from(natural_basis_points) * 60) / u32::from(BASIS_POINTS_PER_WHOLE))
+            .clamp(5, 60) as u8;
         let dominant = leaf
             .and_then(source_leaf)
             .unwrap_or_else(|| fallback_leaf(elevation_meters));

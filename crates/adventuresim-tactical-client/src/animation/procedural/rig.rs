@@ -197,6 +197,10 @@ fn retain_stable_role(
     duplicate
 }
 
+#[expect(
+    clippy::type_complexity,
+    reason = "the Bevy query expresses the exact added-name and unbound-bone component filter"
+)]
 pub(crate) fn bind_humanoid_bones(
     mut commands: Commands,
     bones: Query<(Entity, &Name), (Added<Name>, Without<MhrBone>)>,
@@ -228,6 +232,10 @@ pub(crate) fn bind_humanoid_bones(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Bevy injects each independently borrowed rig topology query as a system parameter"
+)]
 pub(crate) fn cache_humanoid_rigs(
     mut commands: Commands,
     all_bones: Query<(Entity, &HumanoidBone)>,

@@ -36,6 +36,10 @@ pub struct RecruitmentRolePanel {
 /// Server-rendered role inspection panels used by the service-quest fragment.
 /// Keeping this markup here prevents the browser from maintaining a second
 /// component renderer alongside Maud.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the recruitment renderer combines independently loaded role and party projections"
+)]
 pub fn service_role_inspection(
     role_name: &str,
     requirements: &[String],
@@ -112,7 +116,7 @@ pub fn recruitment_panel(
                             }
                             div class="party-role-hover-card" {
                                 strong { (&panel.role.name) }
-                                span class="party-role-hover-tags" { (requirements_label(panel.role.requirements, panel.role.effective_weapon_precision())) }
+                                span class="party-role-hover-tags" { (requirements_label(panel.role.requirements)) }
                                 @if can_manage {
                                     @if panel.requests.is_empty() {
                                         span class="small-copy text-muted" { "No join requests" }
@@ -163,7 +167,6 @@ pub fn recruitment_panel(
                                             data-role-quantity=(panel.role.quantity)
                                             data-role-filled=(panel.filled.len())
                                             data-role-requirements=(requirements_json(panel.role.requirements))
-                                            data-role-weapon-precision=(panel.role.effective_weapon_precision())
                                         {
                                             (&panel.role.name)
                                             span class="small-copy text-muted" {
@@ -177,7 +180,6 @@ pub fn recruitment_panel(
                                             data-role-quantity=(panel.role.quantity)
                                             data-role-filled=(panel.filled.len())
                                             data-role-requirements=(requirements_json(panel.role.requirements))
-                                            data-role-weapon-precision=(panel.role.effective_weapon_precision())
                                             aria-label=(format!("Edit {}", panel.role.name)) { "Edit" }
                                         form action=(format!("/party-recruitment/roles/{}/delete", panel.role.id)) method="post" class="saved-role-delete-form" {
                                             button type="submit" class="saved-role-action saved-role-delete"
@@ -200,7 +202,6 @@ pub fn recruitment_panel(
                                         data-load-saved-role
                                         data-role-name=(&saved.name)
                                         data-role-requirements=(requirements_json(saved.requirements))
-                                        data-role-weapon-precision=(saved.effective_weapon_precision())
                                     { (&saved.name) }
                                     button type="button" class="saved-role-action saved-role-rename"
                                         data-rename-saved-role data-role-id=(saved.id) data-role-name=(&saved.name)
@@ -310,10 +311,10 @@ fn role_requirements_detail(role: &PartyRecruitmentRole, remaining: usize) -> Ma
                 ] {
                     @if required { div class="role-detail-row" { span { (label) } strong { "Required" } } }
                 }
-                @if role.effective_weapon_precision() > 0.0 {
+                @if role.requirements.weapon_precision > 0.0 {
                     div class="role-detail-row" {
                         span { "Weapon precision" }
-                        strong { (format!("{:.1}+", role.effective_weapon_precision())) }
+                        strong { (format!("{:.1}+", role.requirements.weapon_precision)) }
                     }
                 }
                 @for (minimum, label) in [
@@ -454,7 +455,10 @@ pub fn aggregate_check_bars(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 fn aggregate_check_control(
     party: &Party,
     label: &str,
@@ -485,7 +489,10 @@ fn aggregate_check_control(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this domain boundary names each independent input explicitly"
+)]
 fn party_check_target_form(
     party: &Party,
     field: &str,
@@ -562,7 +569,7 @@ fn requirements_json(requirements: RecruitmentRequirements) -> String {
     serde_json::to_string(&requirements).unwrap_or_else(|_| "{}".into())
 }
 
-pub fn requirements_label(r: RecruitmentRequirements, weapon_precision: f32) -> String {
+pub fn requirements_label(r: RecruitmentRequirements) -> String {
     let mut labels = Vec::new();
     for (required, label) in [
         (r.melee, "Melee"),
@@ -577,8 +584,8 @@ pub fn requirements_label(r: RecruitmentRequirements, weapon_precision: f32) -> 
             labels.push(label.to_string());
         }
     }
-    if weapon_precision > 0.0 {
-        labels.push(format!("Precision {weapon_precision:.1}+"));
+    if r.weapon_precision > 0.0 {
+        labels.push(format!("Precision {:.1}+", r.weapon_precision));
     }
     for (value, label) in [(r.athletics, "Athletics"), (r.endurance, "Endurance")] {
         if value > 0 {
