@@ -1,6 +1,16 @@
 use super::*;
 
 const MAX_PRESENTATION_SAMPLE_GAP: u64 = 32;
+const STEADY_TRAVEL_LEAN_DEGREES: f32 = 16.0;
+const FORWARD_ACCELERATION_LEAN_DEGREES: f32 = 10.0;
+const LATERAL_ACCELERATION_LEAN_DEGREES: f32 = 6.4;
+const STARTUP_INERTIAL_LEAN_SCALE: f32 = 0.25;
+const SUSTAINED_INERTIAL_LEAN_SCALE: f32 = 0.18;
+const BODY_RESPONSE_DEGREES_PER_SECOND: f32 = 128.0;
+const BODY_RESPONSE_SMOOTH_TIME_SECONDS: f32 = 0.10;
+const ACCELERATION_ATTACK_RESPONSE_PER_SECOND: f32 = 16.0;
+const ACCELERATION_RELEASE_RESPONSE_PER_SECOND: f32 = 7.0;
+const MAX_BODY_RESPONSE_FRAME_SECONDS: f32 = 1.0 / 30.0;
 
 pub(in crate::animation::procedural) fn presentation_tick_delta(
     previous: Option<u64>,
@@ -20,6 +30,8 @@ pub(in crate::animation::procedural) fn presentation_tick_delta(
 /// frame.
 /// Retained angles are client presentation only.
 pub(in crate::animation) fn apply_locomotion_body_response(
+    time: Res<Time>,
+    procedural_clock: Res<ProceduralAnimationClock>,
     mut commands: Commands,
     mut owners: Query<
         (
@@ -36,15 +48,24 @@ pub(in crate::animation) fn apply_locomotion_body_response(
     >,
 ) {
     let _spike = crate::animation::diagnostics::SpikeGuard::new("apply_locomotion_body_response");
+    let render_delta_seconds = time
+        .delta_secs()
+        .clamp(0.0, MAX_BODY_RESPONSE_FRAME_SECONDS);
     let mut responses = BTreeMap::new();
     for (owner, skeleton, owner_transform, state) in &mut owners {
         let mut next = state.as_deref().copied().unwrap_or_default();
         let tick = skeleton.locomotion_sample_tick;
         let tick_delta = presentation_tick_delta(next.last_tick, tick);
+        let delta_seconds = match procedural_clock.fixed_step() {
+            Some((fixed_tick, _)) if next.last_tick == Some(fixed_tick) => 0.0,
+            Some((_, fixed_delta_seconds)) => fixed_delta_seconds,
+            None => render_delta_seconds,
+        };
         let inverse_body_rotation = owner_transform.rotation.inverse();
         let body_velocity = inverse_body_rotation * skeleton.world_velocity;
         let body_acceleration = inverse_body_rotation * skeleton.world_acceleration;
         let discontinuous = tick_delta.is_none();
+        let source_changed = matches!(tick_delta, Some(1..));
         if skeleton.is_posture_transitioning()
             || skeleton.action_kind() != SkeletonAction::None
             || !skeleton.is_grounded()
@@ -53,35 +74,46 @@ pub(in crate::animation) fn apply_locomotion_body_response(
         {
             next.pitch_radians = 0.0;
             next.roll_radians = 0.0;
+            next.angular_velocity_radians_per_second = Vec2::ZERO;
             next.target_pitch_radians = 0.0;
             next.target_roll_radians = 0.0;
-        } else if let Some(tick_delta @ 1..) = tick_delta {
-            let delta_seconds = tick_delta as f32 / LOCOMOTION_SAMPLE_HZ;
-            if body_velocity.xz().length() > 0.05 || body_acceleration.xz().length() > 0.5 {
-                let braking_scale = deceleration_lean_scale(
-                    next.last_body_velocity,
-                    body_velocity,
-                    body_acceleration,
-                );
-                let combined =
-                    body_response_target(body_velocity, body_acceleration, braking_scale);
-                next.target_pitch_radians = combined.x;
-                next.target_roll_radians = combined.y;
-            } else {
-                let target_decay = 10.0_f32.to_radians() / 0.4 * delta_seconds;
-                next.target_pitch_radians =
-                    advance_towards(next.target_pitch_radians, 0.0, target_decay);
-                next.target_roll_radians =
-                    advance_towards(next.target_roll_radians, 0.0, target_decay);
-            }
-            let maximum_step = 2.0_f32.to_radians() * tick_delta as f32;
+            next.smoothed_body_acceleration = Vec3::ZERO;
+        } else {
+            // Authoritative acceleration is a discrete finite difference and
+            // remains unchanged between replicated samples. Filter that held
+            // value in render time so packet delivery cannot create an
+            // inertial impulse. Releasing the impulse more slowly also avoids
+            // a second head snap when the motor reaches its target speed.
+            next.smoothed_body_acceleration = smooth_acceleration(
+                next.smoothed_body_acceleration,
+                body_acceleration,
+                delta_seconds,
+            );
+            let braking_scale = deceleration_lean_scale(
+                next.last_body_velocity,
+                body_velocity,
+                next.smoothed_body_acceleration,
+            );
+            let combined = body_response_target(
+                body_velocity,
+                next.smoothed_body_acceleration,
+                braking_scale,
+            );
+            next.target_pitch_radians = combined.x;
+            next.target_roll_radians = combined.y;
             let current = Vec2::new(next.pitch_radians, next.roll_radians);
             let target = Vec2::new(next.target_pitch_radians, next.target_roll_radians);
-            let advanced = current + (target - current).clamp_length_max(maximum_step);
+            let (advanced, angular_velocity) = advance_body_response(
+                current,
+                next.angular_velocity_radians_per_second,
+                target,
+                delta_seconds,
+            );
             next.pitch_radians = advanced.x;
             next.roll_radians = advanced.y;
+            next.angular_velocity_radians_per_second = angular_velocity;
         }
-        if next.last_tick.is_none() || discontinuous || matches!(tick_delta, Some(1..)) {
+        if next.last_tick.is_none() || discontinuous || source_changed {
             next.last_body_velocity = body_velocity;
         }
         next.last_tick = Some(tick);
@@ -131,6 +163,43 @@ pub(in crate::animation) fn apply_locomotion_body_response(
     }
 }
 
+fn smooth_acceleration(current: Vec3, target: Vec3, delta_seconds: f32) -> Vec3 {
+    let response_per_second = if target.xz().length_squared() > current.xz().length_squared() {
+        ACCELERATION_ATTACK_RESPONSE_PER_SECOND
+    } else {
+        ACCELERATION_RELEASE_RESPONSE_PER_SECOND
+    };
+    let response = 1.0 - (-response_per_second * delta_seconds.max(0.0)).exp();
+    current.lerp(target, response)
+}
+
+fn advance_body_response(
+    current: Vec2,
+    velocity: Vec2,
+    target: Vec2,
+    delta_seconds: f32,
+) -> (Vec2, Vec2) {
+    let delta_seconds = delta_seconds.max(0.0);
+    if delta_seconds == 0.0 {
+        return (current, velocity);
+    }
+
+    // An implicit critically damped spring retains angular velocity across
+    // target changes. Unlike a first-order slew limiter, it cannot consume a
+    // small accumulated target error as a separate one-frame lean when the
+    // presented motor velocity locks to its sprint plateau.
+    let omega = 2.0 / BODY_RESPONSE_SMOOTH_TIME_SECONDS;
+    let omega_squared = omega * omega;
+    let denominator =
+        1.0 + 2.0 * delta_seconds * omega + delta_seconds * delta_seconds * omega_squared;
+    let next_velocity =
+        (velocity + delta_seconds * omega_squared * (target - current)) / denominator;
+    let maximum_speed = BODY_RESPONSE_DEGREES_PER_SECOND.to_radians();
+    let next_velocity = next_velocity.clamp_length_max(maximum_speed);
+    let next = current + next_velocity * delta_seconds;
+    (next, next_velocity)
+}
+
 fn stable_pelvis_response(
     authored_rotation: Quat,
     reference_rotation: Quat,
@@ -154,25 +223,36 @@ pub(in crate::animation::procedural) fn body_response_target(
 ) -> Vec2 {
     // Tactical body forward is local +Z (the authored rig carries its own
     // facing correction). Authored locomotion keeps a straight back, so steady
-    // travel supplies a pronounced base lean and acceleration adds a stronger
-    // short-lived inertial response, following Overgrowth's division of work.
+    // travel supplies a pronounced base lean and acceleration adds a somewhat
+    // stronger combined startup pose. Keeping most of the lean in travel avoids
+    // a large initial snap followed by an almost upright steady run.
     let travel_pitch = (velocity.z / RUN_LOCOMOTION_PROFILE.reference_speed
-        * 12.0_f32.to_radians())
-    .clamp(-14.0_f32.to_radians(), 14.0_f32.to_radians());
+        * STEADY_TRAVEL_LEAN_DEGREES.to_radians())
+    .clamp(-18.0_f32.to_radians(), 18.0_f32.to_radians());
     let travel_roll = (-velocity.x / RUN_LOCOMOTION_PROFILE.reference_speed
-        * 12.0_f32.to_radians())
-    .clamp(-14.0_f32.to_radians(), 14.0_f32.to_radians());
+        * STEADY_TRAVEL_LEAN_DEGREES.to_radians())
+    .clamp(-18.0_f32.to_radians(), 18.0_f32.to_radians());
+    // Acceleration is an early accent rather than a second full pose. Fade it
+    // almost completely into the stable velocity posture, so reaching target
+    // speed cannot release a late, visibly separate lean.
+    let speed_fraction =
+        (velocity.xz().length() / RUN_LOCOMOTION_PROFILE.reference_speed).clamp(0.0, 1.0);
+    let startup_inertial_scale =
+        STARTUP_INERTIAL_LEAN_SCALE.lerp(SUSTAINED_INERTIAL_LEAN_SCALE, speed_fraction);
     let inertial_pitch = if acceleration.z > 0.0 {
-        (acceleration.z / 12.0 * 18.0_f32.to_radians()).clamp(0.0, 22.0_f32.to_radians())
+        (acceleration.z / 12.0 * FORWARD_ACCELERATION_LEAN_DEGREES.to_radians())
+            .clamp(0.0, 14.0_f32.to_radians())
+            * startup_inertial_scale
     } else {
-        (acceleration.z / 12.0 * 14.0_f32.to_radians()).clamp(-18.0_f32.to_radians(), 0.0)
+        (acceleration.z / 12.0 * 18.0_f32.to_radians()).clamp(-22.0_f32.to_radians(), 0.0)
             * braking_scale.clamp(0.0, 1.0)
     };
     // Turning should read clearly without the extreme motorcycle-like bank of
     // the first stronger-lean pass. Keep lateral travel posture unchanged and
     // scale only acceleration-driven turning response to 60% of that tuning.
-    let inertial_roll = (-acceleration.x / 10.0 * 9.6_f32.to_radians())
-        .clamp(-12.0_f32.to_radians(), 12.0_f32.to_radians());
+    let inertial_roll = (-acceleration.x / 10.0 * LATERAL_ACCELERATION_LEAN_DEGREES.to_radians())
+        .clamp(-8.0_f32.to_radians(), 8.0_f32.to_radians())
+        * startup_inertial_scale;
     let pitch = travel_pitch + inertial_pitch;
     let roll = travel_roll + inertial_roll;
     let response = Vec2::new(pitch, roll);
@@ -244,5 +324,74 @@ mod tests {
             deceleration_lean_scale(Vec3::Z * 5.5, Vec3::Z * 5.5, Vec3::NEG_Z * 12.0),
             1.0
         );
+    }
+
+    #[test]
+    fn acceleration_response_has_smooth_attack_and_release() {
+        let frame_seconds = 1.0 / 60.0;
+        let raw = Vec3::Z * 12.0;
+        let attacked = smooth_acceleration(Vec3::ZERO, raw, frame_seconds);
+        assert!(attacked.z > 0.0 && attacked.z < raw.z);
+
+        let released = smooth_acceleration(attacked, Vec3::ZERO, frame_seconds);
+        assert!(released.z > 0.0 && released.z < attacked.z);
+    }
+
+    #[test]
+    fn body_response_step_is_bounded_by_render_time() {
+        let frame_seconds = 1.0 / 60.0;
+        let current = Vec2::ZERO;
+        let target = Vec2::splat(30.0_f32.to_radians());
+        let (advanced, velocity) =
+            advance_body_response(current, Vec2::ZERO, target, frame_seconds);
+        let maximum_step = BODY_RESPONSE_DEGREES_PER_SECOND.to_radians() * frame_seconds;
+        assert!(advanced.length() <= maximum_step + 0.000_001);
+        assert!(velocity.length() <= BODY_RESPONSE_DEGREES_PER_SECOND.to_radians() + 0.000_001);
+    }
+
+    #[test]
+    fn body_response_preserves_motion_through_a_target_step() {
+        let frame_seconds = 1.0 / 60.0;
+        let velocity = Vec2::new(28.0_f32.to_radians(), 0.0);
+        let current = Vec2::new(14.0_f32.to_radians(), 0.0);
+        let target = Vec2::new(16.0_f32.to_radians(), 0.0);
+        let (advanced, next_velocity) =
+            advance_body_response(current, velocity, target, frame_seconds);
+
+        assert!(advanced.x > current.x);
+        assert!(next_velocity.x > 0.0);
+        assert!((advanced.x - current.x).to_degrees() < 0.75);
+    }
+
+    #[test]
+    fn sprint_ramp_is_continuous_and_settles_below_its_startup_peak() {
+        let frame_seconds = 1.0 / 64.0;
+        let mut acceleration = Vec3::ZERO;
+        let mut response = Vec2::ZERO;
+        let mut velocity = Vec2::ZERO;
+        let mut maximum_pitch = 0.0_f32;
+        let mut maximum_step = 0.0_f32;
+
+        for frame in 0..160 {
+            let speed =
+                (frame as f32 / 32.0).clamp(0.0, 1.0) * RUN_LOCOMOTION_PROFILE.reference_speed;
+            let raw_acceleration = if frame <= 32 {
+                Vec3::Z * 11.0
+            } else {
+                Vec3::ZERO
+            };
+            acceleration = smooth_acceleration(acceleration, raw_acceleration, frame_seconds);
+            let target = body_response_target(Vec3::Z * speed, acceleration, 1.0);
+            let previous = response;
+            (response, velocity) = advance_body_response(response, velocity, target, frame_seconds);
+            maximum_pitch = maximum_pitch.max(response.x);
+            maximum_step = maximum_step.max((response.x - previous.x).abs());
+        }
+
+        let stable_pitch = response.x.to_degrees();
+        let startup_peak = maximum_pitch.to_degrees();
+        assert!((15.9..=16.1).contains(&stable_pitch), "{stable_pitch}");
+        assert!((16.25..=18.0).contains(&startup_peak), "{startup_peak}");
+        assert!(maximum_step.to_degrees() <= 0.6);
     }
 }

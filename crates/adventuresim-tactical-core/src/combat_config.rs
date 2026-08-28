@@ -574,7 +574,7 @@ impl Default for TacticalCombatConfig {
             },
             movement: TacticalMovementConfig {
                 speeds_metres_per_second: MovementSpeedsConfig {
-                    walk: 1.4,
+                    walk: 1.7,
                     run: 5.5,
                     raised_guard: 2.0,
                     prone_walk: 0.45,

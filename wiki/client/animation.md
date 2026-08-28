@@ -616,8 +616,9 @@ it. Before every movement step, the server restores Ahoy's disposable fixed-loop
 accumulator from that state. Missing packets on the unreliable input channel
 therefore cannot erase movement intent for one fixed tick. Intent drives the
 controller but does not select an authored gait. Measured post-physics planar
-velocity owns idle/walk/run selection and stride cadence. Presentation also uses
-body-relative velocity for a sustained travel lean and measured acceleration for
+velocity owns automatic locomotion selection and stride cadence while upright.
+Presentation also uses body-relative velocity for a sustained travel lean and
+measured acceleration for
 a stronger transient inertial response. The authored locomotion backs remain
 straight; the procedural response rotates the pelvis and torso as one rigid
 hierarchy in the stable authored pelvis reference frame, while exactly
@@ -631,10 +632,10 @@ The run flight curve contributes about nine centimetres of visible rise after
 authored passing-height normalization. The debug game-clock switch therefore
 cannot directly select a different gait.
 
-Ordinary idle, walk, and run now follow one compact ownership contract:
+Ordinary idle, walk, run, and strafe now follow one compact ownership contract:
 
-1. The semantic evaluator returns idle/walk/run weights at the shared predicted
-   authoritative phase.
+1. The semantic evaluator returns idle/walk/run/strafe weights at the shared
+   predicted authoritative phase.
 2. Walk and run sample their closed 64-frame runtime cycles continuously.
 3. The same semantic samples provide left/right IK weights. Walk retains
    support; run uses a narrow contact lobe and publishes real zero-weight
@@ -809,9 +810,12 @@ neck and head aim uses only the residual between camera direction and the
 current-frame root rotation before transform propagation; it never reapplies
 the root's yaw from the previous frame.
 
-During lowered travel, forward walk and run continue to serve diagonal and
-lateral travel. Ordinary raised upright grounded movement retains its current
-support cadence and samples only the static `guard` pose. A client-only
+During lowered travel, the hips rotate toward authoritative velocity at their
+bounded turn rate rather than facing it immediately. While they catch up, the
+relative direction between hip facing and velocity blends the walk/run cycles
+with the authored strafe cycle. Ordinary raised upright grounded movement
+retains its current support cadence and samples only the static `guard` pose. A
+client-only
 procedural lower-body pass alternates one swing foot with exactly one
 world-space support foot. Each compact step projects authoritative local
 velocity from the step origin, retains the authored guard's separated stance
@@ -1031,14 +1035,12 @@ pace exhausting at every endurance rank. Prone WASD input uses tank controls in
 the body's orientation rather than the camera orientation, with lateral input
 limited to three-eighths of longitudinal speed. Downed postures retain Ahoy's
 shortened collision shape without applying an additional speed penalty.
-Authored prone contacts follow authoritative velocity directly.
-Their 0.60 m contact step balances the authored hand and knee reach so neither
-support point accumulates the much larger slide produced by a full metre of
-controller travel. Supine scampering remains capped at 2.4 m/s with its
-deliberately reduced contact cadence. All authored posture transitions keep the
-gameplay root facing fixed: the directional dive and get-up poses encode their
-own direction relative to that root and must not be rotated a second time toward
-residual velocity.
+Automatic movement animations play only while upright. Prone and supine
+characters may slide along the ground without advancing their locomotion cycle.
+Supine movement remains capped at 2.4 m/s. All authored posture transitions keep
+the gameplay root facing fixed: the directional dive and get-up poses encode
+their own direction relative to that root and must not be rotated a second time
+toward residual velocity.
 
 ## Initial complete-pack size
 

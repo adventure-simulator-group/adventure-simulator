@@ -30,7 +30,7 @@ pub enum MovementPace {
     Sprint,
 }
 
-pub const TACTICAL_WALK_SPEED_METRES_PER_SECOND: f32 = 1.4;
+pub const TACTICAL_WALK_SPEED_METRES_PER_SECOND: f32 = 1.7;
 pub const BREATH_PER_METRE_PER_SECOND: f32 = 0.0034;
 pub const TACTICAL_BREATH_RESPONSE_SCALE: f32 = 5.0;
 const REFERENCE_LEG_STRENGTH: f32 = 3.0;
@@ -38,6 +38,9 @@ const REFERENCE_BURDEN_KG: f32 = 70.0;
 const MINIMUM_JOG_SPEED_METRES_PER_SECOND: f32 = 1.8;
 const ELITE_MARATHON_SPEED_METRES_PER_SECOND: f32 = 5.83;
 const JOG_ENDURANCE_CURVE_EXPONENT: f32 = 1.873_873;
+// Sprint attributes retain their authored calibration independently of the
+// ordinary walking pace.
+const SPRINT_CURVE_BASE_SPEED_METRES_PER_SECOND: f32 = 1.4;
 const REFERENCE_SPRINT_SPEED_METRES_PER_SECOND: f32 = 8.0;
 const ELITE_SPRINT_SPEED_METRES_PER_SECOND: f32 = 12.4;
 const MINIMUM_ORDINARY_TURN_RADIUS_METRES: f32 = 0.25;
@@ -143,9 +146,9 @@ pub fn tactical_sprint_speed(
     let strength_ratio = effective_strength / REFERENCE_LEG_STRENGTH;
     let burden_ratio = REFERENCE_BURDEN_KG / burden_kg.max(1.0);
     let strength_speed = (REFERENCE_SPRINT_SPEED_METRES_PER_SECOND
-        - TACTICAL_WALK_SPEED_METRES_PER_SECOND)
+        - SPRINT_CURVE_BASE_SPEED_METRES_PER_SECOND)
         * strength_ratio;
-    (TACTICAL_WALK_SPEED_METRES_PER_SECOND + strength_speed * burden_ratio.sqrt()).clamp(
+    (SPRINT_CURVE_BASE_SPEED_METRES_PER_SECOND + strength_speed * burden_ratio.sqrt()).clamp(
         TACTICAL_WALK_SPEED_METRES_PER_SECOND,
         ELITE_SPRINT_SPEED_METRES_PER_SECOND,
     )

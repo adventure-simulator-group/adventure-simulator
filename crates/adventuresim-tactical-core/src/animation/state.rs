@@ -2243,6 +2243,23 @@ pub fn project_skeleton_locomotion_with_intent(
     input: SkeletonLocomotionInput,
     requested_local_direction: Option<Vec2>,
 ) {
+    let body_rotation = controller_yaw(input.orientation);
+    project_skeleton_locomotion_with_body_rotation(
+        skeleton,
+        input,
+        body_rotation,
+        requested_local_direction,
+    );
+}
+
+/// Projection variant for the authoritative server, which owns both the
+/// camera/controller frame and the independently rotating body root.
+pub fn project_skeleton_locomotion_with_body_rotation(
+    skeleton: &mut SkeletonState,
+    input: SkeletonLocomotionInput,
+    body_rotation: Quat,
+    requested_local_direction: Option<Vec2>,
+) {
     let linear_velocity = if input.linear_velocity.is_finite() {
         input.linear_velocity
     } else {
@@ -2258,8 +2275,19 @@ pub fn project_skeleton_locomotion_with_intent(
     };
     let previous_world_velocity = skeleton.world_velocity;
     let was_supported = skeleton.body.is_surface_supported();
-    let local_velocity = controller_yaw(input.orientation).inverse() * linear_velocity;
-    let physical_speed = local_velocity.xz().length();
+    let controller_local_velocity = controller_yaw(input.orientation).inverse() * linear_velocity;
+    let body_rotation = if body_rotation.is_finite() {
+        body_rotation
+    } else {
+        Quat::IDENTITY
+    };
+    let body_local_velocity = body_rotation.inverse() * linear_velocity;
+    let local_velocity = if skeleton.weapon_guard() == WeaponGuardState::Raised {
+        controller_local_velocity
+    } else {
+        body_local_velocity
+    };
+    let physical_speed = linear_velocity.xz().length();
     let contiguous_sample = input.tick == skeleton.locomotion_sample_tick.wrapping_add(1);
     skeleton.world_acceleration = if contiguous_sample {
         ((linear_velocity - previous_world_velocity) * LOCOMOTION_SAMPLE_HZ).clamp_length_max(80.0)
@@ -2298,13 +2326,11 @@ pub fn project_skeleton_locomotion_with_intent(
         // Turning in place has no physical velocity, but its crawl/scamper
         // cycle should run at twice the former synthetic cadence.
         physical_speed.max(0.8) * 2.0
-    } else if skeleton.body == BodyState::Prone {
-        // Crawl pace is selected authoritatively; contacts follow the resulting
-        // physical travel directly without the former two-thirds lag.
-        physical_speed
-    } else if skeleton.body == BodyState::Supine {
-        // Supine retains its deliberately less literal scamper cadence.
-        physical_speed * (2.0 / 3.0)
+    } else if matches!(skeleton.body, BodyState::Prone | BodyState::Supine) {
+        // Residual impulses and collision correction may translate a downed
+        // body, but prone/supine presentation deliberately slides in its idle
+        // pose. Velocity-driven locomotion belongs only to upright bodies.
+        0.0
     } else {
         physical_speed
     };
