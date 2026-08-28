@@ -1,6 +1,4 @@
-use adventuresim_world_schema::coordinates::{
-    LatitudeE7, LatitudeMicrodegrees, UnboundedCoordinateE7, Wgs84CoordinateE7,
-};
+use adventuresim_world_schema::coordinates::{UnboundedCoordinateE7, Wgs84CoordinateE7};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct StrategicPositionE7 {

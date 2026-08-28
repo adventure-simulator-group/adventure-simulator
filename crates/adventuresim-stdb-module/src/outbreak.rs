@@ -6,7 +6,7 @@ use spacetimedb::{ReducerContext, Table, ViewContext, reducer, table};
 use std::str::FromStr;
 
 use adventuresim_core::{
-    material::Microliters,
+    material::{Microliters, Milliliters},
     strategic_place::{StrategicFixtureId, StrategicPlaceId},
 };
 
@@ -215,9 +215,9 @@ pub(crate) fn consume_container_water_contributions(
     let moved = take_container_water_contributions(
         ctx,
         container_object_id,
-        Microliters::try_from_milliliters(source_total_ml)
+        Microliters::try_from_milliliters(Milliliters::new(source_total_ml))
             .map_err(|_| "Source water volume is invalid")?,
-        Microliters::try_from_milliliters(consumed_water_ml)
+        Microliters::try_from_milliliters(Milliliters::new(consumed_water_ml))
             .map_err(|_| "Consumed water volume is invalid")?,
     )?;
     if !moved.is_empty() {
@@ -581,7 +581,7 @@ pub fn collect_fixture_water_into_container(
         lot.growth_per_hour,
         plan.time().end_minute.saturating_sub(lot.anchor_minute),
     );
-    let requested_microliters = Microliters::try_from_milliliters(requested_ml)
+    let requested_microliters = Microliters::try_from_milliliters(Milliliters::new(requested_ml))
         .map_err(|_| "Requested water volume exceeds the material range")?;
     let contaminant_load_microunits =
         (current_concentration.max(0.0) * requested_microliters.get() as f32).round() as u64;
@@ -655,7 +655,7 @@ pub(crate) fn contained_water_contamination(
         .container_object_id()
         .find(container_object_id)
     {
-        Some(liquid) => Microliters::try_from_milliliters(liquid.water_ml)
+        Some(liquid) => Microliters::try_from_milliliters(Milliliters::new(liquid.water_ml))
             .map_err(|_| "Container water volume exceeds the material range")?,
         None => Microliters::ZERO,
     };

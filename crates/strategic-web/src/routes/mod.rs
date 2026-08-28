@@ -20,6 +20,7 @@ pub(crate) mod travel;
 mod weapon_icons;
 
 use adventuresim_core::strategic_time::MINUTES_PER_DAY;
+use adventuresim_world_schema::coordinates::{Wgs84CoordinateE7, Wgs84CoordinateMicrodegrees};
 use axum::{
     Router,
     extract::{Request, State},
@@ -50,6 +51,21 @@ pub struct AppState {
     pub strategic_map: Option<std::sync::Arc<crate::strategic_map::StrategicMap>>,
     pub terrain: Option<std::sync::Arc<travel::TerrainPlanner>>,
     pub session_codec: std::sync::Arc<SessionCodec>,
+}
+
+fn wgs84_latitude_longitude_degrees(
+    latitude_e7: i32,
+    longitude_e7: i32,
+) -> Result<(f64, f64), &'static str> {
+    Wgs84CoordinateE7::new(latitude_e7, longitude_e7)
+        .map(Wgs84CoordinateE7::latitude_longitude_degrees)
+        .ok_or("persisted coordinate is outside WGS84 bounds")
+}
+
+fn wgs84_e7(latitude: f64, longitude: f64) -> Result<(i32, i32), &'static str> {
+    let coordinate = Wgs84CoordinateE7::from_longitude_latitude_degrees(longitude, latitude)
+        .ok_or("route coordinate is outside WGS84 bounds")?;
+    Ok((coordinate.latitude().get(), coordinate.longitude().get()))
 }
 
 /// Serde transport for the gateway's player-visible settlement NPC projection.
@@ -582,10 +598,10 @@ async fn planned_travel_call(
                 .ok_or("Known exact case site not found")?;
             (
                 "travel_to_case_site_planned",
-                (
-                    f64::from(destination.latitude_e7) / 10_000_000.0,
-                    f64::from(destination.longitude_e7) / 10_000_000.0,
-                ),
+                wgs84_latitude_longitude_degrees(
+                    destination.latitude_e7,
+                    destination.longitude_e7,
+                )?,
             )
         }
         _ => return Ok(None),
@@ -608,10 +624,7 @@ async fn planned_travel_call(
             .await
             .map_err(|error| error.to_string())?
             .ok_or("Known exact origin case site not found")?;
-        (
-            f64::from(site.latitude_e7) / 10_000_000.0,
-            f64::from(site.longitude_e7) / 10_000_000.0,
-        )
+        wgs84_latitude_longitude_degrees(site.latitude_e7, site.longitude_e7)?
     } else if let Some(party_id) = character.party_id.as_deref() {
         let journey = state
             .db
@@ -641,11 +654,14 @@ async fn planned_travel_call(
         .forage_environment(origin.0, origin.1)
         .map(|(cell, _, _)| cell.elevation_m)
         .unwrap_or(0);
+    let weather_coordinate =
+        Wgs84CoordinateMicrodegrees::from_longitude_latitude_degrees(origin.1, origin.0)
+            .ok_or("travel origin is outside WGS84 bounds")?;
     let weather = adventuresim_core::weather::weather_at(
         adventuresim_core::weather::WORLD_WEATHER_SEED,
         departure_minute,
-        (origin.0 * 1_000_000.0).round() as i32,
-        (origin.1 * 1_000_000.0).round() as i32,
+        weather_coordinate.latitude().get(),
+        weather_coordinate.longitude().get(),
         elevation_m,
     );
     let plan = match terrain
@@ -703,10 +719,8 @@ pub(crate) fn persisted_route_position(
     minute: u64,
 ) -> Option<(f64, f64)> {
     let coordinate = |point: &crate::spacetimedb::JourneyRoutePoint| {
-        (
-            f64::from(point.latitude_e7) / 10_000_000.0,
-            f64::from(point.longitude_e7) / 10_000_000.0,
-        )
+        wgs84_latitude_longitude_degrees(point.latitude_e7, point.longitude_e7)
+            .expect("persisted journey route coordinates must be valid WGS84")
     };
     let distance = |from: (f64, f64), to: (f64, f64)| {
         let earth_radius_m = 6_371_000.0_f64;
@@ -754,11 +768,16 @@ fn terrain_route_json(
     return_plan: Option<&adventuresim_terrain::RoutePlan>,
     weather: adventuresim_core::weather::WeatherSnapshot,
 ) -> serde_json::Value {
+    let point_json = |point: &adventuresim_terrain::RoutePoint| {
+        let (latitude_e7, longitude_e7) = wgs84_e7(point.latitude, point.longitude)
+            .expect("terrain planner returned an invalid WGS84 route coordinate");
+        json!({"latitude_e7": latitude_e7, "longitude_e7": longitude_e7})
+    };
     let leg_json = |plan: &adventuresim_terrain::RoutePlan| {
         json!({
             "distance_m": plan.distance_m,
             "minutes": plan.minutes,
-            "points": plan.points.iter().map(|point| json!({"latitude_e7":(point.latitude*10_000_000.0).round() as i32,"longitude_e7":(point.longitude*10_000_000.0).round() as i32})).collect::<Vec<_>>(),
+            "points": plan.points.iter().map(point_json).collect::<Vec<_>>(),
             "spans": plan.spans.iter().filter_map(|span| { let kind=match span.surface { adventuresim_terrain::Surface::Road=>"Road",adventuresim_terrain::Surface::Open=>"Open",adventuresim_terrain::Surface::SparseWoods=>"SparseWoods",adventuresim_terrain::Surface::DeepWoods=>"DeepWoods",adventuresim_terrain::Surface::Wetland=>"Wetland",adventuresim_terrain::Surface::Water=>return None};Some(json!({"kind":kind,"terrain":span.terrain,"training_multiplier_permille":span.training_multiplier_permille,"check_millirank":span.check_millirank,"start_minute":span.start_minute,"duration_minutes":span.duration_minutes})) }).collect::<Vec<_>>()
         })
     };
@@ -775,7 +794,7 @@ fn terrain_route_json(
         "atmosphere": weather.atmosphere,
         "distance_m": plan.distance_m,
         "minutes": plan.minutes,
-        "points": plan.points.iter().map(|point| json!({"latitude_e7":(point.latitude*10_000_000.0).round() as i32,"longitude_e7":(point.longitude*10_000_000.0).round() as i32})).collect::<Vec<_>>(),
+        "points": plan.points.iter().map(point_json).collect::<Vec<_>>(),
         "spans": plan.spans.iter().filter_map(|span| { let kind=match span.surface { adventuresim_terrain::Surface::Road=>"Road",adventuresim_terrain::Surface::Open=>"Open",adventuresim_terrain::Surface::SparseWoods=>"SparseWoods",adventuresim_terrain::Surface::DeepWoods=>"DeepWoods",adventuresim_terrain::Surface::Wetland=>"Wetland",adventuresim_terrain::Surface::Water=>return None};Some(json!({"kind":kind,"terrain":span.terrain,"training_multiplier_permille":span.training_multiplier_permille,"check_millirank":span.check_millirank,"start_minute":span.start_minute,"duration_minutes":span.duration_minutes})) }).collect::<Vec<_>>(),
         "return_route": return_plan.map(leg_json)
     })

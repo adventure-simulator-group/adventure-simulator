@@ -5,6 +5,7 @@ use std::{
     sync::Arc,
 };
 
+use adventuresim_world_schema::coordinates::Wgs84CoordinateE7;
 use axum::{
     body::{Body, Bytes},
     extract::{Query, State},
@@ -420,6 +421,11 @@ fn has_geographic_case_site(site: &BackendCaseSitePin) -> bool {
     site.coordinates_are_geographic
 }
 
+fn case_site_longitude_latitude(site: &BackendCaseSitePin) -> Option<(f64, f64)> {
+    Wgs84CoordinateE7::new(site.latitude_e7, site.longitude_e7)
+        .map(Wgs84CoordinateE7::longitude_latitude_degrees)
+}
+
 fn has_geographic_source_in_bounds(settlement: &Settlement, bounds: [f64; 4]) -> bool {
     has_geographic_source(settlement)
         && adventuresim_world_schema::coordinates_in_bounds(
@@ -431,11 +437,9 @@ fn has_geographic_source_in_bounds(settlement: &Settlement, bounds: [f64; 4]) ->
 
 fn has_geographic_case_site_in_bounds(site: &BackendCaseSitePin, bounds: [f64; 4]) -> bool {
     has_geographic_case_site(site)
-        && adventuresim_world_schema::coordinates_in_bounds(
-            f64::from(site.longitude_e7) / 10_000_000.0,
-            f64::from(site.latitude_e7) / 10_000_000.0,
-            bounds,
-        )
+        && case_site_longitude_latitude(site).is_some_and(|(longitude, latitude)| {
+            adventuresim_world_schema::coordinates_in_bounds(longitude, latitude, bounds)
+        })
 }
 
 fn settlement_symbol_kind(category: &SettlementCategory) -> &'static str {
@@ -522,11 +526,9 @@ pub fn strategic_map(
             })
         })
         .map(|site| {
-            project(
-                f64::from(site.longitude_e7) / 10_000_000.0,
-                f64::from(site.latitude_e7) / 10_000_000.0,
-                package.bounds,
-            )
+            let (longitude, latitude) = case_site_longitude_latitude(site)
+                .expect("in-bounds case site must have valid WGS84 coordinates");
+            project(longitude, latitude, package.bounds)
         });
     let destination = settlement_destination.or(case_site_destination);
     let initial_view = initial_view_box((origin_x, origin_y), destination);
@@ -634,8 +636,7 @@ pub fn strategic_map(
                             }
                         }
                         @for site in case_sites.iter().filter(|site| has_geographic_case_site_in_bounds(site, package.bounds)) {
-                            @let longitude = f64::from(site.longitude_e7) / 10_000_000.0;
-                            @let latitude = f64::from(site.latitude_e7) / 10_000_000.0;
+                            @let (longitude, latitude) = case_site_longitude_latitude(site).expect("in-bounds case site must have valid WGS84 coordinates");
                             @let (x, y) = project(longitude, latitude, package.bounds);
                             @let is_selected = selected_id == Some(site.case_site_id.as_str());
                             @let label = format!("Known case site: {}", site.name);
@@ -880,6 +881,8 @@ mod tests {
     }
 
     fn case_site(id: &str, title: &str, longitude: f64, latitude: f64) -> BackendCaseSitePin {
+        let coordinate =
+            Wgs84CoordinateE7::from_longitude_latitude_degrees(longitude, latitude).unwrap();
         BackendCaseSitePin {
             owner_character_id: 7,
             case_id: "quest-1".into(),
@@ -888,8 +891,8 @@ mod tests {
             name: title.into(),
             description: "A camp in the woods.".into(),
             scene_key: "forest".into(),
-            longitude_e7: (longitude * 10_000_000.0) as i32,
-            latitude_e7: (latitude * 10_000_000.0) as i32,
+            longitude_e7: coordinate.longitude().get(),
+            latitude_e7: coordinate.latitude().get(),
             coordinates_are_geographic: true,
             distance_m: 8_000,
             knowledge_stage: DestinationKnowledgeStage::ExactBelieved,

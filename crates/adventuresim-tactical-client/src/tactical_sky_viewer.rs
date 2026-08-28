@@ -617,7 +617,14 @@ fn sky_metrics(data: Option<&[u8]>, width: u32, height: u32, horizon_row: usize)
             horizon_sky_count += 1;
         }
     }
-    let bps = |count: usize| (count * 10_000 / pixels.len()).min(10_000) as u16;
+    let bps = |count: usize| {
+        adventuresim_world_schema::UnitBasisPoints::from_ratio_floor(
+            count as u64,
+            pixels.len() as u64,
+        )
+        .expect("sky capture has pixels")
+        .get()
+    };
     let upper_sky_mean = upper_sky_sum / upper_sky_count.max(1) as f64;
     SkyMetrics {
         bright_pixel_bps: bps(bright),

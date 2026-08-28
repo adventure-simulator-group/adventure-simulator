@@ -101,6 +101,7 @@ fn public_intervention_score(
     differential: &[BackendPhysiologyDifferential],
     profile: &adventuresim_core::physiology::InterventionProfile,
 ) -> i64 {
+    const INTERVENTION_SCORE_SCALE: f64 = 1_000_000.0;
     use adventuresim_core::physiology::{METER_COUNT, Meter};
     let total_likelihood = differential
         .iter()
@@ -130,7 +131,7 @@ fn public_intervention_score(
         let adverse = f64::from(profile.adverse_delta_per_unit.get(meter)).max(0.0);
         burden += adverse * (0.5 + expected);
     }
-    ((benefit - burden) * 1_000_000.0).round() as i64
+    ((benefit - burden) * INTERVENTION_SCORE_SCALE).round() as i64
 }
 
 fn public_confidence_band(confidence_bps: u16) -> &'static str {

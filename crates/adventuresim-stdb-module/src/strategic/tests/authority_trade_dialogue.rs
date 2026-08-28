@@ -25,14 +25,6 @@ fn contract_and_religion_lifecycle_guards_are_explicit() {
 }
 
 #[test]
-fn encounter_body_weight_is_authoritative_but_sanitized() {
-    assert_eq!(sanitized_encounter_body_weight(55.0), 55.0);
-    assert_eq!(sanitized_encounter_body_weight(300.0), 300.0);
-    assert_eq!(sanitized_encounter_body_weight(0.0), 70.0);
-    assert_eq!(sanitized_encounter_body_weight(f32::NAN), 70.0);
-}
-
-#[test]
 fn unready_members_keep_their_burden_but_lose_carrying_capacity() {
     use adventuresim_core::morale::IncapacitationStatus;
 

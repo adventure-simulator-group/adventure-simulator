@@ -21,7 +21,7 @@ mod healing_tests {
         quest_generation_context_commitment, quest_influence_case_site_id,
         recruitment_offer_binding_fields_are_live, refreshed_recruitment_offer_status,
         renewed_recruitment_offer_expiry, sample_mission_candidate,
-        sanitized_encounter_body_weight, settlement_activity_stage_error,
+        settlement_activity_stage_error,
         simulation_quest_provisioning_economy, validate_quest_generation_authority,
         validated_generated_dialogue_manifest,
     };

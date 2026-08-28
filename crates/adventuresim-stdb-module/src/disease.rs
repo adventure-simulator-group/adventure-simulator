@@ -1260,9 +1260,11 @@ pub fn plan_party_disease_interval(
                     row.disease_id,
                     row.starts_at,
                     row.ends_at.min(row.resolved_at.unwrap_or(u64::MAX)),
-                    f32::from(row.disease_intensity)
-                        * f32::from(10_000_u16.saturating_sub(row.mitigation_bps))
-                        / 10_000_000.0,
+                    adventuresim_core::local_problem::mitigated_disease_exposure(
+                        row.disease_intensity,
+                        adventuresim_world_schema::UnitBasisPoints::new(row.mitigation_bps)
+                            .expect("filtered mitigation is a unit basis-point value"),
+                    ),
                     true,
                 )
             }));
@@ -1655,9 +1657,11 @@ fn outbreak_episodes_through(
             continue;
         }
         let disease_id = parse_id(&problem.disease_id)?;
-        let intensity = f32::from(problem.disease_intensity)
-            * f32::from(10_000_u16.saturating_sub(problem.mitigation_bps))
-            / 10_000_000.0;
+        let intensity = adventuresim_core::local_problem::mitigated_disease_exposure(
+            problem.disease_intensity,
+            adventuresim_world_schema::UnitBasisPoints::new(problem.mitigation_bps)
+                .expect("filtered mitigation is a unit basis-point value"),
+        );
         for (source_id, window_from, window_to) in crate::outbreak::exposure_windows(
             ctx,
             &problem.id,

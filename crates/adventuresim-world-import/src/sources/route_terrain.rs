@@ -325,8 +325,8 @@ fn derive(
             length_m,
             u32::from(pair[1].progress.get() - pair[0].progress.get()),
         )?;
-        up = up.max(grade);
-        down = down.min(grade);
+        up = up.max(grade.get());
+        down = down.min(grade.get());
     }
     let mean_slope =
         (local.iter().map(|v| u32::from(v.slope)).sum::<u32>() / local.len() as u32) as u16;

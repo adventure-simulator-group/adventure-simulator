@@ -7,6 +7,7 @@ use adventuresim_tactical_server_dispatcher::scene_input::{
     build_imported_scene, materialize_scene_input,
 };
 use adventuresim_terrain::{TerrainPack, TerrainPurpose};
+use adventuresim_world_schema::coordinates::{LatitudeE7, LongitudeE7};
 use clap::Parser;
 
 #[derive(Debug, Parser)]
@@ -43,8 +44,12 @@ struct Args {
 
 fn main() -> Result<(), String> {
     let args = Args::parse();
-    let latitude_e7 = coordinate_e7("latitude", args.latitude, -90.0, 90.0)?;
-    let longitude_e7 = coordinate_e7("longitude", args.longitude, -180.0, 180.0)?;
+    let latitude_e7 = LatitudeE7::from_degrees(args.latitude)
+        .ok_or("latitude must be finite and within -90..=90")?
+        .get();
+    let longitude_e7 = LongitudeE7::from_degrees(args.longitude)
+        .ok_or("longitude must be finite and within -180..=180")?
+        .get();
     let terrain = TerrainPack::load(&args.terrain_manifest, &args.terrain_pack)
         .map_err(|error| format!("failed to load final terrain pack: {error}"))?;
     if terrain.purpose() != TerrainPurpose::Final {
@@ -77,34 +82,21 @@ fn main() -> Result<(), String> {
     Ok(())
 }
 
-fn coordinate_e7(name: &str, value: f64, minimum: f64, maximum: f64) -> Result<i32, String> {
-    if !value.is_finite() || !(minimum..=maximum).contains(&value) {
-        return Err(format!(
-            "{name} must be finite and within {minimum}..={maximum}"
-        ));
-    }
-    let scaled = (value * 10_000_000.0).round();
-    if !(f64::from(i32::MIN)..=f64::from(i32::MAX)).contains(&scaled) {
-        return Err(format!("{name} cannot be represented as signed E7 degrees"));
-    }
-    Ok(scaled as i32)
-}
-
 #[cfg(test)]
 mod tests {
-    use super::coordinate_e7;
+    use adventuresim_world_schema::coordinates::{LatitudeE7, LongitudeE7};
 
     #[test]
     fn decimal_coordinates_round_to_stable_e7_values() {
         assert_eq!(
-            coordinate_e7("latitude", 53.5503412, -90.0, 90.0),
-            Ok(535_503_412)
+            LatitudeE7::from_degrees(53.5503412).map(LatitudeE7::get),
+            Some(535_503_412)
         );
         assert_eq!(
-            coordinate_e7("longitude", 9.992_345_67, -180.0, 180.0),
-            Ok(99_923_457)
+            LongitudeE7::from_degrees(9.992_345_67).map(LongitudeE7::get),
+            Some(99_923_457)
         );
-        assert!(coordinate_e7("latitude", 90.000_000_1, -90.0, 90.0).is_err());
-        assert!(coordinate_e7("longitude", f64::NAN, -180.0, 180.0).is_err());
+        assert!(LatitudeE7::from_degrees(90.000_000_1).is_none());
+        assert!(LongitudeE7::from_degrees(f64::NAN).is_none());
     }
 }

@@ -117,10 +117,11 @@ pub(super) async fn settlement_map(
             .iter()
             .find(|site| site.case_site_id == destination.id)
         {
-            Some((
-                f64::from(site.latitude_e7) / 10_000_000.0,
-                f64::from(site.longitude_e7) / 10_000_000.0,
-            ))
+            super::super::wgs84_latitude_longitude_degrees(
+                site.latitude_e7,
+                site.longitude_e7,
+            )
+            .ok()
         } else {
             settlements
                 .iter()

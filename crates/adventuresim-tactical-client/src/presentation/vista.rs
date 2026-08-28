@@ -450,7 +450,7 @@ fn stitched_vista_topology_coverage(
     let playable_coverage = playable_ground
         .ground_at(boundary)
         .filter(|sample| sample.cover == GroundCover::TallGrass)
-        .map_or(0.0, |sample| f32::from(sample.cover_density_bps) / 10_000.0);
+        .map_or(0.0, |sample| bps(sample.cover_density_bps));
     let outside = (point.abs() - playable_half_extent)
         .max(Vec2::ZERO)
         .max_element();

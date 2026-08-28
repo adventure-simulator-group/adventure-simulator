@@ -190,10 +190,10 @@ pub(in crate::presentation) fn tree_species_for_site(
     position: Vec3,
     environment: &SceneEnvironment,
 ) -> TreePresentationSpecies {
-    let canopy = f32::from(environment.canopy_bps) / 10_000.0;
-    let moisture = f32::from(environment.weather.ground_moisture_bps) / 10_000.0;
-    let wetland = f32::from(environment.wetland_bps) / 10_000.0;
-    let cultivation = f32::from(environment.cultivation_bps) / 10_000.0;
+    let canopy = crate::presentation::procedural::bps(environment.canopy_bps);
+    let moisture = crate::presentation::procedural::bps(environment.weather.ground_moisture_bps);
+    let wetland = crate::presentation::procedural::bps(environment.wetland_bps);
+    let cultivation = crate::presentation::procedural::bps(environment.cultivation_bps);
     // Beech is concentrated in mesic, closed-canopy communities. Using a
     // 30-metre community key produces stands instead of tree-by-tree confetti
     // and places it where the existing canopy mask already strongly suppresses
@@ -1008,7 +1008,7 @@ pub(in crate::presentation) fn present_pending_trees(
 }
 
 pub(in crate::presentation) fn canopy_competition(canopy_bps: u16) -> f32 {
-    let normalized = f32::from(canopy_bps) / 10_000.0;
+    let normalized = crate::presentation::procedural::bps(canopy_bps);
     normalized * normalized * (3.0 - 2.0 * normalized)
 }
 
@@ -1029,11 +1029,11 @@ fn oak_gnarling_for_site(
     environment: &SceneEnvironment,
     tree_seed: u64,
 ) -> OakGnarlingParameters {
-    let canopy = f32::from(environment.canopy_bps) / 10_000.0;
+    let canopy = crate::presentation::procedural::bps(environment.canopy_bps);
     let open_exposure = 1.0 - canopy;
-    let slope = f32::from(environment.hilly_bps) / 10_000.0;
-    let wetland = f32::from(environment.wetland_bps) / 10_000.0;
-    let cultivation = f32::from(environment.cultivation_bps) / 10_000.0;
+    let slope = crate::presentation::procedural::bps(environment.hilly_bps);
+    let wetland = crate::presentation::procedural::bps(environment.wetland_bps);
+    let cultivation = crate::presentation::procedural::bps(environment.cultivation_bps);
     let elevation =
         ((f32::from(environment.absolute_elevation_metres) - 40.0) / 900.0).clamp(0.0, 1.0);
     let susceptibility = 0.72 + unit_hash(splitmix64(tree_seed ^ 0x5355_5343)) * 0.28;

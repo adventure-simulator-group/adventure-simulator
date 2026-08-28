@@ -73,6 +73,7 @@ const PERFORMANCE_VIEW_WIDTH: u32 = 2560;
 const PERFORMANCE_VIEW_HEIGHT: u32 = 1440;
 const PERFORMANCE_TARGET_FPS: f64 = 60.0;
 const PERFORMANCE_FRAME_BUDGET_MS: f64 = 1_000.0 / PERFORMANCE_TARGET_FPS;
+const SQUARE_METRES_PER_SQUARE_KILOMETRE: f64 = 1_000_000.0;
 const STANDING_EYE_HEIGHT_METRES: f32 = 1.65;
 const CAPTURE_PROFILE_VERSION: u16 = 19;
 const CAMERA_VERSION: u16 = 13;
@@ -2906,7 +2907,7 @@ fn benchmark_scene_performance(
         vista_tree_entities: state.vista_tree_entities.unwrap_or_default(),
         playable_area_square_km: f64::from(
             capture.terrain.width_metres * capture.terrain.depth_metres,
-        ) / 1_000_000.0,
+        ) / SQUARE_METRES_PER_SQUARE_KILOMETRE,
         scene_entity_counts: state.scene_entity_counts.take().unwrap_or_default(),
         warmup_frames_per_mode: SCENE_PERFORMANCE_WARMUP_FRAMES,
         sample_frames_per_mode: state.sample_frames,

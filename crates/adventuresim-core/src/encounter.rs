@@ -196,7 +196,7 @@ pub fn sustainable_speed_m_per_minute(
         * u64::from(encumbrance)
         * u64::from(logistics)
         * u64::from(terrain);
-    (scaled / 10_000_u64.pow(4)).max(1) as u32
+    (scaled / u64::from(BASIS_POINTS_PER_WHOLE).pow(4)).max(1) as u32
 }
 
 pub fn available_choices(

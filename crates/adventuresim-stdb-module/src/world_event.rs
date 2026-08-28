@@ -948,8 +948,12 @@ pub(crate) fn commit_food_water_infection(
         payload: WorldEventPayloadRef::FoodWaterInfection {
             carrier_id,
             contribution_digest: contribution_digest.into(),
-            dose_microunits: (dose.max(0.0) * 1_000_000.0).round() as u64,
-            protected_dose_microunits: (protected_dose.max(0.0) * 1_000_000.0).round() as u64,
+            dose_microunits: adventuresim_core::world_event::infection_dose_microunits(dose)
+                .ok_or("Food-water infection dose is invalid")?,
+            protected_dose_microunits: adventuresim_core::world_event::infection_dose_microunits(
+                protected_dose,
+            )
+            .ok_or("Protected food-water infection dose is invalid")?,
             immunity_milli: (immunity.clamp(0.0, 100.0) * 1_000.0).round() as u32,
             prior_immunity_milli: (prior_immunity.clamp(0.0, 100.0) * 1_000.0).round() as u32,
             consumed_fraction_bps,

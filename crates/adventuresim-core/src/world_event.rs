@@ -11,6 +11,20 @@ use std::collections::BTreeSet;
 pub const WORLD_EVENT_SCHEMA_REVISION: u16 = 1;
 pub const MAX_WORLD_EVENT_ID_BYTES: usize = 192;
 pub const MAX_WORLD_EVENT_SUBJECTS: usize = 64;
+const INFECTION_DOSE_MICROUNITS_PER_UNIT: f64 = 1_000_000.0;
+
+/// Quantizes a non-negative infection dose at the world-event boundary.
+pub fn infection_dose_microunits(dose: f32) -> Option<u64> {
+    if !dose.is_finite() || dose < 0.0 {
+        return None;
+    }
+    let scaled = f64::from(dose) * INFECTION_DOSE_MICROUNITS_PER_UNIT;
+    (scaled <= u64::MAX as f64).then(|| scaled.round() as u64)
+}
+
+pub fn infection_dose_from_microunits(microunits: u64) -> f64 {
+    microunits as f64 / INFECTION_DOSE_MICROUNITS_PER_UNIT
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum WorldEventSource {
@@ -386,6 +400,16 @@ pub fn classify_world_event_retry(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn infection_dose_quantization_rejects_invalid_values_and_round_trips() {
+        let microunits = infection_dose_microunits(1.25).unwrap();
+
+        assert_eq!(microunits, 1_250_000);
+        assert_eq!(infection_dose_from_microunits(microunits), 1.25);
+        assert_eq!(infection_dose_microunits(-0.01), None);
+        assert_eq!(infection_dose_microunits(f32::NAN), None);
+    }
 
     fn forage() -> WorldEventEnvelope {
         WorldEventEnvelope {

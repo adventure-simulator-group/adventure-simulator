@@ -616,8 +616,10 @@ fn spawn_connected_player(
         tailoring_hours: player.skills.tailoring_hours,
         smithing_hours: player.skills.smithing_hours,
     };
+    let body_mass = adventuresim_core::physiology::BodyMassKg::try_new(player.body_weight_kg)
+        .expect("connected player body mass must be validated by strategic authority");
     let mut limbs = Limbs {
-        body_weight_kg: player.body_weight_kg,
+        body_weight_kg: body_mass.kilograms(),
         left_arm: player.limbs.left_arm_health,
         right_arm: player.limbs.right_arm_health,
         left_leg: player.limbs.left_leg_health,

@@ -4,7 +4,7 @@
 //! intentionally calculation-only: callers snapshot the result when a stable
 //! journey or incident needs to outlive later rules changes.
 
-use adventuresim_world_schema::BASIS_POINTS_PER_WHOLE;
+use adventuresim_world_schema::{BASIS_POINTS_PER_WHOLE, coordinates::LatitudeMicrodegrees};
 use fabelgeist_determinism::mix64;
 use serde::{Deserialize, Serialize};
 
@@ -592,7 +592,8 @@ fn temperature_deci_c(
 ) -> i32 {
     let day = (interval * WEATHER_INTERVAL_MINUTES / MINUTES_PER_DAY) % DAYS_PER_YEAR;
     let hour = (interval * WEATHER_INTERVAL_MINUTES / 60) % 24;
-    let latitude_degrees = cell_latitude * WEATHER_CELL_MICRODEGREES / 1_000_000;
+    let latitude_degrees =
+        cell_latitude * WEATHER_CELL_MICRODEGREES / LatitudeMicrodegrees::UNITS_PER_DEGREE;
     let mean = 95 - (latitude_degrees.abs() - 53).abs() * 4;
     let seasonal = triangle_wave_bps((day + 343) % DAYS_PER_YEAR, DAYS_PER_YEAR) * 105
         / i32::from(BASIS_POINTS_PER_WHOLE);

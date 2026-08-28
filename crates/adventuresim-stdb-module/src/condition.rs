@@ -21,10 +21,8 @@ use crate::{
     character_limbs, character_skills, character_stats, character_time,
     character_training_schedule, inventory_item,
 };
-use adventuresim_core::physiology::BodyRegion;
+use adventuresim_core::physiology::{BodyMassKg, BodyRegion};
 
-pub const DEFAULT_BODY_WEIGHT_KG: f32 = 70.0;
-pub const BLOOD_ML_PER_KG: f32 = 70.0;
 pub const RECENT_MORALE_DURATION_MINUTES: u64 = 7 * 24 * 60;
 const LEISURE_MORALE_SOURCE_ID: &str = "settlement-leisure";
 const MASTERY_MORALE_SOURCE_ID: &str = "mastery-enjoyment";
@@ -165,10 +163,11 @@ pub fn initialize_character_condition(
         .find(character_id)
         .is_none()
     {
-        let maximum_blood_ml = DEFAULT_BODY_WEIGHT_KG * BLOOD_ML_PER_KG;
+        let body_mass = BodyMassKg::DEFAULT;
+        let maximum_blood_ml = body_mass.estimated_blood_milliliters();
         ctx.db.character_condition().insert(CharacterCondition {
             character_id,
-            body_weight_kg: DEFAULT_BODY_WEIGHT_KG,
+            body_weight_kg: body_mass.kilograms(),
             current_blood_ml: maximum_blood_ml,
             maximum_blood_ml,
             religion_id: None,
@@ -223,12 +222,14 @@ impl ExposureLocation {
                 route,
                 completed_movement_minutes.saturating_add(movement_offset),
             )
-            .map(|(longitude, latitude)| {
-                (
-                    (latitude * 1_000_000.0).round() as i32,
-                    (longitude * 1_000_000.0).round() as i32,
-                    0,
+            .and_then(|(longitude, latitude)| {
+                adventuresim_world_schema::coordinates::Wgs84CoordinateMicrodegrees::from_longitude_latitude_degrees(
+                    longitude,
+                    latitude,
                 )
+                .map(|coordinate| {
+                    (coordinate.latitude().get(), coordinate.longitude().get(), 0)
+                })
             })
             .unwrap_or((53_000_000, 10_000_000, 0)),
         }
@@ -243,10 +244,14 @@ fn exposure_location(ctx: &ReducerContext, character_id: u64) -> ExposureLocatio
     };
     if let Some(settlement_id) = character.current_settlement_id
         && let Some(place) = ctx.db.settlement().id().find(settlement_id)
+        && let Some(coordinate) = adventuresim_world_schema::coordinates::Wgs84CoordinateMicrodegrees::from_longitude_latitude_degrees(
+            place.coord_x,
+            place.coord_y,
+        )
     {
         return ExposureLocation::Fixed(
-            (place.coord_y * 1_000_000.0).round() as i32,
-            (place.coord_x * 1_000_000.0).round() as i32,
+            coordinate.latitude().get(),
+            coordinate.longitude().get(),
             place.elevation.get(),
         );
     }
@@ -255,7 +260,25 @@ fn exposure_location(ctx: &ReducerContext, character_id: u64) -> ExposureLocatio
             && let Some(site_id) = party.current_case_site_id
             && let Some(site) = ctx.db.case_site_authority().id_key().find(site_id.value)
         {
-            return ExposureLocation::Fixed(site.latitude_e7 / 10, site.longitude_e7 / 10, 0);
+            let coordinate = if site.coordinates_are_geographic {
+                adventuresim_world_schema::coordinates::Wgs84CoordinateE7::new(
+                    site.latitude_e7,
+                    site.longitude_e7,
+                )
+                .map(adventuresim_world_schema::coordinates::Wgs84CoordinateMicrodegrees::from_e7)
+                .map(|coordinate| (coordinate.latitude().get(), coordinate.longitude().get()))
+            } else {
+                use adventuresim_world_schema::coordinates::UnboundedCoordinateE7;
+                Some((
+                    UnboundedCoordinateE7::from_raw(site.latitude_e7)
+                        .millionths_of_coordinate_unit(),
+                    UnboundedCoordinateE7::from_raw(site.longitude_e7)
+                        .millionths_of_coordinate_unit(),
+                ))
+            };
+            if let Some((latitude, longitude)) = coordinate {
+                return ExposureLocation::Fixed(latitude, longitude, 0);
+            }
         }
         if let (Some(journey), Some(route)) = (
             ctx.db.party_journey_authority().party_id().find(&party_id),

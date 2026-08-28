@@ -279,8 +279,8 @@ impl CloudLayerParameters {
         let thickness_metres =
             f32::from(layer.top_metres.saturating_sub(layer.base_metres).max(100));
         Self {
-            coverage: f32::from(layer.coverage_bps) / 10_000.0,
-            density: 0.4 + f32::from(layer.optical_density_bps) / 10_000.0,
+            coverage: bps(layer.coverage_bps),
+            density: 0.4 + bps(layer.optical_density_bps),
             profile,
             seed: 0.0,
             bottom_metres: f32::from(layer.base_metres),
@@ -1018,8 +1018,7 @@ pub(in crate::presentation) fn update_tactical_clouds(
 
 fn cloud_wind_velocity(environment: &SceneEnvironment) -> Vec2 {
     let bearing = f32::from(environment.weather.atmosphere.wind_direction_degrees).to_radians();
-    let speed =
-        f32::from(environment.weather.wind_speed_bps) / 10_000.0 * CLOUD_MAX_WIND_METRES_PER_SECOND;
+    let speed = bps(environment.weather.wind_speed_bps) * CLOUD_MAX_WIND_METRES_PER_SECOND;
     Vec2::new(bearing.sin(), -bearing.cos()) * speed
 }
 
