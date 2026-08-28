@@ -9,10 +9,12 @@ use adventuresim_core::prelude::*;
 use adventuresim_core::strategic_time::MINUTES_PER_DAY;
 #[cfg(test)]
 use adventuresim_core::surgery::untreated_cut_progress;
+use adventuresim_core::surgery::{
+    SurgeryProcedure, simulate_blood_interval, standing_infection_multiplier,
+};
 pub use adventuresim_core::surgery::{
     UNTREATED_CUT_BLOOD_LOSS_PER_DAY, UNTREATED_CUT_DETERIORATION_PER_DAY,
 };
-use adventuresim_core::surgery::{simulate_blood_interval, standing_infection_multiplier};
 use spacetimedb::{ReducerContext, SpacetimeType, Table, reducer, table};
 
 use crate::character::character;
@@ -36,7 +38,7 @@ pub struct TreatmentActionReceipt {
     pub actor_id: u64,
     pub patient_id: u64,
     pub limb: BodyRegion,
-    pub procedure: String,
+    pub procedure: SurgeryProcedure,
     pub projectile_id: Option<u64>,
     pub use_soap: bool,
     pub context_ref: Option<String>,
@@ -61,7 +63,7 @@ fn treatment_receipt_disposition(
     actor_id: u64,
     patient_id: u64,
     limb: BodyRegion,
-    procedure: &str,
+    procedure: SurgeryProcedure,
     projectile_id: Option<u64>,
     use_soap: bool,
     context_ref: Option<&str>,
@@ -726,7 +728,7 @@ fn procedure_check(
     ctx: &ReducerContext,
     actor_id: u64,
     patient_id: u64,
-    procedure: &str,
+    procedure: SurgeryProcedure,
 ) -> Result<f32, String> {
     let attributes = ctx
         .db
@@ -889,7 +891,7 @@ fn align_and_advance(
     Ok(completed)
 }
 
-fn duration_minutes(procedure: &str, skill: f32, dc: f32) -> u64 {
+fn duration_minutes(procedure: SurgeryProcedure, skill: f32, dc: f32) -> u64 {
     adventuresim_core::surgery::procedure_duration_minutes(procedure, skill, dc)
 }
 
@@ -906,7 +908,7 @@ pub fn treat_limb(
     actor_id: u64,
     patient_id: u64,
     limb_slug: String,
-    procedure: String,
+    procedure: SurgeryProcedure,
     projectile_id: Option<u64>,
     use_soap: bool,
     action_id: String,
@@ -941,7 +943,7 @@ pub fn treat_limb(
         actor_id,
         patient_id,
         limb,
-        &procedure,
+        procedure,
         projectile_id,
         use_soap,
         context_ref.as_deref(),
@@ -959,7 +961,7 @@ pub fn treat_limb(
         actor_id,
         patient_id,
         limb,
-        &procedure,
+        procedure,
         contextual_claim.as_ref(),
     );
     match initial_decision {
@@ -972,51 +974,60 @@ pub fn treat_limb(
         }
     }
     crate::item::upsert_surgery_items(ctx);
-    let skill = procedure_check(ctx, actor_id, patient_id, &procedure)?;
+    let skill = procedure_check(ctx, actor_id, patient_id, procedure)?;
     let mut injury = injury_for(ctx, patient_id, limb);
     let projectile = projectile_id.and_then(|id| ctx.db.retained_projectile().id().find(id));
-    let dc = match procedure.as_str() {
-        "bandage" if injury.cut_damage > 0.0 && !injury.bandaged => 0.0,
-        "stitch" if injury.cut_damage > 0.0 && !injury.stitched => 2.0,
-        "splint" if injury.fracture_damage > 0.0 && injury.splint_inventory_item_id.is_none() => {
+    let dc = match procedure {
+        SurgeryProcedure::Bandage if injury.cut_damage > 0.0 && !injury.bandaged => 0.0,
+        SurgeryProcedure::Stitch if injury.cut_damage > 0.0 && !injury.stitched => 2.0,
+        SurgeryProcedure::Splint
+            if injury.fracture_damage > 0.0 && injury.splint_inventory_item_id.is_none() =>
+        {
             1.0
         }
-        "remove-splint" if injury.splint_inventory_item_id.is_some() => 0.0,
-        "extract"
+        SurgeryProcedure::RemoveSplint if injury.splint_inventory_item_id.is_some() => 0.0,
+        SurgeryProcedure::Extract
             if projectile
                 .as_ref()
                 .is_some_and(|p| p.character_id == patient_id && p.limb == limb) =>
         {
             projectile.as_ref().unwrap().extraction_dc
         }
-        "bandage" => return Err("This limb does not need bandaging".into()),
-        "stitch" => return Err("This wound cannot be stitched".into()),
-        "splint" => return Err("This limb has no unsplinted fracture".into()),
-        "remove-splint" => return Err("This limb is not splinted".into()),
-        "extract" => return Err("Projectile not found in this limb".into()),
-        _ => return Err("Unknown procedure".into()),
+        SurgeryProcedure::Bandage => return Err("This limb does not need bandaging".into()),
+        SurgeryProcedure::Stitch => return Err("This wound cannot be stitched".into()),
+        SurgeryProcedure::Splint => {
+            return Err("This limb has no unsplinted fracture".into());
+        }
+        SurgeryProcedure::RemoveSplint => return Err("This limb is not splinted".into()),
+        SurgeryProcedure::Extract => return Err("Projectile not found in this limb".into()),
+        SurgeryProcedure::OpenBody => {
+            return Err("This procedure is available only for dead subjects".into());
+        }
     };
     if skill < dc {
         return Err(format!(
             "Insufficient procedure skill: this procedure requires {dc:.1}"
         ));
     }
-    if procedure == "stitch" && item_quantity(ctx, actor_id, "surgery_kit") == 0 {
+    if procedure == SurgeryProcedure::Stitch && item_quantity(ctx, actor_id, "surgery_kit") == 0 {
         return Err("Stitching requires a surgery kit".into());
     }
-    if procedure == "extract"
+    if procedure == SurgeryProcedure::Extract
         && adventuresim_core::surgery::extraction_requires_surgery_kit(dc)
         && item_quantity(ctx, actor_id, "surgery_kit") == 0
     {
         return Err("Extracting a projectile above DC 1 requires a surgery kit".into());
     }
-    if procedure == "bandage" && item_quantity(ctx, actor_id, "bandage") == 0 {
+    if procedure == SurgeryProcedure::Bandage && item_quantity(ctx, actor_id, "bandage") == 0 {
         return Err("Bandaging requires one bandage".into());
     }
-    if procedure == "splint" && available_splints(ctx, actor_id) == 0 {
+    if procedure == SurgeryProcedure::Splint && available_splints(ctx, actor_id) == 0 {
         return Err("Applying a splint requires one splint".into());
     }
-    let soap_applicable = matches!(procedure.as_str(), "bandage" | "stitch" | "extract");
+    let soap_applicable = matches!(
+        procedure,
+        SurgeryProcedure::Bandage | SurgeryProcedure::Stitch | SurgeryProcedure::Extract
+    );
     let soap_available = ctx
         .db
         .inventory_item()
@@ -1029,7 +1040,7 @@ pub fn treat_limb(
     if use_soap && (!soap_applicable || !soap_available) {
         return Err("The selected procedure cannot use an available unit of soap".into());
     }
-    let duration = duration_minutes(&procedure, skill, dc);
+    let duration = duration_minutes(procedure, skill, dc);
     if !align_and_advance(ctx, actor_id, patient_id, duration)? {
         return Ok(());
     }
@@ -1039,7 +1050,7 @@ pub fn treat_limb(
         actor_id,
         patient_id,
         limb,
-        &procedure,
+        procedure,
         contextual_claim.as_ref(),
     ) {
         adventuresim_core::strategic_action::ContextualActionDecision::Allowed(_) => {}
@@ -1077,8 +1088,8 @@ pub fn treat_limb(
                 .as_ref()
                 .map(|(_, _, effectiveness)| *effectiveness),
         );
-    match procedure.as_str() {
-        "bandage" => {
+    match procedure {
+        SurgeryProcedure::Bandage => {
             consume_one(ctx, actor_id, "bandage")?;
             injury.bandaged = true;
             // The risk is intentionally hidden. Low skill and an untreated
@@ -1090,7 +1101,7 @@ pub fn treat_limb(
                 clean_check,
             )?;
         }
-        "stitch" => {
+        SurgeryProcedure::Stitch => {
             injury.stitched = true;
             injury.stitch_quality = skill;
             crate::disease::record_committed_cut(
@@ -1100,14 +1111,14 @@ pub fn treat_limb(
                 clean_check,
             )?;
         }
-        "splint" => {
+        SurgeryProcedure::Splint => {
             injury.splint_owner_id = Some(actor_id);
             injury.splint_inventory_item_id = Some(equip_splint(ctx, actor_id, patient_id)?);
         }
-        "remove-splint" => {
+        SurgeryProcedure::RemoveSplint => {
             return_splint(ctx, &mut injury)?;
         }
-        "extract" => {
+        SurgeryProcedure::Extract => {
             let projectile = projectile.unwrap();
             let trauma = 0.015;
             injury.cut_damage = (injury.cut_damage + trauma).min(1.0);
@@ -1125,10 +1136,10 @@ pub fn treat_limb(
             crate::disease::record_committed_cut(ctx, patient_id, trauma, clean_check)?;
             ctx.db.retained_projectile().id().delete(projectile.id);
         }
-        _ => unreachable!(),
+        SurgeryProcedure::OpenBody => unreachable!("live-patient procedure was rejected"),
     }
     let exposure =
-        adventuresim_core::surgery::procedure_blood_exposure(&procedure, actor_id != patient_id);
+        adventuresim_core::surgery::procedure_blood_exposure(procedure, actor_id != patient_id);
     if exposure > 0 {
         crate::filth::deposit_now(
             ctx,
@@ -1228,7 +1239,7 @@ mod tests {
             actor_id: 7,
             patient_id: 8,
             limb: BodyRegion::RightLeg,
-            procedure: "bandage".into(),
+            procedure: SurgeryProcedure::Bandage,
             projectile_id: None,
             use_soap: true,
             context_ref: Some("road:1".into()),
@@ -1242,7 +1253,7 @@ mod tests {
                 7,
                 8,
                 BodyRegion::RightLeg,
-                "bandage",
+                SurgeryProcedure::Bandage,
                 None,
                 soap,
                 Some("road:1"),

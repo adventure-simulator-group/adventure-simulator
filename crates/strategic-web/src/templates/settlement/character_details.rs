@@ -23,7 +23,7 @@ use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterLimbs, CharacterSkills,
     CharacterStrategicCondition, CharacterTrainingSchedule, FoodLot, InventoryItem,
     InventoryItemAmount, ItemDefinition, LimbInjury, OrganizationMembership,
-    OrganizationPresentation, Party, RetainedProjectile,
+    OrganizationMembershipStatus, OrganizationPresentation, Party, RetainedProjectile,
 };
 use crate::templates::{
     decorative_game_icon, organization_charge, organization_colors, religion_icon, sidebar_section,
@@ -581,7 +581,7 @@ fn organization_identity_display(
 ) -> Markup {
     let selected = presentation.and_then(|presentation| {
         let membership = memberships.iter().find(|membership| {
-            membership.status == "active"
+            membership.status == OrganizationMembershipStatus::Active
                 && membership.organization_id == presentation.organization_id
         })?;
         let definition = organization(&membership.organization_id)?;
@@ -652,7 +652,7 @@ fn organization_identity_picker(
         .filter_map(|membership| {
             let definition = organization(&membership.organization_id)?;
             let role = definition.role(&membership.role_id)?;
-            (membership.status == "active"
+            (membership.status == OrganizationMembershipStatus::Active
                 && minute <= membership.dues_paid_through_minute
                 && definition.recognition.includes(settlement_id))
             .then_some((membership, definition, role))

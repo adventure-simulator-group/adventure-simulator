@@ -20,8 +20,9 @@ use crate::{
     session::Session,
     spacetimedb::{
         BackendCaseSitePin, BackendForageAttemptState, BackendForageReceipt, Character,
-        CharacterTime, OrganizationMembership, OrganizationPresentation, Party, PartyJourney,
-        PartyJourneyRoute, Settlement, sql_string_literal,
+        CharacterTime, OrganizationMembership, OrganizationMembershipStatus,
+        OrganizationPresentation, Party, PartyJourney, PartyJourneyRoute, Settlement,
+        sql_string_literal,
     },
 };
 
@@ -181,7 +182,7 @@ fn advisory_privileges_for(
     };
     let Some(membership) = memberships.iter().find(|membership| {
         membership.organization_id == presented_organization_id
-            && membership.status == "active"
+            && membership.status == OrganizationMembershipStatus::Active
             && minute <= membership.dues_paid_through_minute
     }) else {
         return BTreeSet::new();
@@ -703,7 +704,11 @@ mod tests {
         assert!(markup.contains("Unavailable here"));
     }
 
-    fn ranger_membership(role_id: &str, status: &str, paid_through: u64) -> OrganizationMembership {
+    fn ranger_membership(
+        role_id: &str,
+        status: OrganizationMembershipStatus,
+        paid_through: u64,
+    ) -> OrganizationMembership {
         OrganizationMembership {
             id: 1,
             character_id: 7,
@@ -711,7 +716,7 @@ mod tests {
             role_id: role_id.into(),
             joined_minute: 0,
             dues_paid_through_minute: paid_through,
-            status: status.into(),
+            status,
             apprenticeship_minutes_accrued: 0,
             practice_minutes_accrued: 0,
         }
@@ -720,7 +725,7 @@ mod tests {
     #[test]
     fn advisory_licenses_require_matching_current_presentation_and_role() {
         use adventuresim_core::organization::Privilege;
-        let warden = ranger_membership("warden", "active", 100);
+        let warden = ranger_membership("warden", OrganizationMembershipStatus::Active, 100);
         let common = advisory_privileges_for(
             Some("lodge_hart_king"),
             std::slice::from_ref(&warden),
@@ -731,7 +736,7 @@ mod tests {
         assert!(common.contains(&Privilege::ForagePlants));
         assert!(!common.contains(&Privilege::ForageHighGame));
 
-        let master = ranger_membership("master", "active", 100);
+        let master = ranger_membership("master", OrganizationMembershipStatus::Active, 100);
         assert!(
             advisory_privileges_for(Some("lodge_hart_king"), &[master], Some(100))
                 .contains(&Privilege::ForageHighGame)
@@ -745,9 +750,9 @@ mod tests {
             )
             .is_empty()
         );
-        let lapsed = ranger_membership("master", "active", 99);
+        let lapsed = ranger_membership("master", OrganizationMembershipStatus::Active, 99);
         assert!(advisory_privileges_for(Some("lodge_hart_king"), &[lapsed], Some(100)).is_empty());
-        let suspended = ranger_membership("master", "suspended", 100);
+        let suspended = ranger_membership("master", OrganizationMembershipStatus::Suspended, 100);
         assert!(
             advisory_privileges_for(Some("lodge_hart_king"), &[suspended], Some(100)).is_empty()
         );

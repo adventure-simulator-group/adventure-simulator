@@ -239,7 +239,7 @@ fn exact_capability(owner: u64, case_id: &str, site_id: &str) -> InvestigationAc
         generated_case_id: "canonical-case".into(),
         method: "inspect_site".into(),
         version: 1,
-        target_kind: "site".into(),
+        target_kind: action::InvestigationTargetKind::Site,
         target_id: site_id.into(),
         target_terrain: "forest".into(),
         seed: 1,
@@ -260,14 +260,14 @@ fn tracking_chain_requires_completed_same_case_area_route_site_provenance() {
     let area = InvestigationActionCapability {
         id: "search-area".into(),
         method: "search_area".into(),
-        target_kind: "area".into(),
+        target_kind: action::InvestigationTargetKind::Area,
         target_id: "area-a".into(),
         ..exact_capability(7, "case-a", "site-a")
     };
     let route = InvestigationActionCapability {
         id: "reacquire-route".into(),
         method: "reacquire_tracks".into(),
-        target_kind: "route".into(),
+        target_kind: action::InvestigationTargetKind::Route,
         target_id: "route-a".into(),
         required_action_id: area.id.clone(),
         ..area.clone()
@@ -275,7 +275,7 @@ fn tracking_chain_requires_completed_same_case_area_route_site_provenance() {
     let site = InvestigationActionCapability {
         id: "follow-site".into(),
         method: "follow_tracks".into(),
-        target_kind: "site".into(),
+        target_kind: action::InvestigationTargetKind::Site,
         target_id: "site-a".into(),
         required_action_id: route.id.clone(),
         ..route.clone()

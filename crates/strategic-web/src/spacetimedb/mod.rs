@@ -76,6 +76,21 @@ impl SatsUnitVariant for adventuresim_core::physiology::InterventionRoute {
     }
 }
 
+impl SatsUnitVariant for adventuresim_core::surgery::SurgeryProcedure {
+    fn sats_name(self) -> &'static str {
+        use adventuresim_core::surgery::SurgeryProcedure;
+
+        match self {
+            SurgeryProcedure::Bandage => "bandage",
+            SurgeryProcedure::Stitch => "stitch",
+            SurgeryProcedure::Splint => "splint",
+            SurgeryProcedure::RemoveSplint => "removeSplint",
+            SurgeryProcedure::Extract => "extract",
+            SurgeryProcedure::OpenBody => "openBody",
+        }
+    }
+}
+
 /// SpacetimeDB's raw HTTP reducer API represents unit enum variants as a
 /// single-key sum object. Domain types own the exact schema-name mapping above.
 pub(crate) fn sats_unit_variant(variant: impl SatsUnitVariant) -> serde_json::Value {
@@ -110,6 +125,14 @@ mod tests {
         assert_eq!(
             sats_unit_variant(adventuresim_core::physiology::InterventionRoute::Oral),
             serde_json::json!({ "oral": {} })
+        );
+        assert_eq!(
+            sats_unit_variant(adventuresim_core::surgery::SurgeryProcedure::RemoveSplint),
+            serde_json::json!({ "removeSplint": {} })
+        );
+        assert_eq!(
+            sats_unit_variant(adventuresim_core::surgery::SurgeryProcedure::OpenBody),
+            serde_json::json!({ "openBody": {} })
         );
     }
 }

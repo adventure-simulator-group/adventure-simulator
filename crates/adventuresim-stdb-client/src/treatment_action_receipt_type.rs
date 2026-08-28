@@ -5,6 +5,7 @@
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::body_region_type::BodyRegion;
+use super::surgery_procedure_type::SurgeryProcedure;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -14,7 +15,7 @@ pub struct TreatmentActionReceipt {
     pub actor_id: u64,
     pub patient_id: u64,
     pub limb: BodyRegion,
-    pub procedure: String,
+    pub procedure: SurgeryProcedure,
     pub projectile_id: Option<u64>,
     pub use_soap: bool,
     pub context_ref: Option<String>,
@@ -35,7 +36,7 @@ pub struct TreatmentActionReceiptCols {
     pub actor_id: __sdk::__query_builder::Col<TreatmentActionReceipt, u64>,
     pub patient_id: __sdk::__query_builder::Col<TreatmentActionReceipt, u64>,
     pub limb: __sdk::__query_builder::Col<TreatmentActionReceipt, BodyRegion>,
-    pub procedure: __sdk::__query_builder::Col<TreatmentActionReceipt, String>,
+    pub procedure: __sdk::__query_builder::Col<TreatmentActionReceipt, SurgeryProcedure>,
     pub projectile_id: __sdk::__query_builder::Col<TreatmentActionReceipt, Option<u64>>,
     pub use_soap: __sdk::__query_builder::Col<TreatmentActionReceipt, bool>,
     pub context_ref: __sdk::__query_builder::Col<TreatmentActionReceipt, Option<String>>,

@@ -836,7 +836,7 @@ fn progressed_single_patrol_frontier_is_valid_after_public_night_wait() {
     let mut patrol = InvestigationActionCapability {
         id: "patrol".into(),
         method: "patrol".into(),
-        target_kind: "area".into(),
+        target_kind: action::InvestigationTargetKind::Area,
         target_id: "area-a".into(),
         required_action_id: inspect.id.clone(),
         alternate_route_action_id: inspect.id.clone(),
@@ -891,7 +891,7 @@ fn newly_issued_graph_rejects_a_sole_non_contact_root() {
     let patrol = InvestigationActionCapability {
         id: "patrol".into(),
         method: "patrol".into(),
-        target_kind: "area".into(),
+        target_kind: action::InvestigationTargetKind::Area,
         target_id: "area-a".into(),
         alternate_route_action_id: "inspect".into(),
         ..exact_capability(7, "case-a", "site-a")
@@ -924,7 +924,7 @@ fn complete_generated_graph_reissue_preserves_progressed_frontier() {
         id: "patrol".into(),
         method: "patrol".into(),
         version: 4,
-        target_kind: "area".into(),
+        target_kind: action::InvestigationTargetKind::Area,
         target_id: "area-a".into(),
         required_action_id: inspect.id.clone(),
         alternate_route_action_id: inspect.id.clone(),

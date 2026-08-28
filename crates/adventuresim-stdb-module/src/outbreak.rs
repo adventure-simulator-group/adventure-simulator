@@ -356,7 +356,8 @@ pub fn collect_fixture_water_into_container(
                 && capability.version == expected_capability_version
                 && capability.provenance_kind
                     == adventuresim_core::investigation::InvestigationProvenanceKind::Generated
-                && capability.target_kind == "site"
+                && capability.target_kind
+                    == adventuresim_core::investigation_action::InvestigationTargetKind::Site
         })
         .ok_or("Water collection action is unavailable")?;
     let authority = ctx

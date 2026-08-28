@@ -259,7 +259,7 @@ pub(super) async fn surgery(
 
 #[derive(Deserialize)]
 pub(super) struct SurgeryProcedureForm {
-    procedure: String,
+    procedure: adventuresim_core::surgery::SurgeryProcedure,
     projectile_id: Option<u64>,
     #[serde(default)]
     use_soap: bool,
@@ -277,7 +277,8 @@ pub(super) fn schedule_allocation_reducer_arg(schedule: &ScheduleAllocation) -> 
 
 #[cfg(test)]
 mod surgery_reducer_argument_tests {
-    use super::schedule_allocation_reducer_arg;
+    use super::{SurgeryProcedureForm, schedule_allocation_reducer_arg};
+    use adventuresim_core::surgery::SurgeryProcedure;
     use crate::spacetimedb::ScheduleAllocation;
     use serde_json::json;
 
@@ -293,6 +294,21 @@ mod surgery_reducer_argument_tests {
             json!({ "some": "armourers_guild" })
         );
         assert_eq!(encoded["practice_organization_id"], json!({ "none": [] }));
+    }
+
+    #[test]
+    fn surgery_form_accepts_only_canonical_procedure_names() {
+        let form = serde_urlencoded::from_str::<SurgeryProcedureForm>(
+            "procedure=remove-splint&action_id=treatment-1",
+        )
+        .unwrap();
+        assert_eq!(form.procedure, SurgeryProcedure::RemoveSplint);
+        assert!(
+            serde_urlencoded::from_str::<SurgeryProcedureForm>(
+                "procedure=amputate&action_id=treatment-1"
+            )
+            .is_err()
+        );
     }
 }
 
@@ -318,7 +334,7 @@ pub(super) async fn perform_surgery(
                 json!(actor_id),
                 json!(patient_id),
                 json!(limb),
-                json!(form.procedure),
+                crate::spacetimedb::sats_unit_variant(form.procedure),
                 crate::spacetimedb::sats_option(form.projectile_id),
                 json!(form.use_soap),
                 json!(form.action_id),

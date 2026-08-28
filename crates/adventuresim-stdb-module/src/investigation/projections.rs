@@ -1095,9 +1095,9 @@ fn tracking_capability_chain_is_coherent(
             || predecessor.case_id != capability.case_id
             || !action::tracking_route_edge_is_coherent(
                 kind,
-                &capability.target_kind,
+                capability.target_kind,
                 predecessor_kind,
-                &predecessor.target_kind,
+                predecessor.target_kind,
             )
         {
             return false;
@@ -1150,7 +1150,7 @@ fn capability_has_live_support_view(
         return false;
     }
     if kind == action::InvestigationActionKind::InspectSite
-        && capability.target_kind == "site"
+        && capability.target_kind == action::InvestigationTargetKind::Site
         && exact_action_site_for_observer(ctx, capability, kind).is_none()
     {
         return false;
@@ -1173,7 +1173,7 @@ fn capability_has_live_support_view(
         return false;
     }
     if prerequisites.requires_approximate_destination
-        && capability.target_kind != "area"
+        && capability.target_kind != action::InvestigationTargetKind::Area
         && !ctx
             .db
             .investigation_lead()
@@ -1195,7 +1195,9 @@ fn exact_action_site_for_observer(
     capability: &InvestigationActionCapability,
     kind: action::InvestigationActionKind,
 ) -> Option<String> {
-    if kind != action::InvestigationActionKind::InspectSite || capability.target_kind != "site" {
+    if kind != action::InvestigationActionKind::InspectSite
+        || capability.target_kind != action::InvestigationTargetKind::Site
+    {
         return None;
     }
     let lead = ctx
@@ -1444,7 +1446,8 @@ fn projected_contact_presence_availability(
     settlement_id: Option<&str>,
     started_at: Option<u64>,
 ) -> Option<ProjectedActionAvailability> {
-    if kind != action::InvestigationActionKind::LocateContact || capability.target_kind != "contact"
+    if kind != action::InvestigationActionKind::LocateContact
+        || capability.target_kind != action::InvestigationTargetKind::Contact
     {
         return None;
     }
@@ -1564,7 +1567,7 @@ fn victim_cohort_is_current_view(
     capability: &InvestigationActionCapability,
     kind: action::InvestigationActionKind,
 ) -> bool {
-    if capability.target_kind != "cohort" {
+    if capability.target_kind != action::InvestigationTargetKind::Cohort {
         return true;
     }
     let Some(actor) = ctx.db.character().id().find(capability.owner_character_id) else {

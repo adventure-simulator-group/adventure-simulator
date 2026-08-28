@@ -1,5 +1,6 @@
 use adventuresim_core::{
     item_catalog::EquipmentChannel,
+    organization::OrganizationMembershipStatus,
     starting_character::{
         StartingAgeTier, StartingCharacterSpec, StartingInclination, StartingPersonalityTrait,
         StartingPresentation, StartingSex, StartingSlot,
@@ -2663,7 +2664,7 @@ pub(crate) fn insert_character_with_origin(
                 organization_id: starting_organization.organization_id.clone(),
                 joined_minute,
                 dues_paid_through_minute: paid_through,
-                status: crate::organization::MEMBERSHIP_ACTIVE.into(),
+                status: OrganizationMembershipStatus::Active,
                 apprenticeship_minutes_accrued: 0,
                 practice_minutes_accrued: 0,
             });

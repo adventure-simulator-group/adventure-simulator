@@ -508,6 +508,7 @@ pub mod investigation_recollection_type;
 pub mod investigation_safe_claim_receipt_type;
 pub mod investigation_safe_lead_receipt_type;
 pub mod investigation_sharing_receipt_type;
+pub mod investigation_target_kind_type;
 pub mod investigation_testimony_bundle_type;
 pub mod investigation_witness_referral_type;
 pub mod item_condition_table;
@@ -602,6 +603,7 @@ pub mod open_corpse_reducer;
 pub mod oral_language_hours_type;
 pub mod order_errantry_acceptance_receipt_type;
 pub mod organic_soil_type;
+pub mod organization_membership_status_type;
 pub mod organization_membership_type;
 pub mod organization_presentation_table;
 pub mod organization_presentation_type;
@@ -888,6 +890,7 @@ pub mod submit_puzzle_challenge_reducer;
 pub mod suitability_basis_points_type;
 pub mod surface_geology_type;
 pub mod surface_lithology_type;
+pub mod surgery_procedure_type;
 pub mod surrender_to_authority_reducer;
 pub mod synchronize_party_for_activity_reducer;
 pub mod tactical_character_consequence_type;
@@ -1455,6 +1458,7 @@ pub use investigation_recollection_type::InvestigationRecollection;
 pub use investigation_safe_claim_receipt_type::InvestigationSafeClaimReceipt;
 pub use investigation_safe_lead_receipt_type::InvestigationSafeLeadReceipt;
 pub use investigation_sharing_receipt_type::InvestigationSharingReceipt;
+pub use investigation_target_kind_type::InvestigationTargetKind;
 pub use investigation_testimony_bundle_type::InvestigationTestimonyBundle;
 pub use investigation_witness_referral_type::InvestigationWitnessReferral;
 pub use item_condition_table::*;
@@ -1549,6 +1553,7 @@ pub use open_corpse_reducer::open_corpse;
 pub use oral_language_hours_type::OralLanguageHours;
 pub use order_errantry_acceptance_receipt_type::OrderErrantryAcceptanceReceipt;
 pub use organic_soil_type::OrganicSoil;
+pub use organization_membership_status_type::OrganizationMembershipStatus;
 pub use organization_membership_type::OrganizationMembership;
 pub use organization_presentation_table::*;
 pub use organization_presentation_type::OrganizationPresentation;
@@ -1835,6 +1840,7 @@ pub use submit_puzzle_challenge_reducer::submit_puzzle_challenge;
 pub use suitability_basis_points_type::SuitabilityBasisPoints;
 pub use surface_geology_type::SurfaceGeology;
 pub use surface_lithology_type::SurfaceLithology;
+pub use surgery_procedure_type::SurgeryProcedure;
 pub use surrender_to_authority_reducer::surrender_to_authority;
 pub use synchronize_party_for_activity_reducer::synchronize_party_for_activity;
 pub use tactical_character_consequence_type::TacticalCharacterConsequence;
@@ -2800,7 +2806,7 @@ pub enum Reducer {
         actor_id: u64,
         patient_id: u64,
         limb_slug: String,
-        procedure: String,
+        procedure: SurgeryProcedure,
         projectile_id: Option<u64>,
         use_soap: bool,
         action_id: String,

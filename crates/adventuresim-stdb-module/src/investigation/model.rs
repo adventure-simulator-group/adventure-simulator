@@ -968,7 +968,7 @@ pub struct InvestigationActionCapability {
     pub generated_case_id: String,
     pub method: String,
     pub version: u32,
-    pub target_kind: String,
+    pub target_kind: action::InvestigationTargetKind,
     pub target_id: String,
     pub target_terrain: String,
     pub seed: u64,

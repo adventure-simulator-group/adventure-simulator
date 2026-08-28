@@ -8,6 +8,7 @@
 use crate::{
     bestiary::ThreatId,
     case::{AssetId, ObjectiveExpression, ObjectiveId, ObjectiveRequirement, SubjectId},
+    investigation_action::InvestigationTargetKind,
     quest_generation::{
         self as qg, CanonicalCause, CanonicalEvent, CausalBridge, ConsequenceProfile,
         GeneratedAction, GeneratedArea, GeneratedCase, GeneratedDialogueProducer,
@@ -713,43 +714,43 @@ fn validate_references(
             &ids.actions,
             "action",
         );
-        match action.target_kind.as_str() {
-            "site" => missing_reference(
+        match action.target_kind {
+            InvestigationTargetKind::Site => missing_reference(
                 diagnostics,
                 format!("{base}.target_id"),
                 &action.target_id,
                 &ids.sites,
                 "site",
             ),
-            "area" => missing_reference(
+            InvestigationTargetKind::Area => missing_reference(
                 diagnostics,
                 format!("{base}.target_id"),
                 &action.target_id,
                 &ids.areas,
                 "area",
             ),
-            "contact" => missing_reference(
+            InvestigationTargetKind::Contact => missing_reference(
                 diagnostics,
                 format!("{base}.target_id"),
                 &action.target_id,
                 &resident_character_ids,
                 "NPC",
             ),
-            "cohort" => missing_reference(
+            InvestigationTargetKind::Cohort => missing_reference(
                 diagnostics,
                 format!("{base}.target_id"),
                 &action.target_id,
                 &ids.cohorts,
                 "cohort",
             ),
-            "route" => missing_reference(
+            InvestigationTargetKind::Route => missing_reference(
                 diagnostics,
                 format!("{base}.target_id"),
                 &action.target_id,
                 &ids.sites,
                 "site",
             ),
-            _ => diagnostics.push(diagnostic(
+            InvestigationTargetKind::Tracks => diagnostics.push(diagnostic(
                 format!("{base}.target_kind"),
                 "unknown_target_kind",
                 "Action target_kind must be site, area, contact, cohort, or route",
@@ -1263,8 +1264,11 @@ fn namespace_definition(
     for action in &mut materialized.actions {
         remap(&mut action.id.0, &replacements);
         if matches!(
-            action.target_kind.as_str(),
-            "site" | "area" | "cohort" | "route"
+            action.target_kind,
+            InvestigationTargetKind::Site
+                | InvestigationTargetKind::Area
+                | InvestigationTargetKind::Cohort
+                | InvestigationTargetKind::Route
         ) {
             remap(&mut action.target_id, &replacements);
         }
@@ -2036,6 +2040,16 @@ mod tests {
         assert_eq!(error[0].code, "invalid_json");
     }
 
+    #[test]
+    fn parse_rejects_unknown_investigation_target_kinds() {
+        let mut definition = serde_json::to_value(generated_definition()).unwrap();
+        definition["actions"][0]["target_kind"] = json!("corpse");
+
+        let error = parse_definition_json(&definition.to_string()).unwrap_err();
+
+        assert_eq!(error[0].code, "invalid_json");
+    }
+
     fn generated_definition() -> DeveloperQuestDefinition {
         DeveloperQuestDefinition::from_generated(qg::generate(&context()).unwrap())
     }
@@ -2171,7 +2185,9 @@ mod tests {
         witness.visible_description = replacement.visible_description.clone();
         witness.circumstance = *replacement.allowed_circumstances.iter().next().unwrap();
         for action in &mut definition.actions {
-            if action.target_kind == "contact" && action.target_id == current_npc.to_string() {
+            if action.target_kind == InvestigationTargetKind::Contact
+                && action.target_id == current_npc.to_string()
+            {
                 action.target_id = replacement.resident_character_id.to_string();
             }
         }

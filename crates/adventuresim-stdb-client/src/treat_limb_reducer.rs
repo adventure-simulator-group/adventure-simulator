@@ -4,13 +4,15 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::surgery_procedure_type::SurgeryProcedure;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct TreatLimbArgs {
     pub actor_id: u64,
     pub patient_id: u64,
     pub limb_slug: String,
-    pub procedure: String,
+    pub procedure: SurgeryProcedure,
     pub projectile_id: Option<u64>,
     pub use_soap: bool,
     pub action_id: String,
@@ -54,7 +56,7 @@ pub trait treat_limb {
         actor_id: u64,
         patient_id: u64,
         limb_slug: String,
-        procedure: String,
+        procedure: SurgeryProcedure,
         projectile_id: Option<u64>,
         use_soap: bool,
         action_id: String,
@@ -86,7 +88,7 @@ pub trait treat_limb {
         actor_id: u64,
         patient_id: u64,
         limb_slug: String,
-        procedure: String,
+        procedure: SurgeryProcedure,
         projectile_id: Option<u64>,
         use_soap: bool,
         action_id: String,
@@ -107,7 +109,7 @@ impl treat_limb for super::RemoteReducers {
         actor_id: u64,
         patient_id: u64,
         limb_slug: String,
-        procedure: String,
+        procedure: SurgeryProcedure,
         projectile_id: Option<u64>,
         use_soap: bool,
         action_id: String,

@@ -297,7 +297,8 @@ fn track_validator_rejects_broken_links_skips_and_early_exact_locations() {
         .actions
         .iter()
         .find(|action| {
-            action.kind == InvestigationActionKind::SearchArea && action.target_kind == "area"
+            action.kind == InvestigationActionKind::SearchArea
+                && action.target_kind == InvestigationTargetKind::Area
         })
         .unwrap()
         .id

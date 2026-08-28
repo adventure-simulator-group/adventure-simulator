@@ -1,3 +1,5 @@
+use adventuresim_core::surgery::SurgeryProcedure;
+
 impl LiveRunner {
     fn acquire_first_aid_material(
         &mut self,
@@ -79,9 +81,9 @@ impl LiveRunner {
             .collect::<Vec<_>>();
         for injury in injuries {
             let procedure = if injury.cut_damage > 0.0 && !injury.bandaged {
-                Some(("bandage", "bandage"))
+                Some((SurgeryProcedure::Bandage, "bandage"))
             } else if injury.fracture_damage > 0.0 && injury.splint_inventory_item_id.is_none() {
-                Some(("splint", "splint"))
+                Some((SurgeryProcedure::Splint, "splint"))
             } else {
                 None
             };
@@ -156,7 +158,7 @@ impl LiveRunner {
                     actor_id,
                     patient_id,
                     limb_slug.to_owned(),
-                    procedure.to_owned(),
+                    reducer_surgery_procedure(procedure),
                     None,
                     false,
                     format!(

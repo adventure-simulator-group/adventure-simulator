@@ -1,7 +1,7 @@
 //! Authoritative organization dues, accrual, and presentation state.
 
 use adventuresim_core::organization::{
-    OrganizationDefinition, Privilege, Requirement, organization,
+    OrganizationDefinition, OrganizationMembershipStatus, Privilege, Requirement, organization,
 };
 use adventuresim_core::skill::Skill;
 use adventuresim_core::strategic_time::MINUTES_PER_DAY;
@@ -14,9 +14,6 @@ use crate::{
     strategic::strategic_gateway_authority__view,
 };
 
-pub const MEMBERSHIP_ACTIVE: &str = "active";
-pub const MEMBERSHIP_SUSPENDED: &str = "suspended";
-
 #[derive(Clone, Debug)]
 #[table(accessor = organization_membership)]
 pub struct OrganizationMembership {
@@ -28,7 +25,7 @@ pub struct OrganizationMembership {
     pub organization_id: String,
     pub joined_minute: u64,
     pub dues_paid_through_minute: u64,
-    pub status: String,
+    pub status: OrganizationMembershipStatus,
     pub apprenticeship_minutes_accrued: u64,
     pub practice_minutes_accrued: u64,
 }
@@ -64,7 +61,7 @@ pub struct BackendOrganizationMembership {
     pub role_id: String,
     pub joined_minute: u64,
     pub dues_paid_through_minute: u64,
-    pub status: String,
+    pub status: OrganizationMembershipStatus,
     pub apprenticeship_minutes_accrued: u64,
     pub practice_minutes_accrued: u64,
 }
@@ -133,7 +130,7 @@ fn current_minute(ctx: &ReducerContext, character_id: u64) -> Result<u64, String
 }
 
 pub fn membership_is_current(row: &OrganizationMembership, minute: u64) -> bool {
-    row.status == MEMBERSHIP_ACTIVE && minute <= row.dues_paid_through_minute
+    row.status == OrganizationMembershipStatus::Active && minute <= row.dues_paid_through_minute
 }
 
 pub fn active_membership(
@@ -313,7 +310,7 @@ pub fn join_organization(
             organization_id: organization_id.clone(),
             joined_minute: minute,
             dues_paid_through_minute: paid_through,
-            status: MEMBERSHIP_ACTIVE.into(),
+            status: OrganizationMembershipStatus::Active,
             apprenticeship_minutes_accrued: 0,
             practice_minutes_accrued: 0,
         });
@@ -372,7 +369,7 @@ pub fn pay_organization_dues(
     };
     row.dues_paid_through_minute =
         base.saturating_add(u64::from(dues.interval_days) * MINUTES_PER_DAY);
-    row.status = MEMBERSHIP_ACTIVE.into();
+    row.status = OrganizationMembershipStatus::Active;
     ctx.db.organization_membership().id().update(row);
     Ok(())
 }
@@ -438,8 +435,9 @@ pub fn settle_membership_dues(ctx: &ReducerContext, character_id: u64) -> Result
         .character_id()
         .filter(character_id)
     {
-        if row.status == MEMBERSHIP_ACTIVE && now > row.dues_paid_through_minute {
-            row.status = MEMBERSHIP_SUSPENDED.into();
+        if row.status == OrganizationMembershipStatus::Active && now > row.dues_paid_through_minute
+        {
+            row.status = OrganizationMembershipStatus::Suspended;
             lapsed.push(row.organization_id.clone());
             ctx.db.organization_membership().id().update(row);
         }
@@ -608,14 +606,17 @@ pub fn increment_activity_accrual(
 mod tests {
     use super::*;
 
-    fn membership_at(status: &str, paid_through: u64) -> OrganizationMembership {
+    fn membership_at(
+        status: OrganizationMembershipStatus,
+        paid_through: u64,
+    ) -> OrganizationMembership {
         OrganizationMembership {
             id: 1,
             character_id: 7,
             organization_id: "lodge_hart_king".into(),
             joined_minute: 0,
             dues_paid_through_minute: paid_through,
-            status: status.into(),
+            status,
             apprenticeship_minutes_accrued: 0,
             practice_minutes_accrued: 0,
         }
@@ -624,7 +625,7 @@ mod tests {
     #[test]
     fn global_license_requires_current_membership_and_right_role() {
         let definition = organization("lodge_hart_king").unwrap();
-        let warden = membership_at(MEMBERSHIP_ACTIVE, 100);
+        let warden = membership_at(OrganizationMembershipStatus::Active, 100);
         let warden_role = definition.role("warden").unwrap();
         assert!(current_membership_grants(
             definition,
@@ -640,7 +641,7 @@ mod tests {
             100,
             Privilege::ForageHighGame
         ));
-        let master = membership_at(MEMBERSHIP_ACTIVE, 100);
+        let master = membership_at(OrganizationMembershipStatus::Active, 100);
         let master_role = definition.role("master").unwrap();
         assert!(current_membership_grants(
             definition,
@@ -649,7 +650,7 @@ mod tests {
             100,
             Privilege::ForageHighGame
         ));
-        let lapsed = membership_at(MEMBERSHIP_ACTIVE, 99);
+        let lapsed = membership_at(OrganizationMembershipStatus::Active, 99);
         assert!(!current_membership_grants(
             definition,
             &lapsed,
@@ -657,7 +658,7 @@ mod tests {
             100,
             Privilege::ForageHighGame
         ));
-        let suspended = membership_at(MEMBERSHIP_SUSPENDED, 100);
+        let suspended = membership_at(OrganizationMembershipStatus::Suspended, 100);
         assert!(!current_membership_grants(
             definition,
             &suspended,

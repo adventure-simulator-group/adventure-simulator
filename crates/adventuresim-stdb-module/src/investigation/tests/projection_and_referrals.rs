@@ -539,7 +539,6 @@ fn both_generated_families_issue_root_and_successor_action_text() {
             validate_investigation_action_text(
                 &remap(&action.id),
                 &manifest.public_case_id,
-                &action.target_kind,
                 &action.target_id,
                 &action.safe_summary,
                 &known_prerequisites,

@@ -26,7 +26,10 @@ include!("policy.rs");
 include!("survival.rs");
 
 mod schema_types;
-use schema_types::{domain_body_region, domain_incapacitation_status, reducer_intervention_route};
+use schema_types::{
+    domain_body_region, domain_incapacitation_status, reducer_intervention_route,
+    reducer_surgery_procedure,
+};
 
 mod failure {
     use super::*;

@@ -631,7 +631,11 @@ pub fn backend_road_challenges(ctx: &ViewContext) -> Vec<BackendRoadChallenge> {
                                 .character_id().filter(character.id)
                                 .find(|injury| injury.limb == limb)
                                 .is_some_and(|injury| adventuresim_core::strategic_action::emergency_bandage_is_necessary(
-                                    incapacitated, "bandage", injury.cut_damage, injury.bandaged)));
+                                    incapacitated,
+                                    adventuresim_core::surgery::SurgeryProcedure::Bandage,
+                                    injury.cut_damage,
+                                    injury.bandaged,
+                                )));
                             if membership.treatment_decision == crate::world_actor::ContextualDecisionState::Unavailable && emergency {
                                 adventuresim_core::road_encounter_catalog::InteractionPresentationDecision::EmergencyTreatment
                             } else {

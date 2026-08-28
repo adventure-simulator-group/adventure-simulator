@@ -69,7 +69,7 @@ fn exact_referred_witness_projects_clues_and_completes_contact_root_idempotently
             owner_character_id: character_id,
             case_id: generated.canonical_case_id.clone(),
             method: method(action.kind).into(),
-            target_kind: action.target_kind.clone(),
+            target_kind: action.target_kind,
             target_id: action.target_id.clone(),
             required_action_id: action
                 .prerequisite
@@ -137,7 +137,7 @@ fn secondary_testimony_without_a_contact_root_mutates_no_route() {
         owner_character_id: 7,
         case_id: "case".into(),
         method: "locate_contact".into(),
-        target_kind: "contact".into(),
+        target_kind: InvestigationTargetKind::Contact,
         target_id: primary_witness.to_string(),
         required_action_id: String::new(),
         active: true,
@@ -168,7 +168,7 @@ fn terminal_referred_contact_completes_without_authored_successors() {
         owner_character_id: 7,
         case_id: "case".into(),
         method: "locate_contact".into(),
-        target_kind: "contact".into(),
+        target_kind: InvestigationTargetKind::Contact,
         target_id: "42".into(),
         required_action_id: String::new(),
         active: true,
@@ -199,7 +199,7 @@ fn failed_route_does_not_revive_a_completed_contact_alternate() {
             owner_character_id: 7,
             case_id: "case".into(),
             method: "search_area".into(),
-            target_kind: "area".into(),
+            target_kind: InvestigationTargetKind::Area,
             target_id: "area".into(),
             required_action_id: String::new(),
             active: true,
@@ -211,7 +211,7 @@ fn failed_route_does_not_revive_a_completed_contact_alternate() {
             owner_character_id: 7,
             case_id: "case".into(),
             method: "locate_contact".into(),
-            target_kind: "contact".into(),
+            target_kind: InvestigationTargetKind::Contact,
             target_id: "witness".into(),
             required_action_id: String::new(),
             active: false,
@@ -275,7 +275,7 @@ fn recurring_routes_unlock_only_after_exact_referred_contact() {
                 owner_character_id: 7,
                 case_id: generated.canonical_case_id.clone(),
                 method: method(action.kind).into(),
-                target_kind: action.target_kind.clone(),
+                target_kind: action.target_kind,
                 target_id: action.target_id.clone(),
                 required_action_id: action
                     .prerequisite
@@ -429,7 +429,7 @@ fn family_entry_validation_rejects_kind_route_target_and_prerequisite_substituti
         match mutate {
             0 => root.kind = InvestigationActionKind::Watch,
             1 => root.route = RouteClass::PhysicalTrail,
-            2 => root.target_kind = "area".into(),
+            2 => root.target_kind = InvestigationTargetKind::Area,
             _ => root.prerequisite = Some(ActionId::new("substituted")),
         }
         assert!(
@@ -457,7 +457,7 @@ fn family_entry_validation_rejects_kind_route_target_and_prerequisite_substituti
         match mutate {
             0 => successor.kind = InvestigationActionKind::SearchArea,
             1 => successor.route = RouteClass::PatternSurveillance,
-            2 => successor.target_kind = "contact".into(),
+            2 => successor.target_kind = InvestigationTargetKind::Contact,
             _ => successor.prerequisite = Some(ActionId::new("substituted")),
         }
         assert!(
@@ -475,7 +475,7 @@ fn family_entry_validation_rejects_kind_route_target_and_prerequisite_substituti
         match mutate {
             0 => physical.kind = InvestigationActionKind::LocateContact,
             1 => physical.route = RouteClass::SocialInquiry,
-            2 => physical.target_kind = "contact".into(),
+            2 => physical.target_kind = InvestigationTargetKind::Contact,
             _ => physical.prerequisite = Some(ActionId::new("substituted")),
         }
         assert!(
