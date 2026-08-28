@@ -79,3 +79,15 @@ pub use time::*;
 pub use weapon_instance::*;
 pub use world_actor::*;
 pub use world_event::*;
+
+/// Return the production portion of a source file for architecture tests.
+///
+/// Source-boundary tests must not match their own assertion strings. Modules
+/// keep their test module last, so the final `#[cfg(test)]` marker is the
+/// stable boundary between implementation and the assertions about it.
+#[cfg(test)]
+pub(crate) fn production_source(source: &str) -> &str {
+    source
+        .rsplit_once("\n#[cfg(test)]")
+        .map_or(source, |(production, _)| production)
+}

@@ -12,18 +12,15 @@ use std::cmp::Ordering;
 
 use crate::{
     combat::{
-        CombatDuration, CombatInstant, CombatSet, MeleeAttackIntent, MeleeAttackStartedIntent,
-        PendingDefenderResponse, RangedAttackIntent, RangedAttackStartedIntent, ReportedPrecision,
-        TacticalCombatSide, TacticalCombatantDefeated,
+        CombatDuration, CombatSet, DefendIntent, MeleeAttackStartedIntent, RangedAttackIntent,
+        RangedAttackStartedIntent, ReportedPrecision, TacticalCombatSide,
     },
-    mission::MissionState,
+    player_projection::begin_get_up_transition_configured,
 };
-#[cfg(test)]
-use defense::CountedEnemyDefeat;
-pub use defense::DefenseChances;
+pub use defense::{DefenseChances, ReactiveDefenseAi};
 use defense::{
-    on_attack_started, on_tactical_combatant_defeated, on_targeted_attack_started,
-    on_targeted_ranged_attack_started, tick_bot_reactions,
+    on_attack_started, on_targeted_attack_started, on_targeted_ranged_attack_started,
+    tick_bot_reactions,
 };
 pub use offense::OffensiveCombatAi;
 #[cfg(test)]
@@ -36,61 +33,220 @@ use offense::{compare_target, drive_offensive_combat_ai};
 #[reflect(Component)]
 pub struct MissionEnemy;
 
-/// Real-time grace period between a bot dying and its ECS despawn. See
-/// [`PendingRemoval`] for why this exists; it has nothing to do with the
-/// client's (much longer, purely cosmetic) fade-out duration.
-const DESPAWN_REPLICATION_GRACE_SECONDS: f32 = 0.3;
+/// Declarative capabilities that can be composed into a combatant. Higher
+/// level tactics such as flanking or ambushing can add packages later without
+/// turning the bot controller into one mutually-exclusive behavior enum.
+#[derive(Reflect, Debug, Clone, Copy, PartialEq)]
+pub enum CombatantBehaviorPackage {
+    OffensiveCombat,
+    RaisedGuard,
+    AimAtNearestOpponent,
+    RecoverToUpright,
+    ReactiveDefense {
+        chances: DefenseChances,
+        requires_facing: bool,
+    },
+}
 
-/// Marks a dead bot for removal after [`DESPAWN_REPLICATION_GRACE_SECONDS`]
-/// of real time, rather than despawning it the instant it dies.
-///
-/// This has nothing to do with the client's cosmetic fade (that lives
-/// entirely in the tactical client's `player::start_fade_on_incapacitation`
-/// and is invisible to the server, and lasts far longer). It exists because
-/// bevy_replicon sends this bot's killing-blow `SuccessfulAttackResponse` and
-/// its eventual despawn as separate messages, and an event referencing an
-/// already-despawned entity fails to deserialize client-side ("unable to map
-/// entities ... from the server"). Rather than relying on exact same-frame
-/// scheduling order against bevy_replicon's internal tick/send machinery (an
-/// assumption two earlier attempts got wrong in practice), this just waits
-/// long enough in wall-clock time that several replication sends have
-/// unambiguously happened first, however that machinery is actually timed.
-#[derive(Component)]
-struct PendingRemoval {
-    timer: Timer,
+#[derive(Component, Reflect, Debug, Clone, Default, PartialEq)]
+#[reflect(Component)]
+pub struct CombatantBehaviorPackages(pub Vec<CombatantBehaviorPackage>);
+
+impl CombatantBehaviorPackages {
+    #[must_use]
+    pub fn standard_combat(config: &TacticalCombatConfig) -> Self {
+        let defense = &config.ai.ordinary.defense;
+        Self(vec![
+            CombatantBehaviorPackage::RecoverToUpright,
+            CombatantBehaviorPackage::OffensiveCombat,
+            CombatantBehaviorPackage::ReactiveDefense {
+                chances: DefenseChances {
+                    parry_chance: defense.parry_chance,
+                    dodge_chance: defense.dodge_chance,
+                },
+                requires_facing: true,
+            },
+        ])
+    }
+
+    #[must_use]
+    pub fn passive() -> Self {
+        Self(vec![CombatantBehaviorPackage::RecoverToUpright])
+    }
+
+    #[must_use]
+    pub fn always_block_without_facing() -> Self {
+        Self(vec![
+            CombatantBehaviorPackage::RecoverToUpright,
+            CombatantBehaviorPackage::RaisedGuard,
+            CombatantBehaviorPackage::ReactiveDefense {
+                chances: DefenseChances {
+                    parry_chance: 1.0,
+                    dodge_chance: 0.0,
+                },
+                requires_facing: false,
+            },
+        ])
+    }
+
+    #[must_use]
+    pub fn always_dodge() -> Self {
+        Self(vec![
+            CombatantBehaviorPackage::RecoverToUpright,
+            CombatantBehaviorPackage::RaisedGuard,
+            CombatantBehaviorPackage::AimAtNearestOpponent,
+            CombatantBehaviorPackage::ReactiveDefense {
+                chances: DefenseChances {
+                    parry_chance: 0.0,
+                    dodge_chance: 1.0,
+                },
+                requires_facing: true,
+            },
+        ])
+    }
+}
+
+fn materialize_behavior_packages(
+    mut cmd: Commands,
+    packages: Query<(Entity, &CombatantBehaviorPackages), Added<CombatantBehaviorPackages>>,
+) {
+    for (entity, packages) in &packages {
+        let mut entity = cmd.entity(entity);
+        for package in &packages.0 {
+            match package {
+                CombatantBehaviorPackage::OffensiveCombat => {
+                    entity.insert(OffensiveCombatAi::default());
+                }
+                CombatantBehaviorPackage::RaisedGuard => {
+                    entity.insert(RaisedGuardAi);
+                }
+                CombatantBehaviorPackage::AimAtNearestOpponent => {
+                    entity.insert(AimAtNearestOpponentAi);
+                }
+                CombatantBehaviorPackage::RecoverToUpright => {
+                    entity.insert(RecoverToUprightAi);
+                }
+                CombatantBehaviorPackage::ReactiveDefense {
+                    chances,
+                    requires_facing,
+                } => {
+                    entity.insert((
+                        ReactiveDefenseAi {
+                            requires_facing: *requires_facing,
+                        },
+                        *chances,
+                    ));
+                }
+            }
+        }
+    }
+}
+
+/// Maintains the same authoritative raised-guard state that player input
+/// projects into [`SkeletonState`]. It intentionally does not imply facing or
+/// target selection; those are separate behavior capabilities.
+#[derive(Component, Reflect, Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[reflect(Component)]
+pub struct RaisedGuardAi;
+
+#[derive(Component, Reflect, Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[reflect(Component)]
+pub struct AimAtNearestOpponentAi;
+
+#[derive(Component, Reflect, Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[reflect(Component)]
+pub struct RecoverToUprightAi;
+
+fn maintain_guard_stance(
+    mut guarded: Query<(&TacticalCombatState, &mut SkeletonState), With<RaisedGuardAi>>,
+) {
+    for (state, mut skeleton) in &mut guarded {
+        let guard = if state.is_incapacitated() {
+            WeaponGuardState::Lowered
+        } else {
+            WeaponGuardState::Raised
+        };
+        set_weapon_guard(&mut skeleton, guard);
+    }
+}
+
+fn aim_at_nearest_opponent(
+    candidates: Query<
+        (
+            Entity,
+            &Transform,
+            &TacticalCombatSide,
+            &TacticalCombatState,
+        ),
+        With<Player>,
+    >,
+    mut aiming: Query<
+        (
+            Entity,
+            &Transform,
+            &TacticalCombatSide,
+            &TacticalCombatState,
+            &mut CharacterLook,
+        ),
+        With<AimAtNearestOpponentAi>,
+    >,
+) {
+    for (entity, transform, side, state, mut look) in &mut aiming {
+        if state.is_incapacitated() {
+            continue;
+        }
+        let nearest = candidates
+            .iter()
+            .filter(|(candidate, _, candidate_side, candidate_state)| {
+                *candidate != entity
+                    && **candidate_side != *side
+                    && !candidate_state.is_incapacitated()
+            })
+            .min_by(|(a, a_transform, _, _), (b, b_transform, _, _)| {
+                compare_target(transform, a_transform, *a, b_transform, *b)
+            });
+        let Some((_, target_transform, _, _)) = nearest else {
+            continue;
+        };
+        let offset = target_transform.translation.xz() - transform.translation.xz();
+        if offset.length_squared() > f32::EPSILON {
+            look.yaw = (-offset.x).atan2(-offset.y);
+        }
+    }
+}
+
+fn recover_to_upright(
+    mut recovering: Query<(&TacticalCombatState, &mut SkeletonState), With<RecoverToUprightAi>>,
+    config: Res<TacticalCombatConfig>,
+) {
+    for (state, mut skeleton) in &mut recovering {
+        if !state.is_incapacitated() && !skeleton.is_posture_transitioning() {
+            begin_get_up_transition_configured(&mut skeleton, &config);
+        }
+    }
 }
 
 pub struct BotPlugin;
 
 impl Plugin for BotPlugin {
     fn build(&self, app: &mut App) {
-        app.add_observer(on_tactical_combatant_defeated)
+        app.init_resource::<TacticalCombatConfig>()
             .add_observer(on_attack_started)
             .add_observer(on_targeted_attack_started)
             .add_observer(on_targeted_ranged_attack_started)
             .add_systems(
                 Update,
                 (
+                    materialize_behavior_packages,
+                    maintain_guard_stance,
+                    aim_at_nearest_opponent,
+                    recover_to_upright,
                     drive_offensive_combat_ai,
                     tick_bot_reactions,
-                    despawn_pending_removals,
                 )
+                    .chain()
                     .after(CombatSet::Condition),
             );
-    }
-}
-
-/// Despawns bots marked [`PendingRemoval`] once their grace timer elapses.
-fn despawn_pending_removals(
-    mut commands: Commands,
-    time: Res<Time<()>>,
-    mut q: Query<(Entity, &mut PendingRemoval)>,
-) {
-    for (entity, mut pending) in &mut q {
-        pending.timer.tick(time.delta());
-        if pending.timer.is_finished() {
-            commands.entity(entity).despawn();
-        }
     }
 }
 
@@ -98,7 +254,10 @@ fn despawn_pending_removals(
 mod tests {
     use std::{num::NonZeroU32, time::Duration};
 
+    use super::defense::PendingBotReaction;
     use super::*;
+    use crate::combat::{MeleeAttackAuthority, MeleeAttackIntent, PendingDefenderResponse};
+    use crate::player_projection::AuthoritativePostureIntent;
 
     #[derive(Resource, Default)]
     struct RecordedAttacks(Vec<(Entity, Entity)>);
@@ -158,6 +317,10 @@ mod tests {
                 input::AccumulatedInput::default(),
                 OffensiveCombatAi::default(),
                 TacticalCombatState::default(),
+                SkeletonState::default(),
+                CharacterDimensions::default(),
+                Collider::cylinder(0.4, 1.9),
+                MeleeAttackAuthority::default(),
             ))
             .id();
         let weapon = world.spawn(ItemOf(actor)).id();
@@ -171,15 +334,14 @@ mod tests {
             prefers_stab: false,
             penetration: 1.0,
             reach: KATZBALGER_REACH,
-            balance: 0.0,
+            grip_to_tip_m: KATZBALGER_REACH,
+            moment_of_inertia_kg_m2: 0.0,
             precise: false,
             melee: true,
             ranged: false,
             blunt: false,
             slash: true,
             pierce: false,
-            windup_secs: 0.3,
-            offhand_windup_secs: 0.34,
         });
         world.entity_mut(weapon).insert(EquipSlot::HoldingRight);
         actor
@@ -201,6 +363,10 @@ mod tests {
                 input::AccumulatedInput::default(),
                 OffensiveCombatAi::default(),
                 TacticalCombatState::default(),
+                SkeletonState::default(),
+                CharacterDimensions::default(),
+                Collider::cylinder(0.4, 1.9),
+                MeleeAttackAuthority::default(),
             ))
             .id();
         let weapon = world.spawn(ItemOf(actor)).id();
@@ -212,15 +378,14 @@ mod tests {
             prefers_stab: false,
             penetration: 1.0,
             reach: TEST_WEAPON_REACH,
-            balance: 0.0,
+            grip_to_tip_m: 1.0,
+            moment_of_inertia_kg_m2: 0.0,
             precise: false,
             melee: true,
             ranged: true,
             blunt: false,
             slash: false,
             pierce: true,
-            windup_secs: 0.3,
-            offhand_windup_secs: 0.34,
         });
         world.entity_mut(weapon).insert(EquipSlot::HoldingRight);
         let ammo = world
@@ -245,6 +410,7 @@ mod tests {
                 side,
                 CharacterLook::default(),
                 TacticalCombatState::default(),
+                Collider::cylinder(0.4, 1.9),
             ))
             .id()
     }
@@ -252,12 +418,278 @@ mod tests {
     fn test_app() -> App {
         let mut app = App::new();
         app.insert_resource(Time::<()>::default())
+            .init_resource::<TacticalCombatConfig>()
             .init_resource::<RecordedAttacks>()
             .init_resource::<RecordedRangedAttacks>()
             .add_observer(record_attack)
             .add_observer(record_ranged_attack)
-            .add_systems(Update, drive_offensive_combat_ai);
+            .add_observer(crate::combat::on_melee_attack_started)
+            .add_systems(
+                Update,
+                (
+                    drive_offensive_combat_ai,
+                    crate::combat::resolve_pending_melee_contacts,
+                )
+                    .chain(),
+            );
         app
+    }
+
+    #[test]
+    fn behavior_packages_compose_runtime_capabilities() {
+        let mut app = App::new();
+        app.init_resource::<TacticalCombatConfig>()
+            .add_systems(Update, materialize_behavior_packages);
+        let blocker = app
+            .world_mut()
+            .spawn(CombatantBehaviorPackages::always_block_without_facing())
+            .id();
+        let standard = app
+            .world_mut()
+            .spawn(CombatantBehaviorPackages::standard_combat(
+                &TacticalCombatConfig::default(),
+            ))
+            .id();
+        let dodger = app
+            .world_mut()
+            .spawn(CombatantBehaviorPackages::always_dodge())
+            .id();
+
+        app.update();
+
+        let blocker = app.world().entity(blocker);
+        assert!(!blocker.contains::<OffensiveCombatAi>());
+        assert!(blocker.contains::<RaisedGuardAi>());
+        assert!(blocker.contains::<RecoverToUprightAi>());
+        assert!(!blocker.get::<ReactiveDefenseAi>().unwrap().requires_facing);
+        assert_eq!(
+            blocker.get::<DefenseChances>(),
+            Some(&DefenseChances {
+                parry_chance: 1.0,
+                dodge_chance: 0.0,
+            })
+        );
+
+        let standard = app.world().entity(standard);
+        assert!(standard.contains::<OffensiveCombatAi>());
+        assert!(standard.get::<ReactiveDefenseAi>().unwrap().requires_facing);
+        assert!(standard.contains::<RecoverToUprightAi>());
+        assert_eq!(
+            standard.get::<DefenseChances>(),
+            Some(&DefenseChances::default())
+        );
+        assert!(!standard.contains::<RaisedGuardAi>());
+
+        let dodger = app.world().entity(dodger);
+        assert!(dodger.contains::<RaisedGuardAi>());
+        assert!(dodger.contains::<AimAtNearestOpponentAi>());
+        assert!(dodger.get::<ReactiveDefenseAi>().unwrap().requires_facing);
+        assert!(dodger.contains::<RecoverToUprightAi>());
+    }
+
+    #[test]
+    fn raised_guard_package_uses_shared_skeleton_guard_state() {
+        let mut app = App::new();
+        app.add_systems(
+            Update,
+            (materialize_behavior_packages, maintain_guard_stance).chain(),
+        );
+        let blocker = app
+            .world_mut()
+            .spawn((
+                CombatantBehaviorPackages::always_block_without_facing(),
+                TacticalCombatState::default(),
+                SkeletonState::default(),
+            ))
+            .id();
+
+        app.update();
+
+        let skeleton = app.world().get::<SkeletonState>(blocker).unwrap();
+        assert_eq!(skeleton.weapon_guard(), WeaponGuardState::Raised);
+    }
+
+    #[test]
+    fn untargeted_windup_only_reacts_on_the_nearest_enemy() {
+        let mut app = App::new();
+        app.init_resource::<TacticalCombatConfig>();
+        app.add_observer(on_attack_started);
+        let attacker = app
+            .world_mut()
+            .spawn((
+                CharacterLook::default(),
+                Transform::default(),
+                TacticalCombatSide::Party,
+            ))
+            .id();
+        let passive = app
+            .world_mut()
+            .spawn((
+                MissionEnemy,
+                CharacterLook::default(),
+                Transform::from_xyz(0.0, 0.0, 1.0),
+                TacticalCombatSide::Enemy,
+                TacticalCombatState::default(),
+            ))
+            .id();
+        let blocker = app
+            .world_mut()
+            .spawn((
+                MissionEnemy,
+                CharacterLook::default(),
+                Transform::from_xyz(0.0, 0.0, 2.0),
+                TacticalCombatSide::Enemy,
+                TacticalCombatState::default(),
+                ReactiveDefenseAi {
+                    requires_facing: false,
+                },
+                DefenseChances {
+                    parry_chance: 1.0,
+                    dodge_chance: 0.0,
+                },
+            ))
+            .id();
+        let start = FromClient {
+            client_id: adventuresim_tactical_netcode::bevy_replicon::prelude::ClientId::Client(
+                attacker,
+            ),
+            message: MeleeActionRequest {
+                strike_family: StrikeFamily::Swing,
+                hand: AttackHand::Main,
+                target: None,
+                body_part: None,
+            },
+        };
+
+        app.world_mut().trigger(start);
+        app.world_mut().flush();
+        assert!(!app.world().entity(blocker).contains::<PendingBotReaction>());
+
+        app.world_mut().despawn(passive);
+        app.world_mut().trigger(start);
+        app.world_mut().flush();
+        assert!(app.world().entity(blocker).contains::<PendingBotReaction>());
+    }
+
+    #[test]
+    fn completed_bot_reaction_enters_the_shared_block_animation() {
+        let mut app = App::new();
+        app.insert_resource(Time::<()>::default())
+            .init_resource::<TacticalCombatConfig>()
+            .add_observer(on_attack_started)
+            .add_observer(crate::combat::apply_defend_intent)
+            .add_systems(Update, tick_bot_reactions);
+        let attacker = app
+            .world_mut()
+            .spawn((
+                CharacterLook::default(),
+                Transform::default(),
+                TacticalCombatSide::Party,
+            ))
+            .id();
+        let blocker = app
+            .world_mut()
+            .spawn((
+                MissionEnemy,
+                CharacterLook::default(),
+                Transform::from_xyz(0.0, 0.0, 1.0),
+                TacticalCombatSide::Enemy,
+                TacticalCombatState::default(),
+                SkeletonState::default(),
+                AuthoritativePostureIntent::default(),
+                QuickstepPush::default(),
+                ReactiveDefenseAi {
+                    requires_facing: false,
+                },
+                DefenseChances {
+                    parry_chance: 1.0,
+                    dodge_chance: 0.0,
+                },
+            ))
+            .id();
+        app.world_mut().trigger(FromClient {
+            client_id: adventuresim_tactical_netcode::bevy_replicon::prelude::ClientId::Client(
+                attacker,
+            ),
+            message: MeleeActionRequest {
+                strike_family: StrikeFamily::Swing,
+                hand: AttackHand::Main,
+                target: None,
+                body_part: None,
+            },
+        });
+        app.world_mut().flush();
+        app.world_mut()
+            .resource_mut::<Time<()>>()
+            .advance_by(Duration::from_secs(1));
+
+        app.update();
+        app.world_mut().flush();
+
+        assert_eq!(
+            app.world()
+                .get::<SkeletonState>(blocker)
+                .unwrap()
+                .action_kind(),
+            SkeletonAction::Block
+        );
+        assert!(
+            app.world()
+                .get::<PendingDefenderResponse>(blocker)
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn aiming_package_faces_the_nearest_opponent() {
+        let mut app = App::new();
+        app.add_systems(Update, aim_at_nearest_opponent);
+        let dodger = app
+            .world_mut()
+            .spawn((
+                Player::default(),
+                Transform::default(),
+                TacticalCombatSide::Enemy,
+                TacticalCombatState::default(),
+                CharacterLook::default(),
+                AimAtNearestOpponentAi,
+            ))
+            .id();
+        app.world_mut().spawn((
+            Player::default(),
+            Transform::from_xyz(2.0, 0.0, 0.0),
+            TacticalCombatSide::Party,
+            TacticalCombatState::default(),
+        ));
+
+        app.update();
+
+        let look = app.world().get::<CharacterLook>(dodger).unwrap();
+        assert!((look.yaw + std::f32::consts::FRAC_PI_2).abs() < 0.0001);
+    }
+
+    #[test]
+    fn recovery_package_starts_authored_get_up_without_skipping_upright() {
+        let mut app = App::new();
+        app.init_resource::<TacticalCombatConfig>();
+        app.add_systems(Update, recover_to_upright);
+        let prone = app
+            .world_mut()
+            .spawn((
+                TacticalCombatState::default(),
+                SkeletonState::default().with_body_state(BodyState::Prone),
+                RecoverToUprightAi,
+            ))
+            .id();
+
+        app.update();
+
+        let skeleton = app.world().get::<SkeletonState>(prone).unwrap();
+        assert_eq!(skeleton.body(), BodyState::Prone);
+        assert_eq!(
+            skeleton.posture_transition().unwrap().kind(),
+            PostureTransitionKind::ProneToUpright
+        );
     }
 
     #[test]
@@ -277,7 +709,7 @@ mod tests {
             Vec3::new(0.0, 0.0, -2.0),
         );
 
-        for _ in 0..7 {
+        for _ in 0..8 {
             app.world_mut()
                 .resource_mut::<Time<()>>()
                 .advance_by(Duration::from_millis(100));
@@ -307,22 +739,6 @@ mod tests {
             "ammo exhaustion should return a melee-capable weapon to melee cadence"
         );
         assert_eq!(app.world().resource::<RecordedRangedAttacks>().0.len(), 1);
-    }
-
-    #[test]
-    fn enemy_defeat_is_counted_only_once() {
-        let mut app = App::new();
-        app.insert_resource(MissionState::new(None, 1, NonZeroU32::new(1).unwrap()))
-            .add_observer(on_tactical_combatant_defeated);
-        let enemy = app.world_mut().spawn(MissionEnemy).id();
-
-        app.world_mut().trigger(TacticalCombatantDefeated(enemy));
-        app.update();
-        app.world_mut().trigger(TacticalCombatantDefeated(enemy));
-        app.update();
-
-        assert_eq!(app.world().resource::<MissionState>().enemies_defeated(), 1);
-        assert!(app.world().entity(enemy).contains::<CountedEnemyDefeat>());
     }
 
     #[test]
@@ -382,9 +798,30 @@ mod tests {
             .distance(enemy_transform.translation.xz());
         const KATZBALGER_REACH: f32 = 0.8;
         const TWO_CHARACTER_COLLIDER_RADII: f32 = 0.8;
+        let combat_config = TacticalCombatConfig::default();
+        let quickstep_distance = quickstep_target_displacement_metres(
+            combat_config
+                .movement
+                .motor
+                .reference_quickstep_leg_length_metres,
+            &combat_config.movement.motor,
+        );
         assert!(
-            separation <= melee_interaction_range(KATZBALGER_REACH),
-            "AI stopped outside melee interaction range: {separation}"
+            separation
+                <= maximum_melee_lunge_range(
+                    CharacterDimensions::default().arm_reach_metres,
+                    KATZBALGER_REACH,
+                    quickstep_distance,
+                ),
+            "AI stopped outside reachable lunge range: {separation}"
+        );
+        assert!(
+            separation
+                > melee_interaction_range(
+                    CharacterDimensions::default().arm_reach_metres,
+                    KATZBALGER_REACH,
+                ),
+            "AI should commit its attack while the lunge still has a gap to close: {separation}"
         );
         assert!(
             separation >= TWO_CHARACTER_COLLIDER_RADII,
@@ -460,14 +897,17 @@ mod tests {
     fn ai_duel_stops_incapacitated_combatants() {
         let mut app = App::new();
         app.insert_resource(Time::<()>::default())
+            .init_resource::<TacticalCombatConfig>()
             .init_resource::<RecordedAttacks>()
             .add_observer(record_attack)
             .add_observer(apply_deterministic_test_hit)
+            .add_observer(crate::combat::on_melee_attack_started)
             .add_systems(
                 Update,
                 (
                     crate::combat::update_tactical_combat_state,
                     drive_offensive_combat_ai,
+                    crate::combat::resolve_pending_melee_contacts,
                 )
                     .chain(),
             );
@@ -560,7 +1000,7 @@ mod tests {
             crate::mission::terminal_resolution(crate::mission::TerminalCombatSnapshot {
                 required_enemies: 1,
                 loaded_enemies: 1,
-                defeated_enemies: u32::from(enemy_defeated),
+                incapacitated_enemies: u32::from(enemy_defeated),
                 loaded_party: 1,
                 incapacitated_party: u32::from(party_defeated),
                 enrollment_sealed: true,

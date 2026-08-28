@@ -28,6 +28,7 @@ use clap::{Parser, ValueEnum};
 use console_error_panic_hook;
 #[cfg(target_family = "wasm")]
 use wasm_bindgen::prelude::*;
+use web_time::Instant;
 
 #[expect(
     dead_code,
@@ -56,6 +57,7 @@ mod player;
     reason = "the gameplay binary shares presentation review data with the native capture viewers"
 )]
 mod presentation;
+mod targeting;
 mod ui;
 
 #[derive(Parser, Debug, Clone, Resource)]
@@ -73,12 +75,39 @@ struct Args {
     /// Write one JSON object per rendered animation frame.
     #[arg(long)]
     animation_log: Option<String>,
+    /// Write compact per-frame timing telemetry without animation pose data.
+    #[arg(long)]
+    frame_timing_log: Option<String>,
+    /// Record compact frame timing for this many seconds, then exit.
+    #[arg(long, requires = "frame_timing_log")]
+    frame_timing_seconds: Option<f64>,
+    /// Wait this many seconds after the local player is ready before timing.
+    #[arg(long, default_value_t = 5.0, requires = "frame_timing_log")]
+    frame_timing_warmup_seconds: f64,
     /// Close the native client shortly after the final scripted command.
     #[arg(long, requires = "input_script")]
     exit_after_script: bool,
     /// Rendering cost preset for diagnostics and low-power GPUs.
     #[arg(long, value_enum, default_value_t)]
     graphics_preset: GraphicsPreset,
+    /// Override the preset's grass shoot density (0.0 = bare, 1.0 = full).
+    #[arg(long, value_parser = clap::value_parser!(f32))]
+    grass_density: Option<f32>,
+    /// Override the preset's grass LOD reach (0.35 = shortest, 1.0 = legacy).
+    /// Near-field vertex cost scales with the square of this value.
+    #[arg(long, value_parser = clap::value_parser!(f32))]
+    grass_range: Option<f32>,
+    /// Override the preset's cloud ray-march quality (0.35 = cheapest,
+    /// 1.0 = full-fidelity reference march).
+    #[arg(long, value_parser = clap::value_parser!(f32))]
+    cloud_quality: Option<f32>,
+    /// Override the preset's offscreen cloud resolution fraction (0.25 =
+    /// cheapest, 1.0 = legacy full-resolution in-view clouds).
+    #[arg(long, value_parser = clap::value_parser!(f32))]
+    cloud_resolution: Option<f32>,
+    /// Override the preset's MSAA sample count (1, 2, or 4).
+    #[arg(long, value_parser = clap::value_parser!(u8))]
+    msaa: Option<u8>,
     /// Swapchain presentation strategy for frame-pacing diagnostics.
     #[arg(long, value_enum, default_value_t)]
     present_mode: ClientPresentMode,
@@ -141,6 +170,43 @@ impl GraphicsPreset {
             environment_map_size: 64,
             bloom_enabled: !matches!(self, Self::NoBloom | Self::Minimal),
             max_vista_lods: if matches!(self, Self::Minimal) { 1 } else { 3 },
+            grass_density_scale: if matches!(self, Self::Minimal) {
+                0.45
+            } else {
+                1.0
+            },
+            // The gameplay client trades a shorter geometric sward for frame
+            // rate by default; capture/benchmark tooling keeps the plugin's
+            // 1.0 legacy reach so goldens stay comparable.
+            grass_range_scale: if matches!(self, Self::Minimal) {
+                0.5
+            } else {
+                0.75
+            },
+            // The reference 40-step cloud march costs ~20 ms/frame at QHD, a
+            // near-constant floor regardless of scene content; gameplay
+            // presets shorten it, capture tooling keeps full fidelity.
+            cloud_quality_scale: if matches!(self, Self::Minimal) {
+                0.45
+            } else {
+                0.65
+            },
+            // Clouds are baked into the frozen sky cubemap now, so the offscreen
+            // march runs once rather than every frame; the half-area downscale it
+            // used to justify no longer buys anything, so render it full-res.
+            cloud_resolution_scale: 1.0,
+            // Two-sample coverage halves MSAA bandwidth at QHD; foliage
+            // AlphaToCoverage still resolves, just with coarser edge dither.
+            msaa_samples: if matches!(self, Self::Minimal) { 1 } else { 2 },
+            // Two dense cascades to 72 m cover every vegetation band; the
+            // engine default spends four cascades on reach the tactical
+            // camera rarely benefits from.
+            shadow_cascade_count: if matches!(self, Self::Minimal) { 1 } else { 2 },
+            shadow_maximum_distance: if matches!(self, Self::Minimal) {
+                40.0
+            } else {
+                72.0
+            },
         }
     }
 }
@@ -174,8 +240,16 @@ pub fn wasm_boot() {
             server_addr: String::new(),
             input_script: None,
             animation_log: None,
+            frame_timing_log: None,
+            frame_timing_seconds: None,
+            frame_timing_warmup_seconds: 5.0,
             exit_after_script: false,
             graphics_preset: GraphicsPreset::Default,
+            grass_density: None,
+            grass_range: None,
+            cloud_quality: None,
+            cloud_resolution: None,
+            msaa: None,
             present_mode: ClientPresentMode::AutoVsync,
             #[cfg(feature = "debug")]
             headless: false,
@@ -224,6 +298,9 @@ pub fn wasm_quote_weapon_design(design_json: String) -> Result<String, JsValue> 
 }
 
 fn run(args: Args, initial_tactical: bool) {
+    let startup_started_at = Instant::now();
+    #[cfg(not(target_family = "wasm"))]
+    eprintln!("[startup] native client process entry");
     let mut app = App::new();
     #[cfg(not(target_family = "wasm"))]
     let asset_root = native_asset_root();
@@ -297,6 +374,7 @@ fn run(args: Args, initial_tactical: bool) {
             .build()
             .set(AdventureSimulatorPhysicsPlugin {
                 enable_simulation: false,
+                enable_presentation_simulation: true,
             }),
         AdventureSimulatorNetPlugins,
     ))
@@ -311,13 +389,32 @@ fn run(args: Args, initial_tactical: bool) {
         // (e.g. the atmosphere environment probe) crash without one, so
         // force every optional GPU effect off regardless of the requested
         // preset - there's nothing to present them to anyway.
-        if headless {
-            GraphicsPreset::Minimal.presentation()
-        } else {
-            args.graphics_preset.presentation()
+        {
+            let mut presentation = if headless {
+                GraphicsPreset::Minimal.presentation()
+            } else {
+                args.graphics_preset.presentation()
+            };
+            if let Some(density) = args.grass_density {
+                presentation.grass_density_scale = density.clamp(0.0, 1.0);
+            }
+            if let Some(range) = args.grass_range {
+                presentation.grass_range_scale = range.clamp(0.35, 1.0);
+            }
+            if let Some(quality) = args.cloud_quality {
+                presentation.cloud_quality_scale = quality.clamp(0.35, 1.0);
+            }
+            if let Some(resolution) = args.cloud_resolution {
+                presentation.cloud_resolution_scale = resolution.clamp(0.25, 1.0);
+            }
+            if let Some(msaa) = args.msaa {
+                presentation.msaa_samples = msaa.clamp(1, 4);
+            }
+            presentation
         },
     ))
     .insert_resource(ClearColor(Color::srgb(0.1, 0.1, 0.15)))
+    .insert_resource(presentation::ClientStartupTiming::new(startup_started_at))
     .add_systems(Startup, setup_initial_client)
     .add_systems(
         Update,
@@ -347,6 +444,9 @@ fn run(args: Args, initial_tactical: bool) {
         diagnostics::DiagnosticPlugin::new(
             args.input_script.as_deref(),
             args.animation_log.as_deref(),
+            args.frame_timing_log.as_deref(),
+            args.frame_timing_seconds,
+            args.frame_timing_warmup_seconds,
             args.exit_after_script,
         )
         .unwrap_or_else(|error| panic!("invalid tactical client diagnostics: {error}")),
@@ -376,6 +476,11 @@ fn run(args: Args, initial_tactical: bool) {
         app.add_systems(Update, configure_headless_render_target);
     }
 
+    #[cfg(not(target_family = "wasm"))]
+    eprintln!(
+        "[startup] native client app constructed elapsed_ms={}",
+        startup_started_at.elapsed().as_millis()
+    );
     app.run();
 }
 
@@ -447,6 +552,7 @@ fn setup_initial_client(
     mut commands: Commands,
     args: Res<Args>,
     initial_tactical: Res<InitialTacticalMode>,
+    startup: Res<presentation::ClientStartupTiming>,
 ) {
     if !initial_tactical.0 {
         return;
@@ -455,6 +561,7 @@ fn setup_initial_client(
         player_id: args.id,
         server_url: args.server_addr.clone(),
     });
+    startup.mark("startup schedule complete; connection requested");
 }
 
 fn capture_cursor(
@@ -500,21 +607,43 @@ mod graphics_preset_tests {
     }
 
     #[test]
-    fn individual_presets_disable_only_the_requested_effect() {
-        let no_atmosphere = GraphicsPreset::NoAtmosphere.presentation();
-        assert!(no_atmosphere.shadows_enabled);
-        assert!(!no_atmosphere.atmosphere_enabled);
-        assert!(!no_atmosphere.environment_light_enabled);
-        assert!(no_atmosphere.bloom_enabled);
+    fn no_shadows_disables_only_shadows() {
+        let preset = GraphicsPreset::NoShadows.presentation();
+        assert!(!preset.shadows_enabled);
+        assert!(preset.celestial_enabled);
+        assert_eq!(preset.max_vista_lods, 3);
     }
 
     #[test]
-    fn minimal_disables_every_optional_gpu_effect() {
+    fn minimal_reduces_non_atmosphere_presentation() {
         let minimal = GraphicsPreset::Minimal.presentation();
         assert!(!minimal.shadows_enabled);
         assert!(!minimal.atmosphere_enabled);
         assert!(!minimal.environment_light_enabled);
         assert!(!minimal.bloom_enabled);
+        assert!(!minimal.celestial_enabled);
+        assert_eq!(minimal.max_vista_lods, 1);
+        assert!(minimal.grass_density_scale < 1.0);
+        assert_eq!(
+            GraphicsPreset::Default.presentation().grass_density_scale,
+            1.0
+        );
+        // Gameplay presets shorten the cloud march; capture tooling relies on
+        // the plugin default staying at full reference quality.
+        let default = GraphicsPreset::Default.presentation();
+        assert!(minimal.cloud_quality_scale < default.cloud_quality_scale);
+        assert!(default.cloud_quality_scale < 1.0);
+        assert_eq!(
+            presentation::TacticalPresentationPlugin::default().cloud_quality_scale,
+            1.0
+        );
+        // Clouds bake into the frozen sky cubemap, so the offscreen march runs
+        // full-resolution once instead of downscaling every frame.
+        assert_eq!(default.cloud_resolution_scale, 1.0);
+        assert_eq!(
+            presentation::TacticalPresentationPlugin::default().cloud_resolution_scale,
+            1.0
+        );
     }
 
     #[test]

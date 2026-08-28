@@ -590,7 +590,7 @@ pub fn administer_tincture_from_container(
 mod tests {
     #[test]
     fn tincture_lifecycle_is_private_pinned_consuming_and_transfer_safe() {
-        let source = include_str!("herbalism.rs");
+        let source = crate::production_source(include_str!("herbalism.rs"));
         assert!(source.contains("started_at_world_minute"));
         assert!(source.contains("pinned_potency_units"));
         assert!(source.contains("ingredient_object_id"));

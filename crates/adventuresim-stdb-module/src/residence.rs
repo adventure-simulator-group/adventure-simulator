@@ -1608,7 +1608,7 @@ mod tests {
 
     #[test]
     fn schema_separates_many_holdings_from_one_primary_and_one_occupancy() {
-        let source = include_str!("residence.rs");
+        let source = crate::production_source(include_str!("residence.rs"));
         assert!(source.contains("#[table(accessor = residence_holding)]"));
         assert!(source.contains("pub struct PrimaryResidence"));
         assert!(source.contains("pub struct ResidenceOccupant"));
@@ -1619,7 +1619,7 @@ mod tests {
 
     #[test]
     fn acquisition_preserves_owned_property_and_replaces_only_a_rental() {
-        let source = include_str!("residence.rs");
+        let source = crate::production_source(include_str!("residence.rs"));
         let acquisition = source
             .split("fn acquire_residence_internal")
             .nth(1)
@@ -1635,7 +1635,7 @@ mod tests {
 
     #[test]
     fn billing_covers_all_holdings_and_audits_household_line_items() {
-        let source = include_str!("residence.rs");
+        let source = crate::production_source(include_str!("residence.rs"));
         let billing = source
             .split("pub fn settle_residence_billing")
             .nth(1)
@@ -1655,7 +1655,7 @@ mod tests {
 
     #[test]
     fn necessities_use_effective_age_and_promote_adult_children() {
-        let source = include_str!("residence.rs");
+        let source = crate::production_source(include_str!("residence.rs"));
         let counts = source
             .split("fn supported_occupant_counts_at")
             .nth(1)
@@ -1670,7 +1670,7 @@ mod tests {
 
     #[test]
     fn gateway_projection_keeps_nonprimary_owned_holdings_manageable() {
-        let source = include_str!("residence.rs");
+        let source = crate::production_source(include_str!("residence.rs"));
         let projection = source
             .split("pub fn backend_character_residence_statuses")
             .nth(1)
@@ -1684,13 +1684,15 @@ mod tests {
         assert!(
             projection.contains("let owns_holding = holding.owner_character_id == character_id")
         );
-        assert!(projection.contains("owns_holding.then_some(holding.last_billed_minute)"));
-        assert!(projection.contains("owns_holding.then_some(holding.next_due_minute)"));
+        assert!(projection.contains("last_billed_minute: if owns_holding"));
+        assert!(projection.contains("holding.last_billed_minute"));
+        assert!(projection.contains("next_due_minute: if owns_holding"));
+        assert!(projection.contains("holding.next_due_minute"));
     }
 
     #[test]
     fn effective_guest_removal_preserves_newer_current_occupancy() {
-        let source = include_str!("residence.rs");
+        let source = crate::production_source(include_str!("residence.rs"));
         let removal = source
             .split("pub(crate) fn remove_nonowned_occupancy_effective")
             .nth(1)
@@ -1727,7 +1729,7 @@ mod tests {
         );
         assert_eq!(funds, 0);
 
-        let source = include_str!("residence.rs");
+        let source = crate::production_source(include_str!("residence.rs"));
         let one_period = source
             .split("fn settle_one_holding_period")
             .nth(1)
@@ -1740,7 +1742,7 @@ mod tests {
 
     #[test]
     fn specific_relinquishment_resolves_occupants_without_deleting_history() {
-        let source = include_str!("residence.rs");
+        let source = crate::production_source(include_str!("residence.rs"));
         let relinquish = source
             .split("fn relinquish_holding_at")
             .nth(1)

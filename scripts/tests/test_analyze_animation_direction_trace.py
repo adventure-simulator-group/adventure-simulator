@@ -38,6 +38,8 @@ def frame(index, direction, elapsed, angle):
         },
         "evaluation": {"gait_phase": (elapsed / half_step_seconds / 2.0) % 1.0},
         "subject_rotation_xyzw": [0.0, 0.0, 0.0, 1.0],
+        "subject_translation": [root_x, 0.0, 0.0],
+        "action": "Attack" if 0.9 <= elapsed <= 1.3 else "None",
         "input": {
             "command_index": list(MODULE.DIRECTION_VECTORS).index(direction),
             "command_kind": "move",
@@ -62,27 +64,27 @@ def frame(index, direction, elapsed, angle):
             },
             {
                 "name": "l_upleg",
-                "translation": [root_x - 0.2, 1.0, 0.0],
+                "translation": [root_x - 0.02, 1.0, 0.0],
                 "rotation_xyzw": [0.0, 0.0, 0.0, 1.0],
             },
             {
                 "name": "l_lowleg",
-                "translation": [root_x - 0.2, 0.5, 0.0],
+                "translation": [root_x + 0.04, 0.5, 0.0],
                 "rotation_xyzw": [0.0, 0.0, 0.0, 1.0],
             },
             {
                 "name": "l_foot",
-                "translation": [root_x - 0.2, swing_height if left_swing else 0.0, 0.0],
+                "translation": [root_x + 0.1, swing_height if left_swing else 0.0, 0.0],
                 "rotation_xyzw": [0.0, 0.0, 0.0, 1.0],
             },
             {
                 "name": "r_upleg",
-                "translation": [root_x + 0.2, 1.0, 0.0],
+                "translation": [root_x + 0.02, 1.0, 0.0],
                 "rotation_xyzw": [0.0, 0.0, 0.0, 1.0],
             },
             {
                 "name": "r_lowleg",
-                "translation": [root_x + 0.2, 0.5, 0.0],
+                "translation": [root_x + 0.11, 0.5, 0.0],
                 "rotation_xyzw": [0.0, 0.0, 0.0, 1.0],
             },
             {
@@ -148,6 +150,30 @@ class AnalyzeAnimationDirectionTraceTests(unittest.TestCase):
         timing = result["directions"]["left"]["timing"]
         self.assertEqual(timing["render_stall_count"], 1)
         self.assertEqual(timing["source_tick_gap_count"], 1)
+
+    def test_stalled_or_attack_free_direction_is_not_valid_evidence(self):
+        frames = []
+        index = 0
+        for direction in MODULE.DIRECTION_VECTORS:
+            for sample in range(80):
+                item = frame(index, direction, sample / 32.0, 0.002 * sample)
+                if direction == "left":
+                    item["subject_translation"] = [0.0, 0.0, 0.0]
+                    item["action"] = "None"
+                frames.append(item)
+                index += 1
+        with tempfile.TemporaryDirectory() as directory:
+            trace = Path(directory) / "trace.jsonl"
+            trace.write_text(
+                "".join(json.dumps(item) + "\n" for item in frames), encoding="utf-8"
+            )
+            result = MODULE.analyze_trace(trace, 0.25, 0.25)
+
+        contracts = result["directions"]["left"]["operational_contracts"]
+        self.assertFalse(result["benchmark_valid"])
+        self.assertFalse(contracts["root_travel_passed"])
+        self.assertFalse(contracts["attack_coverage_passed"])
+        self.assertEqual(result["directions"]["left"]["quality_score"], 0.0)
 
     def test_sustained_sideways_foot_displacement_forces_score_to_zero(self):
         frames = []

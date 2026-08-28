@@ -18,8 +18,7 @@ test("developer mode is persisted off by default and enables explicit developer 
   assert.match(script, /link\.hidden = !enabled/);
   assert.match(script, /input\.disabled = !enabled/);
   assert.match(script, /new MutationObserver/);
-  assert.match(rest, /name="advance_development_clock" value="true" disabled/);
-  assert.match(rest, /data-developer-mode-input/);
+  assert.doesNotMatch(rest, /advance_development_clock/);
   assert.match(dialogue, /target = "_blank"/);
   assert.match(dialogue, /noopener noreferrer/);
   assert.match(dialogue, /dialogue-source-icon/);

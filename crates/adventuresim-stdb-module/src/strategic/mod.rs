@@ -9,9 +9,6 @@
 #[cfg(test)]
 pub(crate) const STRATEGIC_SOURCE: &str = concat!(
     include_str!("autoresolve.rs"),
-    include_str!("tests/combat_party.rs"),
-    include_str!("tests/authority_trade_dialogue.rs"),
-    include_str!("tests/generated_world.rs"),
     include_str!("party_readiness.rs"),
     include_str!("world_import.rs"),
     include_str!("authority_model.rs"),
@@ -30,7 +27,6 @@ pub(crate) const STRATEGIC_SOURCE: &str = concat!(
     include_str!("incidents.rs"),
     include_str!("journey_camp.rs"),
     include_str!("encounters.rs"),
-    include_str!("travel_tests.rs"),
     include_str!("travel_reducers.rs"),
     include_str!("custody_objectives.rs"),
     include_str!("development_scenarios.rs"),

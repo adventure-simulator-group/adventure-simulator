@@ -36,20 +36,21 @@ fn local_interactor_position_reaches_only_ground_foliage_materials() {
 }
 
 #[test]
-fn understory_density_preserves_sparse_woods_and_caps_dense_biomes() {
-    assert!((understory_scatter_chance(0.35, 0.03, 0.0) - 0.191).abs() < 0.000_01);
-    assert_eq!(understory_scatter_chance(0.9, 0.05, 0.0), 0.24);
-    assert_eq!(understory_scatter_chance(0.1, 0.95, 0.0), 0.24);
+fn understory_density_caps_physical_shrubs_at_the_reduced_global_budget() {
+    assert!((understory_scatter_chance(0.35, 0.03, 0.0) - 0.0573).abs() < 0.000_01);
+    assert_eq!(understory_scatter_chance(0.9, 0.05, 0.0), 0.075);
+    assert_eq!(understory_scatter_chance(0.1, 0.95, 0.0), 0.075);
     assert_eq!(understory_scatter_chance(0.0, 0.0, 0.0), 0.0);
-    assert_eq!(understory_scatter_chance(0.0, 0.0, 1.0), 0.08);
+    assert_eq!(understory_scatter_chance(0.0, 0.0, 1.0), 0.024);
 }
 
 #[test]
 fn grass_density_favors_open_meadow_and_thins_under_closed_canopy() {
     assert_eq!(grass_scatter_density(0.0, 0.0, 0.0, 0.0), 0.98);
     assert!((grass_scatter_density(0.35, 0.0, 0.0, 0.0) - 0.6475).abs() < 0.000_01);
-    assert_eq!(grass_scatter_density(0.9, 0.0, 0.0, 0.0), 0.25);
-    assert_eq!(grass_scatter_density(0.0, 1.0, 0.0, 0.0), 0.25);
+    assert!((grass_scatter_density(0.9, 0.0, 0.0, 0.0) - 0.125).abs() < 0.000_01);
+    assert!((grass_scatter_density(0.0, 1.0, 0.0, 0.0) - 0.10).abs() < 0.000_01);
+    assert!((grass_scatter_density(0.0, 0.0, 0.0, 0.65) - 0.183_75).abs() < 0.000_01);
 }
 
 #[test]
@@ -59,7 +60,7 @@ fn terminal_grass_pigment_compensates_for_foliage_optical_darkening() {
     let terminal = grass_terminal_pigment(&environment)
         .to_linear()
         .to_f32_array();
-    for (channel, expected) in [0.22, 0.25, 0.05].into_iter().enumerate() {
+    for (channel, expected) in [0.34, 0.38, 0.18].into_iter().enumerate() {
         assert!((terminal[channel] / blade[channel] - expected).abs() < 0.000_01);
     }
 }

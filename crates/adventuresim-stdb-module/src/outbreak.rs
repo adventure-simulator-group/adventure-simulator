@@ -1601,7 +1601,7 @@ pub(crate) fn patient_presence_suppression_at(
 mod water_integration_contract_tests {
     #[test]
     fn collection_input_is_observer_safe_and_replay_precedes_private_reads() {
-        let source = include_str!("outbreak.rs");
+        let source = crate::production_source(include_str!("outbreak.rs"));
         let reducer = source
             .split("pub fn collect_fixture_water_into_container")
             .nth(1)
@@ -1621,7 +1621,7 @@ mod water_integration_contract_tests {
 
     #[test]
     fn private_truth_does_not_control_public_fixture_handling() {
-        let container = include_str!("inventory_container.rs");
+        let container = crate::production_source(include_str!("inventory_container.rs"));
         let public_row = container
             .split("pub struct ContainerLiquid")
             .nth(1)
@@ -1951,7 +1951,7 @@ pub(crate) fn discover_case_corpses(
 mod tests {
     #[test]
     fn outbreak_authority_and_patients_are_private_and_real() {
-        let source = include_str!("outbreak.rs");
+        let source = crate::production_source(include_str!("outbreak.rs"));
         let production = source.split("#[cfg(test)]").next().unwrap();
         assert!(production.contains("#[table(accessor = outbreak_authority)]"));
         assert!(production.contains("#[table(accessor = outbreak_patient_authority)]"));
@@ -1968,7 +1968,7 @@ mod tests {
 
     #[test]
     fn outbreak_corpses_use_ordinary_character_death_and_generic_pathology() {
-        let source = include_str!("outbreak.rs");
+        let source = crate::production_source(include_str!("outbreak.rs"));
         let production = source.split("#[cfg(test)]").next().unwrap();
         assert!(production.contains("transition_character_to_dead_at"));
         assert!(production.contains("corpse:character:"));
@@ -1979,7 +1979,7 @@ mod tests {
 
     #[test]
     fn patient_context_visibility_requires_problem_knowledge() {
-        let source = include_str!("outbreak.rs");
+        let source = crate::production_source(include_str!("outbreak.rs"));
         let production = source.split("#[cfg(test)]").next().unwrap();
         assert!(production.contains("case_patient_visible_to_character_view"));
         assert!(production.contains("local_problem_receipt()"));
@@ -1995,21 +1995,26 @@ mod tests {
 
     #[test]
     fn remediation_is_exact_idempotent_and_uses_normal_outcome_authority() {
-        let source = include_str!("outbreak.rs");
+        let source = crate::production_source(include_str!("outbreak.rs"));
         assert!(source.contains("authority.remediation_id != remediation_id"));
         assert!(source.contains("physical_source_fixture_id != source_fixture.to_string()"));
         assert!(source.contains("StrategicFixtureId::outbreak_source"));
         assert!(source.contains("parse_outbreak_source_fixture"));
         assert!(source.contains("remediation_source_id.as_deref() == Some(source_id)"));
-        let actions = include_str!("investigation/actions.rs");
-        assert!(actions.contains("OutcomeFactKind::SourceRemediated"));
-        let objectives = include_str!("strategic/custody_objectives.rs");
+        // The custody module keeps source-boundary tests ahead of this
+        // implementation, so select the canonical outcome-ingestion owner
+        // directly instead of applying the conventional trailing-test split.
+        let objectives = include_str!("strategic/custody_objectives.rs")
+            .rsplit("pub(crate) fn ingest_case_outcome_fact")
+            .next()
+            .unwrap();
         assert!(objectives.contains("accepted_hostile_remediation"));
+        assert!(objectives.contains("OutcomeFactKind::SourceRemediated"));
     }
 
     #[test]
     fn generated_outbreak_retry_checks_every_immutable_authority_field() {
-        let source = include_str!("outbreak.rs");
+        let source = crate::production_source(include_str!("outbreak.rs"));
         let retry = source
             .split("pub(crate) fn materialize_generated_outbreak")
             .nth(1)
@@ -2037,7 +2042,7 @@ mod tests {
 
     #[test]
     fn remediation_releases_context_without_curing_and_family_is_canonical() {
-        let source = include_str!("outbreak.rs");
+        let source = crate::production_source(include_str!("outbreak.rs"));
         let deactivate = source
             .split("fn deactivate_outbreak_patient_contexts")
             .nth(1)

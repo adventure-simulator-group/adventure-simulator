@@ -29,6 +29,17 @@ pub fn celestial_directions(
     latitude: LatitudeMicrodegrees,
     longitude: LongitudeMicrodegrees,
 ) -> CelestialDirections {
+    celestial_directions_with_phase(absolute_minute, absolute_minute, latitude, longitude)
+}
+
+/// Resolve celestial directions while allowing journey-local time of day to
+/// advance independently from the canonical lunar phase.
+pub fn celestial_directions_with_phase(
+    absolute_minute: u64,
+    lunar_phase_minute: u64,
+    latitude: LatitudeMicrodegrees,
+    longitude: LongitudeMicrodegrees,
+) -> CelestialDirections {
     let latitude = latitude.degrees().to_radians();
     let longitude_degrees = longitude.degrees();
     // The strategic clock is already a minute offset into its canonical
@@ -48,7 +59,7 @@ pub fn celestial_directions(
         .asin();
     let sun = equatorial_to_horizon(latitude, solar_declination, solar_hour_angle);
 
-    let phase = lunar_phase(absolute_minute);
+    let phase = lunar_phase(lunar_phase_minute);
     let lunar_hour_angle = solar_hour_angle + std::f64::consts::TAU * phase;
     // Shifting the seasonal ecliptic angle by phase keeps new moons near the
     // Sun and full moons opposite it without the cost of a full ephemeris.
@@ -124,5 +135,18 @@ mod tests {
         );
         assert!(utc_noon.sun[1] > east_noon.sun[1]);
         assert!(east_noon.sun[0] < 0.0);
+    }
+
+    #[test]
+    fn journey_time_can_move_the_sky_without_advancing_the_lunar_phase() {
+        let phase_anchor = 12_345;
+        let latitude = LatitudeMicrodegrees::from_degrees(53.5).unwrap();
+        let longitude = LongitudeMicrodegrees::from_degrees(10.0).unwrap();
+        let first = celestial_directions_with_phase(720, phase_anchor, latitude, longitude);
+        let later = celestial_directions_with_phase(1_080, phase_anchor, latitude, longitude);
+        assert_eq!(first.lunar_phase, later.lunar_phase);
+        assert_eq!(first.lunar_illumination, later.lunar_illumination);
+        assert_ne!(first.sun, later.sun);
+        assert_ne!(first.moon, later.moon);
     }
 }

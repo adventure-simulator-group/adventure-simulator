@@ -15,6 +15,7 @@ pub struct TacticalServerRequest {
     pub longitude_e_7: i32,
     pub latitude_e_7: i32,
     pub absolute_minute: u64,
+    pub lunar_phase_minute: u64,
     pub expected_party_members: u32,
     pub authorized_party_member_ids: Vec<u64>,
     pub required_enemy_kills: u32,
@@ -42,6 +43,7 @@ pub struct TacticalServerRequestCols {
     pub longitude_e_7: __sdk::__query_builder::Col<TacticalServerRequest, i32>,
     pub latitude_e_7: __sdk::__query_builder::Col<TacticalServerRequest, i32>,
     pub absolute_minute: __sdk::__query_builder::Col<TacticalServerRequest, u64>,
+    pub lunar_phase_minute: __sdk::__query_builder::Col<TacticalServerRequest, u64>,
     pub expected_party_members: __sdk::__query_builder::Col<TacticalServerRequest, u32>,
     pub authorized_party_member_ids: __sdk::__query_builder::Col<TacticalServerRequest, Vec<u64>>,
     pub required_enemy_kills: __sdk::__query_builder::Col<TacticalServerRequest, u32>,
@@ -65,6 +67,7 @@ impl __sdk::__query_builder::HasCols for TacticalServerRequest {
             longitude_e_7: __sdk::__query_builder::Col::new(table_name, "longitude_e_7"),
             latitude_e_7: __sdk::__query_builder::Col::new(table_name, "latitude_e_7"),
             absolute_minute: __sdk::__query_builder::Col::new(table_name, "absolute_minute"),
+            lunar_phase_minute: __sdk::__query_builder::Col::new(table_name, "lunar_phase_minute"),
             expected_party_members: __sdk::__query_builder::Col::new(
                 table_name,
                 "expected_party_members",

@@ -913,6 +913,7 @@ pub(crate) fn materialize_chance_narrative_encounter(
         journey_coordinates_are_geographic(ctx, &journey),
     )
     .ok_or("Narrative encounter position is not a valid WGS84 coordinate")?;
+    let official_minute = crate::time::refresh_clock(ctx)?;
     ctx.db
         .road_challenge_authority()
         .insert(RoadChallengeAuthority {
@@ -928,9 +929,7 @@ pub(crate) fn materialize_chance_narrative_encounter(
             catalog_id: definition.id.clone(),
             catalog_revision: definition.version,
             catalog_digest: adventuresim_core::road_encounter_catalog::digest().into(),
-            absolute_minute: journey
-                .departure_minute
-                .saturating_add(journey.completed_elapsed_minutes),
+            absolute_minute: official_minute,
             longitude_e7: position_e7.longitude_e7,
             latitude_e7: position_e7.latitude_e7,
             trigger: match origin {
@@ -950,9 +949,7 @@ pub(crate) fn materialize_chance_narrative_encounter(
         ctx,
         &id,
         definition,
-        journey
-            .departure_minute
-            .saturating_add(journey.completed_elapsed_minutes),
+        official_minute,
     )?;
     ctx.db
         .narrative_encounter_private_authority()
@@ -2498,7 +2495,7 @@ mod challenge_source_boundary_tests {
 
     #[test]
     fn public_projection_omits_private_truth_fields() {
-        let source = include_str!("challenges.rs");
+        let source = crate::production_source(include_str!("challenges.rs"));
         let projection = source
             .split("pub struct BackendChallenge")
             .nth(1)
@@ -2564,7 +2561,7 @@ mod challenge_source_boundary_tests {
             .contains("Conflicting retry")
         );
 
-        let source = include_str!("challenges.rs");
+        let source = crate::production_source(include_str!("challenges.rs"));
         let receipt_check = source
             .find("if let Some(existing) = ctx.db.challenge_attempt_receipt()")
             .unwrap();
@@ -2576,7 +2573,7 @@ mod challenge_source_boundary_tests {
     #[test]
     fn demo_is_reused_and_materializes_a_real_bound_camp() {
         assert_ne!(puzzle_demo_suffix(7, 0), puzzle_demo_suffix(7, 1));
-        let source = include_str!("challenges.rs");
+        let source = crate::production_source(include_str!("challenges.rs"));
         let loader = source
             .split("fn materialize_order_errantry")
             .nth(1)
@@ -2603,7 +2600,7 @@ mod challenge_source_boundary_tests {
 
     #[test]
     fn road_encounter_demo_is_dev_authorized_catalog_driven_and_camp_bound() {
-        let source = include_str!("challenges.rs");
+        let source = crate::production_source(include_str!("challenges.rs"));
         let loader = source
             .split("fn materialize_development_road_encounter")
             .nth(1)
@@ -2629,7 +2626,7 @@ mod challenge_source_boundary_tests {
             narrative_combat_roll(7, "occurrence:a"),
             narrative_combat_roll(7, "occurrence:b")
         );
-        let source = include_str!("challenges.rs");
+        let source = crate::production_source(include_str!("challenges.rs"));
         let dispatch = source
             .split("fn materialize_narrative_combat")
             .nth(1)
@@ -2645,10 +2642,15 @@ mod challenge_source_boundary_tests {
         assert!(dispatch.contains("Awareness::Both"));
         assert!(dispatch.contains("Awareness::PartyOnly"));
         assert!(dispatch.contains("rebind_road_cast_to_strategic_encounter"));
-        assert!(dispatch.contains("CharacterContextKind::StrategicEncounter"));
         assert!(dispatch.contains("initiating_character_id"));
         assert!(dispatch.contains("existing.encounter_id == encounter_id"));
         assert!(!dispatch.contains("unlawful_bridge_custom_v1"));
+        let rebound = crate::production_source(include_str!("../world_actor.rs"))
+            .split("pub(crate) fn rebind_road_cast_to_strategic_encounter")
+            .nth(1)
+            .and_then(|tail| tail.split("fn title_case").next())
+            .expect("canonical road-cast rebound");
+        assert!(rebound.contains("CharacterContextKind::StrategicEncounter"));
         let reducer = source
             .split("pub fn resolve_errantry_road_challenge")
             .nth(1)
@@ -2662,7 +2664,7 @@ mod challenge_source_boundary_tests {
 
     #[test]
     fn authored_combat_followup_is_closed_actor_bound_and_receipted() {
-        let source = include_str!("challenges.rs");
+        let source = crate::production_source(include_str!("challenges.rs"));
         let followup = source
             .split("pub(crate) fn resolve_narrative_combat_followup")
             .nth(1)
@@ -2685,19 +2687,19 @@ mod challenge_source_boundary_tests {
             followup.find("resolved_combat_outcome(outcome)").unwrap()
                 < followup.find("apply_narrative_effect").unwrap()
         );
-        let resolver = include_str!("encounters.rs");
+        let resolver = crate::production_source(include_str!("encounters.rs"));
         assert!(resolver.contains("resolve_narrative_combat_followup(ctx, &encounter)"));
         assert!(resolver.contains("!authored_followup"));
     }
 
     #[test]
     fn trial_is_optional_camp_authority_and_physical_rewards_are_separate() {
-        let source = include_str!("challenges.rs");
+        let source = crate::production_source(include_str!("challenges.rs"));
         let camp_match = source
             .split("fn journey_at_bound_trial_camp")
             .nth(1)
             .unwrap()
-            .split("fn party_at_bound_trial_camp_view")
+            .split("fn journey_at_bound_road_challenge")
             .next()
             .unwrap();
         assert!(camp_match.contains("journey_camp_identity_matches"));
@@ -2716,19 +2718,19 @@ mod challenge_source_boundary_tests {
         assert!(!puzzle_submission.contains("award_errantry_countermeasure"));
         assert!(source.contains("bound_tactical_insight"));
 
-        let mission = include_str!("custody_objectives.rs");
+        let mission = crate::production_source(include_str!("custody_objectives.rs"));
         assert!(!mission.contains("errantry_mission_scale_snapshot"));
         assert!(!mission.contains("base_enemy_combat_scale_bps"));
         assert!(!mission.contains("countermeasure_source_challenge_id"));
-        let tactical = include_str!("../tactical.rs");
+        let tactical = crate::production_source(include_str!("../tactical.rs"));
         assert!(tactical.contains("mission.enemy_combat_scale_bps"));
-        let autoresolve = include_str!("autoresolve.rs");
+        let autoresolve = crate::production_source(include_str!("mission_bootstrap.rs"));
         assert!(autoresolve.contains("mission.enemy_combat_scale_bps"));
     }
 
     #[test]
     fn rested_courier_trial_is_optional_authorized_and_material() {
-        let source = include_str!("challenges.rs");
+        let source = crate::production_source(include_str!("challenges.rs"));
         let reducer = source
             .split("pub fn resolve_errantry_road_challenge")
             .nth(1)
@@ -2740,7 +2742,13 @@ mod challenge_source_boundary_tests {
         assert!(source.contains("encounter.status == StrategicEncounterStatus::AwaitingChoice"));
         assert!(source.contains("narrative_skill"));
         assert!(reducer.contains("target_religion_check"));
-        assert!(reducer.contains("OfficialReligion::RomanCatholic"));
+        assert!(reducer.contains("narrative_religion"));
+        let religion = source
+            .split("fn narrative_religion")
+            .nth(1)
+            .and_then(|tail| tail.split("fn narrative_axis").next())
+            .expect("canonical narrative religion resolver");
+        assert!(religion.contains("OfficialReligion::RomanCatholic"));
         assert!(reducer.contains("apply_personality_development"));
         assert!(!reducer.contains("ingest_case_outcome_fact"));
         assert!(source.contains("COURIER_REST_DELAY_MINUTES"));
@@ -2795,7 +2803,7 @@ mod challenge_source_boundary_tests {
 
     #[test]
     fn missions_do_not_snapshot_hidden_errantry_modifiers() {
-        let mission = include_str!("authority_model.rs");
+        let mission = crate::production_source(include_str!("authority_model.rs"));
         assert!(!mission.contains("errantry_approach_snapshot_json"));
         assert!(!mission.contains("countermeasure_source_challenge_id"));
         assert!(!mission.contains("base_enemy_combat_scale_bps"));
@@ -2816,7 +2824,7 @@ mod challenge_source_boundary_tests {
             format!("{:?}", threat.profile().combat)
         );
 
-        let source = include_str!("challenges.rs");
+        let source = crate::production_source(include_str!("challenges.rs"));
         let production = source.split("#[cfg(test)]").next().unwrap();
         assert!(!production.contains("FavorOfTheThornLady"));
         assert!(!production.contains("FEY_COUNTERMEASURE_ITEM_ID"));
@@ -2828,7 +2836,7 @@ mod challenge_source_boundary_tests {
 
     #[test]
     fn committed_acceptance_retry_precedes_live_presence_validation() {
-        let source = include_str!("challenges.rs");
+        let source = crate::production_source(include_str!("challenges.rs"));
         let reducer = source
             .split("pub fn accept_order_errantry")
             .nth(1)

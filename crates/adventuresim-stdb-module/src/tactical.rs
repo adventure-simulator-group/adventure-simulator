@@ -21,7 +21,6 @@ use crate::{
         fail_bound_mission_attempt, hostile_group_authority, mission_authority,
         outcome_source_authority, strategic_gateway_authority__view,
     },
-    time::character_time,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
@@ -108,6 +107,9 @@ pub struct TacticalServerRequest {
     pub latitude_e7: i32,
     /// Requesting leader's absolute strategic minute captured atomically.
     pub absolute_minute: u64,
+    /// Canonical minute used only for lunar phase. Wilderness time of day may
+    /// advance while this value remains fixed for the entire excursion.
+    pub lunar_phase_minute: u64,
     /// Living strategic party members bound when the mission is requested.
     pub expected_party_members: u32,
     /// Immutable participant authority captured with the mission request.
@@ -604,6 +606,52 @@ fn leave_mission_for_server(
     Ok(())
 }
 
+/// Retire an interrupted standalone development session before its persistent
+/// profile is reused. The bootstrap capability is checked by the only caller;
+/// keeping the cleanup here lets it share the authoritative mission teardown
+/// primitives without exposing a new reducer.
+pub(crate) fn retire_interrupted_standalone_server_for_character(
+    ctx: &ReducerContext,
+    character_id: u64,
+) -> Result<(), String> {
+    let servers: Vec<_> = ctx
+        .db
+        .tactical_server_authority()
+        .iter()
+        .filter(|server| server.authorized_party_member_ids.contains(&character_id))
+        .collect();
+    for server in servers {
+        let mission = ctx
+            .db
+            .mission_authority()
+            .id()
+            .find(&server.mission_id)
+            .ok_or("Interrupted tactical server has no mission authority")?;
+        if !mission.case_id.starts_with("case:standalone:") {
+            return Err("Refusing to retire a non-standalone tactical server".into());
+        }
+        fail_bound_mission_attempt(ctx, &server.mission_id)?;
+        let connected: Vec<_> = ctx
+            .db
+            .character()
+            .server()
+            .filter(server.identity)
+            .collect();
+        for character in connected {
+            leave_mission_for_server(ctx, character, server.identity)?;
+        }
+        ctx.db
+            .tactical_server_authority()
+            .identity()
+            .delete(server.identity);
+        log::info!(
+            "Retired interrupted standalone tactical server for mission '{}'",
+            server.mission_id
+        );
+    }
+    Ok(())
+}
+
 /// Request a new [`TacticalServer`] with generated *mission_id* from
 /// the *scene_key* and the current timestamp.
 #[reducer]
@@ -658,13 +706,9 @@ pub fn request_tactical_server(
     {
         return Err("Tactical entry requires an exact geographic case-site position".into());
     }
-    let absolute_minute = ctx
-        .db
-        .character_time()
-        .character_id()
-        .find(character_id)
-        .ok_or("Character has no authoritative strategic clock")?
-        .minutes;
+    let (absolute_minute, lunar_phase_minute) =
+        crate::strategic::party_wilderness_environment_minutes(&party)
+            .ok_or("Case-site tactical entry requires a party wilderness clock")?;
     match crate::investigation::case_site_provenance_reducer(ctx, &case_site) {
         Some(None) => {}
         Some(Some(_)) => {
@@ -779,6 +823,7 @@ pub fn request_tactical_server(
             longitude_e7: case_site.longitude_e7,
             latitude_e7: case_site.latitude_e7,
             absolute_minute,
+            lunar_phase_minute,
             expected_party_members,
             authorized_party_member_ids,
             required_enemy_kills: mission.enemy_count,
@@ -1311,7 +1356,7 @@ mod authority_tests {
 
     #[test]
     fn tactical_receipt_validation_keeps_authority_and_custody_checks() {
-        let source = include_str!("tactical.rs");
+        let source = crate::production_source(include_str!("tactical.rs"));
         assert!(source.contains("character.temporary"));
         assert!(source.contains("character.server != server.identity"));
         assert!(source.contains("character.party_id.as_deref()"));
@@ -1321,7 +1366,7 @@ mod authority_tests {
 
     #[test]
     fn tactical_schema_has_no_quest_keyed_mission_authority() {
-        let source = include_str!("tactical.rs");
+        let source = crate::production_source(include_str!("tactical.rs"));
         for schema in ["TacticalServerRequest", "TacticalServer"] {
             let body = source
                 .split(&format!("pub struct {schema}"))
@@ -1352,7 +1397,7 @@ mod authority_tests {
 
     #[test]
     fn gateway_entry_points_require_character_authority() {
-        let source = include_str!("tactical.rs");
+        let source = crate::production_source(include_str!("tactical.rs"));
         let request = source
             .split("pub fn request_tactical_server(")
             .nth(1)
@@ -1363,7 +1408,7 @@ mod authority_tests {
 
     #[test]
     fn tactical_entry_is_manual_only_and_scene_wrapper_cannot_bypass_it() {
-        let source = include_str!("tactical.rs");
+        let source = crate::production_source(include_str!("tactical.rs"));
         let wrapper = source
             .split("pub fn request_tactical_server_for_scene")
             .nth(1)
@@ -1392,7 +1437,7 @@ mod authority_tests {
 
     #[test]
     fn claim_is_gateway_authorized_hashed_and_consumed_once() {
-        let source = include_str!("tactical.rs");
+        let source = crate::production_source(include_str!("tactical.rs"));
         assert!(source.contains("require_strategic_gateway(ctx)?"));
         assert!(source.contains("Sha256::digest(claim.as_bytes())"));
         assert!(source.contains(".tactical_server_claim()"));
@@ -1402,7 +1447,7 @@ mod authority_tests {
 
     #[test]
     fn strategic_request_binds_expected_party_members_into_the_server() {
-        let source = include_str!("tactical.rs");
+        let source = crate::production_source(include_str!("tactical.rs"));
         for schema in ["TacticalServerRequest", "TacticalServer"] {
             let body = source
                 .split(&format!("pub struct {schema}"))
@@ -1423,7 +1468,7 @@ mod authority_tests {
 
     #[test]
     fn tactical_completion_is_an_opaque_signal_to_strategic_authority() {
-        let source = include_str!("tactical.rs");
+        let source = crate::production_source(include_str!("tactical.rs"));
         let completion = source
             .split("fn end_tactical_server_by_instance")
             .nth(1)

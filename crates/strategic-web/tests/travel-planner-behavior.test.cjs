@@ -237,12 +237,10 @@ test("authoritative travel guards stale sync, bounded itineraries, and terminal 
   assert.match(strategic, /synchronize_party_departure_time[\s\S]+revalidate_party_after_departure_sync/);
   assert.match(strategic, /pending_incident[\s\S]+departure_snapshot_allows_travel/);
   assert.match(strategic, /camps\.len\(\) >= MAX_ITINERARY_SEGMENTS/);
-  const personalNeeds = time.indexOf("apply_elapsed_needs(ctx, member_id, elapsed)?;");
-  const personalTerminal = time.indexOf("if terminal.is_some()", personalNeeds);
-  assert.ok(personalNeeds >= 0 && personalNeeds < personalTerminal, "personal camp sync consumes needs before terminal return");
-  const partyNeeds = time.indexOf("apply_elapsed_needs(ctx, member_id, member_elapsed)?;", personalNeeds + 1);
+  assert.doesNotMatch(time, /advance_personal_camp_time/);
+  const partyNeeds = time.indexOf("apply_elapsed_needs(ctx, member_id, member_elapsed)?;");
   const partyTerminal = time.indexOf("if terminal.is_some()", partyNeeds);
-  assert.ok(partyNeeds > personalNeeds && partyNeeds < partyTerminal, "party camp consumes needs before terminal return");
+  assert.ok(partyNeeds >= 0 && partyNeeds < partyTerminal, "party camp consumes needs before terminal return");
   assert.doesNotMatch(strategic, /plan_version|reconstruct_legacy_journey_coordinates/);
   assert.match(strategic, /total_movement_minutes[\s\S]+completed_movement_minutes/);
   assert.match(

@@ -488,7 +488,7 @@ pub fn delete_unreferenced_settlement_social_organizations(
 mod tests {
     #[test]
     fn assignment_key_enforces_one_role_per_organization_instance() {
-        let source = include_str!("social_roles.rs");
+        let source = crate::production_source(include_str!("social_roles.rs"));
         let insertion = source
             .split("fn insert_character_role")
             .nth(1)
@@ -498,12 +498,13 @@ mod tests {
             .unwrap();
         assert!(source.contains("character:{character_id}:{instance_id}"));
         assert!(insertion.contains("existing.role_id == role_id"));
-        assert!(insertion.contains("already has role"));
+        assert!(insertion.contains("character_organization_role().id().find(&id)"));
+        assert!(insertion.contains("Err("));
     }
 
     #[test]
     fn family_identity_is_stable_and_newborns_copy_birth_family_roles() {
-        let source = include_str!("social_roles.rs");
+        let source = crate::production_source(include_str!("social_roles.rs"));
         let family = source
             .split("pub fn ensure_character_family_role")
             .nth(1)
@@ -527,7 +528,7 @@ mod tests {
 
     #[test]
     fn gateway_precedence_comes_from_the_address_winning_public_role() {
-        let source = include_str!("social_roles.rs");
+        let source = crate::production_source(include_str!("social_roles.rs"));
         let projection = source
             .split("pub fn character_social_precedence_view")
             .nth(1)

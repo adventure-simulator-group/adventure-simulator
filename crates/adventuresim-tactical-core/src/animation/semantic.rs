@@ -11,6 +11,17 @@ pub enum SemanticPose {
     WalkPassing,
     RunContact,
     RunFlight,
+    CombatStance,
+    StrafeCycle,
+    SkipCycle,
+    QuickstepForwardTakeoff,
+    QuickstepForwardContact,
+    QuickstepRightTakeoff,
+    QuickstepRightContact,
+    QuickstepLeftTakeoff,
+    QuickstepLeftContact,
+    QuickstepBackTakeoff,
+    QuickstepBackContact,
     DiveForward,
     DiveBackward,
     DiveLeft,
@@ -47,8 +58,8 @@ mod contract_tests {
     use super::*;
 
     #[test]
-    fn humanoid_contract_resolves_from_eighteen_semantic_variants() {
-        assert_eq!(SemanticPose::HUMANOID_REQUIRED.len(), 19);
+    fn humanoid_contract_resolves_from_twenty_nine_semantic_variants() {
+        assert_eq!(SemanticPose::HUMANOID_REQUIRED.len(), 30);
         let authored = SemanticPose::HUMANOID_REQUIRED
             .into_iter()
             .filter(|pose| {
@@ -56,7 +67,7 @@ mod contract_tests {
                     .is_none_or(|other| pose.as_str() < other.as_str())
             })
             .collect::<BTreeSet<_>>();
-        assert_eq!(authored.len(), 18);
+        assert_eq!(authored.len(), 29);
         let mut library = AnimationPackLibrary::default();
         library
             .insert(AnimationPack {
@@ -158,16 +169,20 @@ mod contract_tests {
         state.advance_action(5);
         let early = AnimationEvaluation::from_skeleton(&state);
         assert_eq!(early.action[0].pose, SemanticPose::GuardThrust);
-        assert_eq!(
-            early.action[0].sampling,
-            PoseSampling::Span {
-                end: SemanticPose::AttackThrust,
-                progress: 0.5,
-            }
+        let PoseSampling::CurveSpan { end, coordinate } = early.action[0].sampling else {
+            panic!("ordinary attacks should use the extrapolating pose curve");
+        };
+        assert_eq!(end, SemanticPose::AttackThrust);
+        assert!(
+            coordinate < 0.0,
+            "the early readable tell draws behind guard"
         );
-        state.advance_action(15);
+        state.advance_action(11);
         let recovery = AnimationEvaluation::from_skeleton(&state);
-        assert_eq!(recovery.action[0].pose, SemanticPose::AttackThrust);
+        let PoseSampling::CurveSpan { coordinate, .. } = recovery.action[0].sampling else {
+            panic!("ordinary recovery should use the extrapolating pose curve");
+        };
+        assert!(coordinate > 1.0, "recovery begins beyond contact");
     }
 
     #[test]
@@ -391,6 +406,7 @@ mod contract_tests {
         assert!(state.begin_posture_transition(
             PostureTransitionKind::DiveToDowned {
                 direction: DiveDirection::Forward,
+                trajectory: DiveTrajectory::Airborne,
             },
             0,
             11,
@@ -420,6 +436,7 @@ mod contract_tests {
         assert!(state.begin_posture_transition(
             PostureTransitionKind::DiveToDowned {
                 direction: DiveDirection::Backward,
+                trajectory: DiveTrajectory::Airborne,
             },
             0,
             11,
@@ -431,6 +448,28 @@ mod contract_tests {
         state.advance_posture_transition(18);
         assert_eq!(state.body(), BodyState::Supine);
         assert!(state.posture_transition().is_none());
+    }
+
+    #[test]
+    fn supported_dive_timeout_enters_contact_recovery_without_pose_snap() {
+        let mut state = SkeletonState::default();
+        assert!(state.begin_posture_transition(
+            PostureTransitionKind::DiveToDowned {
+                direction: DiveDirection::Backward,
+                trajectory: DiveTrajectory::Airborne,
+            },
+            0,
+            8,
+        ));
+
+        state.advance_posture_transition(7);
+        assert!(state.posture_transition().unwrap().phase() < 0.5);
+        state.advance_posture_transition(8);
+        assert_eq!(state.posture_transition().unwrap().phase(), 0.5);
+        state.advance_posture_transition(12);
+        assert_eq!(state.posture_transition().unwrap().phase(), 0.75);
+        state.advance_posture_transition(16);
+        assert_eq!(state.body(), BodyState::Supine);
     }
 
     #[test]
@@ -498,6 +537,7 @@ mod contract_tests {
         assert!(state.begin_posture_transition(
             PostureTransitionKind::DiveToDowned {
                 direction: DiveDirection::Forward,
+                trajectory: DiveTrajectory::Airborne,
             },
             11,
             20,
@@ -561,12 +601,23 @@ mod contract_tests {
 }
 
 impl SemanticPose {
-    pub const ALL: [Self; 30] = [
+    pub const ALL: [Self; 41] = [
         Self::IdleRelaxed,
         Self::WalkContact,
         Self::WalkPassing,
         Self::RunContact,
         Self::RunFlight,
+        Self::CombatStance,
+        Self::StrafeCycle,
+        Self::SkipCycle,
+        Self::QuickstepForwardTakeoff,
+        Self::QuickstepForwardContact,
+        Self::QuickstepRightTakeoff,
+        Self::QuickstepRightContact,
+        Self::QuickstepLeftTakeoff,
+        Self::QuickstepLeftContact,
+        Self::QuickstepBackTakeoff,
+        Self::QuickstepBackContact,
         Self::DiveForward,
         Self::DiveBackward,
         Self::DiveLeft,
@@ -596,12 +647,23 @@ impl SemanticPose {
     /// Non-attack semantics every complete humanoid family must resolve.
     /// Attack clips are capabilities: a pack may deliberately omit any or all
     /// of them, and gameplay respects that absence.
-    pub const HUMANOID_REQUIRED: [Self; 19] = [
+    pub const HUMANOID_REQUIRED: [Self; 30] = [
         Self::IdleRelaxed,
         Self::WalkContact,
         Self::WalkPassing,
         Self::RunContact,
         Self::RunFlight,
+        Self::CombatStance,
+        Self::StrafeCycle,
+        Self::SkipCycle,
+        Self::QuickstepForwardTakeoff,
+        Self::QuickstepForwardContact,
+        Self::QuickstepRightTakeoff,
+        Self::QuickstepRightContact,
+        Self::QuickstepLeftTakeoff,
+        Self::QuickstepLeftContact,
+        Self::QuickstepBackTakeoff,
+        Self::QuickstepBackContact,
         Self::DiveForward,
         Self::DiveBackward,
         Self::DiveLeft,
@@ -626,6 +688,17 @@ impl SemanticPose {
             WalkPassing => "walk_passing",
             RunContact => "run_contact",
             RunFlight => "run_flight",
+            CombatStance => "combat_stance",
+            StrafeCycle => "strafe_cycle",
+            SkipCycle => "skip_cycle",
+            QuickstepForwardTakeoff => "quickstep_forward_takeoff",
+            QuickstepForwardContact => "quickstep_forward_contact",
+            QuickstepRightTakeoff => "quickstep_right_takeoff",
+            QuickstepRightContact => "quickstep_right_contact",
+            QuickstepLeftTakeoff => "quickstep_left_takeoff",
+            QuickstepLeftContact => "quickstep_left_contact",
+            QuickstepBackTakeoff => "quickstep_back_takeoff",
+            QuickstepBackContact => "quickstep_back_contact",
             DiveForward => "dive_forward",
             DiveBackward => "dive_backward",
             DiveLeft => "dive_left",
@@ -677,6 +750,16 @@ impl SemanticPose {
             WalkPassing => WalkContact,
             RunContact => WalkContact,
             RunFlight => WalkPassing,
+            CombatStance => IdleRelaxed,
+            StrafeCycle | SkipCycle => CombatStance,
+            QuickstepForwardTakeoff
+            | QuickstepForwardContact
+            | QuickstepRightTakeoff
+            | QuickstepRightContact
+            | QuickstepLeftTakeoff
+            | QuickstepLeftContact
+            | QuickstepBackTakeoff
+            | QuickstepBackContact => CombatStance,
             DiveForward | DiveBackward | DiveLeft | DiveRight => GuardThrust,
             AirborneCenter => RunFlight,
             AirborneTravel => AirborneCenter,

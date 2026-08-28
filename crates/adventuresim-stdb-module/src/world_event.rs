@@ -1113,7 +1113,7 @@ mod tests {
 
     #[test]
     fn receipt_lookup_precedes_mutable_plan_reads_and_commit() {
-        let source = include_str!("world_event.rs");
+        let source = crate::production_source(include_str!("world_event.rs"));
         let commit = source
             .split("fn commit_world_event")
             .nth(1)

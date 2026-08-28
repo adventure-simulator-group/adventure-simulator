@@ -308,17 +308,22 @@ impl CombatEquipment {
 
 impl PlayerEquipment for CombatEquipment {
     fn weapon_skill_distribution(&self) -> crate::equipment::WeaponSkillDistribution {
-        self.weapon
-            .map_or_else(Default::default, |weapon| weapon.skills)
+        self.weapon.map_or(
+            crate::equipment::WeaponSkillDistribution::UNARMED,
+            |weapon| weapon.skills,
+        )
     }
     fn weapon_is_melee(&self) -> bool {
-        self.weapon.is_some_and(|weapon| weapon.melee)
+        self.weapon.is_none_or(|weapon| weapon.melee)
     }
     fn weapon_is_ranged(&self) -> bool {
         self.weapon.is_some_and(|weapon| weapon.ranged)
     }
+    fn weapon_is_unarmed(&self) -> bool {
+        self.weapon.is_none()
+    }
     fn weapon_does_blunt(&self) -> bool {
-        self.weapon.is_some_and(|weapon| weapon.blunt)
+        self.weapon.is_none_or(|weapon| weapon.blunt)
     }
     fn weapon_does_slash(&self) -> bool {
         self.weapon.is_some_and(|weapon| weapon.slash)
@@ -330,10 +335,12 @@ impl PlayerEquipment for CombatEquipment {
         self.weapon.map_or(0.0, |weapon| weapon.accuracy)
     }
     fn weapon_swing_precision(&self) -> f32 {
-        self.weapon.map_or(0.0, |weapon| weapon.swing_precision)
+        self.weapon
+            .map_or(UNARMED_SWING_PRECISION, |weapon| weapon.swing_precision)
     }
     fn weapon_stab_precision(&self) -> f32 {
-        self.weapon.map_or(0.0, |weapon| weapon.stab_precision)
+        self.weapon
+            .map_or(UNARMED_STAB_PRECISION, |weapon| weapon.stab_precision)
     }
     fn weapon_preferred_melee_style(&self) -> crate::combat_style::MeleeAttackStyle {
         self.weapon
@@ -477,15 +484,7 @@ impl Combatant {
     }
 
     fn recover_balance(&mut self) {
-        let balance = self.skills.skill_check_by_parts(
-            Skill::Balance,
-            &self.attributes,
-            &self.body,
-            &self.essentials,
-            &self.equipment,
-            LimbWeights::both_legs(),
-        );
-        self.imbalance = recover_combat_imbalance(self.imbalance, balance, COMBAT_ROUND_SECONDS);
+        self.imbalance = recover_combat_imbalance(self.imbalance, COMBAT_ROUND_SECONDS);
     }
 
     fn can_attack_ranged(&self) -> bool {
@@ -1564,25 +1563,11 @@ fn apply_attack_result(
         AttackResult::ToDefender { balance_damage, .. } => {
             defender.imbalance += balance_damage.max(0.0);
             let damage = health_damage_from_attack(result, part);
-            let raw_cut = match result {
-                AttackResult::ToDefender { cut_damage, .. } => cut_damage.max(0.0),
-                _ => 0.0,
-            };
-            let raw_total = match result {
-                AttackResult::ToDefender {
-                    cut_damage,
-                    blunt_damage,
-                    ..
-                } => (cut_damage + blunt_damage).max(0.0),
-                _ => 0.0,
-            };
             let applied = defender.body.apply_damage(part, damage);
-            defender.cut_damage += if raw_total > 0.0 {
-                applied * raw_cut / raw_total
-            } else {
-                0.0
-            };
-            defender.blood_loss_fraction += applied * BLOOD_LOSS_PER_HEALTH_DAMAGE;
+            let (applied_cut, applied_blunt) = apportion_attack_health_damage(result, applied);
+            defender.cut_damage += applied_cut;
+            defender.blood_loss_fraction +=
+                blood_loss_from_applied_health_damage(part, applied_cut, applied_blunt);
             AttackEffect {
                 hit: true,
                 health_damage: applied,

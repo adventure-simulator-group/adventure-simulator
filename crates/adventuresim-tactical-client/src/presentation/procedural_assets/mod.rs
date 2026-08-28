@@ -184,6 +184,7 @@ enum SurfaceRecipe {
 pub(super) fn setup_procedural_environment_assets(
     mut commands: Commands,
     mut images: ResMut<Assets<Image>>,
+    startup: Option<Res<crate::presentation::ClientStartupTiming>>,
 ) {
     let started = web_time::Instant::now();
     info!("Generating procedural environment texture assets");
@@ -192,6 +193,9 @@ pub(super) fn setup_procedural_environment_assets(
         elapsed_ms = started.elapsed().as_millis(),
         "Generated procedural environment texture assets"
     );
+    if let Some(startup) = startup {
+        startup.mark("procedural environment assets generated");
+    }
 }
 
 pub(super) fn generate_procedural_environment_assets(

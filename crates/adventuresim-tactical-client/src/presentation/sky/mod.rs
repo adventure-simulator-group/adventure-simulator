@@ -3,13 +3,24 @@
 
 use super::*;
 use adventuresim_world_schema::coordinates::{LatitudeMicrodegrees, LongitudeMicrodegrees};
-use bevy::{camera::visibility::NoFrustumCulling, light::SunDisk};
+use bevy::{
+    camera::visibility::NoFrustumCulling,
+    light::{CascadeShadowConfig, CascadeShadowConfigBuilder, SunDisk},
+};
 
 const MOON_DISTANCE_METRES: f32 = 30_000.0;
+const SUN_DISTANCE_METRES: f32 = 50_000.0;
+const SUN_ANGULAR_RADIUS_RADIANS: f32 = 0.266_5_f32.to_radians();
 const MOON_ANGULAR_RADIUS_RADIANS: f32 = 0.25_f32.to_radians();
 const STAR_DISTANCE_METRES: f32 = 55_000.0;
 const MOON_SHADER: &str = "shaders/tactical_moon.wgsl";
+const SUN_SHADER: &str = "shaders/tactical_sun.wgsl";
 const STAR_SHADER: &str = "shaders/tactical_stars.wgsl";
+
+/// One short cascade preserves contact-scale tactical shadows without paying
+/// Bevy's four-cascade, 150 m default for distant scenery.
+pub(in crate::presentation) const TACTICAL_DIRECTIONAL_SHADOW_MAP_SIZE: usize = 1024;
+const TACTICAL_DIRECTIONAL_SHADOW_DISTANCE_METRES: f32 = 28.0;
 
 const ATTRIBUTE_STAR_DIRECTION: MeshVertexAttribute =
     MeshVertexAttribute::new("StarDirection", 2_180_001, VertexFormat::Float32x3);
@@ -22,6 +33,9 @@ const ATTRIBUTE_STAR_CORNER: MeshVertexAttribute =
 pub(crate) struct TacticalSunlight;
 
 #[derive(Component)]
+pub(crate) struct TacticalSun;
+
+#[derive(Component)]
 pub(crate) struct TacticalMoonlight;
 
 #[derive(Component)]
@@ -29,6 +43,16 @@ pub(crate) struct TacticalMoon;
 
 #[derive(Component)]
 pub(crate) struct TacticalStars;
+
+pub(in crate::presentation) fn tactical_directional_shadow_config() -> CascadeShadowConfig {
+    CascadeShadowConfigBuilder {
+        num_cascades: 1,
+        maximum_distance: TACTICAL_DIRECTIONAL_SHADOW_DISTANCE_METRES,
+        overlap_proportion: 0.0,
+        ..default()
+    }
+    .build()
+}
 
 #[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
 pub(in crate::presentation) struct TacticalMoonMaterial {
@@ -42,6 +66,21 @@ pub(in crate::presentation) struct TacticalMoonMaterial {
     /// Earthshine floor, disc radiance, phase, reserved.
     #[uniform(1)]
     appearance: Vec4,
+}
+
+#[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
+pub(in crate::presentation) struct TacticalSunMaterial {
+    #[uniform(0)]
+    radiance: Vec4,
+}
+
+impl Material for TacticalSunMaterial {
+    fn vertex_shader() -> ShaderRef {
+        SUN_SHADER.into()
+    }
+    fn fragment_shader() -> ShaderRef {
+        SUN_SHADER.into()
+    }
 }
 
 impl Material for TacticalMoonMaterial {
@@ -98,15 +137,36 @@ impl Material for TacticalStarMaterial {
     }
 }
 
+/// Cascade configuration from the graphics preset; `None` keeps the engine
+/// default (four cascades to its default reach), which capture tooling
+/// relies on for golden stability. Gameplay presets trade distant contact
+/// shadows for fewer, denser cascades.
+fn preset_cascade_config(
+    settings: &TacticalGraphicsSettings,
+) -> Option<bevy::light::CascadeShadowConfig> {
+    if settings.shadow_cascade_count == 0 && settings.shadow_maximum_distance <= 0.0 {
+        return None;
+    }
+    let mut builder = bevy::light::CascadeShadowConfigBuilder::default();
+    if settings.shadow_cascade_count > 0 {
+        builder.num_cascades = settings.shadow_cascade_count;
+    }
+    if settings.shadow_maximum_distance > 0.0 {
+        builder.maximum_distance = settings.shadow_maximum_distance;
+    }
+    Some(builder.build())
+}
+
 pub(in crate::presentation) fn setup_tactical_sky(
     mut commands: Commands,
     settings: Res<TacticalGraphicsSettings>,
     asset_server: Res<AssetServer>,
     mut meshes: ResMut<Assets<Mesh>>,
+    mut sun_materials: ResMut<Assets<TacticalSunMaterial>>,
     mut moon_materials: ResMut<Assets<TacticalMoonMaterial>>,
     mut star_materials: ResMut<Assets<TacticalStarMaterial>>,
 ) {
-    commands.spawn((
+    let mut sunlight = commands.spawn((
         Name::new("Tactical sunlight"),
         TacticalSunlight,
         SunDisk::EARTH,
@@ -116,9 +176,13 @@ pub(in crate::presentation) fn setup_tactical_sky(
             illuminance: 0.0,
             ..default()
         },
+        tactical_directional_shadow_config(),
     ));
+    if let Some(cascades) = preset_cascade_config(&settings) {
+        sunlight.insert(cascades);
+    }
 
-    commands.spawn((
+    let mut moonlight = commands.spawn((
         Name::new("Tactical moonlight"),
         TacticalMoonlight,
         SunDisk::OFF,
@@ -129,11 +193,29 @@ pub(in crate::presentation) fn setup_tactical_sky(
             shadow_maps_enabled: false,
             ..default()
         },
+        tactical_directional_shadow_config(),
     ));
+    if let Some(cascades) = preset_cascade_config(&settings) {
+        moonlight.insert(cascades);
+    }
 
     if !settings.celestial_enabled {
         return;
     }
+
+    commands.spawn((
+        Name::new("Analytic tactical Sun disc"),
+        TacticalSun,
+        NotShadowCaster,
+        Mesh3d(meshes.add(Sphere::new(1.0).mesh().uv(32, 16))),
+        MeshMaterial3d(sun_materials.add(TacticalSunMaterial {
+            radiance: Vec4::new(1.0, 0.93, 0.78, 14.0),
+        })),
+        Transform::from_scale(Vec3::splat(
+            SUN_DISTANCE_METRES * SUN_ANGULAR_RADIUS_RADIANS.tan(),
+        )),
+        Visibility::Hidden,
+    ));
 
     commands.spawn((
         Name::new("Tactical Moon disc"),
@@ -194,7 +276,12 @@ impl CelestialLightingSnapshot {
             .expect("validated tactical scene latitude");
         let longitude = LongitudeMicrodegrees::new(environment.longitude_microdegrees)
             .expect("validated tactical scene longitude");
-        let celestial = celestial_directions(environment.absolute_minute, latitude, longitude);
+        let celestial = celestial_directions_with_phase(
+            environment.absolute_minute,
+            environment.lunar_phase_minute,
+            latitude,
+            longitude,
+        );
         let sun_direction = to_bevy_direction(celestial.sun);
         let moon_direction = to_bevy_direction(celestial.moon);
         let sun_altitude_degrees = sun_direction.y.asin().to_degrees();
@@ -283,7 +370,7 @@ pub(in crate::presentation) fn apply_presented_celestial_lighting(
         (&mut DirectionalLight, &mut Transform),
         (With<TacticalMoonlight>, Without<TacticalSunlight>),
     >,
-    camera: Single<&mut Exposure, With<Camera3d>>,
+    camera: Single<&mut Exposure, With<TacticalGameplayCamera>>,
     mut ambient: ResMut<GlobalAmbientLight>,
     mut moon: Query<
         (&MeshMaterial3d<TacticalMoonMaterial>, &mut Visibility),
@@ -332,11 +419,7 @@ pub(in crate::presentation) fn apply_presented_celestial_lighting(
     };
 
     let (mut sun, mut sun_transform) = sunlight.into_inner();
-    sun.illuminance = selected_solar_illuminance(
-        settings.atmosphere_enabled,
-        environment,
-        celestial.sun_altitude_degrees,
-    );
+    sun.illuminance = scene_atmosphere_solar_illuminance(environment);
     sun.shadow_maps_enabled = settings.shadows_enabled && celestial.sun_altitude_degrees > 0.0;
     *sun_transform = light_transform(celestial.sun_direction);
 
@@ -387,9 +470,8 @@ pub(crate) struct AtmosphereIblAmbientHandoff {
 }
 
 pub(super) fn update_global_ambient_policy(
-    settings: Res<TacticalGraphicsSettings>,
     celestial: Res<PresentedCelestialLighting>,
-    camera_environment: Single<Option<&EnvironmentMapLight>, With<Camera3d>>,
+    camera_environment: Single<Option<&EnvironmentMapLight>, With<TacticalGameplayCamera>>,
     mut handoff: ResMut<AtmosphereIblAmbientHandoff>,
     mut ambient: ResMut<GlobalAmbientLight>,
 ) {
@@ -404,10 +486,8 @@ pub(super) fn update_global_ambient_policy(
     // filtering is observable from the main world. Hold the full fallback for a
     // short bounded grace after allocation; deterministic captures additionally
     // require consecutive stable readbacks before accepting evidence.
-    let allocated = settings.atmosphere_enabled
-        && settings.environment_light_enabled
-        && camera_environment.is_some();
-    if allocated && handoff.active && !settings.is_changed() && !celestial_changed {
+    let allocated = camera_environment.is_some();
+    if allocated && handoff.active && !celestial_changed {
         return;
     }
     handoff.allocated_frames = if allocated {
@@ -433,6 +513,16 @@ mod ambient_handoff_tests {
     use super::*;
 
     #[test]
+    fn tactical_directional_shadows_use_one_close_compact_cascade() {
+        let config = tactical_directional_shadow_config();
+
+        assert_eq!(TACTICAL_DIRECTIONAL_SHADOW_MAP_SIZE, 1024);
+        assert_eq!(config.bounds, vec![28.0]);
+        assert_eq!(config.minimum_distance, 0.1);
+        assert_eq!(config.overlap_proportion, 0.0);
+    }
+
+    #[test]
     fn missing_active_scene_clears_all_celestial_outputs() {
         let mut app = App::new();
         app.init_resource::<Assets<TacticalMoonMaterial>>()
@@ -447,6 +537,13 @@ mod ambient_handoff_tests {
                 environment_map_size: 64,
                 bloom_enabled: true,
                 max_vista_lods: 3,
+                grass_density_scale: 1.0,
+                grass_range_scale: 1.0,
+                cloud_quality_scale: 1.0,
+                cloud_resolution_scale: 1.0,
+                msaa_samples: 4,
+                shadow_cascade_count: 0,
+                shadow_maximum_distance: 0.0,
             })
             .insert_resource(GlobalAmbientLight {
                 brightness: 42.0,
@@ -471,8 +568,11 @@ mod ambient_handoff_tests {
             },
             Transform::default(),
         ));
-        app.world_mut()
-            .spawn((Camera3d::default(), Exposure { ev100: 2.0 }));
+        app.world_mut().spawn((
+            Camera3d::default(),
+            TacticalGameplayCamera,
+            Exposure { ev100: 2.0 },
+        ));
         let moon = app
             .world_mut()
             .resource_mut::<Assets<TacticalMoonMaterial>>()
@@ -577,28 +677,42 @@ mod ambient_handoff_tests {
     }
 }
 
-fn selected_solar_illuminance(
-    atmosphere_enabled: bool,
-    environment: &SceneEnvironment,
-    sun_altitude_degrees: f32,
-) -> f32 {
-    if atmosphere_enabled {
-        scene_atmosphere_solar_illuminance(environment)
-    } else {
-        // The non-atmospheric fallback has no planetary transmittance or
-        // horizon occlusion, so it must retain the explicit altitude clamp.
-        scene_sunlight_illuminance(environment, sun_altitude_degrees)
-    }
-}
-
+#[expect(
+    clippy::type_complexity,
+    reason = "the Bevy query mutates the sun presentation while excluding the distinct moon entity"
+)]
 pub(in crate::presentation) fn keep_celestial_visuals_centered(
-    camera: Single<&GlobalTransform, With<Camera3d>>,
+    camera: Single<&GlobalTransform, With<TacticalGameplayCamera>>,
     celestial: Res<PresentedCelestialLighting>,
-    mut moon: Query<&mut Transform, With<TacticalMoon>>,
+    frozen_atmosphere: Res<FrozenAtmosphereStatus>,
+    mut sun: Query<
+        (
+            &MeshMaterial3d<TacticalSunMaterial>,
+            &mut Transform,
+            &mut Visibility,
+        ),
+        (With<TacticalSun>, Without<TacticalMoon>),
+    >,
+    mut sun_materials: ResMut<Assets<TacticalSunMaterial>>,
+    mut moon: Query<&mut Transform, (With<TacticalMoon>, Without<TacticalSun>)>,
 ) {
     let Some(celestial) = celestial.snapshot.as_ref() else {
         return;
     };
+    if let Ok((handle, mut sun_transform, mut visibility)) = sun.single_mut() {
+        sun_transform.translation =
+            camera.translation() + celestial.sun_direction * SUN_DISTANCE_METRES;
+        *visibility = if frozen_atmosphere.is_frozen() && celestial.sun_altitude_degrees > -0.3 {
+            Visibility::Inherited
+        } else {
+            Visibility::Hidden
+        };
+        if let Some(mut material) = sun_materials.get_mut(&handle.0) {
+            let daylight = smoothstep(-0.3, 12.0, celestial.sun_altitude_degrees);
+            let color = Vec3::new(1.0, 0.42, 0.12).lerp(Vec3::new(1.0, 0.93, 0.78), daylight);
+            material.radiance = color.extend(14.0 * celestial.weather_transmission);
+        }
+    }
     let Ok(mut moon_transform) = moon.single_mut() else {
         return;
     };
@@ -799,6 +913,14 @@ mod tests {
     }
 
     #[test]
+    fn frozen_atmosphere_replacement_preserves_the_earth_sun_angular_size() {
+        assert!((SUN_ANGULAR_RADIUS_RADIANS * 2.0 - SunDisk::EARTH.angular_size).abs() < 0.000_01);
+        let shader = include_str!("../../../../../assets/shaders/tactical_sun.wgsl");
+        assert!(shader.contains("sun_radiance"));
+        assert!(!shader.contains("for ("));
+    }
+
+    #[test]
     fn star_visibility_follows_astronomical_twilight() {
         assert_eq!(star_visibility(0.0), 0.0);
         assert_eq!(star_visibility(-16.0), 1.0);
@@ -831,13 +953,14 @@ mod tests {
     }
 
     #[test]
-    fn atmosphere_and_fallback_select_safe_solar_sources() {
+    fn baked_atmosphere_uses_the_physical_solar_source() {
         let environment = SceneEnvironment {
             scene_digest: "sky-test".into(),
             generation_version: TACTICAL_SCENE_GENERATION_VERSION,
             latitude_microdegrees: 0,
             longitude_microdegrees: 0,
             absolute_minute: 0,
+            lunar_phase_minute: 0,
             absolute_elevation_metres: 0,
             weather: WeatherSnapshot {
                 rules_version: WEATHER_RULES_VERSION,
@@ -858,14 +981,9 @@ mod tests {
             water_bps: 0,
             hilly_bps: 0,
         };
-        assert_eq!(selected_solar_illuminance(false, &environment, -6.0), 0.0);
         assert_eq!(
-            selected_solar_illuminance(true, &environment, -6.0),
+            scene_atmosphere_solar_illuminance(&environment),
             lux::RAW_SUNLIGHT
-        );
-        assert_eq!(
-            selected_solar_illuminance(false, &environment, 8.0),
-            selected_solar_illuminance(true, &environment, 8.0)
         );
     }
 

@@ -1,8 +1,13 @@
 use std::path::PathBuf;
 
 use adventuresim_character_creator::{
-    CharacterRecipe, IdentityGroup,
-    export::{RiggedMesh, export_rigged_glb},
+    CharacterRecipe, ClothingSelection, IdentityGroup,
+    clothing::{GarmentSpecification, generate_clothing_shells},
+    export::{
+        MHR_ANATOMICAL_UV_DOMAIN, RiggedMesh, RiggedShell, RiggedSocket, SurfaceUvLayout,
+        export_rigged_glb, fitted_equipment_socket_from_uv,
+    },
+    item_catalog_schema::{EquipmentLocation, ItemCatalogDocument, ItemDefinition},
 };
 use anyhow::{Context, Result};
 use bevy::{
@@ -35,9 +40,16 @@ struct Args {
     recipe: PathBuf,
     #[arg(long, default_value = "assets_src/biped/unarmed/base.glb")]
     glb: PathBuf,
+    #[arg(long, default_value = "content/items")]
+    catalog: PathBuf,
+    #[arg(long, default_value = "assets/equipment/procedural")]
+    equipment_output: PathBuf,
     /// Export the selected recipe without opening the studio window.
     #[arg(long)]
     export_only: bool,
+    /// Generate one procedural MHR asset for every armor/clothing placement.
+    #[arg(long)]
+    generate_equipment: bool,
 }
 
 #[derive(Resource)]
@@ -46,6 +58,9 @@ struct BodyModel {
     lod: u8,
     correctives: bool,
 }
+
+#[derive(Resource)]
+struct EquipmentCatalog(Vec<ItemDefinition>);
 
 #[derive(Resource)]
 struct Studio {
@@ -83,6 +98,7 @@ fn main() -> Result<()> {
     let device = Device::default();
     let model = load_body_model(&args.assets, args.lod, false, &device)
         .with_context(|| format!("loading MHR assets from {}", args.assets.display()))?;
+    let catalog = EquipmentCatalog(load_item_catalog(&args.catalog)?);
 
     let recipe = if args.recipe.is_file() {
         let parsed: CharacterRecipe = serde_json::from_slice(&std::fs::read(&args.recipe)?)?;
@@ -95,8 +111,16 @@ fn main() -> Result<()> {
         }
     };
 
+    if args.generate_equipment {
+        generate_equipment_assets(&args.equipment_output, &model, &recipe, &catalog)?;
+        println!(
+            "Generated equipment under {}",
+            args.equipment_output.display()
+        );
+        return Ok(());
+    }
     if args.export_only {
-        export_character(&args.glb, &model, &recipe)?;
+        export_character(&args.glb, &model, &recipe, &catalog)?;
         println!("Exported {}", args.glb.display());
         return Ok(());
     }
@@ -105,6 +129,7 @@ fn main() -> Result<()> {
         .insert_resource(ClearColor(Color::srgb(0.035, 0.045, 0.055)))
         .insert_resource(args.clone())
         .insert_resource(model)
+        .insert_resource(catalog)
         .insert_resource(Studio {
             recipe,
             selected: IdentityGroup::Body,
@@ -197,7 +222,12 @@ fn setup(
     deprecated,
     reason = "egui's replacement requires a parent Ui, but this is the top-level panel"
 )]
-fn studio_ui(mut contexts: EguiContexts, model: Res<BodyModel>, mut studio: ResMut<Studio>) {
+fn studio_ui(
+    mut contexts: EguiContexts,
+    model: Res<BodyModel>,
+    catalog: Res<EquipmentCatalog>,
+    mut studio: ResMut<Studio>,
+) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
     egui::SidePanel::left("creator")
         .exact_width(360.0)
@@ -237,6 +267,37 @@ fn studio_ui(mut contexts: EguiContexts, model: Res<BodyModel>, mut studio: ResM
             ui.small(
                 "Correctives improve posed deformation but require substantially more memory.",
             );
+            ui.separator();
+
+            ui.collapsing("Catalog clothing and armor", |ui| {
+                for item in procedural_items(&catalog) {
+                    let equipment = item.equipment.as_ref().expect("filtered equipment");
+                    for placement in &equipment.placements {
+                        let selection = ClothingSelection {
+                            item_id: item.id.clone(),
+                            placement_id: placement.id.clone(),
+                        };
+                        let mut enabled = studio.recipe.clothing.contains(&selection);
+                        let label = if equipment.placements.len() == 1 {
+                            item.display_name.clone()
+                        } else {
+                            format!("{} · {}", item.display_name, placement.id)
+                        };
+                        if ui.checkbox(&mut enabled, label).changed() {
+                            if enabled {
+                                studio.recipe.clothing.push(selection.clone());
+                            } else {
+                                studio
+                                    .recipe
+                                    .clothing
+                                    .retain(|selected| selected != &selection);
+                            }
+                            studio.dirty = true;
+                        }
+                    }
+                }
+            });
+            ui.small("Bone-weight shells follow the generated body and share its MHR skin.");
             ui.separator();
 
             ui.horizontal(|ui| {
@@ -326,6 +387,7 @@ fn studio_ui(mut contexts: EguiContexts, model: Res<BodyModel>, mut studio: ResM
                     std::path::Path::new(&studio.glb_path),
                     &model,
                     &studio.recipe,
+                    &catalog,
                 )
                 .map(|()| format!("Exported {}", studio.glb_path))
                 .unwrap_or_else(|error| format!("Export failed: {error:#}"));
@@ -353,6 +415,267 @@ fn load_recipe(path: &str) -> Result<CharacterRecipe> {
     let recipe: CharacterRecipe = serde_json::from_slice(&std::fs::read(path)?)?;
     recipe.validate().map_err(anyhow::Error::msg)?;
     Ok(recipe)
+}
+
+fn load_item_catalog(directory: &std::path::Path) -> Result<Vec<ItemDefinition>> {
+    let mut files = std::fs::read_dir(directory)
+        .with_context(|| format!("reading item catalog directory {}", directory.display()))?
+        .map(|entry| entry.map(|entry| entry.path()))
+        .collect::<std::io::Result<Vec<_>>>()?;
+    files.retain(|path| {
+        path.extension()
+            .is_some_and(|extension| extension == "yaml")
+    });
+    files.sort();
+    let mut items = Vec::new();
+    for path in files {
+        let document: ItemCatalogDocument = serde_json::from_slice(&std::fs::read(&path)?)
+            .with_context(|| format!("parsing item catalog {}", path.display()))?;
+        items.extend(document.items);
+    }
+    if items.is_empty() {
+        anyhow::bail!("item catalog contains no definitions");
+    }
+    Ok(items)
+}
+
+fn procedural_items(catalog: &EquipmentCatalog) -> impl Iterator<Item = &ItemDefinition> {
+    catalog.0.iter().filter(|item| {
+        item.equipment.as_ref().is_some_and(|equipment| {
+            equipment.material.is_some()
+                && equipment
+                    .placements
+                    .iter()
+                    .any(|placement| !placement.surface.is_empty())
+        })
+    })
+}
+
+fn selected_garments(
+    recipe: &CharacterRecipe,
+    catalog: &EquipmentCatalog,
+) -> Result<Vec<GarmentSpecification>, String> {
+    recipe
+        .clothing
+        .iter()
+        .map(|selection| {
+            let item = procedural_items(catalog)
+                .find(|item| item.id == selection.item_id)
+                .ok_or_else(|| format!("unknown procedural item {}", selection.item_id))?;
+            let placement = item
+                .equipment
+                .as_ref()
+                .and_then(|equipment| {
+                    equipment
+                        .placements
+                        .iter()
+                        .find(|placement| placement.id == selection.placement_id)
+                })
+                .ok_or_else(|| {
+                    format!(
+                        "item {} has no placement {}",
+                        selection.item_id, selection.placement_id
+                    )
+                })?;
+            Ok(GarmentSpecification::from_catalog(
+                format!("{} · {}", item.display_name, placement.id),
+                placement,
+                item.equipment
+                    .as_ref()
+                    .and_then(|equipment| equipment.material)
+                    .ok_or_else(|| format!("item {} has no procedural material", item.id))?,
+            ))
+        })
+        .collect()
+}
+
+fn placement_coverage(
+    placement: &adventuresim_character_creator::item_catalog_schema::EquipmentPlacement,
+) -> f32 {
+    let region_count = placement
+        .surface
+        .iter()
+        .map(|span| span.regions.len())
+        .sum::<usize>();
+    placement
+        .surface
+        .iter()
+        .map(|span| span.coverage * span.regions.len() as f32)
+        .sum::<f32>()
+        / region_count as f32
+}
+
+fn belt_mount_outward(location: EquipmentLocation) -> Option<[f64; 3]> {
+    Some(match location {
+        // MHR uses positive model-space X for the character's anatomical left.
+        EquipmentLocation::LeftBelt => [1.0, 0.0, 0.0],
+        EquipmentLocation::RightBelt => [-1.0, 0.0, 0.0],
+        EquipmentLocation::FrontBelt => [0.0, 0.0, -1.0],
+        EquipmentLocation::BackBelt => [0.0, 0.0, 1.0],
+        _ => return None,
+    })
+}
+
+fn generate_equipment_assets(
+    output: &std::path::Path,
+    model: &BodyModel,
+    recipe: &CharacterRecipe,
+    catalog: &EquipmentCatalog,
+) -> Result<()> {
+    std::fs::create_dir_all(output)
+        .with_context(|| format!("creating equipment output {}", output.display()))?;
+    let generated = generate_character(model, recipe)?;
+    let character = &model.mhr.character;
+    let mut assets = Vec::new();
+    let mut generated_files = std::collections::BTreeSet::new();
+    for item in procedural_items(catalog) {
+        let equipment = item.equipment.as_ref().expect("filtered equipment");
+        for placement in &equipment.placements {
+            if placement.surface.is_empty() {
+                continue;
+            }
+            let specification = GarmentSpecification::from_catalog(
+                format!("{} · {}", item.display_name, placement.id),
+                placement,
+                equipment.material.ok_or_else(|| {
+                    anyhow::anyhow!("item {} has no procedural material", item.id)
+                })?,
+            );
+            let clothed = generate_clothing_shells(
+                &[specification],
+                &generated.positions,
+                &generated.normals,
+                &character.mesh.faces,
+                &character.skin_weights.index,
+                &character.skin_weights.weight,
+                &character.skeleton.names,
+                &generated.global_joint_states,
+            )
+            .map_err(anyhow::Error::msg)?;
+            let shell = &clothed.shells[0];
+            let file_name = format!("{}--{}.glb", item.id, placement.id);
+            let path = output.join(&file_name);
+            let rigged_shell = RiggedShell {
+                name: &shell.specification.name,
+                positions: &shell.positions,
+                normals: &shell.normals,
+                faces: &shell.faces,
+                base_color: shell.specification.base_color,
+                metallic: shell.specification.metallic,
+                roughness: shell.specification.roughness,
+            };
+            let rigged_mesh = RiggedMesh {
+                positions: &generated.positions,
+                normals: &generated.normals,
+                faces: &character.mesh.faces,
+                export_body: false,
+                joint_indices: &character.skin_weights.index,
+                joint_weights: &character.skin_weights.weight,
+                joint_names: &character.skeleton.names,
+                joint_parents: &character.skeleton.parents,
+                global_joint_states: &generated.global_joint_states,
+            };
+            let surface_uv_layout = SurfaceUvLayout {
+                domain: MHR_ANATOMICAL_UV_DOMAIN,
+                texcoords: &character.mesh.texcoords,
+                texcoord_faces: &character.mesh.texcoord_faces,
+            };
+            let sockets = equipment
+                .attachment_points
+                .iter()
+                .filter(|point| point.tangent_direction.is_some())
+                .map(|point| {
+                    let tangent = point.tangent_direction.expect("filtered tangent");
+                    let outward = point
+                        .locations
+                        .iter()
+                        .copied()
+                        .find_map(belt_mount_outward)
+                        .with_context(|| {
+                            format!(
+                                "item {} attachment point {} has a tangent but no belt location",
+                                item.id, point.id
+                            )
+                        })?;
+                    let surface = point.surface_uv.as_ref().with_context(|| {
+                        format!(
+                            "item {} attachment point {} has a tangent but no anatomical surface UV",
+                            item.id, point.id
+                        )
+                    })?;
+                    if surface.domain != surface_uv_layout.domain {
+                        anyhow::bail!(
+                            "item {} attachment point {} uses unsupported anatomical UV domain {}",
+                            item.id,
+                            point.id,
+                            surface.domain
+                        );
+                    }
+                    fitted_equipment_socket_from_uv(
+                        &rigged_mesh,
+                        &rigged_shell,
+                        &surface_uv_layout,
+                        surface.uv,
+                        outward,
+                        tangent,
+                    )
+                        .with_context(|| {
+                            format!(
+                                "could not fit item {} attachment point {}",
+                                item.id, point.id
+                            )
+                        })
+                        .map(|transform| RiggedSocket {
+                            attachment_point_id: &point.id,
+                            surface_uv_domain: &surface.domain,
+                            surface_uv: surface.uv,
+                            transform,
+                        })
+                })
+                .collect::<Result<Vec<_>>>()?;
+            export_rigged_glb(
+                &path,
+                &item.id,
+                recipe.version,
+                model.lod,
+                &rigged_mesh,
+                &[rigged_shell],
+                &sockets,
+            )?;
+            generated_files.insert(file_name.clone());
+            assets.push(serde_json::json!({
+                "item_id": item.id,
+                "placement_id": placement.id,
+                "file": file_name,
+                "coverage": placement_coverage(placement),
+                "material": equipment.material,
+                "triangles": shell.faces.len(),
+            }));
+        }
+    }
+    for entry in std::fs::read_dir(output)? {
+        let path = entry?.path();
+        if path.extension().is_some_and(|extension| extension == "glb")
+            && path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| !generated_files.contains(name))
+        {
+            std::fs::remove_file(&path)
+                .with_context(|| format!("removing stale generated asset {}", path.display()))?;
+        }
+    }
+    let manifest = serde_json::json!({
+        "schema_version": 1,
+        "mhr_release": "v1.0.1",
+        "lod": model.lod,
+        "assets": assets,
+    });
+    std::fs::write(
+        output.join("manifest.json"),
+        serde_json::to_vec_pretty(&manifest)?,
+    )?;
+    Ok(())
 }
 
 fn load_body_model(
@@ -406,6 +729,7 @@ fn reload_model(args: Res<Args>, mut model: ResMut<BodyModel>, mut studio: ResMu
 fn regenerate_mesh(
     mut commands: Commands,
     model: Res<BodyModel>,
+    catalog: Res<EquipmentCatalog>,
     mut studio: ResMut<Studio>,
     old: Query<Entity, With<CharacterMesh>>,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -423,10 +747,36 @@ fn regenerate_mesh(
         }
     };
     let GeneratedCharacter {
-        positions, normals, ..
+        positions,
+        normals,
+        global_joint_states,
     } = generated;
     let faces = &model.mhr.character.mesh.faces;
-    let indices = faces
+    let specifications = match selected_garments(&studio.recipe, &catalog) {
+        Ok(specifications) => specifications,
+        Err(error) => {
+            studio.status = format!("Clothing selection failed: {error}");
+            return;
+        }
+    };
+    let clothed = match generate_clothing_shells(
+        &specifications,
+        &positions,
+        &normals,
+        faces,
+        &model.mhr.character.skin_weights.index,
+        &model.mhr.character.skin_weights.weight,
+        &model.mhr.character.skeleton.names,
+        &global_joint_states,
+    ) {
+        Ok(clothed) => clothed,
+        Err(error) => {
+            studio.status = format!("Clothing generation failed: {error}");
+            return;
+        }
+    };
+    let indices = clothed
+        .visible_body_faces
         .iter()
         .flat_map(|face| face.iter().copied())
         .collect::<Vec<_>>();
@@ -435,7 +785,7 @@ fn regenerate_mesh(
         RenderAssetUsages::default(),
     )
     .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
-    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
+    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals.clone())
     .with_inserted_indices(Indices::U32(indices));
     for entity in &old {
         commands.entity(entity).despawn();
@@ -459,7 +809,38 @@ fn regenerate_mesh(
             ..default()
         })),
     ));
-    studio.status = format!("Generated {} vertices", model.mhr.num_vertices());
+    for shell in clothed.shells {
+        let specification = shell.specification;
+        let indices = shell
+            .faces
+            .iter()
+            .flat_map(|face| face.iter().copied())
+            .collect::<Vec<_>>();
+        let mesh = Mesh::new(
+            PrimitiveTopology::TriangleList,
+            RenderAssetUsages::default(),
+        )
+        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, shell.positions)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, shell.normals)
+        .with_inserted_indices(Indices::U32(indices));
+        let [red, green, blue, alpha] = specification.base_color;
+        commands.spawn((
+            CharacterMesh,
+            Name::new(specification.name.clone()),
+            Mesh3d(meshes.add(mesh)),
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color: Color::srgba(red, green, blue, alpha),
+                metallic: specification.metallic,
+                perceptual_roughness: specification.roughness,
+                ..default()
+            })),
+        ));
+    }
+    studio.status = format!(
+        "Generated {} vertices · {} clothing shells",
+        model.mhr.num_vertices(),
+        studio.recipe.clothing.len()
+    );
 }
 
 fn generate_character(model: &BodyModel, recipe: &CharacterRecipe) -> Result<GeneratedCharacter> {
@@ -536,9 +917,38 @@ fn export_character(
     path: &std::path::Path,
     model: &BodyModel,
     recipe: &CharacterRecipe,
+    catalog: &EquipmentCatalog,
 ) -> Result<()> {
     let generated = generate_character(model, recipe)?;
     let character = &model.mhr.character;
+    let specifications = selected_garments(recipe, catalog).map_err(anyhow::Error::msg)?;
+    let clothed = generate_clothing_shells(
+        &specifications,
+        &generated.positions,
+        &generated.normals,
+        &character.mesh.faces,
+        &character.skin_weights.index,
+        &character.skin_weights.weight,
+        &character.skeleton.names,
+        &generated.global_joint_states,
+    )
+    .map_err(anyhow::Error::msg)?;
+    let shells = clothed
+        .shells
+        .iter()
+        .map(|shell| {
+            let specification = &shell.specification;
+            RiggedShell {
+                name: &specification.name,
+                positions: &shell.positions,
+                normals: &shell.normals,
+                faces: &shell.faces,
+                base_color: specification.base_color,
+                metallic: specification.metallic,
+                roughness: specification.roughness,
+            }
+        })
+        .collect::<Vec<_>>();
     export_rigged_glb(
         path,
         &recipe.name,
@@ -547,13 +957,16 @@ fn export_character(
         &RiggedMesh {
             positions: &generated.positions,
             normals: &generated.normals,
-            faces: &character.mesh.faces,
+            faces: &clothed.visible_body_faces,
+            export_body: true,
             joint_indices: &character.skin_weights.index,
             joint_weights: &character.skin_weights.weight,
             joint_names: &character.skeleton.names,
             joint_parents: &character.skeleton.parents,
             global_joint_states: &generated.global_joint_states,
         },
+        &shells,
+        &[],
     )
 }
 
@@ -588,4 +1001,21 @@ fn orbit_camera(
     let rotation = Quat::from_euler(EulerRot::YXZ, orbit.yaw, orbit.pitch, 0.0);
     transform.translation = orbit.focus + rotation * Vec3::new(0.0, 0.0, orbit.radius);
     transform.look_at(orbit.focus, Vec3::Y);
+}
+
+#[cfg(test)]
+mod belt_mount_tests {
+    use super::*;
+
+    #[test]
+    fn belt_sides_follow_mhr_anatomical_x() {
+        assert_eq!(
+            belt_mount_outward(EquipmentLocation::LeftBelt),
+            Some([1.0, 0.0, 0.0])
+        );
+        assert_eq!(
+            belt_mount_outward(EquipmentLocation::RightBelt),
+            Some([-1.0, 0.0, 0.0])
+        );
+    }
 }

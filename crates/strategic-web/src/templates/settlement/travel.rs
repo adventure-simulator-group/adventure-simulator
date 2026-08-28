@@ -242,6 +242,11 @@ fn map_destination_list_with_context(
 pub(crate) fn travel_preferences_form(party: &Party, action: &str) -> Markup {
     let walking_hours = f32::from(party.walking_minutes_per_day) / 60.0;
     let travel_at_night = party.travel_at_night;
+    let departure_time = format!(
+        "{:02}:{:02}",
+        party.journey_start_minute_of_day / 60,
+        party.journey_start_minute_of_day % 60,
+    );
     let walking_hours_title = if travel_at_night {
         "Walking is centered on midnight; shorter first and final days are forecast automatically."
     } else {
@@ -270,6 +275,12 @@ pub(crate) fn travel_preferences_form(party: &Party, action: &str) -> Markup {
                         span class="travel-period-thumb" {}
                     }
                 }
+            }
+            div class="travel-period-control" {
+                label for="journey-start-time" { "Journey begins at" }
+                input id="journey-start-time" type="time" name="journey_start_time"
+                    value=(departure_time) step="900" required
+                    readonly[party.wilderness_canonical_anchor_minute.is_some()];
             }
         }
     }
@@ -948,6 +959,9 @@ pub fn camp_page(
                 h3 class="sidebar-header" { "Journey" }
                 @if let Some(route) = terrain_route {
                     (journey_weather_status(route))
+                }
+                p class="text-muted small-copy" data-journey-subjective-elapsed-minutes=(party.wilderness_elapsed_minutes) {
+                    (format_journey_time(party.wilderness_elapsed_minutes)) " elapsed since setting out"
                 }
                 div class="travel-planner-vertical" {
                     (travel_planner_bar_for(destination_name, "", false, party.camp_remaining_minutes, "", "", party.camp_fatigue_percent, journey, terrain_route, provision_forecast, journey.map_or(0, |item| item.departure_minute), journey.map_or(party.camp_remaining_minutes, |item| item.total_elapsed_minutes), &journey.map_or_else(String::new, format_persisted_itinerary), &format_persisted_terrain_spans(terrain_route)))

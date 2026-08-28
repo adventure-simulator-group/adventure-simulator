@@ -15,7 +15,7 @@ fn contract_and_religion_lifecycle_guards_are_explicit() {
     assert!(normalize.contains("ContractStatus::Accepted | ContractStatus::ReadyToReport"));
     assert!(!normalize.contains("ContractStatus::Paid"));
 
-    let condition = include_str!("../../condition.rs");
+    let condition = crate::production_source(include_str!("../../condition.rs"));
     let religion = condition
         .split("pub fn set_character_religion")
         .nth(1)
@@ -295,7 +295,6 @@ fn tracking_is_presentation_only_and_travel_revalidates_exact_knowledge() {
         .and_then(|tail| tail.split("pub fn travel_to_settlement").next())
         .expect("case-site travel implementation");
     assert_eq!(travel.matches("exact_case_site_for_observer").count(), 2);
-    assert!(travel.contains("\"case_site\""));
     assert!(travel.contains("expected_settlement_id = party.current_settlement_id.clone()"));
     assert!(travel.contains("expected_case_site_id = party.current_case_site_id.clone()"));
     assert!(travel.contains("JourneyEndpoint::Settlement"));
@@ -553,10 +552,10 @@ fn merchant_trade_is_bound_to_a_closed_storefront_and_persistent_provider() {
     assert!(MerchantStorefrontRoute::try_from("herbalist").is_err());
     assert!(MerchantStorefrontRoute::try_from("../inn").is_err());
 
-    let source = STRATEGIC_SOURCE;
+    let source = include_str!("../inventory_trade.rs");
     let trade = source
-        .split("fn finalize_storefront_trade_impl")
-        .nth(1)
+        .rsplit("fn finalize_storefront_trade_impl")
+        .next()
         .and_then(|tail| tail.split("#[reducer]\npub fn leave_party").next())
         .expect("storefront trade implementation");
     for authority_check in [
@@ -584,8 +583,8 @@ fn merchant_trade_is_bound_to_a_closed_storefront_and_persistent_provider() {
     );
 
     let party_purchase = source
-        .split("fn add_to_party_inventory_checked")
-        .nth(1)
+        .rsplit("fn add_to_party_inventory_checked")
+        .next()
         .and_then(|tail| tail.split("fn credit_party_stake").next())
         .expect("party inventory purchase implementation");
     assert!(party_purchase.contains("inventory_food_definition(kind, item_id)?"));
@@ -702,16 +701,16 @@ fn authority_arrest_action_projection_is_gateway_only_exact_and_redacted() {
         .and_then(|tail| tail.split("#[spacetimedb::reducer]").next())
         .expect("authority arrest action projection");
     let gate = projection.find("strategic_view_is_gateway(ctx)").unwrap();
-    let private_read = projection.find("strategic_incident__view").unwrap();
+    let private_read = projection.find("strategic_incident()").unwrap();
     assert!(gate < private_read);
     for exact_filter in [
-        "StrategicIncidentKind::AuthorityArrest",
-        "StrategicIncidentStatus::Pending",
-        "party.current_case_site_id.as_deref()",
-        "incident.case_site_id.as_str()",
+        "IncidentKind::AuthorityArrest",
+        "IncidentStatus::Pending",
+        "party.current_case_site_id.as_ref()",
+        "Some(&incident.case_site_id)",
         "member.character_id == incident.instigator_id",
         "character.alive",
-        "character.party_id.as_deref() == Some(party.id.as_str())",
+        "character.party_id.as_deref() != Some(&incident.party_id)",
         "authority_fine_for_charges",
         "affordable: funds >= fine",
     ] {

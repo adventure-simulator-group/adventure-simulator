@@ -7,7 +7,8 @@ use crate::FIXED_TIMESTEP_HZ;
 use crate::message::{
     DebugDumpWorldRequest, DebugGameTimeScaleRequest, DefendRequest, EquipmentActionRequest,
     JoinRequest, MeleeActionRequest, PlayerInputRequest, RangedActionRequest, ReconnectCapability,
-    SceneVistaBundle, SuccessfulAttackResponse, TacticalOutcomeResponse,
+    SceneVistaBundle, SuccessfulAttackResponse, TacticalCombatConfigSnapshot,
+    TacticalOutcomeResponse,
 };
 
 #[derive(Default)]
@@ -23,11 +24,14 @@ impl Plugin for AdventureSimulatorReplicationPlugin {
             .add_plugins(RepliconPlugins)
             .replicate::<Player>()
             .replicate::<CharacterId>()
+            .replicate::<CharacterDimensions>()
             .replicate::<Limbs>()
             .replicate::<Skills>()
             .replicate::<Stats>()
+            .replicate::<TacticalCombatSide>()
             .replicate::<TacticalCombatState>()
             .replicate::<SkeletonState>()
+            .replicate::<CharacterMotionSnapshot>()
             .replicate::<Attributes>()
             .replicate::<Transform>()
             .replicate::<CharacterLook>()
@@ -52,10 +56,11 @@ impl Plugin for AdventureSimulatorReplicationPlugin {
             .add_client_event::<JoinRequest>(Channel::Ordered)
             .add_server_event::<ReconnectCapability>(Channel::Ordered)
             .add_server_event::<SceneVistaBundle>(Channel::Ordered)
+            .add_server_event::<TacticalCombatConfigSnapshot>(Channel::Ordered)
             .add_client_event::<PlayerInputRequest>(Channel::Unreliable)
             .add_client_event::<DebugGameTimeScaleRequest>(Channel::Ordered)
             .add_client_event::<DebugDumpWorldRequest>(Channel::Ordered)
-            .add_client_event::<DefendRequest>(Channel::Unreliable)
+            .add_client_event::<DefendRequest>(Channel::Ordered)
             .add_mapped_client_event::<EquipmentActionRequest>(Channel::Ordered)
             .add_mapped_client_event::<MeleeActionRequest>(Channel::Ordered)
             .add_mapped_client_event::<RangedActionRequest>(Channel::Ordered)

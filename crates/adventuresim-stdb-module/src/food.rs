@@ -4421,7 +4421,7 @@ mod tests {
     use super::*;
     #[test]
     fn preparation_adapter_revalidates_and_persists_terminal_attempts() {
-        let source = include_str!("food.rs");
+        let source = crate::production_source(include_str!("food.rs"));
         let reducer = source
             .split("pub fn prepare_ingredient_lot")
             .nth(1)
@@ -4450,7 +4450,8 @@ mod tests {
         assert!(source.contains("view_carried_custody_is_fully_resolved"));
         assert!(source.contains("view_direct_custody"));
         assert!(source.contains("party_at_bound_road_challenge_view"));
-        assert!(source.contains("Some((\"party\", row_id))"));
+        assert!(source.contains("Some((CarriedInventoryScope::Personal, row_id))"));
+        assert!(source.contains("Some((CarriedInventoryScope::Party, row_id))"));
         assert!(!source.contains("view_actor_has_stable_preparation_interval"));
     }
 
@@ -4511,7 +4512,7 @@ mod tests {
 
     #[test]
     fn grown_contamination_and_terminal_boundaries_are_planning_inputs() {
-        let source = include_str!("food.rs");
+        let source = crate::production_source(include_str!("food.rs"));
         assert!(source.contains("current_minute.saturating_sub(row.anchor_minute)"));
         assert!(source.contains("preparation_terminal_minute("));
         assert!(source.contains("preview_disease_terminal_boundary"));
@@ -4555,33 +4556,33 @@ mod tests {
 
     #[test]
     fn every_food_lot_constructor_establishes_stable_identity_and_revision() {
-        let source = include_str!("food.rs");
+        let source = crate::production_source(include_str!("food.rs"));
         assert_eq!(
             source.matches("ctx.db.food_lot().insert(FoodLot {").count(),
             3
         );
         assert_eq!(source.matches("ctx.db.food_lot().insert(child)").count(), 3);
-        assert!(source.matches("material_revision: 1").count() >= 4);
+        assert_eq!(source.matches("material_revision: 1").count(), 3);
         assert!(source.matches("ensure_food_material_object").count() >= 8);
         assert!(!source.contains("material_revision: 0"));
     }
 
     #[test]
     fn every_partial_food_split_scales_full_contamination_provenance() {
-        let source = include_str!("food.rs");
+        let source = crate::production_source(include_str!("food.rs"));
         assert_eq!(
             source
                 .matches("split_food_contamination_provenance(ctx, source.id, child.id, ratio)")
                 .count(),
             3
         );
-        assert!(source.contains("food_contamination_provenance().insert"));
+        assert!(source.contains(".insert(FoodContaminationProvenance {"));
         assert!(source.contains("consume_food_contamination_provenance"));
     }
 
     #[test]
     fn container_cooking_is_distinct_from_loose_roasting() {
-        let source = include_str!("food.rs");
+        let source = crate::production_source(include_str!("food.rs"));
         assert!(!source.contains("pub fn set_fireplace_instrument"));
         let cooking = source
             .split("fn add_fireplace_ingredients_at")
@@ -4593,8 +4594,8 @@ mod tests {
     }
 
     #[test]
-    fn recursive_vessel_selection_requires_authoritative_food_lots() {
-        let source = include_str!("food.rs");
+    fn vessel_selection_uses_direct_authoritative_food_lots() {
+        let source = crate::production_source(include_str!("food.rs"));
         let reducer = source
             .split("pub fn start_fireplace_container_cooking")
             .nth(1)
@@ -4602,7 +4603,9 @@ mod tests {
             .split("fn add_fireplace_ingredients_at")
             .next()
             .unwrap();
-        assert!(reducer.contains("subtree_object_ids"));
+        assert!(reducer.contains(".parent_object_id()"));
+        assert!(reducer.contains(".filter(container_object_id)"));
+        assert!(!reducer.contains("subtree_object_ids"));
         assert!(reducer.contains("InventoryLocation::Personal"));
         assert!(reducer.contains("InventoryLocation::Party"));
         assert!(reducer.contains("let (Some(lot), Some(amount))"));
@@ -4611,7 +4614,7 @@ mod tests {
 
     #[test]
     fn eating_and_travel_reconcile_stable_container_objects() {
-        let source = include_str!("food.rs");
+        let source = crate::production_source(include_str!("food.rs"));
         assert!(source.matches("reconcile_consumed_row(").count() >= 4);
         assert!(source.contains("CarriedInventoryScope::Personal"));
         assert!(source.contains("CarriedInventoryScope::Party"));
@@ -4620,7 +4623,7 @@ mod tests {
 
     #[test]
     fn authoritative_preview_rejects_cooked_output_as_an_ingredient() {
-        let source = include_str!("food.rs");
+        let source = crate::production_source(include_str!("food.rs"));
         let preview = source
             .split("pub fn preview_cooking")
             .nth(1)
@@ -4663,7 +4666,7 @@ mod tests {
 
     #[test]
     fn stew_water_and_fireplace_escrow_contract_are_explicit() {
-        let source = include_str!("food.rs");
+        let source = crate::production_source(include_str!("food.rs"));
         let cook = source
             .split("pub fn add_fireplace_ingredients")
             .nth(1)
@@ -4682,7 +4685,7 @@ mod tests {
 
     #[test]
     fn fireplace_authority_is_private_location_bound_and_race_safe() {
-        let source = include_str!("food.rs");
+        let source = crate::production_source(include_str!("food.rs"));
         assert!(source.contains("#[table(accessor = fireplace_station)]"));
         assert!(source.contains("#[table(accessor = fireplace_dish)]"));
         assert!(source.contains("#[view(accessor = backend_fireplace_stations, public)]"));
@@ -4713,16 +4716,24 @@ mod tests {
         assert!(!camp_custody.contains("ends_with"));
         assert!(source.contains("This fireplace already holds a dish"));
         assert!(source.contains("Food lot selections must be unique and positive"));
-        assert!(source.contains("Retrieve the current dish before changing instruments"));
-        assert!(source.contains("original party inventory is no longer available"));
+        assert!(source.contains("vessel_station_key"));
+        assert!(source.contains("Retrieve the cooked dish before removing its container"));
+        let container_retrieval = source
+            .split("pub fn retrieve_fireplace_container")
+            .nth(1)
+            .and_then(|tail| tail.split("fn preparation_skill_check").next())
+            .expect("container retrieval reducer");
+        assert!(container_retrieval.contains("OperationalCustody::Party(party_id)"));
+        assert!(container_retrieval.contains(".party_authority()"));
+        assert!(container_retrieval.contains(".is_none()"));
         assert!(source.contains("instrument_return_custody"));
         assert!(!source.contains("instrument_party_id"));
     }
 
     #[test]
     fn camp_departure_and_retrieval_cleanup_enforce_fireplace_custody() {
-        let food_source = include_str!("food.rs");
-        let travel_source = include_str!("strategic/travel_reducers.rs");
+        let food_source = crate::production_source(include_str!("food.rs"));
+        let travel_source = crate::production_source(include_str!("strategic/travel_reducers.rs"));
         assert!(travel_source.contains("require_clear_current_camp_fireplace"));
         assert!(food_source.contains(
             "Retrieve every dish and remove every cooking instrument before breaking camp"
@@ -4755,7 +4766,7 @@ mod tests {
 
     #[test]
     fn fireplace_container_retrieval_rejects_tactical_actors() {
-        let source = include_str!("food.rs");
+        let source = crate::production_source(include_str!("food.rs"));
         let retrieval = source
             .split("pub fn retrieve_fireplace_container")
             .nth(1)
@@ -4767,9 +4778,9 @@ mod tests {
 
     #[test]
     fn party_exit_and_death_have_explicit_fireplace_custody_policy() {
-        let food_source = include_str!("food.rs");
+        let food_source = crate::production_source(include_str!("food.rs"));
         let party_source = include_str!("strategic/inventory_trade.rs");
-        let character_source = include_str!("character.rs");
+        let character_source = crate::production_source(include_str!("character.rs"));
         let removal = party_source
             .split("pub fn remove_party_member")
             .nth(1)
@@ -4797,14 +4808,14 @@ mod tests {
         assert!(cleanup.contains("ctx.db.inventory_item().insert"));
         assert!(cleanup.contains("fireplace_station().key().delete"));
         assert!(cleanup.contains("prevalidate_rehome_subtree"));
-        assert!(cleanup.contains("rehome_subtree(ctx, object_id, kind, &owner)?"));
+        assert!(cleanup.contains("rehome_subtree(ctx, object_id, &destination)?"));
         assert!(!cleanup.contains("let _ ="));
         assert!(cleanup.contains("Abandoned tools remain installed at their station"));
     }
 
     #[test]
     fn catalog_quality_is_copied_when_lots_are_acquired() {
-        let source = include_str!("food.rs");
+        let source = crate::production_source(include_str!("food.rs"));
         let constructor = source
             .split("pub fn create_personal_food_lot")
             .nth(1)
@@ -4815,7 +4826,7 @@ mod tests {
 
     #[test]
     fn hidden_food_contamination_uses_explicit_food_water_prevention() {
-        let source = include_str!("food.rs");
+        let source = crate::production_source(include_str!("food.rs"));
         let exposure = source
             .split("fn expose_to_dysentery")
             .nth(1)
@@ -4828,13 +4839,13 @@ mod tests {
 
     #[test]
     fn physical_preparation_keeps_safe_prefix_and_exact_instance_tool_rules() {
-        let source = include_str!("food.rs");
+        let source = crate::production_source(include_str!("food.rs"));
         let reducer = source
             .split("pub fn prepare_ingredient_lot")
             .nth(1)
             .unwrap();
         let wait = reducer.find("advance_character_wait_time").unwrap();
-        assert!(wait < reducer.find("lot.preparation = authority.next").unwrap());
+        assert!(wait < reducer.find("lot.preparation = post.next").unwrap());
         assert!(wait < reducer.find("apply_direct_training").unwrap());
         assert!(source.contains(
             "effective_weapon_stat(item.accuracy, damage, item.edge_sensitivity) >= 0.5"
@@ -4846,8 +4857,9 @@ mod tests {
 
     #[test]
     fn vessel_selection_is_direct_and_preparation_shortens_safety_time() {
-        let source = include_str!("food.rs");
-        assert!(source.contains("parent_object_id().filter(container_object_id)"));
+        let source = crate::production_source(include_str!("food.rs"));
+        assert!(source.contains(".parent_object_id()"));
+        assert!(source.contains(".filter(container_object_id)"));
         assert!(source.contains("CUT_COOKING_TIME_FACTOR"));
         assert!(source.contains("GROUND_COOKING_TIME_FACTOR"));
         assert!(source.contains("method_doneness_outcome"));

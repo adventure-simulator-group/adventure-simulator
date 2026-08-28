@@ -643,9 +643,16 @@ fn combat_weapon(item: &Item) -> CombatWeapon {
 }
 
 fn weapon_attack_interval(item: &Item) -> f32 {
-    let draw_or_recovery = if item.ranged { 0.45 } else { 0.0 };
-    (0.4 + item.weight.max(0.1) * 0.15 + item.balance.max(0.0) * 0.2 + draw_or_recovery)
-        .clamp(0.35, 3.0)
+    if item.melee {
+        let timing = adventuresim_core::equipment::melee_attack_timing(
+            item.preferred_melee_style,
+            item.moment_of_inertia_kg_m2,
+            false,
+        );
+        timing.preparation_secs + timing.recovery_secs
+    } else {
+        (0.4 + item.weight.max(0.1) * 0.15 + 0.45).clamp(0.35, 3.0)
+    }
 }
 
 impl PlayerEquipment for StrategicEquipment {
@@ -660,8 +667,11 @@ impl PlayerEquipment for StrategicEquipment {
     fn weapon_is_ranged(&self) -> bool {
         self.weapon.as_ref().is_some_and(|item| item.ranged)
     }
+    fn weapon_is_unarmed(&self) -> bool {
+        self.weapon.is_none()
+    }
     fn weapon_does_blunt(&self) -> bool {
-        self.weapon.as_ref().is_some_and(|item| item.blunt)
+        self.weapon.as_ref().is_none_or(|item| item.blunt)
     }
     fn weapon_does_slash(&self) -> bool {
         self.weapon.as_ref().is_some_and(|item| item.slash)
@@ -702,6 +712,11 @@ impl PlayerEquipment for StrategicEquipment {
     }
     fn weapon_balance(&self) -> f32 {
         self.weapon.as_ref().map_or(0.0, |item| item.balance)
+    }
+    fn weapon_moment_of_inertia(&self) -> f32 {
+        self.weapon
+            .as_ref()
+            .map_or(0.0, |item| item.moment_of_inertia_kg_m2)
     }
     fn shield_block_bonus(&self) -> f32 {
         self.shield.as_ref().map_or(0.0, |item| item.block)
@@ -850,7 +865,7 @@ pub(crate) fn load_combatant(
 mod tests {
     #[test]
     fn water_burden_comes_only_from_physical_containers() {
-        let source = include_str!("capability.rs");
+        let source = crate::production_source(include_str!("capability.rs"));
         assert!(source.contains("contained_water_ml"));
         assert!(!source.contains("carried_water_ml"));
     }

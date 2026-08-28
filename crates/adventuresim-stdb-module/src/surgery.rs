@@ -1173,7 +1173,7 @@ mod tests {
 
     #[test]
     fn treatment_authorization_precedes_mutation_and_is_revalidated() {
-        let source = include_str!("surgery.rs");
+        let source = crate::production_source(include_str!("surgery.rs"));
         let reducer = source
             .split("pub fn treat_limb")
             .nth(1)
@@ -1189,7 +1189,7 @@ mod tests {
 
     #[test]
     fn treatment_receipts_bind_exact_requests_and_retries() {
-        let source = include_str!("surgery.rs");
+        let source = crate::production_source(include_str!("surgery.rs"));
         let binding = source
             .split("fn treatment_receipt_disposition")
             .nth(1)
@@ -1359,7 +1359,7 @@ mod tests {
 
     #[test]
     fn injury_terminal_preview_is_side_effect_free() {
-        let source = include_str!("surgery.rs");
+        let source = crate::production_source(include_str!("surgery.rs"));
         let preview = source
             .split("pub(crate) fn preview_injury_boundary")
             .nth(1)
@@ -1381,7 +1381,7 @@ mod tests {
 
     #[test]
     fn injury_interval_api_has_one_explicit_recovery_path() {
-        let source = include_str!("surgery.rs");
+        let source = crate::production_source(include_str!("surgery.rs"));
         let preview = source
             .split("pub(crate) fn preview_injury_boundary")
             .nth(1)
@@ -1409,7 +1409,7 @@ mod tests {
 
     #[test]
     fn current_injury_rows_are_created_once_then_updated() {
-        let source = include_str!("surgery.rs");
+        let source = crate::production_source(include_str!("surgery.rs"));
         let initializer = source
             .split("pub(crate) fn initialize_character_injuries")
             .nth(1)

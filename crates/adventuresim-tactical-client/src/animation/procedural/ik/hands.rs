@@ -97,9 +97,7 @@ pub(in crate::animation) fn apply_arm_and_weapon_constraints(
         };
         set_world_transform(
             weapon,
-            socket_global
-                .mul_transform(constraint.socket_bind_correction)
-                .compute_transform(),
+            weapon_socket_world_transform(socket_global),
             &parents,
             &mut transforms,
         );
@@ -151,6 +149,34 @@ pub(in crate::animation) fn apply_arm_and_weapon_constraints(
         } else {
             commands.entity(owner).insert(ArmIkState(memory));
         }
+    }
+}
+
+fn weapon_socket_world_transform(socket: GlobalTransform) -> Transform {
+    Transform {
+        translation: socket.translation(),
+        rotation: socket.rotation(),
+        scale: Vec3::ONE,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn held_weapon_uses_the_authored_socket_orientation_without_inheriting_scale() {
+        let socket = GlobalTransform::from(Transform {
+            translation: Vec3::new(0.4, 1.2, -0.3),
+            rotation: Quat::from_euler(EulerRot::XYZ, 0.7, -0.4, 1.1),
+            scale: Vec3::splat(1.25),
+        });
+
+        let weapon = weapon_socket_world_transform(socket);
+
+        assert!(weapon.translation.abs_diff_eq(socket.translation(), 1e-5));
+        assert!(weapon.rotation.dot(socket.rotation()).abs() > 1.0 - 1e-5);
+        assert_eq!(weapon.scale, Vec3::ONE);
     }
 }
 

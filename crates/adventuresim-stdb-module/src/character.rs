@@ -2615,6 +2615,7 @@ pub(crate) fn insert_character_with_origin(
     } else if !newborn {
         add_inventory_item(ctx, character.id, "torch", 1);
         add_inventory_item(ctx, character.id, "bandage", 3);
+        add_and_equip_basic_clothing(ctx, character.id)?;
         for (item, slot) in [
             ("buckler", StartingSlot::LeftHand),
             ("katzbalger", StartingSlot::RightHand),
@@ -3481,6 +3482,59 @@ fn add_and_equip_starting_item(
     )
 }
 
+pub(crate) fn add_and_equip_basic_clothing(
+    ctx: &ReducerContext,
+    character_id: u64,
+) -> Result<(), String> {
+    for (item, slot) in [
+        ("linen_tunic", StartingSlot::Chest),
+        ("linen_breeches", StartingSlot::LeftLeg),
+        ("leather_boot", StartingSlot::LeftFoot),
+        ("leather_boot", StartingSlot::RightFoot),
+    ] {
+        add_and_equip_starting_item(ctx, character_id, item, slot)?;
+    }
+    Ok(())
+}
+
+/// Replaces only the equipped roots of a disposable development character,
+/// reusing matching inventory rows before creating anything new. Keeping this
+/// beside the ordinary equipment internals gives fixtures the same placement
+/// validation as gameplay without exposing an unrestricted reducer.
+pub(crate) fn replace_development_loadout(
+    ctx: &ReducerContext,
+    character_id: u64,
+    loadout: &[(&str, StartingSlot)],
+) -> Result<(), String> {
+    for inventory_item_id in equipped_wearable_ids(ctx, character_id) {
+        unequip_wearable(ctx, inventory_item_id);
+    }
+
+    let mut selected = std::collections::BTreeSet::new();
+    for (item_id, destination) in loadout {
+        let inventory_item_id = ctx
+            .db
+            .inventory_item()
+            .character_and_item_id()
+            .filter((character_id, *item_id))
+            .find(|item| !selected.contains(&item.id))
+            .map(|item| item.id)
+            .or_else(|| add_inventory_item(ctx, character_id, item_id, 1))
+            .ok_or_else(|| format!("Failed to add {item_id} to development loadout"))?;
+        selected.insert(inventory_item_id);
+        equip_equipment_internal(
+            ctx,
+            character_id,
+            inventory_item_id,
+            starting_item_placement_index(ctx, item_id, *destination)?,
+            Vec::new(),
+            false,
+            false,
+        )?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod starting_character_boundary_tests {
     use super::{
@@ -3509,7 +3563,7 @@ mod starting_character_boundary_tests {
 
     #[test]
     fn herbalism_foraging_demo_resets_mutually_exclusive_presence() {
-        let source = include_str!("character.rs");
+        let source = crate::production_source(include_str!("character.rs"));
         let fixture = source
             .split("pub(crate) fn seed_herbalism_demo_character")
             .nth(1)
@@ -3542,7 +3596,8 @@ mod starting_character_boundary_tests {
             validation < first_reset,
             "party ownership must be validated first"
         );
-        let scenarios = include_str!("strategic/development_scenarios.rs");
+        let scenarios =
+            crate::production_source(include_str!("strategic/development_scenarios.rs"));
         let settlement = scenarios
             .split("pub(crate) fn ensure_foraging_demo_settlement")
             .nth(1)
@@ -3580,7 +3635,7 @@ mod starting_character_boundary_tests {
         assert!(!CharacterCreationMode::Newborn.temporary());
         assert!(CharacterCreationMode::Newborn.newborn());
 
-        let source = include_str!("character.rs");
+        let source = crate::production_source(include_str!("character.rs"));
         let persistent = source
             .split("pub(crate) fn insert_persistent_npc_character")
             .nth(1)
@@ -3596,7 +3651,7 @@ mod starting_character_boundary_tests {
 
     #[test]
     fn full_character_rows_are_gateway_only() {
-        let source = include_str!("character.rs");
+        let source = crate::production_source(include_str!("character.rs"));
         assert!(source.contains("#[table(accessor = character)]"));
         assert!(!source.contains("#[table(accessor = character, public)]"));
         for component in [
@@ -3631,14 +3686,14 @@ mod starting_character_boundary_tests {
         }
         assert!(source.contains("#[table(accessor = character_death)]"));
         assert!(!source.contains("#[table(accessor = character_death, public)]"));
-        let condition_source = include_str!("condition.rs");
+        let condition_source = crate::production_source(include_str!("condition.rs"));
         assert!(condition_source.contains("#[table(accessor = character_morale_source)]"));
         assert!(!condition_source.contains("#[table(accessor = character_morale_source, public)]"));
     }
 
     #[test]
     fn newborns_have_full_components_without_an_adult_starter_package() {
-        let source = include_str!("character.rs");
+        let source = crate::production_source(include_str!("character.rs"));
         let insertion = source
             .split("pub(crate) fn insert_character_with_origin")
             .nth(1)
@@ -3654,7 +3709,7 @@ mod starting_character_boundary_tests {
 
     #[test]
     fn completed_creation_checks_the_full_component_invariant() {
-        let source = include_str!("character.rs");
+        let source = crate::production_source(include_str!("character.rs"));
         let insertion = source
             .split("pub(crate) fn insert_character_with_origin")
             .nth(1)
@@ -3687,7 +3742,7 @@ mod starting_character_boundary_tests {
 
     #[test]
     fn active_non_newborn_materialization_adds_one_authored_belt_sheath_kit() {
-        let source = include_str!("character.rs");
+        let source = crate::production_source(include_str!("character.rs"));
         let insertion = source
             .split("pub(crate) fn insert_character_with_origin")
             .nth(1)
@@ -3711,18 +3766,28 @@ mod starting_character_boundary_tests {
             "recommended_holder",
             "scabbard",
             "weapon_loop",
-            "attachment_point_id: \"left\"",
-            "attachment_point_id: \"right\"",
-            "attachment_point_id: \"blade\"",
-            "if !initially_held",
+            "zip([\"right\", \"left\"])",
+            "attachment_point_id: hip.into()",
+            "attachment_point_id: \"blade\".into()",
+            "place_unheld_weapon_in_sheath",
         ] {
             assert!(helper.contains(evidence), "missing {evidence}");
         }
+        let unheld_helper = helper
+            .split("fn place_unheld_weapon_in_sheath")
+            .nth(1)
+            .unwrap()
+            .split("fn authored_placement_index")
+            .next()
+            .unwrap();
+        assert!(unheld_helper.contains("character_equipped_item()"));
+        assert!(unheld_helper.contains(".find(weapon.id)"));
+        assert!(unheld_helper.contains("return Ok(())"));
     }
 
     #[test]
     fn creation_initializes_condition_before_capability_dependent_side_effects() {
-        let source = include_str!("character.rs");
+        let source = crate::production_source(include_str!("character.rs"));
         let insertion = source
             .split("pub(crate) fn insert_character_with_origin")
             .nth(1)
@@ -3765,7 +3830,7 @@ mod starting_character_boundary_tests {
 
     #[test]
     fn public_starting_character_reducer_requires_the_gateway() {
-        let source = include_str!("character.rs");
+        let source = crate::production_source(include_str!("character.rs"));
         let reducer = source
             .split("pub fn create_starting_character")
             .nth(1)
@@ -3800,7 +3865,7 @@ mod starting_character_boundary_tests {
 
     #[test]
     fn equipment_mutation_preflights_before_deleting_the_old_graph_rows() {
-        let source = include_str!("character.rs");
+        let source = crate::production_source(include_str!("character.rs"));
         let reducer = source
             .split("fn equip_equipment_internal")
             .nth(1)
@@ -3922,7 +3987,7 @@ mod starting_character_boundary_tests {
 
     #[test]
     fn strategic_slot_swaps_use_the_explicit_atomic_reducer() {
-        let source = include_str!("character.rs");
+        let source = crate::production_source(include_str!("character.rs"));
         let reducer = source
             .split("pub fn replace_item_at_placement")
             .nth(1)
@@ -4002,7 +4067,7 @@ mod starting_character_boundary_tests {
 
     #[test]
     fn normalized_equipment_mutations_refresh_capability_and_condition() {
-        let source = include_str!("character.rs");
+        let source = crate::production_source(include_str!("character.rs"));
         let helper = source
             .split("fn refresh_equipment_dependents")
             .nth(1)
@@ -4024,7 +4089,7 @@ mod starting_character_boundary_tests {
 
     #[test]
     fn production_full_characters_simulate_life_but_tactical_fixtures_keep_authored_overrides() {
-        let source = include_str!("character.rs");
+        let source = crate::production_source(include_str!("character.rs"));
         let insertion = source
             .split("fn insert_character_with_origin")
             .nth(1)
@@ -4047,7 +4112,7 @@ mod starting_character_boundary_tests {
 
     #[test]
     fn creation_persists_only_the_current_skill_projection() {
-        let source = include_str!("character.rs");
+        let source = crate::production_source(include_str!("character.rs"));
         assert!(source.contains("character_skills().insert"));
         for forbidden in [
             concat!("CharacterTraining", "History"),

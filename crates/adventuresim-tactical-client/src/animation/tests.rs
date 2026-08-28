@@ -318,7 +318,7 @@ mod legacy_tests {
                 "required pose {required:?} did not resolve"
             );
         }
-        // The 19 required semantics collapse to 18 independently resolvable
+        // The 30 required semantics collapse to 29 independently resolvable
         // variants when the supported whole-body mirror pair appears once.
         let authored_variants = SemanticPose::HUMANOID_REQUIRED
             .into_iter()
@@ -327,7 +327,7 @@ mod legacy_tests {
                     .is_none_or(|counterpart| pose.as_str() < counterpart.as_str())
             })
             .count();
-        assert_eq!(authored_variants, 18);
+        assert_eq!(authored_variants, 29);
         assert_eq!(
             root.motions["walk"].path,
             "animations/biped/unarmed/walk.glb"
@@ -370,6 +370,18 @@ mod legacy_tests {
         assert_eq!(root.motions["thrust"].required_last_frame, 4);
         assert_eq!(root.motions["offhand"].last_frame, 4);
         assert_eq!(root.motions["offhand"].required_last_frame, 0);
+        assert_eq!(root.motions["strafe"].last_frame, 24);
+        assert_eq!(root.motions["skip"].last_frame, 24);
+        assert_eq!(root.poses[&SemanticPose::StrafeCycle].frame, 0);
+        assert_eq!(root.poses[&SemanticPose::SkipCycle].frame, 0);
+        for motion in [
+            "quickstep_forward",
+            "quickstep_right",
+            "quickstep_left",
+            "quickstep_back",
+        ] {
+            assert_eq!(root.motions[motion].last_frame, 12);
+        }
     }
 
     #[test]
@@ -444,7 +456,9 @@ mod legacy_tests {
                 key,
                 LoadedClip {
                     handle: assets.add(AnimationClip::default()),
-                    duration_seconds: 64.0 / ANIMATION_FPS,
+                    duration_seconds: catalog.packs[HUMANOID_UNARMED_PACK].motions[&anchor.motion]
+                        .last_frame as f32
+                        / ANIMATION_FPS,
                     layer: ClipLayer::Whole,
                 },
             );
@@ -633,6 +647,19 @@ mod legacy_tests {
     }
 
     #[test]
+    fn database_weapon_skill_weights_select_the_grip_without_item_names() {
+        let mut hilt = [0.0; 9];
+        hilt[3] = 1.0;
+        assert_eq!(weapon_grip(&hilt), WeaponGrip::Hilt);
+
+        let mut hybrid_polearm = [0.0; 9];
+        hybrid_polearm[0] = 1.0 / 3.0;
+        hybrid_polearm[1] = 1.0 / 3.0;
+        hybrid_polearm[2] = 1.0 / 3.0;
+        assert_eq!(weapon_grip(&hybrid_polearm), WeaponGrip::Polearm);
+    }
+
+    #[test]
     fn authored_rig_attaches_to_a_player_with_skeleton_state() {
         let mut world = World::new();
         let runtime = AnimationRuntime {
@@ -696,6 +723,117 @@ mod legacy_tests {
         );
         assert_eq!(weighted.len(), 1);
         assert!(weighted[0].time_seconds.abs() < 0.0001);
+    }
+
+    #[test]
+    fn missing_forward_quickstep_plays_the_authored_back_clip_in_reverse() {
+        let catalog = AnimationPackCatalog::default();
+        let runtime = runtime_with_available([
+            SemanticPose::QuickstepBackTakeoff,
+            SemanticPose::QuickstepBackContact,
+        ]);
+        let mut weighted = Vec::new();
+        append_resolved_sample(
+            &mut weighted,
+            &runtime,
+            &catalog,
+            HUMANOID_UNARMED_PACK,
+            PoseSample {
+                pose: SemanticPose::QuickstepForwardTakeoff,
+                sampling: PoseSampling::Timeline { progress: 0.25 },
+                weight: 1.0,
+                mirror_lower_body: false,
+            },
+        );
+
+        let back = runtime.clips[&(
+            HUMANOID_UNARMED_PACK.to_owned(),
+            "quickstep_back".to_owned(),
+        )]
+            .handle
+            .id();
+        assert_eq!(weighted.len(), 1);
+        assert_eq!(weighted[0].clip.handle.id(), back);
+        assert!((weighted[0].time_seconds - 9.0 / ANIMATION_FPS).abs() < 0.0001);
+        assert!((weighted[0].weight - 1.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn authored_quickstep_direction_wins_over_its_reverse_fallback() {
+        let catalog = AnimationPackCatalog::default();
+        let runtime = runtime_with_available([
+            SemanticPose::QuickstepRightTakeoff,
+            SemanticPose::QuickstepRightContact,
+            SemanticPose::QuickstepLeftTakeoff,
+            SemanticPose::QuickstepLeftContact,
+        ]);
+        let mut weighted = Vec::new();
+        append_resolved_sample(
+            &mut weighted,
+            &runtime,
+            &catalog,
+            HUMANOID_UNARMED_PACK,
+            PoseSample {
+                pose: SemanticPose::QuickstepRightTakeoff,
+                sampling: PoseSampling::Timeline { progress: 0.5 },
+                weight: 1.0,
+                mirror_lower_body: false,
+            },
+        );
+
+        let right = runtime.clips[&(
+            HUMANOID_UNARMED_PACK.to_owned(),
+            "quickstep_right".to_owned(),
+        )]
+            .handle
+            .id();
+        assert_eq!(weighted.len(), 1);
+        assert_eq!(weighted[0].clip.handle.id(), right);
+        assert!((weighted[0].time_seconds - 6.0 / ANIMATION_FPS).abs() < 0.0001);
+    }
+
+    #[test]
+    fn timeline_and_cycle_samples_preserve_the_requested_bone_layer() {
+        let catalog = AnimationPackCatalog::default();
+        let runtime = runtime_with_available([
+            SemanticPose::StrafeCycle,
+            SemanticPose::QuickstepRightTakeoff,
+            SemanticPose::QuickstepRightContact,
+        ]);
+        for (sample, expected_layer) in [
+            (
+                PoseSample {
+                    pose: SemanticPose::StrafeCycle,
+                    sampling: PoseSampling::Cycle { phase: 0.5 },
+                    weight: 1.0,
+                    mirror_lower_body: false,
+                },
+                ClipLayer::Lower,
+            ),
+            (
+                PoseSample {
+                    pose: SemanticPose::QuickstepRightTakeoff,
+                    sampling: PoseSampling::Timeline { progress: 0.5 },
+                    weight: 1.0,
+                    mirror_lower_body: false,
+                },
+                ClipLayer::Lower,
+            ),
+        ] {
+            let mut weighted = Vec::new();
+            let mut spans = Vec::new();
+            append_resolved_sample_layer(
+                &mut weighted,
+                &mut spans,
+                &runtime,
+                &catalog,
+                HUMANOID_UNARMED_PACK,
+                sample,
+                expected_layer,
+            );
+            assert_eq!(weighted.len(), 1);
+            assert_eq!(weighted[0].clip.layer, expected_layer);
+        }
     }
 
     #[test]
@@ -767,7 +905,6 @@ mod legacy_tests {
             owner: Entity::PLACEHOLDER,
             primary_hand: HandSide::Right,
             secondary_grip_local: None,
-            socket_bind_correction: Transform::IDENTITY,
         };
         assert_eq!(constraint.primary_hand, HandSide::Right);
     }
@@ -800,5 +937,22 @@ mod legacy_tests {
         let mut turning = idle;
         turning.set_downed_turning(true);
         assert!(ordinary_locomotion_candidate(&turning));
+    }
+
+    #[test]
+    fn combat_cycle_support_is_exclusive_and_switches_at_authored_contacts() {
+        for sample in 0..240 {
+            let phase = sample as f32 / 240.0;
+            let weights = combat_cycle_ik_weights(phase);
+            assert!(
+                (weights.x > 0.0) ^ (weights.y > 0.0),
+                "phase {phase:.4} reported overlapping or absent support: {weights:?}"
+            );
+        }
+
+        assert_eq!(combat_cycle_ik_weights(0.2499), Vec2::Y);
+        assert_eq!(combat_cycle_ik_weights(0.25), Vec2::X);
+        assert_eq!(combat_cycle_ik_weights(0.7499), Vec2::X);
+        assert_eq!(combat_cycle_ik_weights(0.75), Vec2::Y);
     }
 }

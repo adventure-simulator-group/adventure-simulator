@@ -452,7 +452,7 @@ fn correction_paths_reset_after_invalidation_and_replay_before_mutation() {
         generic
             .find("reset_unsupported_capability_progress")
             .unwrap()
-            < generic.find("receipt.consumed_by").unwrap()
+            < generic.find("receipt.consumed_by = action_id.clone()").unwrap()
     );
     let reset_revision = source
         .split("fn reset_capability_progress_if_unsupported")

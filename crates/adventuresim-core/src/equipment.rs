@@ -386,6 +386,18 @@ pub struct WeaponSkillDistribution {
 }
 
 impl WeaponSkillDistribution {
+    pub const UNARMED: Self = Self {
+        polearm: 0.0,
+        axe: 0.0,
+        bludgeon: 1.0,
+        sword: 0.0,
+        knife: 0.0,
+        bow: 0.0,
+        crossbow: 0.0,
+        firearm: 0.0,
+        throw: 0.0,
+    };
+
     pub const SKILLS: [Skill; 9] = [
         Skill::Polearm,
         Skill::Axe,
@@ -453,6 +465,67 @@ impl WeaponSkillDistribution {
             .map(|(skill, weight)| check(skill) * weight)
             .sum::<f32>()
             / total
+    }
+}
+
+/// Real-time attack schedule for one ordinary melee strike. Preparation ends
+/// at contact; recovery ends when another non-continuation attack may begin.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MeleeAttackTiming {
+    pub preparation_secs: f32,
+    pub recovery_secs: f32,
+}
+
+/// Converts physical rotational inertia into the compact handling coefficient
+/// shown to players. The characteristic length is measured from the grip to
+/// the tip, so this is the radius of gyration as a fraction of usable length.
+/// Lower values are easier to redirect.
+pub fn weapon_balance_from_moment(
+    moment_of_inertia_kg_m2: f32,
+    mass_kg: f32,
+    grip_to_tip_m: f32,
+) -> f32 {
+    if !moment_of_inertia_kg_m2.is_finite()
+        || !mass_kg.is_finite()
+        || !grip_to_tip_m.is_finite()
+        || moment_of_inertia_kg_m2 < 0.0
+        || mass_kg <= f32::EPSILON
+        || grip_to_tip_m <= f32::EPSILON
+    {
+        return 1.0;
+    }
+    (moment_of_inertia_kg_m2 / mass_kg).sqrt() / grip_to_tip_m
+}
+
+/// Initial tactical cadence synthesized from physical rotational inertia and
+/// attack style. Weapon family is intentionally absent: two weapons with the
+/// same inertia take the same baseline time to redirect.
+pub fn melee_attack_timing(
+    style: MeleeAttackStyle,
+    moment_of_inertia_kg_m2: f32,
+    unarmed: bool,
+) -> MeleeAttackTiming {
+    let inertia = if moment_of_inertia_kg_m2.is_finite() {
+        moment_of_inertia_kg_m2.max(0.0)
+    } else {
+        0.3
+    };
+    let base_cycle = if unarmed {
+        0.36
+    } else {
+        // Saturation prevents long weapons from becoming unusably slow while
+        // retaining a steep distinction among knives, swords, and polearms.
+        0.24 + 0.40 * (inertia / (inertia + 0.45)).sqrt()
+    };
+    let (style_scale, contact_share) = if style == MeleeAttackStyle::Stab {
+        (1.18, 0.56)
+    } else {
+        (1.0, 0.55)
+    };
+    let cycle = base_cycle * style_scale;
+    MeleeAttackTiming {
+        preparation_secs: cycle * contact_share,
+        recovery_secs: cycle * (1.0 - contact_share),
     }
 }
 
@@ -553,6 +626,14 @@ pub trait PlayerEquipment {
     fn weapon_is_ranged(&self) -> bool {
         false
     }
+    /// Whether the selected attack uses the character's empty hands.
+    ///
+    /// This is intentionally explicit: zero weapon weight is not a reliable
+    /// proxy because an item may be exceptionally light, while empty-hand
+    /// impacts have their own injury and stagger calibration.
+    fn weapon_is_unarmed(&self) -> bool {
+        false
+    }
     fn weapon_does_blunt(&self) -> bool {
         false
     }
@@ -587,6 +668,10 @@ pub trait PlayerEquipment {
     fn weapon_holding_side(&self) -> Option<BodySide>;
     fn weapon_is_precise(&self) -> bool;
     fn weapon_balance(&self) -> f32;
+    /// Rotational inertia around the controlling hand, in kg*m^2.
+    fn weapon_moment_of_inertia(&self) -> f32 {
+        0.0
+    }
     /// Real-time seconds between committing to a swing and the hit actually
     /// landing - the authoritative source both the tactical client (to pace
     /// its own local windup before raycasting) and the tactical server (to
@@ -597,6 +682,18 @@ pub trait PlayerEquipment {
     /// combat has no real-time pacing concept at all - that don't drive
     /// real-time tactical combat.
     fn weapon_windup_secs(&self) -> f32 {
+        0.3
+    }
+    fn weapon_windup_secs_for(&self, _style: MeleeAttackStyle) -> f32 {
+        self.weapon_windup_secs()
+    }
+    fn weapon_recovery_secs(&self) -> f32 {
+        0.3
+    }
+    fn weapon_recovery_secs_for(&self, _style: MeleeAttackStyle) -> f32 {
+        self.weapon_recovery_secs()
+    }
+    fn weapon_ranged_windup_secs(&self) -> f32 {
         0.3
     }
     /// Kinetic energy delivered by a projectile. Forty joules is a useful
@@ -670,6 +767,65 @@ mod tests {
         });
         assert_eq!(check, 3.0);
         assert!(halberd.validate(true, false));
+    }
+
+    #[test]
+    fn melee_timing_is_inferred_from_moment_and_style() {
+        let cases = [
+            ("fists", MeleeAttackStyle::Swing, 0.0, true, 0.36),
+            (
+                "knife cut",
+                MeleeAttackStyle::Swing,
+                0.009216,
+                false,
+                0.24 + 0.40 * f32::sqrt(0.009216 / (0.009216 + 0.45)),
+            ),
+            (
+                "knife thrust",
+                MeleeAttackStyle::Stab,
+                0.009216,
+                false,
+                (0.24 + 0.40 * f32::sqrt(0.009216 / (0.009216 + 0.45))) * 1.18,
+            ),
+            (
+                "sword",
+                MeleeAttackStyle::Swing,
+                0.26325,
+                false,
+                0.24 + 0.40 * f32::sqrt(0.26325 / (0.26325 + 0.45)),
+            ),
+            (
+                "mace",
+                MeleeAttackStyle::Swing,
+                0.170555,
+                false,
+                0.24 + 0.40 * f32::sqrt(0.170555 / (0.170555 + 0.45)),
+            ),
+        ];
+        for (label, style, inertia, unarmed, expected_cycle) in cases {
+            let timing = melee_attack_timing(style, inertia, unarmed);
+            let cycle = timing.preparation_secs + timing.recovery_secs;
+            assert!((cycle - expected_cycle).abs() < 1.0e-5, "{label}: {cycle}");
+        }
+    }
+
+    #[test]
+    fn greater_moment_of_inertia_slows_cadence() {
+        let low_inertia = melee_attack_timing(MeleeAttackStyle::Swing, 0.05, false);
+        let high_inertia = melee_attack_timing(MeleeAttackStyle::Swing, 1.0, false);
+        assert!(
+            high_inertia.preparation_secs + high_inertia.recovery_secs
+                > low_inertia.preparation_secs + low_inertia.recovery_secs
+        );
+    }
+
+    #[test]
+    fn displayed_balance_round_trips_authored_moment() {
+        let mass: f32 = 1.3;
+        let length: f32 = 0.9;
+        let old_balance: f32 = 0.5;
+        let moment = mass * (old_balance * length).powi(2);
+        assert!((weapon_balance_from_moment(moment, mass, length) - old_balance).abs() < 1.0e-6);
     }
 
     #[test]

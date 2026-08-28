@@ -753,7 +753,7 @@ mod tests {
 
     #[test]
     fn repair_submission_preserves_stable_object_in_explicit_escrow() {
-        let source = include_str!("repair.rs");
+        let source = crate::production_source(include_str!("repair.rs"));
         let submit = source
             .split("fn submit(")
             .nth(1)

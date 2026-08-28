@@ -18,19 +18,27 @@ in a left-hip scabbard, a morion, breastplate, paired vambraces, paired leather
 boots, a torch, three bandages, and the ordinary 100-unit starting purse.
 
 Literacy is not universal. A character whose authoritative organization role
-authors a creation-literacy entitlement spends part of the simulated
-student-age phase learning that written language through the normal
-Intelligence learning rate and cap. Noble-family roles currently author local
-written German; civic citizenship alone grants nothing. Merchant-family literacy is represented
-by the merchant starting profession. Learned religious curricula teach their
-authored languages over time (Latin and German for Catholic and Lutheran
-organizations; Hebrew, Yiddish, and German for the Jewish organization).
-Professing a religion or merely joining an organization grants no instant
-literacy. Bidirectional German–Latin and German–Low German primers let each
-currently authored literate upbringing enter the wider book catalog.
-Characters are created by investing some amount of [favor](../shared/magic.md) into them. The more powerful the character, as determined by their [stats](../shared/stats.md), the more favor you need to invest. The exact kind of favor you need also depends on what character you want. If you want an elf character, you need to go do some quests with the elves.
+authors a creation-literacy entitlement spends part of the simulated student-age
+phase learning that written language through the normal Intelligence learning
+rate and cap. Noble-family roles currently author local written German; civic
+citizenship alone grants nothing. Merchant-family literacy is represented by the
+merchant starting profession. Learned religious curricula teach their authored
+languages over time (Latin and German for Catholic and Lutheran organizations;
+Hebrew, Yiddish, and German for the Jewish organization). Professing a religion
+or merely joining an organization grants no instant literacy. Bidirectional
+German–Latin and German–Low German primers let each currently authored literate
+upbringing enter the wider book catalog. Characters are created by investing
+some amount of [favor](../shared/magic.md) into them. The more powerful the
+character, as determined by their [stats](../shared/stats.md), the more favor
+you need to invest. The exact kind of favor you need also depends on what
+character you want. If you want an elf character, you need to go do some quests
+with the elves.
 
-You aren't exactly spawning a character into the world; ostensibly, you are obtaining control over a character who already exists! This means you don't always have to start "fresh" with a young, untrained character with no background. You can create a wealthy, skilled character simply by spending a lot of favor on him.
+You aren't exactly spawning a character into the world; ostensibly, you are
+obtaining control over a character who already exists! This means you don't
+always have to start "fresh" with a young, untrained character with no
+background. You can create a wealthy, skilled character simply by spending a lot
+of favor on him.
 
 ## Personality
 
@@ -49,8 +57,8 @@ Authoritative personality is private. Other characters instead keep durable,
 observer-specific beliefs with confidence and observation time. Beliefs may be
 wrong and can later be corrected. Insight forms beliefs about other people and
 is opposed by involuntary Deception modified by Transparency; Insight also
-governs reflection about oneself. Public morale labels never reveal the true trait that changed a
-reaction.
+governs reflection about oneself. Public morale labels never reveal the true
+trait that changed a reaction.
 
 ## Relationships
 
@@ -65,17 +73,18 @@ after they separate.
 ### Temporal relationship scope
 
 Relationship systems distinguish **pairwise-soft** history from canonical,
-exclusive history. Affinity, familiarity, and ordinary Socializing are
-presented in the Conversation Dock rather than a separate Social modal. The
-header's qualitative regard face opens an observer-only impression containing
+exclusive history. Affinity, familiarity, and ordinary Socializing are presented
+in the Conversation Dock rather than a separate Social modal. The header's
+qualitative regard face opens an observer-only impression containing
 familiarity, perceived traits, confidence, and approach hints; it can be pinned
 for pointer or keyboard inspection. Self-selection omits the chat composer and
 uses Recent Tidings for reflection. Age, faith, and local reputation remain on
-the biography and are also expressed naturally as questions and answers under
-Of Thee. These pairwise-soft values may be updated on the acting character's clock and never
-consume another character's schedule. A person who is engaged or married can
-therefore still become a close friend of somebody whose personal date is in
-their past. The resulting friendship does not create romantic eligibility.
+the biography and are also expressed naturally as questions and answers under Of
+Thee. These pairwise-soft values may be updated on the acting character's clock
+and never consume another character's schedule. A person who is engaged or
+married can therefore still become a close friend of somebody whose personal
+date is in their past. The resulting friendship does not create romantic
+eligibility.
 
 Courtship, gifts, discovery by family, engagements, marriage, pregnancy, and
 birth are canonical or exclusive actions. NPC-controlled people are full
@@ -88,25 +97,24 @@ NPC generation takes an explicit upbringing settlement and stable policy seed,
 so its life simulation and personality do not depend on reducer RNG, insertion
 order, or retries.
 
-`CharacterTime` is the one authoritative personal frontier for both players
-and NPCs; there is no parallel NPC clock. Canonical NPC actions may only move
-that frontier forward and settle residence bills, weddings, and births in the
-same transaction. Player travel and account-owned schedule reducers never
-advance an NPC on its behalf. Institutional services (guild admission,
-renewable market trade, ordinary rest, and actor-local quest journal updates)
-remain asynchronous only when they neither read nor write dynamic canonical
-NPC state. A private bounded scheduler advances living NPCs in
-exact-personal-minute cohorts, then character-ID order, by no more than one
-day per pass. It records schedule, housing, and romance decisions for every
-member of a cohort before advancing any member.
-Weddings and births use separate bounded effective-date queues. NPC participants
-causally advance through a ceremony boundary without login; a wedding involving
-a lagging player remains reserved until that player's frontier arrives, so the
-ceremony never evaluates location against stale history. Relationship projections are
-evaluated against the projected character's personal minute: a globally
-reserved engagement may block a conflicting romance while a marriage,
-pregnancy, exposure, or child which is still in that character's future is not
-shown.
+`CharacterTime` is the one authoritative personal frontier for both players and
+NPCs; there is no parallel NPC clock. Canonical NPC actions may only move that
+frontier forward and settle residence bills, weddings, and births in the same
+transaction. Player travel and account-owned schedule reducers never advance an
+NPC on its behalf. Institutional services (guild admission, renewable market
+trade, ordinary rest, and actor-local quest journal updates) remain asynchronous
+only when they neither read nor write dynamic canonical NPC state. A private
+bounded scheduler advances living NPCs in exact-personal-minute cohorts, then
+character-ID order, by no more than one day per pass. It records schedule,
+housing, and romance decisions for every member of a cohort before advancing any
+member. Weddings and births use separate bounded effective-date queues. NPC
+participants causally advance through a ceremony boundary without login; a
+wedding involving a lagging player remains reserved until that player's frontier
+arrives, so the ceremony never evaluates location against stale history.
+Relationship projections are evaluated against the projected character's
+personal minute: a globally reserved engagement may block a conflicting romance
+while a marriage, pregnancy, exposure, or child which is still in that
+character's future is not shown.
 
 Socializing is a 15-minute allocated strategic activity, distinct from both
 Leisure and Carousing. One deterministic companion receives all of a daily
@@ -136,7 +144,7 @@ Autonomous romance considers at most 16 deterministically ordered, currently
 present settlement residents. Both people must have `NpcPolicy`; policy never
 targets a player-owned character. The ordinary living-adult, mutual
 attraction, co-location, non-kinship, and exclusivity checks use the later of
-the two independent personal dates without synchronizing either clock.
+the two NPC policy frontiers without synchronizing either clock.
 Formal and informal affinity, father approval, personality threshold, and
 secrecy rules are the same rules exposed to players. A successful courtship
 atomically reserves its wedding one year ahead; expected ineligibility is a
@@ -154,12 +162,12 @@ to Deception. The three integer basis-point weights always sum to 10,000.
 Courtship is an explicit canonical action, never an automatic threshold
 transition. Both participants must be living adults, co-located, mutually
 attracted according to their private inclination and observable presentation,
-not close kin, and evaluated at the later participant frontier without moving
-the lagging participant's clock. The resulting courtship is effective-dated,
-and an immediate exclusive wedding reservation blocks conflicting romance even
-when its details remain in a character's future. High affinity
-with a person who has an exclusive commitment remains friendship rather than a
-counterfactual romantic relationship.
+not close kin, and evaluated in the settlement's canonical present without
+moving either participant's subjective clock. The resulting courtship is
+effective-dated, and an immediate exclusive wedding reservation blocks
+conflicting romance even when its details remain in a character's future. High
+affinity with a person who has an exclusive commitment remains friendship rather
+than a counterfactual romantic relationship.
 
 Formal courtship currently requires a biologically male suitor and biologically
 female partner, enough affinity from the partner, and enough affinity from her
@@ -177,18 +185,18 @@ pair, but requires substantially more affinity; Amorous partners lower that
 threshold and Proper partners raise it. A wedding can only be scheduled from
 an active courtship. Scheduling creates an immediate exclusive engagement for
 both people and fixes the ceremony one year later. The wedding materializes
-only after both personal frontiers reach the ceremony; ending the resulting
-marriage likewise requires both spouses at the same personal date.
+when official time reaches the ceremony. Ending the resulting marriage is also
+a canonical-present action and does not require matching subjective ages.
 
 When an informal courtship begins, every living adult parent or sibling then
 co-located with the couple becomes a frozen observer, with that observer's
-Insight and the weaker partner's Deception frozen at the same effective
-minute. While the courtship remains secret and Active, each observer makes one
-Insight-versus-Deception check per relationship day. These checks run from the canonical
-lifecycle boundary independently of that day's Socializing target. Every
-success and failure has an immutable receipt; the first success exposes the
-facade and stops later checks. Discovery knowledge is available only through a
-gateway projection scoped to the discovering observer. An active retry of the
+Insight and the weaker partner's Deception frozen at the same effective minute.
+While the courtship remains secret and Active, each observer makes one
+Insight-versus-Deception check per relationship day. These checks run from the
+canonical lifecycle boundary independently of that day's Socializing target.
+Every success and failure has an immutable receipt; the first success exposes
+the facade and stops later checks. Discovery knowledge is available only through
+a gateway projection scoped to the discovering observer. An active retry of the
 same courtship kind is idempotent, a different active kind is rejected, and an
 ended pair is final in this first-pass history model. A check waits until both
 participants and the frozen observer have reached that day. Because its cohort
@@ -197,11 +205,10 @@ settlement does not depend on later location, skill, clock-chunk, or NPC
 advancement order. An observer who dies ceases to be eligible from the death
 minute onward and cannot hold the remaining living observer cohort at an
 unreachable personal frontier; post-death days are deterministic skips and do
-not create discovery-attempt receipts for that observer.
-The discovery receipt keeps that historical attempt minute, while any affinity
-penalty is anchored at the observer's current frontier where the mutable
-affinity value was evaluated; delayed settlement therefore cannot decay the
-same elapsed interval twice.
+not create discovery-attempt receipts for that observer. The discovery receipt
+keeps that historical attempt minute, while any affinity penalty is anchored at
+the observer's current frontier where the mutable affinity value was evaluated;
+delayed settlement therefore cannot decay the same elapsed interval twice.
 
 Opposite-sex adult spouses who are co-located can conceive from qualifying
 spouse Leisure. Only the integer intersection of their realized Leisure
@@ -319,17 +326,17 @@ resent.
 
 The selected local's dialogue includes a contextual conversation topic. Its
 spoken responses offer a brief exchange, an unhurried visit, or an evening
-together; exact durations remain available to assistive technology and on
-hover without making raw minutes the primary interface. Courtship and wedding
+together; exact durations remain available to assistive technology and on hover
+without making raw minutes the primary interface. Courtship and wedding
 proposals likewise appear as dialogue topics and spoken responses rather than
-standalone action buttons. A conversation with a settlement NPC must fit wholly inside that
-NPC's current presence window. Each quarter hour uses the speaker's Charm and Insight together
-with mutual personality fit and the existing relationship. Familiarity always
-records the shared time, but morale and directional affinity can rise or fall;
-even a skilled, compatible pair can have an awkward conversation, and a poor
-match can occasionally connect. The observer-facing result remains
-qualitative and never exposes checks, personality fit, rolls, or numeric
-deltas.
+standalone action buttons. A conversation with a settlement NPC must fit wholly
+inside that NPC's current presence window. Each quarter hour uses the speaker's
+Charm and Insight together with mutual personality fit and the existing
+relationship. Familiarity always records the shared time, but morale and
+directional affinity can rise or fall; even a skilled, compatible pair can have
+an awkward conversation, and a poor match can occasionally connect. The
+observer-facing result remains qualitative and never exposes checks, personality
+fit, rolls, or numeric deltas.
 
 The available social approaches are filtered by the concern rather than showing
 every Social skill for every problem. Commiseration is always available as one
@@ -407,74 +414,125 @@ roster is browser-scoped and is not an account or authentication boundary.
 
 ## Mortal
 
-Character personality includes a mutable Temperance score whose visible axis is **Temperate** and
-**Drunkard** are visible non-neutral tags; the neutral state is omitted like
-other neutral axes. Random mortal/NPC profiles still activate exactly two to
-four distinct axes across the expanded thirteen-axis behavioral catalog.
-Mirth, Courtship, Transparency, and Self-knowledge join the existing axes.
-Presentation and Inclination are always assigned outside that sparse count;
-private Sex supplies demographic truth and never participates in attraction.
-The displayed inclination traits are Attracted to men, Attracted to men and
-women, Attracted to women, and Attracted to neither. Apparent gender identity
-is Man/Ambiguous/Woman. Man and Woman are normally learned on contact;
+Character personality includes a mutable Temperance score whose visible axis is
+**Temperate** and **Drunkard** are visible non-neutral tags; the neutral state
+is omitted like other neutral axes. Random mortal/NPC profiles still activate
+exactly two to four distinct axes across the expanded thirteen-axis behavioral
+catalog. Mirth, Courtship, Transparency, and Self-knowledge join the existing
+axes. Presentation and Inclination are always assigned outside that sparse
+count; private Sex supplies demographic truth and never participates in
+attraction. The displayed inclination traits are Attracted to men, Attracted to
+men and women, Attracted to women, and Attracted to neither. Apparent gender
+identity is Man/Ambiguous/Woman. Man and Woman are normally learned on contact;
 Ambiguous identity requires an Insight discovery check. Deliberately presenting
 traits that differ from a character's true traits is reserved for a broader
 Deception-based feature.
 
-Each actual personality discovery check conserves 0.25 real training hours.
-An Open subject awards all of it to the observer's Insight; a Neutral subject
+Each actual personality discovery check conserves 0.25 real training hours. An
+Open subject awards all of it to the observer's Insight; a Neutral subject
 splits it evenly between observer Insight and subject Deception; a Guarded
-subject awards it all to subject Deception. Unsupported contexts produce
-neither a check nor training.
-Mortal characters [age](../strategic/time.md) normally and eventually die. They cannot have their physical features customized; when rolling them, players must choose from a limited selection of randomly generated characters. They are cheap and efficient, ideal for players who want a [roguelike](https://en.wikipedia.org/wiki/Roguelike)/extraction-esque experience of frequently rolling new characters, quickly obtaining power, dying, and starting over.
+subject awards it all to subject Deception. Unsupported contexts produce neither
+a check nor training. Mortal characters [age](../strategic/time.md) normally and
+eventually die. They cannot have their physical features customized; when
+rolling them, players must choose from a limited selection of randomly generated
+characters. They are cheap and efficient, ideal for players who want a
+[roguelike](https://en.wikipedia.org/wiki/Roguelike)/extraction-esque experience
+of frequently rolling new characters, quickly obtaining power, dying, and
+starting over.
 ### Humans
 [Default](https://en.wikipedia.org/wiki/Human).
 ### Dwarves
-Inspired by their Tolkien/*Warhammer* depiction. A proud, stubborn, greedy, ~~short~~ sturdy, and strong race. Dwarves dwell in underground mountain cities. In their days of glory, the Dwarves built extensive tunnel networks between these cities; these tunnels have since been infested by foul creatures.
+Inspired by their Tolkien/*Warhammer* depiction. A proud, stubborn, greedy,
+~~short~~ sturdy, and strong race. Dwarves dwell in underground mountain cities.
+In their days of glory, the Dwarves built extensive tunnel networks between
+these cities; these tunnels have since been infested by foul creatures.
 
-Dwarves who shame their kin by dishonoring the ancestors, breaking oaths, or engaging with prissy Elven nonsense like magic may be exiled at best, at worst compelled to redeem their honor by undertaking various suicide missions to retake an ancestral realm.
+Dwarves who shame their kin by dishonoring the ancestors, breaking oaths, or
+engaging with prissy Elven nonsense like magic may be exiled at best, at worst
+compelled to redeem their honor by undertaking various suicide missions to
+retake an ancestral realm.
 
-As the race needs a lot of Dwarf-specific assets, Dwarves will not be included in the MVP or tentatively even the next phase.
+As the race needs a lot of Dwarf-specific assets, Dwarves will not be included
+in the MVP or tentatively even the next phase.
 ### Halflings
-Inspired by their Tolkien/*Warhammer* depiction. A small, jovial, provincial people generally unconcerned with the matters of the "big people." Would be found in small idyllic villages here and there. Not important enough for the MVP.
+Inspired by their Tolkien/*Warhammer* depiction. A small, jovial, provincial
+people generally unconcerned with the matters of the "big people." Would be
+found in small idyllic villages here and there. Not important enough for the
+MVP.
 ### Orcs/Goblins
-Inspired by *Warhammer* greenskins, though less comedic and specifically only grown from nasty underground funky pools. An Orc is just a Goblin who had lots of fresh meat thrown into its spawning pool (and must maintain this diet). 
+Inspired by *Warhammer* greenskins, though less comedic and specifically only
+grown from nasty underground funky pools. An Orc is just a Goblin who had lots
+of fresh meat thrown into its spawning pool (and must maintain this diet).
 
-If you aren't familiar with *Warhammer*, the idea is that they are a fungus-based lifeform with genetic memories. The point is for them not to need a complex civilization to be threatening (they already know how to fight and speak) and for you to not feel bad for slaughtering them (no women or children, they emerge REDY 2 FITE). Quest fodder for the MVP.
+If you aren't familiar with *Warhammer*, the idea is that they are a
+fungus-based lifeform with genetic memories. The point is for them not to need a
+complex civilization to be threatening (they already know how to fight and
+speak) and for you to not feel bad for slaughtering them (no women or children,
+they emerge REDY 2 FITE). Quest fodder for the MVP.
 ### Ratlings
-Inspired by *Warhammer Fantasy* Skaven, though with the technology level toned down somewhat. These are wretched, craven humanoid rats who dwell underground, both in stolen Dwarven cities and in their own subterranean creations beneath prosperous human cities. They don't need to be in the MVP.
+Inspired by *Warhammer Fantasy* Skaven, though with the technology level toned
+down somewhat. These are wretched, craven humanoid rats who dwell underground,
+both in stolen Dwarven cities and in their own subterranean creations beneath
+prosperous human cities. They don't need to be in the MVP.
 ## Immortal
-Immortal characters [do not age](https://en.wikipedia.org/wiki/Biological_immortality), will respawn if killed, and can be customized in detail. Their purpose is to give players the option of a more conventional RPG playstyle than the punishing roguelike experience of mortal characters.[^1]
+Immortal characters
+[do not age](https://en.wikipedia.org/wiki/Biological_immortality), will respawn
+if killed, and can be customized in detail. Their purpose is to give players the
+option of a more conventional RPG playstyle than the punishing roguelike
+experience of mortal characters.[^1]
 
 [^1]: However, everyone's first character (and probably the next several) will be mortal; mortal characters are playable on free accounts, and players can obtain their first with zero [favor](../shared/magic.md).
 
-Respawning an immortal character requires a [favor](../shared/magic.md) cost equivalent to the death cost of a similarly valuable mortal character. The cost may even be *higher* for immortal characters, so players would be ill-advised to use them for suicide missions. However, what immortal characters lack in cost efficiency, they compensate for with a higher effective skill ceiling, having unlimited time to train their [skills](../shared/stats.md).[^2]
+Respawning an immortal character requires a [favor](../shared/magic.md) cost
+equivalent to the death cost of a similarly valuable mortal character. The cost
+may even be *higher* for immortal characters, so players would be ill-advised to
+use them for suicide missions. However, what immortal characters lack in cost
+efficiency, they compensate for with a higher effective skill ceiling, having
+unlimited time to train their [skills](../shared/stats.md).[^2]
 
 [^2]: Albeit with drastically diminishing returns.
 
-Immortality is based on race, not an abstract per-character flag. All immortal races are said to have "fey blood." In the current roadmap, Elves are the only immortal race planned.
+Immortality is based on race, not an abstract per-character flag. All immortal
+races are said to have "fey blood." In the current roadmap, Elves are the only
+immortal race planned.
 ### Elves
-Inspired by their Tolkien/*Warhammer* depiction. Tall, beautiful, and haughty, Elves live in either deep forests or fictitious islands. They are generally morally good. Exceptions include the evil "Dark Elves" and the somewhat more neutral, ecoterroristic "Wood Elves."
+Inspired by their Tolkien/*Warhammer* depiction. Tall, beautiful, and haughty,
+Elves live in either deep forests or fictitious islands. They are generally
+morally good. Exceptions include the evil "Dark Elves" and the somewhat more
+neutral, ecoterroristic "Wood Elves."
 ### Dragons
-Intelligent [dragons](https://en.wikipedia.org/wiki/Dragon) who can take on a human form. It would be extraordinarily expensive to actually create a full-blooded dragon character. Some dragons may be unable or unwilling to take a human form. Absolutely not in the MVP and almost certainly not in the polished product unless one of the devs is very insistent.
+Intelligent [dragons](https://en.wikipedia.org/wiki/Dragon) who can take on a
+human form. It would be extraordinarily expensive to actually create a
+full-blooded dragon character. Some dragons may be unable or unwilling to take a
+human form. Absolutely not in the MVP and almost certainly not in the polished
+product unless one of the devs is very insistent.
 
 > Halbe: *I* am certainly not going to try and animate dragon flight.
 ### Beastmen
 *(rename "Beastlings"? "Shifters"?)*
 
-Beastmen have both a beast form and human form that they may shift between. The exact type of beast depends on whatever would be local to them. Can be felines, canines, serpentines, equestrians, lizards, and more.
+Beastmen have both a beast form and human form that they may shift between. The
+exact type of beast depends on whatever would be local to them. Can be felines,
+canines, serpentines, equestrians, lizards, and more.
 
 Probably not in the MVP. Might be in the polished product at least for wolves.
 ### Half/quarter/etc.-blooded
-These generally look like normal humans, except they can be immortal and customized. They are for players who want the mechanics of Elves/Dragons/Beastmen but don't want the pointy ears or shapeshifting. These come from breeding between mundane people and the fey-blooded.
+These generally look like normal humans, except they can be immortal and
+customized. They are for players who want the mechanics of
+Elves/Dragons/Beastmen but don't want the pointy ears or shapeshifting. These
+come from breeding between mundane people and the fey-blooded.
 
-In the case of feybloods who can shift between forms, the half-bloods may be unable to shift. Instead, they might take on some intermediate characteristics of the two forms.
+In the case of feybloods who can shift between forms, the half-bloods may be
+unable to shift. Instead, they might take on some intermediate characteristics
+of the two forms.
 
 > Halbe: Yes, half-blooded beastmen are the "designated furry race." And I think gnomes are just elf-halfling hybrids.
 
 > Bruno: And I was expecting something tasteful and classy, like the half-bloods are our way of capturing the aesthetic of ancient Egyptian deities in a post-Christian world. Alas.
 ### Vilebloods
-When a mundane character consumes fey blood, he can *become* fey-blooded. However, this is evil, so it also curses him. The exact nature of the curse depends on the kind of fey blood.
+When a mundane character consumes fey blood, he can *become* fey-blooded.
+However, this is evil, so it also curses him. The exact nature of the curse
+depends on the kind of fey blood.
 * Werewolves/bears/etc are beastmen-blooded.
 * True vampires are elf-blooded.
     * Mostly analogous to *Warhammer* Dark Elves. They do not burn in the sun, and they are not actually undead.
@@ -487,7 +545,13 @@ Mortals risen from the dead through unnatural magic.
 * A lich is a necromancer who has turned himself into a wight. As his soul is bound to himself, a lich is the only type of wight with free will. (This implies the possibility of ghoul-liches, who retain their flesh.)
 ## Death
 
-Characters begin alive. Death is an authoritative strategic transition: `Character.alive` is the fast life-state flag and one immutable `CharacterDeath` row retains the first typed cause, source, optional committed-outcome identifier, and the character's personal strategic minute. Repeating the transition is idempotent and cannot replace the original context. Tactical combat may submit a final death outcome, but tactical positions, hit points, enemies, and tick state never enter strategic persistence.
+Characters begin alive. Death is an authoritative strategic transition:
+`Character.alive` is the fast life-state flag and one immutable `CharacterDeath`
+row retains the first typed cause, source, optional committed-outcome
+identifier, and the character's personal strategic minute. Repeating the
+transition is idempotent and cannot replace the original context. Tactical
+combat may submit a final death outcome, but tactical positions, hit points,
+enemies, and tick state never enter strategic persistence.
 
 `CharacterDeath` and derived morale-source rows are private authority. The
 registered gateway receives broad backend projections for simulation and
@@ -501,6 +565,21 @@ observer's personal minute. If the observer time cannot be read, the gateway
 does not use the broad current `alive = false` value to disclose or suppress a
 character; strategic reducers remain authoritative for attempted actions.
 
-Dead characters remain visible for history and party context, but cannot train, rest, travel, trade, manage equipment or inventory, enter combat, use party actions, recruit, change membership, or chat. Party readiness, forecasts, provisioning, movement, needs, condition updates, and combat construction consider living members only; a corpse's personal minute and location remain fixed while survivors continue. Dead members are not recorded as battle participants, receive no victory morale, mission experience, loot stake, or quest reward, and participant life state is checked again when loot is stored. A disposable simulation capability provides the deterministic death path used for integration testing; ordinary production identities cannot invoke it.
+Dead characters remain visible for history and party context, but cannot train,
+rest, travel, trade, manage equipment or inventory, enter combat, use party
+actions, recruit, change membership, or chat. Party readiness, forecasts,
+provisioning, movement, needs, condition updates, and combat construction
+consider living members only; a corpse's personal minute and location remain
+fixed while survivors continue. Dead members are not recorded as battle
+participants, receive no victory morale, mission experience, loot stake, or
+quest reward, and participant life state is checked again when loot is stored. A
+disposable simulation capability provides the deterministic death path used for
+integration testing; ordinary production identities cannot invoke it.
 
-Characters initialize with the German vernacular selected deterministically from their final settlement profile. NPC Yiddish incidence is also deterministic; every selected Yiddish speaker retains a decent local German dialect at the documented 0.8 effective shared-language coefficient. Quest-company leaders atomically replace both Oral and Written language identity after being moved to their authoritative settlement, so a random creation origin cannot leak into their language record.
+Characters initialize with the German vernacular selected deterministically from
+their final settlement profile. NPC Yiddish incidence is also deterministic;
+every selected Yiddish speaker retains a decent local German dialect at the
+documented 0.8 effective shared-language coefficient. Quest-company leaders
+atomically replace both Oral and Written language identity after being moved to
+their authoritative settlement, so a random creation origin cannot leak into
+their language record.

@@ -521,16 +521,19 @@ fn generated_hostile_materialization_preserves_manifest_identity_across_links() 
                 .all(|candidate| candidate.hostile_group_id == *hostile_group_id)
         );
         if generated.family == TemplateFamily::RecurringDepredation {
-            assert_eq!(candidates.len(), 3);
             assert!(candidates.iter().any(|candidate| {
                 candidate.resolution == HostileResolutionKind::Defeated && candidate.weight == 50
             }));
             assert!(candidates.iter().any(|candidate| {
                 candidate.resolution == HostileResolutionKind::DrivenOff && candidate.weight == 30
             }));
-            assert!(candidates.iter().any(|candidate| {
-                candidate.resolution == HostileResolutionKind::Surrendered && candidate.weight == 20
-            }));
+            assert_eq!(
+                candidates.iter().any(|candidate| {
+                    candidate.resolution == HostileResolutionKind::Surrendered
+                        && candidate.weight == 20
+                }),
+                adventuresim_core::strategic_action::hostile_surrender_is_authored(*threat)
+            );
         }
     }
 
@@ -547,7 +550,7 @@ fn generated_combat_eligibility_fails_closed_across_site_group_and_finale_author
     use adventuresim_core::quest_generation::TemplateFamily;
 
     let generated = generated_case(7, TemplateFamily::RecurringDepredation);
-    let (hostile_group_id, hostile_site_id, _, _) = generated
+    let (hostile_group_id, hostile_site_id, threat, _) = generated
         .hostile_groups
         .first()
         .expect("recurring case has hostile authority");
@@ -642,21 +645,22 @@ fn generated_combat_eligibility_fails_closed_across_site_group_and_finale_author
         Some(hostile_group_id.as_str()),
         "generated pre-combat resolution must not depend on a bound mission capability",
     );
-    assert_eq!(
-        generated_case_site_hostile_resolution_eligible(
-            &generated,
-            &case,
-            &site,
-            std::slice::from_ref(&group),
-            &finales,
-            &facts,
-            "party",
-            Some(HostileResolutionKind::Surrendered),
-        )
-        .map(|eligible| eligible.id.as_str()),
-        Some(hostile_group_id.as_str()),
-        "generated surrender must not depend on a bound mission capability",
+    let surrender = generated_case_site_hostile_resolution_eligible(
+        &generated,
+        &case,
+        &site,
+        std::slice::from_ref(&group),
+        &finales,
+        &facts,
+        "party",
+        Some(HostileResolutionKind::Surrendered),
     );
+    assert_eq!(
+        surrender.is_some(),
+        adventuresim_core::strategic_action::hostile_surrender_is_authored(*threat),
+        "generated surrender must follow the hostile's authored negotiation policy",
+    );
+    assert!(surrender.is_none_or(|eligible| eligible.id == *hostile_group_id));
     assert!(
         generated_case_site_combat_eligible(
             &generated,
@@ -785,13 +789,13 @@ fn generated_truth_and_replay_authority_have_no_public_subscription_surface() {
     assert!(strategic.contains("#[table(accessor = quest_generation_authority)]"));
     assert!(!strategic.contains("#[table(accessor = quest_generation_authority, public)]"));
 
-    let generated_client = include_str!("../../../../adventuresim-stdb-client/src/mod.rs");
+    let generated_client = crate::production_source(include_str!("../../../../adventuresim-stdb-client/src/mod.rs"));
     assert!(!generated_client.contains("quest_generation_authority_table"));
-    let web_types = include_str!("../../../../strategic-web/src/spacetimedb/types.rs");
+    let web_types = crate::production_source(include_str!("../../../../strategic-web/src/spacetimedb/types.rs"));
     let contract = web_types
         .split("pub struct ContractPresentation")
         .nth(1)
-        .and_then(|tail| tail.split("pub enum ContractPresentationStatus").next())
+        .and_then(|tail| tail.split("pub struct RecruitmentOffer").next())
         .unwrap();
     assert!(contract.contains("opposition_wording"));
     for forbidden in [
@@ -916,13 +920,14 @@ fn world_import_persists_settlement_facts_without_activating_gameplay() {
         .expect("settlement activity");
     assert!(activity.contains("ensure_settlement_smith"));
 
+    let quest_source = crate::production_source(include_str!("../mission_bootstrap.rs"));
     for consumer in [
         "fn generate_quest_for_settlement",
         "pub fn spawn_developer_quest",
     ] {
-        let body = source
-            .rsplit(consumer)
-            .next()
+        let body = quest_source
+            .split(consumer)
+            .nth(1)
             .expect("quest ordinal consumer");
         assert!(body.contains("validated.context.settlement_id == settlement_id"));
     }
@@ -937,9 +942,10 @@ fn outcome_ingestion_preflights_provenance_before_any_mutation() {
         .and_then(|tail| tail.split("pub(crate) fn ingest_case_outcome_fact").next())
         .unwrap();
     for required in [
-        "\"manual\" if case.generated_case_id.is_empty()",
+        "match case.provenance_kind",
+        "InvestigationProvenanceKind::Manual",
         "authorities.is_empty()",
-        "\"generated\" if case.generated_case_id == case.id",
+        "InvestigationProvenanceKind::Generated",
         "authorities.len() != 1",
         "validate_quest_generation_authority",
         "objectives != validated.manifest.objectives",

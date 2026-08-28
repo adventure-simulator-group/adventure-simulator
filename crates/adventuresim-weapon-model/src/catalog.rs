@@ -118,7 +118,7 @@ fn shaft(length: u32, radius: u32, steel: bool) -> ComponentDesign {
             radius: Millimeters(radius),
             bottom_scale: Permille(900),
             top_scale: Permille(920),
-            segments: Segments(18),
+            segments: Segments(16),
         }),
     )
 }
@@ -184,10 +184,22 @@ fn polearm_base(
     socket_length: u32,
     socket_radius: u32,
 ) -> WeaponDesign {
+    let shaft_segments = if matches!(
+        id,
+        "halberd-1540" | "lucerne-hammer" | "pollaxe" | "hooked-bill"
+    ) {
+        Segments(8)
+    } else {
+        Segments(16)
+    };
+    let mut haft = shaft(length, radius, false);
+    if let ComponentShape::Cylinder(spec) = &mut haft.shape {
+        spec.segments = shaft_segments;
+    }
     WeaponDesign {
         catalog_id: id.into(),
         components: vec![
-            shaft(length, radius, false),
+            haft,
             socket("shaft", socket_length, socket_radius, socket_length * 3 / 4),
             component(
                 "butt-cap",
@@ -234,11 +246,12 @@ fn sword(
         None,
         OffsetMm::default(),
         MaterialClass::Leather,
-        ComponentShape::Cylinder(CylinderSpec {
+        ComponentShape::OvalGrip(OvalGripSpec {
             length: Millimeters(grip_length),
-            radius: Millimeters(21),
+            width: Millimeters(32),
+            thickness: Millimeters(23),
             bottom_scale: Permille(1000),
-            top_scale: Permille(920),
+            top_scale: Permille(850),
             segments: Segments(16),
         }),
     );
@@ -296,6 +309,12 @@ fn cross(span: u32, sweep: i32) -> ComponentShape {
         samples: Segments(22),
         radial_segments: Segments(14),
     })
+}
+fn set_oval_grip(design: &mut WeaponDesign, width: u32, thickness: u32) {
+    if let ComponentShape::OvalGrip(grip) = &mut design.components[0].shape {
+        grip.width = Millimeters(width);
+        grip.thickness = Millimeters(thickness);
+    }
 }
 fn profiled(points: &[(u32, u32)]) -> ComponentShape {
     ComponentShape::ProfiledPommel(ProfiledPommelSpec {
@@ -478,7 +497,7 @@ fn gothic(id: &str, length: u32, haft: u32, concavity: u16) -> WeaponDesign {
 pub fn preset_design(id: &str) -> Option<WeaponDesign> {
     Some(match id {
         "halberd-1540" => {
-            let mut d = polearm_base(id, 1820, 26, 240, 33);
+            let mut d = polearm_base(id, 1820, 22, 240, 33);
             d.components.push(component(
                 "axe",
                 ComponentRole::Head,
@@ -528,7 +547,7 @@ pub fn preset_design(id: &str) -> Option<WeaponDesign> {
             polearm_finish(d, 380)
         }
         "lucerne-hammer" => {
-            let mut d = polearm_base(id, 1740, 25, 240, 33);
+            let mut d = polearm_base(id, 1740, 22, 240, 33);
             d.components.push(component(
                 "poll",
                 ComponentRole::Head,
@@ -571,7 +590,7 @@ pub fn preset_design(id: &str) -> Option<WeaponDesign> {
             polearm_finish(d, 420)
         }
         "pollaxe" => {
-            let mut d = polearm_base(id, 1480, 26, 250, 32);
+            let mut d = polearm_base(id, 1480, 22, 250, 32);
             d.components.push(component(
                 "axe",
                 ComponentRole::Head,
@@ -618,19 +637,19 @@ pub fn preset_design(id: &str) -> Option<WeaponDesign> {
             polearm_finish(d, 500)
         }
         "kriegsspiess" => {
-            let mut d = polearm_base(id, 3350, 21, 180, 27);
+            let mut d = polearm_base(id, 3350, 19, 180, 27);
             d.components
                 .push(spear("spike", "socket", 250, 43, 22, 150));
             d
         }
         "short-spear" => {
-            let mut d = polearm_base(id, 1720, 23, 200, 31);
+            let mut d = polearm_base(id, 1720, 20, 200, 31);
             d.components
                 .push(spear("spike", "socket", 310, 85, 24, 320));
             d
         }
         "partisan" => {
-            let mut d = polearm_base(id, 1780, 24, 220, 34);
+            let mut d = polearm_base(id, 1780, 21, 220, 34);
             d.components.push(component(
                 "partisan",
                 ComponentRole::Head,
@@ -653,7 +672,7 @@ pub fn preset_design(id: &str) -> Option<WeaponDesign> {
             polearm_finish(d, 320)
         }
         "glaive" => {
-            let mut d = polearm_base(id, 1720, 25, 250, 34);
+            let mut d = polearm_base(id, 1720, 21, 250, 34);
             d.components.push(component(
                 "glaive",
                 ComponentRole::Head,
@@ -677,7 +696,7 @@ pub fn preset_design(id: &str) -> Option<WeaponDesign> {
             polearm_finish(d, 400)
         }
         "hooked-bill" => {
-            let mut d = polearm_base(id, 1830, 26, 230, 33);
+            let mut d = polearm_base(id, 1830, 22, 230, 33);
             d.components.push(component(
                 "bill",
                 ComponentRole::Head,
@@ -701,7 +720,7 @@ pub fn preset_design(id: &str) -> Option<WeaponDesign> {
             polearm_finish(d, 380)
         }
         "military-fork" => {
-            let mut d = polearm_base(id, 1860, 24, 240, 34);
+            let mut d = polearm_base(id, 1860, 21, 240, 34);
             d.components.push(component(
                 "fork",
                 ComponentRole::Head,
@@ -722,16 +741,20 @@ pub fn preset_design(id: &str) -> Option<WeaponDesign> {
             ));
             polearm_finish(d, 340)
         }
-        "landsknecht-longsword" => sword(
-            id,
-            1020,
-            65,
-            300,
-            BladeSection::Fullered,
-            0,
-            cross(310, 18),
-            profiled(&[(0, 38), (32, 52), (105, 37), (130, 23)]),
-        ),
+        "landsknecht-longsword" => {
+            let mut d = sword(
+                id,
+                1020,
+                65,
+                300,
+                BladeSection::Fullered,
+                0,
+                cross(310, 18),
+                profiled(&[(0, 12), (10, 17), (38, 20), (55, 10)]),
+            );
+            set_oval_grip(&mut d, 33, 24);
+            d
+        }
         "zweihander" => {
             let mut d = sword(
                 id,
@@ -741,13 +764,14 @@ pub fn preset_design(id: &str) -> Option<WeaponDesign> {
                 BladeSection::Fullered,
                 0,
                 cross(480, 35),
-                profiled(&[(0, 45), (40, 60), (115, 42), (145, 25)]),
+                profiled(&[(0, 14), (12, 21), (45, 24), (65, 12)]),
             );
             if let ComponentShape::Blade(blade) = &mut d.components[3].shape {
                 blade.thickness = Millimeters(13);
                 blade.taper = Permille(680);
                 blade.ricasso = Millimeters(260);
             }
+            set_oval_grip(&mut d, 38, 28);
             d.components.push(component(
                 "parrying-lugs",
                 ComponentRole::Guard,
@@ -779,9 +803,7 @@ pub fn preset_design(id: &str) -> Option<WeaponDesign> {
                     thickness: Millimeters(14),
                 }),
             );
-            if let ComponentShape::Cylinder(grip) = &mut d.components[0].shape {
-                grip.radius = Millimeters(22);
-            }
+            set_oval_grip(&mut d, 34, 25);
             if let ComponentShape::Blade(blade) = &mut d.components[3].shape {
                 blade.thickness = Millimeters(11);
                 blade.taper = Permille(500);
@@ -797,7 +819,7 @@ pub fn preset_design(id: &str) -> Option<WeaponDesign> {
                 BladeSection::Flat,
                 85,
                 cross(230, 10),
-                profiled(&[(0, 26), (30, 34), (52, 25)]),
+                profiled(&[(0, 16), (18, 22), (38, 14)]),
             );
             d.components[0].material = MaterialClass::Wood;
             d.components[1].material = MaterialClass::Brass;
@@ -852,36 +874,44 @@ pub fn preset_design(id: &str) -> Option<WeaponDesign> {
                     samples: Segments(24),
                     radial_segments: Segments(14),
                 }),
-                profiled(&[(0, 24), (26, 30), (45, 22)]),
+                profiled(&[(0, 13), (15, 18), (32, 11)]),
             );
             d.components[3].shape = curved_blade(690, 68, 12, 130, 820, 800, 320);
             d.components[1].material = MaterialClass::Brass;
             d
         }
-        "estoc" => sword(
-            id,
-            1050,
-            34,
-            260,
-            BladeSection::Diamond,
-            0,
-            cross(240, 5),
-            profiled(&[(0, 36), (35, 50), (100, 35), (120, 21)]),
-        ),
-        "rondel-dagger" => sword(
-            id,
-            380,
-            32,
-            125,
-            BladeSection::Diamond,
-            0,
-            ComponentShape::Rondel(RondelSpec {
-                radius: Millimeters(47),
-                thickness: Millimeters(14),
-                segments: Segments(20),
-            }),
-            profiled(&[(0, 35), (12, 47), (26, 35)]),
-        ),
+        "estoc" => {
+            let mut d = sword(
+                id,
+                1050,
+                34,
+                260,
+                BladeSection::Diamond,
+                0,
+                cross(240, 5),
+                profiled(&[(0, 12), (10, 17), (36, 19), (52, 9)]),
+            );
+            set_oval_grip(&mut d, 31, 23);
+            d
+        }
+        "rondel-dagger" => {
+            let mut d = sword(
+                id,
+                380,
+                32,
+                125,
+                BladeSection::Diamond,
+                0,
+                ComponentShape::Rondel(RondelSpec {
+                    radius: Millimeters(32),
+                    thickness: Millimeters(8),
+                    segments: Segments(20),
+                }),
+                profiled(&[(0, 22), (8, 32), (16, 22)]),
+            );
+            set_oval_grip(&mut d, 30, 22);
+            d
+        }
         "reitschwert-1540" => {
             let mut d = sword(
                 id,
@@ -891,8 +921,9 @@ pub fn preset_design(id: &str) -> Option<WeaponDesign> {
                 BladeSection::Fullered,
                 0,
                 cross(230, 10),
-                profiled(&[(0, 28), (30, 42), (70, 31), (88, 19)]),
+                profiled(&[(0, 12), (10, 17), (32, 19), (45, 9)]),
             );
+            set_oval_grip(&mut d, 31, 22);
             d.components.push(component(
                 "side-ring",
                 ComponentRole::Guard,
@@ -1045,14 +1076,14 @@ pub fn default_design(catalog_id: &str) -> Option<WeaponDesign> {
     if catalog_id == "walking_staff" {
         return Some(WeaponDesign {
             catalog_id: catalog_id.into(),
-            components: vec![shaft(1_850, 25, false)],
+            components: vec![shaft(1_850, 22, false)],
         });
     }
     if catalog_id == "club" {
         return Some(WeaponDesign {
             catalog_id: catalog_id.into(),
             components: vec![
-                shaft(620, 25, false),
+                shaft(620, 22, false),
                 component(
                     "swollen-head",
                     ComponentRole::Head,

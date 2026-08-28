@@ -355,7 +355,20 @@ fn complete_settlement_arrival(
     travel_minutes_to_advance: Option<u64>,
     rest_temporary_companions: bool,
 ) -> Result<(), String> {
+    let canonical_excursion = party
+        .as_ref()
+        .and_then(|party| party.wilderness_canonical_anchor_minute)
+        .map(|start| crate::time::refresh_clock(ctx).map(|end| (start, end)))
+        .transpose()?;
     for traveler_id in traveler_ids {
+        if let Some((canonical_start, canonical_end)) = canonical_excursion {
+            crate::condition::apply_canonical_wilderness_observance(
+                ctx,
+                traveler_id,
+                canonical_start,
+                canonical_end,
+            )?;
+        }
         if let Some(travel_minutes) = travel_minutes_to_advance
             && !advance_travel_time(ctx, traveler_id, travel_minutes)?
         {
@@ -370,6 +383,9 @@ fn complete_settlement_arrival(
         traveler.current_settlement_id = Some(settlement_id.to_owned());
         crate::investigation::set_character_case_site(ctx, traveler.id, None)?;
         ctx.db.character().id().update(traveler);
+        if !crate::time::synchronize_to_settlement_time_of_day(ctx, traveler_id)? {
+            continue;
+        }
         crate::condition::replenish_needs_at_settlement(ctx, traveler_id)?;
         crate::condition::refresh_character_strategic_condition(ctx, traveler_id)?;
         crate::organization::reconcile_presentation(ctx, traveler_id)?;
@@ -768,6 +784,7 @@ pub fn set_party_travel_itinerary(
     character_id: u64,
     walking_minutes_per_day: u16,
     travel_at_night: bool,
+    journey_start_minute_of_day: u16,
 ) -> Result<(), String> {
     crate::character::require_living_character(ctx, character_id)?;
     if walking_minutes_per_day > adventuresim_core::strategic_time::MAX_WALKING_MINUTES_PER_DAY
@@ -776,6 +793,13 @@ pub fn set_party_travel_itinerary(
     {
         return Err("Daily walking time must be between 0 and 24 hours".into());
     }
+    let Some(journey_start) =
+        adventuresim_core::strategic_time::StrategicMinuteOfDay::new(
+            journey_start_minute_of_day,
+        )
+    else {
+        return Err("Journey departure time must be within one day".into());
+    };
     let character = ctx
         .db
         .character()
@@ -792,8 +816,14 @@ pub fn set_party_travel_itinerary(
     if party.leader_id != character_id {
         return Err("Only the party leader can configure travel".into());
     }
+    if party.wilderness_canonical_anchor_minute.is_some()
+        && party.journey_start_minute_of_day != journey_start.get()
+    {
+        return Err("Journey departure time cannot change after setting out".into());
+    }
     party.walking_minutes_per_day = walking_minutes_per_day;
     party.travel_at_night = travel_at_night;
+    party.journey_start_minute_of_day = journey_start.get();
     let camped = party.camp_destination.is_some();
     ctx.db.party_authority().id().update(party);
     if camped {

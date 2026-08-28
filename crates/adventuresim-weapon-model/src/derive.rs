@@ -61,6 +61,9 @@ pub fn derive_holder_properties(
         mass_kg,
         length_m,
         grip_to_tip_m: 0.0,
+        center_of_mass_from_grip_m: 0.0,
+        moment_of_inertia_kg_m2: 0.0,
+        balance: 1.0,
     })
 }
 
@@ -101,6 +104,15 @@ fn volume(shape: &ComponentShape) -> f32 {
             v.radius.meters() * v.top_scale.unit(),
             v.segments.0,
         ),
+        OvalGrip(v) => {
+            polygonal_frustum(
+                v.length.meters(),
+                v.width.meters() * v.bottom_scale.unit() * 0.5,
+                v.width.meters() * v.top_scale.unit() * 0.5,
+                v.segments.0,
+            ) * v.thickness.meters()
+                / v.width.meters()
+        }
         Socket(v) => {
             let outer = (v.outer_radius.meters() + v.top_radius.meters()) * 0.5;
             let inner = outer - v.wall.meters();
@@ -109,9 +121,9 @@ fn volume(shape: &ComponentShape) -> f32 {
         }
         Blade(v) => {
             let section_factor = match v.section {
-                crate::BladeSection::Flat => 0.48,
-                crate::BladeSection::Diamond => 0.38,
-                crate::BladeSection::Fullered => 0.34,
+                crate::BladeSection::Flat => 0.32,
+                crate::BladeSection::Diamond => 0.21,
+                crate::BladeSection::Fullered => 0.19,
             };
             v.length.meters() * v.width.meters() * v.thickness.meters() * section_factor
         }
@@ -208,6 +220,36 @@ fn volume(shape: &ComponentShape) -> f32 {
     }
 }
 
+fn central_transverse_inertia_per_kg(shape: &ComponentShape) -> f32 {
+    let length = shape.axial_length().meters();
+    let axial = length * length / 12.0;
+    let lateral = match shape {
+        ComponentShape::Cylinder(value) => value.radius.meters().powi(2) / 4.0,
+        ComponentShape::OvalGrip(value) => {
+            (value.width.meters().powi(2) + value.thickness.meters().powi(2)) / 32.0
+        }
+        ComponentShape::Blade(value) => {
+            (value.width.meters().powi(2) + value.thickness.meters().powi(2)) / 24.0
+        }
+        ComponentShape::Guard(value) => value.span.meters().powi(2) / 24.0,
+        ComponentShape::FanPommel(value) => {
+            (value.width.meters().powi(2) + value.thickness.meters().powi(2)) / 24.0
+        }
+        ComponentShape::Rondel(value) => value.radius.meters().powi(2) / 4.0,
+        ComponentShape::ProfiledPommel(value) => {
+            value
+                .profile
+                .iter()
+                .map(|point| point.radius.meters())
+                .fold(0.0_f32, f32::max)
+                .powi(2)
+                / 4.0
+        }
+        _ => 0.0,
+    };
+    axial + lateral
+}
+
 /// Computes gameplay-facing physical properties directly from the quantized recipe.
 ///
 /// This intentionally does not generate vertices or indices. Rendering clients call
@@ -224,6 +266,8 @@ pub fn derive_properties(design: &WeaponDesign) -> Result<DerivedProperties, Vec
     let mut maximum = f32::NEG_INFINITY;
     let mut grip = 0.0;
     let mut mass = 0.0;
+    let mut first_moment = 0.0;
+    let mut components = Vec::with_capacity(design.components.len());
     for component in &design.components {
         let origin = origin_y(component, &by_id, &mut origins);
         let top = origin + component.shape.axial_length().meters();
@@ -232,12 +276,31 @@ pub fn derive_properties(design: &WeaponDesign) -> Result<DerivedProperties, Vec
         if component.role == ComponentRole::Grip {
             grip = (origin + top) * 0.5;
         }
-        mass += volume(&component.shape) * component.material.density_kg_m3();
+        let component_mass = volume(&component.shape) * component.material.density_kg_m3();
+        let center = (origin + top) * 0.5;
+        mass += component_mass;
+        first_moment += component_mass * center;
+        components.push((
+            component_mass,
+            center,
+            central_transverse_inertia_per_kg(&component.shape),
+        ));
     }
+    let center_of_mass = first_moment / mass;
+    let moment_of_inertia = components
+        .into_iter()
+        .map(|(component_mass, center, central)| {
+            component_mass * (central + (center - grip).powi(2))
+        })
+        .sum::<f32>();
+    let grip_to_tip = maximum - grip;
     Ok(DerivedProperties {
         mass_kg: mass,
         length_m: maximum - minimum,
-        grip_to_tip_m: maximum - grip,
+        grip_to_tip_m: grip_to_tip,
+        center_of_mass_from_grip_m: center_of_mass - grip,
+        moment_of_inertia_kg_m2: moment_of_inertia,
+        balance: (moment_of_inertia / mass).sqrt() / grip_to_tip,
     })
 }
 

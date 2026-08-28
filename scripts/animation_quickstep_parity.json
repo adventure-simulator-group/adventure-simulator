@@ -1,0 +1,14 @@
+{
+  "commands": [
+    { "type": "wait", "duration_seconds": 5.0 },
+    { "type": "guard", "raised": true },
+    { "type": "wait", "duration_seconds": 0.5 },
+    {
+      "type": "quickstep",
+      "direction": "right",
+      "duration_seconds": 0.08
+    },
+    { "type": "guard", "raised": false },
+    { "type": "wait", "duration_seconds": 1.0 }
+  ]
+}

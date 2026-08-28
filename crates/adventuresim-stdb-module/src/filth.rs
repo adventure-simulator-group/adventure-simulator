@@ -873,7 +873,7 @@ pub(crate) fn seed_demo(
 mod source_tests {
     #[test]
     fn blood_route_receives_partial_physician_protection_after_physical_controls() {
-        let source = include_str!("filth.rs");
+        let source = crate::production_source(include_str!("filth.rs"));
         let exposure = source
             .split("pub fn blood_exposure_attempts_through")
             .nth(1)

@@ -17,7 +17,8 @@ use bevy::{
     prelude::*,
 };
 use bevy_egui::{
-    EguiContexts, EguiPlugin, EguiPrimaryContextPass,
+    EguiContext, EguiContexts, EguiGlobalSettings, EguiPlugin, EguiPrimaryContextPass,
+    PrimaryEguiContext,
     egui::{self, Color32, Pos2, Stroke},
 };
 use bevy_flair::prelude::*;
@@ -30,8 +31,10 @@ use crate::camera::{CameraDebugEnabled, CameraRigDebugState};
 use crate::debug::DebugGameSpeed;
 use crate::{
     Args,
+    animation::{BoneRole, HumanoidRig},
     camera::CameraAimState,
     player::{AttackState, ClientPlayer},
+    presentation::TacticalGameplayCamera,
 };
 
 pub struct UiPlugin;
@@ -41,10 +44,40 @@ pub struct UiPlugin;
 #[derive(Component)]
 pub(crate) struct TacticalUiRoot;
 
+/// Pins the primary egui context to the gameplay camera. The automatic
+/// first-camera adoption is disabled in `UiPlugin::build`, so cameras that
+/// render offscreen never receive UI passes.
+#[expect(
+    clippy::type_complexity,
+    reason = "the Bevy camera filter selects newly added gameplay cameras without cloud or existing egui contexts"
+)]
+fn attach_primary_egui_context(
+    mut commands: Commands,
+    cameras: Query<
+        Entity,
+        (
+            Added<Camera3d>,
+            Without<crate::presentation::TacticalCloudOffscreenCamera>,
+            Without<EguiContext>,
+        ),
+    >,
+) {
+    for camera in &cameras {
+        commands.entity(camera).insert(PrimaryEguiContext);
+    }
+}
+
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins((FlairPlugin, EguiPlugin::default()))
-            .add_systems(Startup, setup_ui)
+        app.add_plugins((FlairPlugin, EguiPlugin::default()));
+        app.world_mut()
+            .resource_mut::<EguiGlobalSettings>()
+            .auto_create_primary_context = false;
+        app.add_systems(Startup, setup_ui)
+            // bevy_egui would otherwise adopt the first camera it sees as
+            // the primary context, which can be the offscreen cloud camera
+            // whose Rgba16Float target the egui pipeline cannot render to.
+            .add_systems(PreUpdate, attach_primary_egui_context)
             .add_systems(
                 EguiPrimaryContextPass,
                 draw_incapacitation_wheel.run_if(any_with_component::<ClientPlayer>),
@@ -77,6 +110,10 @@ impl Plugin for UiPlugin {
 
 const INCAPACITATION_WHEEL_RADIUS: f32 = 26.0;
 const INCAPACITATION_WHEEL_WIDTH: f32 = 8.0;
+const ENEMY_INCAPACITATION_WHEEL_RADIUS: f32 = 18.0;
+const ENEMY_INCAPACITATION_WHEEL_WIDTH: f32 = 6.0;
+const ENEMY_WHEEL_HEAD_CLEARANCE_METRES: f32 = 0.25;
+const ENEMY_WHEEL_ROOT_FALLBACK_HEIGHT_METRES: f32 = 1.1;
 const INCAPACITATION_WHEEL_RESOLUTION: f32 = 96.0;
 const MIN_VISIBLE_INCAPACITATION_SEGMENT: f32 = 0.005;
 
@@ -99,18 +136,36 @@ fn visible_incapacitation_wheel_amount(raw_amount: f32, remaining: f32) -> Optio
     (amount >= MIN_VISIBLE_INCAPACITATION_SEGMENT).then_some(amount)
 }
 
+fn enemy_incapacitation_wheel_visible(side: TacticalCombatSide, incapacitation: f32) -> bool {
+    side == TacticalCombatSide::Enemy && incapacitation > 0.0
+}
+
+#[expect(
+    clippy::type_complexity,
+    reason = "the Bevy enemy query selects every combat and presentation input needed by the incapacitation wheel"
+)]
 fn draw_incapacitation_wheel(
     mut contexts: EguiContexts,
     player: Single<(Entity, &TacticalCombatState, &Limbs), With<ClientPlayer>>,
+    enemies: Query<
+        (
+            Entity,
+            &TacticalCombatSide,
+            &TacticalCombatState,
+            &Limbs,
+            &GlobalTransform,
+            Option<&HumanoidRig>,
+        ),
+        (With<Player>, Without<ClientPlayer>),
+    >,
+    bone_transforms: Query<&GlobalTransform, Without<Player>>,
+    camera: Single<(&Camera, &GlobalTransform), With<TacticalGameplayCamera>>,
     viewer: TacticalPlayerViewer,
 ) -> Result {
     let (entity, state, limbs) = player.into_inner();
     let view = viewer.get(entity)?;
     let will = view.skill_check(Skill::Will, LimbWeights::all_equal());
     let sources = state.incapacitation_sources(limbs.total_damage(), will);
-    if state.incapacitation <= 0.0 {
-        return Ok(());
-    }
 
     let context = contexts.ctx_mut()?;
     let painter = context.layer_painter(egui::LayerId::new(
@@ -119,12 +174,82 @@ fn draw_incapacitation_wheel(
     ));
     let center = context.content_rect().center();
 
+    if state.incapacitation > 0.0 {
+        paint_incapacitation_wheel(
+            &painter,
+            center,
+            state,
+            sources,
+            INCAPACITATION_WHEEL_RADIUS,
+            INCAPACITATION_WHEEL_WIDTH,
+        );
+    }
+
+    let content_rect = context.content_rect();
+    let (camera, camera_transform) = camera.into_inner();
+    for (entity, side, state, limbs, root_transform, rig) in &enemies {
+        if !enemy_incapacitation_wheel_visible(*side, state.incapacitation) {
+            continue;
+        }
+        let Ok(view) = viewer.get(entity) else {
+            continue;
+        };
+        let will = view.skill_check(Skill::Will, LimbWeights::all_equal());
+        let sources = state.incapacitation_sources(limbs.total_damage(), will);
+        let head_position = rig
+            .and_then(|rig| rig.get(&BoneRole::Head))
+            .and_then(|head| bone_transforms.get(*head).ok())
+            .map_or_else(
+                || root_transform.translation() + Vec3::Y * ENEMY_WHEEL_ROOT_FALLBACK_HEIGHT_METRES,
+                |head| head.translation() + Vec3::Y * ENEMY_WHEEL_HEAD_CLEARANCE_METRES,
+            );
+        let Ok(viewport_position) = camera.world_to_viewport(camera_transform, head_position)
+        else {
+            continue;
+        };
+        let center = Pos2::new(viewport_position.x, viewport_position.y);
+        if !content_rect
+            .expand(ENEMY_INCAPACITATION_WHEEL_RADIUS)
+            .contains(center)
+        {
+            continue;
+        }
+        paint_incapacitation_wheel(
+            &painter,
+            center,
+            state,
+            sources,
+            ENEMY_INCAPACITATION_WHEEL_RADIUS,
+            ENEMY_INCAPACITATION_WHEEL_WIDTH,
+        );
+    }
+
+    Ok(())
+}
+
+fn paint_incapacitation_wheel(
+    painter: &egui::Painter,
+    center: Pos2,
+    state: &TacticalCombatState,
+    sources: TacticalIncapacitationSources,
+    radius: f32,
+    width: f32,
+) {
+    painter.circle_stroke(
+        center,
+        radius,
+        Stroke::new(
+            width,
+            Color32::from_rgba_unmultiplied(0x10, 0x12, 0x16, 150),
+        ),
+    );
+
     if state.is_incapacitated() {
         painter.circle_stroke(
             center,
-            INCAPACITATION_WHEEL_RADIUS,
+            radius,
             Stroke::new(
-                INCAPACITATION_WHEEL_WIDTH + 6.0,
+                width + 6.0,
                 Color32::from_rgba_unmultiplied(0xc8, 0x47, 0x47, 70),
             ),
         );
@@ -142,22 +267,18 @@ fn draw_incapacitation_wheel(
             .map(|step| {
                 let angle = cursor + (end - cursor) * step as f32 / steps as f32;
                 Pos2::new(
-                    center.x + INCAPACITATION_WHEEL_RADIUS * angle.cos(),
-                    center.y + INCAPACITATION_WHEEL_RADIUS * angle.sin(),
+                    center.x + radius * angle.cos(),
+                    center.y + radius * angle.sin(),
                 )
             })
             .collect();
-        painter.add(egui::Shape::line(
-            points,
-            Stroke::new(INCAPACITATION_WHEEL_WIDTH, color),
-        ));
+        painter.add(egui::Shape::line(points, Stroke::new(width, color)));
         cursor = end;
         remaining -= amount;
         if remaining <= 0.0 {
             break;
         }
     }
-    Ok(())
 }
 
 #[derive(Component)]
@@ -316,7 +437,7 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
             (
                 Name::new("controls"),
                 Text::new(
-                    "WASD to move | Caps Lock: jog | Shift: sprint | Space to jump | Aim + Space + WASD: quickstep | Release Left Alt: prone/get up | Shift + Left Alt + WASD: dive | Downed WASD: tank controls | Hold Space: align with camera | Hold Space + A/D: keep rolling | Mouse to look around | F9 to toggle camera\n",
+                    "WASD to move | Caps Lock: jog | Shift: sprint | Space to jump | Aim + Space + WASD: quickstep | Release Left Alt without WASD: prone/get up | Left Alt + WASD: dive (slide while sprinting) | Downed WASD: tank controls | Hold Space: align with camera | Hold Space + A/D: keep rolling | Mouse to look around | F9 to toggle camera\n",
                 ),
                 #[cfg(feature = "debug")]
                 children![
@@ -1130,5 +1251,21 @@ mod tests {
     fn incapacitation_wheel_hides_subpixel_segments_without_changing_state() {
         assert_eq!(visible_incapacitation_wheel_amount(0.0049, 1.0), None);
         assert_eq!(visible_incapacitation_wheel_amount(0.005, 1.0), Some(0.005));
+    }
+
+    #[test]
+    fn enemy_incapacitation_wheel_is_absent_at_zero() {
+        assert!(!enemy_incapacitation_wheel_visible(
+            TacticalCombatSide::Enemy,
+            0.0
+        ));
+        assert!(enemy_incapacitation_wheel_visible(
+            TacticalCombatSide::Enemy,
+            f32::EPSILON
+        ));
+        assert!(!enemy_incapacitation_wheel_visible(
+            TacticalCombatSide::Party,
+            0.5
+        ));
     }
 }

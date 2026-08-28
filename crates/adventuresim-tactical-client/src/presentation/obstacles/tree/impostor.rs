@@ -109,8 +109,10 @@ pub(in crate::presentation) const BEECH_TREE_BAKE_STYLE: TreeBakeStyle = TreeBak
     // Beech uses sparse eight-leaf spray proxies. Retaining multiple smaller
     // representatives per spray preserves its tall, continuous crown instead
     // of enlarging a few horizontal leaves into disconnected shelves.
-    aggregate_leaf_strides: [2, 3, 4, 4],
-    aggregate_leaf_scales: [1.05, 1.90, 2.25, 2.45],
+    aggregate_leaf_strides: [3, 4, 5, 6],
+    // Match the sparse, vertically open source crown instead of inflating a
+    // small retained sample into a dark solid mass at the 6-8 m handoff.
+    aggregate_leaf_scales: [0.82, 1.32, 1.62, 1.84],
     lod1_world_vertical: false,
     lod1_runtime_width_scale: 1.0,
 };
@@ -823,7 +825,10 @@ pub(in crate::presentation) fn tree_projected_lod_visibility(
         handoff.end..(handoff.end + width)
     };
     let (start, end) = match lod {
-        0 => (0.0..0.0, transition(0)),
+        // Keep detailed clusters opaque while LOD1 dithers in, then retire
+        // them over a trailing band. Complementary fading exposed a bare-tree
+        // frame around seven metres on a cold first approach.
+        0 => (0.0..0.0, delayed_transition_out(0)),
         // Keep the outgoing aggregate fully visible while the next one
         // dithers in, then fade it out over an equally wide trailing band.
         // The baked silhouettes are not pixel-identical, so exact
@@ -881,13 +886,15 @@ pub(in crate::presentation) fn tree_mid_trunk_visibility() -> VisibilityRange {
 }
 
 /// Keeps the two live trunk representations on the same obstacle-origin
-/// distance metric. The detailed root mesh hands off over 12..16 metres, and
-/// the mid trunk then persists through the existing LOD3-to-billboard tail.
+/// distance metric. The mid trunk enters over 12..16 metres; the detailed root
+/// mesh retires over the trailing 16..20 metre band. Mid then persists through
+/// the existing LOD3-to-billboard tail.
 pub(in crate::presentation) fn tree_projected_trunk_visibility(
     mid_distance: bool,
     focal_scale: f32,
 ) -> VisibilityRange {
     let handoff = (TREE_TRUNK_HANDOFF_START * focal_scale)..(TREE_TRUNK_HANDOFF_END * focal_scale);
+    let handoff_width = handoff.end - handoff.start;
     VisibilityRange {
         start_margin: if mid_distance {
             handoff.clone()
@@ -897,7 +904,10 @@ pub(in crate::presentation) fn tree_projected_trunk_visibility(
         end_margin: if mid_distance {
             tree_projected_lod_visibility(3, focal_scale, 3.5).end_margin
         } else {
-            handoff
+            // Do not complement-dither two non-identical trunk meshes. Keep
+            // the detailed bole opaque while Mid enters, then retire it over
+            // a trailing band so the supporting trunk cannot vanish.
+            handoff.end..(handoff.end + handoff_width)
         },
         use_aabb: false,
     }
@@ -1103,16 +1113,13 @@ mod tests {
         let cambered_leaf = tree_leaf_visibility(TreeLeafRepresentation::TexturedMesh, 1.0, 3.5);
         let alpha_leaf = tree_leaf_visibility(TreeLeafRepresentation::AlphaCard, 1.0, 3.5);
         assert_eq!(cambered_leaf.end_margin, alpha_leaf.start_margin);
-        assert_eq!(alpha_leaf.end_margin, tree_lod_visibility(1).start_margin);
+        assert_eq!(alpha_leaf.end_margin, tree_lod_visibility(0).end_margin);
+        assert_eq!(tree_lod_visibility(1).start_margin, 6.0..8.0);
         for lod in 0..4 {
             let current = tree_lod_visibility(lod);
             let next = tree_lod_visibility(lod + 1);
-            if lod == 0 {
-                assert_eq!(current.end_margin, next.start_margin);
-            } else {
-                assert_eq!(current.end_margin.start, next.start_margin.end);
-                assert!(current.end_margin.end > next.start_margin.end);
-            }
+            assert_eq!(current.end_margin.start, next.start_margin.end);
+            assert!(current.end_margin.end > next.start_margin.end);
             assert!(!current.is_abrupt());
         }
     }
@@ -1141,7 +1148,7 @@ mod tests {
     #[test]
     fn production_tree_lod_ranges_handoff_before_detail_is_subpixel() {
         let expected = [
-            (0.0..0.0, 6.0..8.0),
+            (0.0..0.0, 8.0..10.0),
             (6.0..8.0, 16.0..20.0),
             (12.0..16.0, 32.0..40.0),
             (24.0..32.0, 60.0..70.0),
@@ -1156,7 +1163,7 @@ mod tests {
             tree_leaf_visibility(TreeLeafRepresentation::TexturedMesh, 1.0, 3.5).end_margin,
             1.5..2.5
         );
-        assert_eq!(tree_trunk_visibility().end_margin, 12.0..16.0);
+        assert_eq!(tree_trunk_visibility().end_margin, 16.0..20.0);
         assert_eq!(tree_mid_trunk_visibility().start_margin, 12.0..16.0);
         assert_eq!(tree_mid_trunk_visibility().end_margin, 60.0..70.0);
     }
@@ -1167,7 +1174,8 @@ mod tests {
             let detailed = tree_projected_trunk_visibility(false, focal_scale);
             let mid = tree_projected_trunk_visibility(true, focal_scale);
             assert_eq!(detailed.start_margin, 0.0..0.0);
-            assert_eq!(detailed.end_margin, mid.start_margin);
+            assert_eq!(detailed.end_margin.start, mid.start_margin.end);
+            assert!(detailed.end_margin.end > mid.start_margin.end);
             assert_eq!(
                 mid.end_margin,
                 tree_projected_lod_visibility(3, focal_scale, 3.5).end_margin
@@ -1183,11 +1191,8 @@ mod tests {
                 for lod in 0..4 {
                     let current = tree_projected_lod_visibility(lod, focal_scale, radius);
                     let next = tree_projected_lod_visibility(lod + 1, focal_scale, radius);
-                    if lod == 0 {
-                        assert_eq!(current.end_margin, next.start_margin);
-                    } else {
-                        assert_eq!(current.end_margin.start, next.start_margin.end);
-                    }
+                    assert_eq!(current.end_margin.start, next.start_margin.end);
+                    assert!(current.end_margin.end > next.start_margin.end);
                     assert!(!current.use_aabb && !next.use_aabb);
                 }
             }

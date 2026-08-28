@@ -238,15 +238,21 @@ pub(crate) fn rest_service_menu(
     }
 }
 
-fn settlement_rest_duration_control(initial_minutes: u64, unit: &str) -> Markup {
-    wake_time_rest_duration_control(
-        "settlement-rest",
-        initial_minutes,
-        unit,
-        MINUTES_PER_DAY,
-        None,
-        None,
-    )
+fn settlement_rest_duration_control(initial_minutes: u64, _unit: &str) -> Markup {
+    let days = initial_minutes
+        .div_ceil(MINUTES_PER_DAY)
+        .clamp(1, DAYS_PER_YEAR);
+    html! {
+        div class="rest-duration-control settlement-rest-duration" data-rest-duration {
+            input type="hidden" name="unit" value="days";
+            div class="rest-days-control" {
+                input type="number" name="duration" value=(days) min="1"
+                    max=(DAYS_PER_YEAR) step="1" inputmode="numeric"
+                    aria-label="Rest duration in whole days" data-rest-duration-input;
+                span class="rest-days-unit" { "days" }
+            }
+        }
+    }
 }
 
 fn wake_time_rest_duration_control(
@@ -298,8 +304,6 @@ fn wake_time_rest_duration_control(
                 button type="button" class="rest-days-step rest-days-increase" aria-label="Increase rest duration" data-rest-step="1" { "+" }
             }
             input type="hidden" name="requested_minutes" disabled[!hours_active] data-rest-exact-minutes;
-            input type="hidden" name="advance_development_clock" value="true" disabled
-                data-developer-mode-input;
         }
     }
 }
@@ -427,18 +431,14 @@ mod tests {
     }
 
     #[test]
-    fn settlement_wake_control_is_accessible_and_defaults_to_eight() {
+    fn settlement_rest_control_uses_accessible_whole_days() {
         let markup = settlement_rest_duration_control(MINUTES_PER_DAY, "hours").into_string();
-        assert!(markup.contains("data-wake-time"));
-        assert!(markup.contains("type=\"range\""));
-        assert!(markup.contains("step=\"60\""));
-        assert!(markup.contains("value=\"480\""));
-        assert!(markup.contains("type=\"text\""));
-        assert!(markup.contains("value=\"24:00\""));
-        assert!(markup.contains("pattern=\"[0-9]+:[0-5][0-9]\""));
-        assert!(markup.contains("aria-label=\"Wake time\""));
-        assert!(markup.contains("aria-valuetext=\"08:00\""));
-        assert!(markup.contains("name=\"requested_minutes\""));
+        assert!(markup.contains("data-rest-duration"));
+        assert!(markup.contains("type=\"hidden\" name=\"unit\" value=\"days\""));
+        assert!(markup.contains("type=\"number\" name=\"duration\" value=\"1\""));
+        assert!(markup.contains(&format!("min=\"1\" max=\"{DAYS_PER_YEAR}\" step=\"1\"")));
+        assert!(markup.contains("aria-label=\"Rest duration in whole days\""));
+        assert!(!markup.contains("data-wake-time"));
     }
 
     #[test]
@@ -481,18 +481,12 @@ mod tests {
     }
 
     #[test]
-    fn days_recommendation_keeps_slider_disabled_and_minimum_one() {
+    fn days_recommendation_uses_the_recommended_whole_day_count() {
         let markup = settlement_rest_duration_control(3 * MINUTES_PER_DAY, "days").into_string();
-        assert!(markup.contains("value=\"days\" checked"));
-        assert!(markup.contains("aria-disabled=\"true\""));
-        assert!(
-            markup.contains(
-                "value=\"480\" aria-label=\"Wake time\" aria-valuetext=\"08:00\" disabled"
-            )
-        );
+        assert!(markup.contains("type=\"hidden\" name=\"unit\" value=\"days\""));
         assert!(markup.contains("type=\"number\" name=\"duration\" value=\"3\""));
         assert!(markup.contains(&format!("min=\"1\" max=\"{DAYS_PER_YEAR}\" step=\"1\"")));
-        assert!(markup.contains("name=\"requested_minutes\" disabled"));
+        assert!(!markup.contains("data-wake-time"));
     }
 
     #[test]

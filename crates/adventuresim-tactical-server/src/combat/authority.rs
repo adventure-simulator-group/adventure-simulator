@@ -4,8 +4,8 @@ use adventuresim_tactical_core::prelude::{BodyPart, melee_interaction_range};
 use bevy::prelude::*;
 
 use super::{
-    MELEE_RANGE_LATENCY_TOLERANCE, MeleeIntentFacts, MeleeIntentRejection,
-    RANGED_RANGE_LATENCY_TOLERANCE, RangedIntentFacts, RangedIntentRejection, TacticalCombatSide,
+    MeleeIntentFacts, MeleeIntentRejection, RangedIntentFacts, RangedIntentRejection,
+    TacticalCombatSide,
 };
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
@@ -25,6 +25,7 @@ impl CombatInstant {
 pub(crate) struct CombatDuration(Duration);
 
 impl CombatDuration {
+    #[cfg(test)]
     pub(crate) const fn from_duration(duration: Duration) -> Self {
         Self(duration)
     }
@@ -87,6 +88,9 @@ impl ValidatedMeleeAttack {
     }
     pub(super) fn target(&self) -> Entity {
         self.target
+    }
+    pub(super) fn body_part(&self) -> BodyPart {
+        self.body_part
     }
     pub(super) fn attacker_position(&self) -> Vec3 {
         self.attacker_position
@@ -174,14 +178,16 @@ impl AuthorizedRangedShot {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct ObservedMeleeWindup {
+    attack_key: u64,
     target: Option<Entity>,
+    body_part: Option<BodyPart>,
     ready_at: CombatInstant,
     expires_at: CombatInstant,
 }
 
-#[derive(Component, Debug, Default)]
+#[derive(Component, Debug, Default, Clone)]
 pub(crate) struct MeleeAttackAuthority {
     windup: Option<ObservedMeleeWindup>,
     cooldown_until: CombatInstant,
@@ -190,22 +196,43 @@ pub(crate) struct MeleeAttackAuthority {
 impl MeleeAttackAuthority {
     pub(crate) fn observe(
         &mut self,
+        attack_key: u64,
         target: Option<Entity>,
+        body_part: Option<BodyPart>,
         now: CombatInstant,
         windup: CombatDuration,
         network_allowance: CombatDuration,
     ) {
         let ready_at = now + windup;
         self.windup = Some(ObservedMeleeWindup {
+            attack_key,
             target,
+            body_part,
             ready_at,
             expires_at: ready_at + network_allowance,
         });
     }
 
-    fn authorize(&mut self, target: Entity, now: CombatInstant, cooldown: CombatDuration) -> bool {
+    pub(crate) fn attack_key(&self) -> Option<u64> {
+        self.windup.as_ref().map(|windup| windup.attack_key)
+    }
+
+    pub(crate) fn complete_miss(&mut self) -> Option<u64> {
+        self.windup.take().map(|windup| windup.attack_key)
+    }
+
+    fn authorize(
+        &mut self,
+        target: Entity,
+        body_part: BodyPart,
+        now: CombatInstant,
+        cooldown: CombatDuration,
+    ) -> bool {
         let valid = self.windup.as_ref().is_some_and(|windup| {
             windup.target.is_none_or(|observed| observed == target)
+                && windup
+                    .body_part
+                    .is_none_or(|observed| observed == body_part)
                 && now >= windup.ready_at
                 && now <= windup.expires_at
                 && now >= self.cooldown_until
@@ -223,13 +250,16 @@ impl MeleeAttackAuthority {
         now: CombatInstant,
         cooldown: CombatDuration,
     ) -> Option<AuthorizedMeleeAttack> {
-        self.authorize(attack.target, now, cooldown)
+        self.authorize(attack.target, attack.body_part, now, cooldown)
             .then_some(AuthorizedMeleeAttack(attack))
     }
 
-    pub(crate) fn permits(&self, target: Entity, now: CombatInstant) -> bool {
+    pub(crate) fn permits(&self, target: Entity, body_part: BodyPart, now: CombatInstant) -> bool {
         self.windup.as_ref().is_some_and(|windup| {
             windup.target.is_none_or(|observed| observed == target)
+                && windup
+                    .body_part
+                    .is_none_or(|observed| observed == body_part)
                 && now >= windup.ready_at
                 && now <= windup.expires_at
                 && now >= self.cooldown_until
@@ -237,13 +267,13 @@ impl MeleeAttackAuthority {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct ObservedRangedWindup {
     ready_at: CombatInstant,
     expires_at: CombatInstant,
 }
 
-#[derive(Component, Debug, Default)]
+#[derive(Component, Debug, Default, Clone)]
 pub(crate) struct RangedAttackAuthority {
     windup: Option<ObservedRangedWindup>,
     cooldown_until: CombatInstant,
@@ -312,10 +342,34 @@ mod tests {
         let target = Entity::from_bits(7);
         let start = CombatInstant(Duration::ZERO);
         let mut authority = MeleeAttackAuthority::default();
-        authority.observe(Some(target), start, SECOND, SECOND);
-        assert!(!authority.permits(target, start));
-        assert!(authority.permits(target, start + SECOND));
-        assert!(authority.permits(target, start + SECOND + SECOND));
+        authority.observe(
+            7,
+            Some(target),
+            Some(BodyPart::Chest),
+            start,
+            SECOND,
+            SECOND,
+        );
+        assert!(!authority.permits(target, BodyPart::Chest, start));
+        assert!(!authority.permits(target, BodyPart::Head, start + SECOND));
+        assert!(authority.permits(target, BodyPart::Chest, start + SECOND));
+        assert!(authority.permits(target, BodyPart::Chest, start + SECOND + SECOND));
+    }
+
+    #[test]
+    fn client_miss_terminates_the_correlated_windup() {
+        let target = Entity::from_bits(7);
+        let mut authority = MeleeAttackAuthority::default();
+        authority.observe(
+            42,
+            Some(target),
+            Some(BodyPart::Head),
+            CombatInstant(Duration::ZERO),
+            SECOND,
+            SECOND,
+        );
+        assert_eq!(authority.complete_miss(), Some(42));
+        assert_eq!(authority.attack_key(), None);
     }
 }
 
@@ -351,7 +405,7 @@ pub(super) fn validate_ranged_intent(
             return Err(RangedIntentRejection::Incapacitated);
         }
         if !facts.separation.is_some_and(|distance| {
-            distance.is_finite() && distance <= facts.weapon_range + RANGED_RANGE_LATENCY_TOLERANCE
+            distance.is_finite() && distance <= facts.weapon_range + facts.range_latency_tolerance
         }) {
             return Err(RangedIntentRejection::OutOfRange);
         }
@@ -401,12 +455,17 @@ pub(super) fn validate_melee_intent_cheap(
     if attacker_incapacitated || target_incapacitated {
         return Err(MeleeIntentRejection::Incapacitated);
     }
-    if !facts.weapon_reach.is_finite() || facts.weapon_reach <= 0.0 {
+    if !facts.arm_reach.is_finite()
+        || facts.arm_reach <= 0.0
+        || !facts.weapon_reach.is_finite()
+        || facts.weapon_reach < 0.0
+    {
         return Err(MeleeIntentRejection::Unarmed);
     }
     if !facts.separation.is_finite()
         || facts.separation
-            > melee_interaction_range(facts.weapon_reach) + MELEE_RANGE_LATENCY_TOLERANCE
+            > melee_interaction_range(facts.arm_reach, facts.weapon_reach)
+                + facts.range_latency_tolerance
     {
         return Err(MeleeIntentRejection::OutOfRange);
     }

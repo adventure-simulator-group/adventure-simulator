@@ -6,46 +6,46 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct SyncDevelopmentClockToCharacterArgs {
-    pub character_id: u64,
+pub(super) struct DevBootstrapFinalizeArgs {
+    pub bootstrap_token: String,
 }
 
-impl From<SyncDevelopmentClockToCharacterArgs> for super::Reducer {
-    fn from(args: SyncDevelopmentClockToCharacterArgs) -> Self {
-        Self::SyncDevelopmentClockToCharacter {
-            character_id: args.character_id,
+impl From<DevBootstrapFinalizeArgs> for super::Reducer {
+    fn from(args: DevBootstrapFinalizeArgs) -> Self {
+        Self::DevBootstrapFinalize {
+            bootstrap_token: args.bootstrap_token,
         }
     }
 }
 
-impl __sdk::InModule for SyncDevelopmentClockToCharacterArgs {
+impl __sdk::InModule for DevBootstrapFinalizeArgs {
     type Module = super::RemoteModule;
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `sync_development_clock_to_character`.
+/// Extension trait for access to the reducer `dev_bootstrap_finalize`.
 ///
 /// Implemented for [`super::RemoteReducers`].
-pub trait sync_development_clock_to_character {
-    /// Request that the remote module invoke the reducer `sync_development_clock_to_character` to run as soon as possible.
+pub trait dev_bootstrap_finalize {
+    /// Request that the remote module invoke the reducer `dev_bootstrap_finalize` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
-    /// /// Use [`sync_development_clock_to_character:sync_development_clock_to_character_then`] to run a callback after the reducer completes.
-    fn sync_development_clock_to_character(&self, character_id: u64) -> __sdk::Result<()> {
-        self.sync_development_clock_to_character_then(character_id, |_, _| {})
+    /// /// Use [`dev_bootstrap_finalize:dev_bootstrap_finalize_then`] to run a callback after the reducer completes.
+    fn dev_bootstrap_finalize(&self, bootstrap_token: String) -> __sdk::Result<()> {
+        self.dev_bootstrap_finalize_then(bootstrap_token, |_, _| {})
     }
 
-    /// Request that the remote module invoke the reducer `sync_development_clock_to_character` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `dev_bootstrap_finalize` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed with the `callback`.
-    fn sync_development_clock_to_character_then(
+    fn dev_bootstrap_finalize_then(
         &self,
-        character_id: u64,
+        bootstrap_token: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -55,10 +55,10 @@ pub trait sync_development_clock_to_character {
     ) -> __sdk::Result<()>;
 }
 
-impl sync_development_clock_to_character for super::RemoteReducers {
-    fn sync_development_clock_to_character_then(
+impl dev_bootstrap_finalize for super::RemoteReducers {
+    fn dev_bootstrap_finalize_then(
         &self,
-        character_id: u64,
+        bootstrap_token: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -66,9 +66,7 @@ impl sync_development_clock_to_character for super::RemoteReducers {
         ) + Send
         + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(
-            SyncDevelopmentClockToCharacterArgs { character_id },
-            callback,
-        )
+        self.imp
+            .invoke_reducer_with_callback(DevBootstrapFinalizeArgs { bootstrap_token }, callback)
     }
 }

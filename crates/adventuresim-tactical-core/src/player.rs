@@ -4,8 +4,9 @@ use bevy_enhanced_input::prelude::Actions;
 use fabelgeist_determinism::splitmix64;
 use serde::{Deserialize, Serialize};
 
+use crate::combat_config::AttackCurveConfig;
 use crate::{
-    animation::AttackHand,
+    animation::{AttackCurve, AttackHand, AttackSpec},
     inventory::{InventoryView, InventoryViewer},
 };
 
@@ -18,6 +19,7 @@ pub type ControlledPlayer = Actions<Player>;
 #[reflect(Component)]
 #[require(
     CharacterId,
+    CharacterDimensions,
     Limbs,
     Skills,
     Attributes,
@@ -27,6 +29,42 @@ pub type ControlledPlayer = Actions<Player>;
 #[component(immutable)]
 pub struct Player {
     pub name: String,
+}
+
+/// Anatomical measurements that affect authoritative tactical movement.
+///
+/// These values live beside the transient tactical character rather than in
+/// presentation state so server physics and client prediction use the same
+/// proportions. The default is measured from the current humanoid rig.
+#[derive(Component, Serialize, Deserialize, Debug, Reflect, Clone, Copy, PartialEq)]
+#[reflect(Component)]
+pub struct CharacterDimensions {
+    pub leg_length_metres: f32,
+    pub body_height_metres: f32,
+    /// Fully extended shoulder-to-hand length. The reference value is the
+    /// `uparm -> lowarm -> wrist` chain measured from the authoritative MHR rig.
+    pub arm_reach_metres: f32,
+}
+
+impl Default for CharacterDimensions {
+    fn default() -> Self {
+        Self {
+            leg_length_metres: 0.840_348,
+            body_height_metres: 1.9,
+            arm_reach_metres: 0.526_801,
+        }
+    }
+}
+
+/// Transient tactical allegiance. This is authoritative on the tactical
+/// server and replicated so clients can present enemy-only combat UI without
+/// inferring allegiance from connectivity or local control.
+#[derive(Component, Serialize, Deserialize, Debug, Reflect, Clone, Copy, PartialEq, Eq)]
+#[reflect(Component)]
+#[component(immutable)]
+pub enum TacticalCombatSide {
+    Party,
+    Enemy,
 }
 
 pub fn default_tactical_character_id() -> u64 {
@@ -591,6 +629,61 @@ impl TacticalPlayerViewer<'_, '_> {
             .with_equipment(inventory)
             .with_skills(skills))
     }
+}
+
+/// Effective leaf-skill check used by attack handling. The weapon's authored
+/// skill distribution is the single selector, including the shared unarmed
+/// bludgeon fallback.
+pub fn effective_weapon_handling_skill(view: &TacticalPlayerView<'_, '_, '_>) -> f32 {
+    view.weapon_skill_distribution()
+        .weighted_check(|skill| view.skill_check(skill, LimbWeights::all_equal()))
+}
+
+/// Applies the attacker's current equipment and skill to the replicated pose
+/// curve. Player input and NPC behavior call this same function.
+pub fn configure_attack_curve(
+    mut spec: AttackSpec,
+    view: &TacticalPlayerView<'_, '_, '_>,
+    config: &AttackCurveConfig,
+) -> AttackSpec {
+    spec.curve = AttackCurve::from_handling_with_config(
+        view.weapon_moment_of_inertia(),
+        effective_weapon_handling_skill(view),
+        config,
+    );
+    spec
+}
+
+/// Contact timing combines authored rotational inertia with the attacker's arm
+/// strength. The correction is deliberately bounded: strength helps control a
+/// difficult weapon but does not erase the physical distinction between it
+/// and a knife.
+pub fn attack_preparation_secs(
+    view: &TacticalPlayerView<'_, '_, '_>,
+    style: MeleeAttackStyle,
+) -> f32 {
+    let inertia = view.weapon_moment_of_inertia().max(0.0);
+    let inertia_difficulty = if view.weapon_is_unarmed() {
+        0.35
+    } else {
+        (inertia / (inertia + 0.45)).sqrt()
+    };
+    let strength = view.limb_attr_by_weight(LimbAttribute::Strength, LimbWeights::both_arms());
+    let strength_scale = (1.0 + (3.0 - strength) * 0.08 * inertia_difficulty).clamp(0.85, 1.20);
+    (view.weapon_windup_secs_for(style) * strength_scale).clamp(0.08, 0.75)
+}
+
+/// Skill mostly improves braking and redirection rather than raw peak weapon
+/// speed. Continuations save additional recovery but remain bounded.
+pub fn attack_recovery_secs(
+    view: &TacticalPlayerView<'_, '_, '_>,
+    style: MeleeAttackStyle,
+    continuation: bool,
+) -> f32 {
+    let control = (effective_weapon_handling_skill(view) / 5.0).clamp(0.0, 1.0);
+    let skill_scale = 1.12 - 0.28 * control;
+    let continuation_scale = if continuation { 0.78 } else { 1.0 };
+    (view.weapon_recovery_secs_for(style) * skill_scale * continuation_scale).clamp(0.08, 0.55)
 }
 
 #[cfg(test)]

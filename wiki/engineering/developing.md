@@ -688,11 +688,10 @@ selects `auto-vsync`, `auto-no-vsync`, `fifo`, `fifo-relaxed`, `mailbox`, or
 wgpu's render backend. For example,
 `just tactical-play diagnostic 25020 default off auto-vsync required display dx12`
 records a deterministic DX12 Display Capture without requiring PresentMon. Pass
-a fourth argument of `no-shadows`, `no-bloom`, `no-atmosphere`, or `minimal` to
-compare GPU-oriented rendering presets; MSAA is already disabled in every
-tactical preset. The normal client uses a 64×64 generated atmosphere
-environment map. Use `no-environment-light` to omit it while retaining the
-visible sky.
+a fourth argument of `no-shadows` or `minimal` to
+compare GPU-oriented rendering presets; four-sample MSAA remains fixed across
+tactical presets. The normal client uses a 64×64 generated atmosphere
+environment map.
 
 This builds the native tactical server and client before creating a mission,
 starts a worktree-isolated SpacetimeDB instance, publishes and seeds it, starts
@@ -1017,15 +1016,16 @@ flags, and its capture-clock strategy. The harness advances Bevy's virtual clock
 to a fixed two-second wind phase and pauses it before settling and GPU
 readbacks, so readback latency does not change foliage pose. Normal review
 plates use `TacticalPresentationPlugin::default()` exactly: shadows,
-atmosphere/celestials, 64-pixel atmosphere environment-map lighting, bloom and
-all three vista LODs are enabled just as in production. Four-sample MSAA is the
+atmosphere/celestials, 64-pixel atmosphere environment-map lighting, and all
+three vista LODs are enabled just as in production; tactical bloom is not
+installed. Four-sample MSAA is the
 WebGPU-compatible anti-aliasing path; SSAO is not part of the tactical renderer
 because Bevy 0.19 does not support it on WebGPU. The manifest records every
 setting and a production-default-parity gate; the matrix runner rejects any
 child whose feature map differs from this contract. Parity is based on observed
 runtime state, not only requested configuration: the manifest records the actual
-`TacticalGraphicsSettings`, camera environment map and size, Bloom component,
-four-sample MSAA, exposure, tonemapping, and final global ambient
+`TacticalGraphicsSettings`, camera environment map and size, four-sample MSAA,
+exposure, tonemapping, and final global ambient
 color/brightness. The capture harness does not override ambient light; the
 production environment observer owns its final value. After the ordinary warmup,
 each view performs two consecutive disposable GPU readbacks and records their

@@ -6,17 +6,22 @@ const source = fs.readFileSync(
   "utf8",
 );
 
-const integerProduct = (name) => {
-  const declaration = new RegExp(`pub const ${name}: u64 = ([^;]+);`).exec(source);
+const integerConstant = (name, resolving = new Set()) => {
+  if (resolving.has(name)) throw new Error(`cyclic strategic-time constant ${name}`);
+  const declaration = new RegExp(`pub const ${name}: u(?:16|64) = ([^;]+);`).exec(source);
   if (!declaration) throw new Error(`missing strategic-time constant ${name}`);
+  const dependencies = new Set(resolving).add(name);
   return declaration[1]
     .split("*")
-    .map((factor) => Number(factor.trim().replaceAll("_", "")))
+    .map((factor) => factor.trim().replace(/\s+as\s+u(?:16|64)$/, ""))
+    .map((factor) => /^\d[\d_]*$/.test(factor)
+      ? Number(factor.replaceAll("_", ""))
+      : integerConstant(factor, dependencies))
     .reduce((product, factor) => product * factor, 1);
 };
 
 module.exports = Object.freeze({
-  minutesPerDay: integerProduct("MINUTES_PER_DAY"),
-  daysPerYear: integerProduct("DAYS_PER_YEAR"),
-  lunarCycleMinutes: integerProduct("LUNAR_CYCLE_MINUTES"),
+  minutesPerDay: integerConstant("MINUTES_PER_DAY"),
+  daysPerYear: integerConstant("DAYS_PER_YEAR"),
+  lunarCycleMinutes: integerConstant("LUNAR_CYCLE_MINUTES"),
 });

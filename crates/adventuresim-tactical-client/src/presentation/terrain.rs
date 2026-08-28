@@ -5,13 +5,15 @@ use super::procedural_assets::{
 use super::*;
 use fabelgeist_determinism::splitmix64;
 
-const DETAIL_PATCH_RADIUS_METRES: f32 = 20.0;
-const DETAIL_PATCH_MORPH_START_METRES: f32 = 15.5;
-const DETAIL_PATCH_SPACING_METRES: f32 = 0.25;
+const DETAIL_PATCH_RADIUS_METRES: f32 = 12.0;
+const DETAIL_PATCH_MORPH_START_METRES: f32 = 8.0;
+pub(crate) const DETAIL_PATCH_SPACING_METRES: f32 = 0.5;
 const DETAIL_PATCH_SNAP_METRES: f32 = 1.0;
 const DETAIL_PATCH_DEPTH_BIAS: f32 = 2.0;
-const DETAIL_PATCH_BASE_CUTOUT_RADIUS_METRES: f32 = 18.5;
+const DETAIL_PATCH_BASE_CUTOUT_RADIUS_METRES: f32 = 10.0;
+#[cfg(test)]
 const DETAIL_RELIEF_MINIMUM_METRES: f32 = -0.075;
+#[cfg(test)]
 const DETAIL_RELIEF_MAXIMUM_METRES: f32 = 0.105;
 const TREE_ROOT_SEED_STRIDE: u64 = 0x9e37_79b9_7f4a_7c15;
 const TERRAIN_NOISE_X_STRIDE: u64 = 0x9e37_79b9_7f4a_7c15;
@@ -51,44 +53,13 @@ pub(crate) fn terrain_heightmap_image(terrain: &SceneTerrain) -> Image {
     })
 }
 
-/// Builds the heightfield used to seat tree materials against the close-range
-/// render mesh. Unlike the authoritative heightmap, this includes the same
-/// presentation-only clods, drainage, root mounds, and obstacle contact relief
-/// evaluated by [`terrain_detail_patch_mesh`]. Sampling it at the detail patch
-/// spacing keeps the shader's triangle reconstruction aligned with the visible
-/// ground rather than a coarser surface hidden underneath it.
-pub(crate) fn terrain_contact_heightmap_image(
-    terrain: &SceneTerrain,
-    ground: Option<&SceneGround>,
-    environment: &SceneEnvironment,
-    vista: &ActiveVistaSurface,
-    obstacles: &Query<(&SceneObstacle, &Transform)>,
-) -> (Image, Vec2) {
-    let width = (terrain.width() / DETAIL_PATCH_SPACING_METRES).round() as u32 + 1;
-    let height = (terrain.depth() / DETAIL_PATCH_SPACING_METRES).round() as u32 + 1;
-    let minimum = terrain.minimum_height() + DETAIL_RELIEF_MINIMUM_METRES;
-    let maximum = terrain.maximum_height() + DETAIL_RELIEF_MAXIMUM_METRES;
-    let tree_positions = detail_tree_positions(obstacles);
-    let rock_influences = detail_rock_influences(obstacles);
-    let image = encoded_terrain_heightmap_image(width, height, minimum, maximum, |x, z| {
-        let point = Vec2::new(
-            x as f32 / (width - 1) as f32 * terrain.width() - terrain.width() * 0.5,
-            z as f32 / (height - 1) as f32 * terrain.depth() - terrain.depth() * 0.5,
-        );
-        let base_height = terrain.height_at(point).unwrap_or(terrain.minimum_height());
-        base_height
-            + terrain_surface_relief(
-                stable_text_seed(&environment.scene_digest) ^ 0x7465_7272_6169_6e64,
-                point,
-                terrain,
-                ground,
-                environment,
-                vista,
-                &tree_positions,
-                &rock_influences,
-            )
-    });
-    (image, Vec2::new(minimum, maximum))
+/// Builds the authoritative heightfield used to seat tree materials against
+/// the same surface queried by collision and IK.
+pub(crate) fn terrain_contact_heightmap_image(terrain: &SceneTerrain) -> (Image, Vec2) {
+    (
+        terrain_heightmap_image(terrain),
+        Vec2::new(terrain.minimum_height(), terrain.maximum_height()),
+    )
 }
 
 fn encoded_terrain_heightmap_image(
@@ -126,15 +97,14 @@ pub(in crate::presentation) struct ScenePresentationOf(pub(in crate::presentatio
 #[derive(Component)]
 pub(crate) struct TerrainMaterialPresentation;
 
-/// Camera-local render refinement. This mesh never participates in collision
-/// or ground queries; its bounded displacement is presentation-only.
+/// Camera-local render LOD of the authoritative terrain surface.
 #[derive(Component, Debug, Clone, Copy)]
 pub(crate) struct TerrainDetailPatch {
     centre: Vec2,
     vista_revision: u64,
-    obstacle_signature: u64,
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, Copy)]
 struct DetailRockInfluence {
     centre: Vec2,
@@ -156,6 +126,8 @@ pub(in crate::presentation) struct TacticalTerrainExtension {
     weather: Vec4,
     #[uniform(100)]
     far_sward: Vec4,
+    #[uniform(100)]
+    lod_sward: Vec4,
     #[uniform(100)]
     playable_bounds: Vec4,
     #[uniform(100)]
@@ -230,6 +202,7 @@ pub(in crate::presentation) fn present_pending_terrain(
             &MeshMaterial3d<TacticalTerrainMaterial>,
             &mut TerrainDetailPatch,
             &Mesh3d,
+            &mut TerrainTriangleCount,
         ),
         With<TerrainDetailPatch>,
     >,
@@ -238,55 +211,20 @@ pub(in crate::presentation) fn present_pending_terrain(
     mut images: ResMut<Assets<Image>>,
     procedural_assets: Res<ProceduralEnvironmentAssets>,
     vista: Res<ActiveVistaSurface>,
-    obstacles: Query<(&SceneObstacle, &Transform)>,
+    mut startup: Option<ResMut<crate::presentation::ClientStartupTiming>>,
 ) {
-    let tree_positions = detail_tree_positions(&obstacles);
-    let rock_influences = detail_rock_influences(&obstacles);
-    let obstacle_signature = detail_obstacle_signature(&tree_positions, &rock_influences);
+    let mut prepared_first_terrain = false;
     for (entity, id, terrain, environment, ground) in &query {
-        let presented =
-            if let (Some((_, handle)), Some((_, detail_handle, mut patch, mesh_handle))) = (
-                presentations.iter().find(|(source, _)| source.0 == entity),
-                detail_presentations
-                    .iter_mut()
-                    .find(|(source, _, _, _)| source.0 == entity),
-            ) {
-                if materials.get(&handle.0).is_some() && materials.get(&detail_handle.0).is_some() {
-                    let material = terrain_material(
-                        terrain,
-                        environment,
-                        ground,
-                        &procedural_assets,
-                        &mut images,
-                    );
-                    *materials
-                        .get_mut(&handle.0)
-                        .expect("checked terrain material") = material.clone();
-                    let mut detail_material = material;
-                    detail_material.base.depth_bias = DETAIL_PATCH_DEPTH_BIAS;
-                    detail_material.extension.detail_patch.x = 0.0;
-                    *materials
-                        .get_mut(&detail_handle.0)
-                        .expect("checked detail terrain material") = detail_material;
-                    if let Some(mut mesh) = meshes.get_mut(&mesh_handle.0) {
-                        *mesh = terrain_detail_patch_mesh(
-                            terrain,
-                            ground,
-                            environment,
-                            &vista,
-                            patch.centre,
-                            &tree_positions,
-                            &rock_influences,
-                        );
-                        patch.vista_revision = vista.revision();
-                        patch.obstacle_signature = obstacle_signature;
-                    }
-                    true
-                } else {
-                    false
-                }
-            } else {
-                info!(?entity, "Spawning a scene {id:?}");
+        let presented = if let (
+            Some((_, handle)),
+            Some((_, detail_handle, mut patch, mesh_handle, mut triangle_count)),
+        ) = (
+            presentations.iter().find(|(source, _)| source.0 == entity),
+            detail_presentations
+                .iter_mut()
+                .find(|(source, _, _, _, _)| source.0 == entity),
+        ) {
+            if materials.get(&handle.0).is_some() && materials.get(&detail_handle.0).is_some() {
                 let material = terrain_material(
                     terrain,
                     environment,
@@ -294,176 +232,130 @@ pub(in crate::presentation) fn present_pending_terrain(
                     &procedural_assets,
                     &mut images,
                 );
-                let mut detail_material = material.clone();
+                *materials
+                    .get_mut(&handle.0)
+                    .expect("checked terrain material") = material.clone();
+                let mut detail_material = material;
                 detail_material.base.depth_bias = DETAIL_PATCH_DEPTH_BIAS;
                 detail_material.extension.detail_patch.x = 0.0;
-                let material = materials.add(material);
-                let detail_material = materials.add(detail_material);
-                commands.spawn((
-                    Name::new(format!("{} terrain mesh", id.0)),
-                    ScenePresentationOf(entity),
-                    TerrainMaterialPresentation,
-                    Mesh3d(meshes.add(terrain.mesh())),
-                    MeshMaterial3d(material.clone()),
-                ));
-                let centre = Vec2::ZERO;
-                commands.spawn((
-                    Name::new(format!("{} camera-local terrain detail patch", id.0)),
-                    ScenePresentationOf(entity),
-                    TerrainDetailPatch {
-                        centre,
-                        vista_revision: vista.revision(),
-                        obstacle_signature,
-                    },
-                    NotShadowCaster,
-                    Mesh3d(meshes.add(terrain_detail_patch_mesh(
-                        terrain,
-                        ground,
-                        environment,
-                        &vista,
-                        centre,
-                        &tree_positions,
-                        &rock_influences,
-                    ))),
-                    MeshMaterial3d(detail_material),
-                ));
+                *materials
+                    .get_mut(&detail_handle.0)
+                    .expect("checked detail terrain material") = detail_material;
+                if let Some(mut mesh) = meshes.get_mut(&mesh_handle.0) {
+                    let replacement =
+                        terrain_detail_patch_mesh(terrain, environment, &vista, patch.centre);
+                    triangle_count.0 = mesh_triangle_count(&replacement);
+                    *mesh = replacement;
+                    patch.vista_revision = vista.revision();
+                }
                 true
-            };
+            } else {
+                false
+            }
+        } else {
+            info!(?entity, "Spawning a scene {id:?}");
+            let material = terrain_material(
+                terrain,
+                environment,
+                ground,
+                &procedural_assets,
+                &mut images,
+            );
+            let mut detail_material = material.clone();
+            detail_material.base.depth_bias = DETAIL_PATCH_DEPTH_BIAS;
+            detail_material.extension.detail_patch.x = 0.0;
+            let material = materials.add(material);
+            let detail_material = materials.add(detail_material);
+            let playable_mesh = terrain.coarse_mesh();
+            let playable_triangle_count = mesh_triangle_count(&playable_mesh);
+            commands.spawn((
+                Name::new(format!("{} terrain mesh", id.0)),
+                ScenePresentationOf(entity),
+                TerrainMaterialPresentation,
+                TerrainTriangleCount(playable_triangle_count),
+                Mesh3d(meshes.add(playable_mesh)),
+                MeshMaterial3d(material.clone()),
+            ));
+            let centre = Vec2::ZERO;
+            let detail_mesh = terrain_detail_patch_mesh(terrain, environment, &vista, centre);
+            let detail_triangle_count = mesh_triangle_count(&detail_mesh);
+            commands.spawn((
+                Name::new(format!("{} camera-local terrain detail patch", id.0)),
+                ScenePresentationOf(entity),
+                TerrainDetailPatch {
+                    centre,
+                    vista_revision: vista.revision(),
+                },
+                TerrainTriangleCount(detail_triangle_count),
+                NotShadowCaster,
+                Mesh3d(meshes.add(detail_mesh)),
+                MeshMaterial3d(detail_material),
+            ));
+            true
+        };
         if presented {
+            prepared_first_terrain = true;
             commands
                 .entity(entity)
                 .remove::<PendingTerrainPresentation>();
         }
     }
+    if prepared_first_terrain && let Some(startup) = startup.as_mut() {
+        startup.mark_terrain_prepared_once();
+    }
 }
 
 /// Moves the bounded high-resolution patch in one-metre increments. All
-/// relief is evaluated in world space, so snapping changes only the fully
-/// morphed-out perimeter rather than making the surface swim under the player.
+/// heights are sampled in world space, so snapping changes only the fully
+/// morphed transition ring rather than making the surface swim under the player.
 pub(in crate::presentation) fn update_terrain_detail_patch(
-    camera: Single<&GlobalTransform, With<Camera3d>>,
+    camera: Single<&GlobalTransform, With<TacticalGameplayCamera>>,
     active: Res<ActiveTacticalScene>,
-    scenes: Query<(&SceneTerrain, Option<&SceneGround>, &SceneEnvironment)>,
-    mut patches: Query<(&ScenePresentationOf, &mut TerrainDetailPatch, &Mesh3d)>,
-    obstacles: Query<(&SceneObstacle, &Transform)>,
+    scenes: Query<(&SceneTerrain, &SceneEnvironment)>,
+    mut patches: Query<(
+        &ScenePresentationOf,
+        &mut TerrainDetailPatch,
+        &Mesh3d,
+        &mut TerrainTriangleCount,
+    )>,
     vista: Res<ActiveVistaSurface>,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
     let camera_position = camera.translation().xz();
     let desired_centre =
         (camera_position / DETAIL_PATCH_SNAP_METRES).round() * DETAIL_PATCH_SNAP_METRES;
-    let tree_positions = detail_tree_positions(&obstacles);
-    let rock_influences = detail_rock_influences(&obstacles);
-    let obstacle_signature = detail_obstacle_signature(&tree_positions, &rock_influences);
-    for (source, mut patch, mesh_handle) in &mut patches {
+    for (source, mut patch, mesh_handle, mut triangle_count) in &mut patches {
         if active.entity.is_some_and(|entity| entity != source.0)
             || (patch.vista_revision == vista.revision()
-                && patch.obstacle_signature == obstacle_signature
                 && patch.centre.distance_squared(desired_centre)
                     < DETAIL_PATCH_SNAP_METRES * DETAIL_PATCH_SNAP_METRES * 0.25)
         {
             continue;
         }
-        let Ok((terrain, ground, environment)) = scenes.get(source.0) else {
+        let Ok((terrain, environment)) = scenes.get(source.0) else {
             continue;
         };
         let Some(mut mesh) = meshes.get_mut(&mesh_handle.0) else {
             continue;
         };
-        *mesh = terrain_detail_patch_mesh(
-            terrain,
-            ground,
-            environment,
-            &vista,
-            desired_centre,
-            &tree_positions,
-            &rock_influences,
-        );
+        let replacement = terrain_detail_patch_mesh(terrain, environment, &vista, desired_centre);
+        triangle_count.0 = mesh_triangle_count(&replacement);
+        *mesh = replacement;
         patch.centre = desired_centre;
         patch.vista_revision = vista.revision();
-        patch.obstacle_signature = obstacle_signature;
     }
-}
-
-fn detail_tree_positions(obstacles: &Query<(&SceneObstacle, &Transform)>) -> Vec<Vec2> {
-    let mut positions = obstacles
-        .iter()
-        .filter_map(|(obstacle, transform)| {
-            matches!(obstacle, SceneObstacle::Tree).then_some(transform.translation.xz())
-        })
-        .collect::<Vec<_>>();
-    positions.sort_unstable_by(|left, right| {
-        left.x
-            .total_cmp(&right.x)
-            .then_with(|| left.y.total_cmp(&right.y))
-    });
-    positions
-}
-
-fn detail_rock_influences(
-    obstacles: &Query<(&SceneObstacle, &Transform)>,
-) -> Vec<DetailRockInfluence> {
-    let mut rocks = obstacles
-        .iter()
-        .filter_map(|(obstacle, transform)| match obstacle {
-            SceneObstacle::Rock(recipe) => Some(DetailRockInfluence {
-                centre: transform.translation.xz(),
-                radius: recipe.collision_radius_metres(),
-            }),
-            SceneObstacle::Tree => None,
-        })
-        .collect::<Vec<_>>();
-    rocks.sort_unstable_by(|left, right| {
-        left.centre
-            .x
-            .total_cmp(&right.centre.x)
-            .then_with(|| left.centre.y.total_cmp(&right.centre.y))
-            .then_with(|| left.radius.total_cmp(&right.radius))
-    });
-    rocks
-}
-
-fn detail_obstacle_signature(
-    tree_positions: &[Vec2],
-    rock_influences: &[DetailRockInfluence],
-) -> u64 {
-    let trees = tree_positions.iter().fold(
-        0x7472_6565_5f67_7264 ^ tree_positions.len() as u64,
-        |signature, position| {
-            splitmix64(
-                signature
-                    ^ u64::from(position.x.to_bits()).rotate_left(17)
-                    ^ u64::from(position.y.to_bits()),
-            )
-        },
-    );
-    rock_influences.iter().fold(
-        trees ^ (rock_influences.len() as u64).rotate_left(31),
-        |signature, rock| {
-            splitmix64(
-                signature
-                    ^ u64::from(rock.centre.x.to_bits()).rotate_left(11)
-                    ^ u64::from(rock.centre.y.to_bits()).rotate_left(37)
-                    ^ u64::from(rock.radius.to_bits()),
-            )
-        },
-    )
 }
 
 fn terrain_detail_patch_mesh(
     terrain: &SceneTerrain,
-    ground: Option<&SceneGround>,
     environment: &SceneEnvironment,
     vista: &ActiveVistaSurface,
     centre: Vec2,
-    tree_positions: &[Vec2],
-    rock_influences: &[DetailRockInfluence],
 ) -> Mesh {
     let diameter_steps =
         (DETAIL_PATCH_RADIUS_METRES * 2.0 / DETAIL_PATCH_SPACING_METRES).round() as usize;
     let width = diameter_steps + 1;
     let minimum = centre - Vec2::splat(DETAIL_PATCH_RADIUS_METRES);
-    let seed = stable_text_seed(&environment.scene_digest) ^ 0x7465_7272_6169_6e64;
     let mut positions = Vec::with_capacity(width * width);
     let mut uvs = Vec::with_capacity(width * width);
     let mut valid = Vec::with_capacity(width * width);
@@ -471,7 +363,8 @@ fn terrain_detail_patch_mesh(
     for z in 0..width {
         for x in 0..width {
             let point = minimum + Vec2::new(x as f32, z as f32) * DETAIL_PATCH_SPACING_METRES;
-            let base_height = vista.presented_height_at(&environment.scene_digest, terrain, point);
+            let fine_height = vista.presented_height_at(&environment.scene_digest, terrain, point);
+            let coarse_height = terrain.coarse_height_at(point).or(fine_height);
             let radius = point.distance(centre);
             let morph = 1.0
                 - terrain_smoothstep(
@@ -479,24 +372,15 @@ fn terrain_detail_patch_mesh(
                     DETAIL_PATCH_RADIUS_METRES - DETAIL_PATCH_SPACING_METRES * 1.5,
                     radius,
                 );
-            let relief = base_height.map_or(0.0, |_| {
-                terrain_surface_relief(
-                    seed,
-                    point,
-                    terrain,
-                    ground,
-                    environment,
-                    vista,
-                    tree_positions,
-                    rock_influences,
-                ) * morph
-            });
-            positions.push([point.x, base_height.unwrap_or_default() + relief, point.y]);
+            let height = fine_height
+                .zip(coarse_height)
+                .map(|(fine, coarse)| coarse + (fine - coarse) * morph);
+            positions.push([point.x, height.unwrap_or_default(), point.y]);
             uvs.push([
                 (point.x / terrain.width() + 0.5).clamp(0.0, 1.0),
                 (point.y / terrain.depth() + 0.5).clamp(0.0, 1.0),
             ]);
-            valid.push(base_height.is_some());
+            valid.push(height.is_some());
         }
     }
 
@@ -515,9 +399,9 @@ fn terrain_detail_patch_mesh(
             let i = i as u32;
             indices.extend_from_slice(&[
                 i,
-                i + width as u32 + 1,
+                i + width as u32,
                 i + 1,
-                i,
+                i + 1,
                 i + width as u32,
                 i + width as u32 + 1,
             ]);
@@ -534,6 +418,9 @@ fn terrain_detail_patch_mesh(
     mesh.with_computed_area_weighted_normals()
 }
 
+// These formula-level helpers remain test-only while their production owner
+// is the authoritative scene generator in adventuresim-tactical-core.
+#[cfg(test)]
 #[derive(Debug, Clone, Copy)]
 struct TerrainShapeSample {
     downhill: Vec2,
@@ -545,6 +432,7 @@ struct TerrainShapeSample {
     clippy::too_many_arguments,
     reason = "terrain relief keeps the sampled point, source layers, vista seam, and obstacle influences explicit"
 )]
+#[cfg(test)]
 fn terrain_surface_relief(
     seed: u64,
     point: Vec2,
@@ -612,15 +500,18 @@ fn terrain_surface_relief(
         .clamp(DETAIL_RELIEF_MINIMUM_METRES, DETAIL_RELIEF_MAXIMUM_METRES)
 }
 
+#[cfg(test)]
 fn signed_ground_noise(seed: u64, point: Vec2) -> f32 {
     ground_mask_noise(seed, point) * 2.0 - 1.0
 }
 
+#[cfg(test)]
 fn terrain_clod_relief(seed: u64, point: Vec2) -> f32 {
     let field = ground_mask_noise(seed ^ 0x636c_6f64_5f66_6c64, point / 0.58);
     terrain_smoothstep(0.69, 0.91, field) * 0.022 - 0.003
 }
 
+#[cfg(test)]
 fn terrain_shape_sample(
     scene_digest: &str,
     terrain: &SceneTerrain,
@@ -651,6 +542,7 @@ fn terrain_shape_sample(
     })
 }
 
+#[cfg(test)]
 fn drainage_relief(
     seed: u64,
     point: Vec2,
@@ -673,6 +565,7 @@ fn drainage_relief(
     (-channel * (0.026 + moisture * 0.012) + shoulder * 0.009) * slope_weight
 }
 
+#[cfg(test)]
 fn soil_creep_relief(seed: u64, point: Vec2, shape: TerrainShapeSample) -> f32 {
     let slope_weight = terrain_smoothstep(0.035, 0.22, shape.slope);
     let warp = signed_ground_noise(seed ^ 0x6372_6565_705f_7772, point / 7.0) * 0.55;
@@ -685,6 +578,7 @@ fn soil_creep_relief(seed: u64, point: Vec2, shape: TerrainShapeSample) -> f32 {
 /// Exposed rock is organized into broad ledges with sparse intersecting
 /// fractures. The wavelengths stay above the detail grid spacing, so this
 /// adds readable form rather than sub-pixel noise.
+#[cfg(test)]
 fn rocky_substrate_relief(
     seed: u64,
     point: Vec2,
@@ -719,9 +613,10 @@ fn rocky_substrate_relief(
     (shelf - crack * 0.019) * strength
 }
 
-/// Deforms only the render-detail residual around boulders. The authoritative
-/// terrain and collider remain unchanged: a shallow socket, contact apron,
+/// Formula-level regression for the boulder socket now baked by tactical-core
+/// into the authoritative terrain: a shallow socket, contact apron,
 /// and downhill debris tail visually seat each generated rock in the landform.
+#[cfg(test)]
 fn boulder_ground_relief(
     seed: u64,
     point: Vec2,
@@ -770,11 +665,13 @@ fn boulder_ground_relief(
     relief.clamp(-0.055, 0.07)
 }
 
+#[cfg(test)]
 fn periodic_distance(value: f32, period: f32) -> f32 {
     let wrapped = value.rem_euclid(period);
     wrapped.min(period - wrapped)
 }
 
+#[cfg(test)]
 fn tree_root_relief(seed: u64, point: Vec2, tree_positions: &[Vec2]) -> f32 {
     let mut relief = 0.0;
     for &tree in tree_positions {
@@ -812,11 +709,13 @@ fn tree_root_relief(seed: u64, point: Vec2, tree_positions: &[Vec2]) -> f32 {
     relief.clamp(-0.02, 0.115)
 }
 
+#[cfg(test)]
 fn wrapped_angle_difference(left: f32, right: f32) -> f32 {
     (left - right + core::f32::consts::PI).rem_euclid(core::f32::consts::TAU)
         - core::f32::consts::PI
 }
 
+#[cfg(test)]
 fn road_surface_relief(seed: u64, point: Vec2, ground: &SceneGround) -> f32 {
     let is_road = |sample: Vec2| {
         ground
@@ -900,16 +799,24 @@ pub(in crate::presentation) fn terrain_material(
                 bps(environment.hilly_bps),
                 bps(environment.weather.wind_speed_bps),
             ),
-            // Beyond the geometric grass range, retain a band-limited sward
-            // response in the terrain material instead of paying for blades
-            // that project to less than a pixel. x/y are the fade interval;
-            // z is environment-dependent coverage and w is reserved.
+            // The final Vista-to-terrain fade retains a band-limited sward
+            // instead of paying for sub-pixel grass. x/y are its distance
+            // interval; z is environment-dependent coverage and w is reserved.
             far_sward: Vec4::new(
                 TERMINAL_SWARD_FADE_START_METRES,
                 TERMINAL_SWARD_FADE_END_METRES,
                 (1.0 - bps(environment.water_bps) * 0.9
                     - bps(environment.weather.snow_cover_bps) * 0.8)
                     .clamp(0.0, 1.0),
+                0.0,
+            ),
+            // Replace Far's removed physical coverage during the Near-to-Far
+            // crossfade. x/y are the shared blade-LOD interval; z is the
+            // stable Far subset's missing projected coverage; w is reserved.
+            lod_sward: Vec4::new(
+                NEAR_TO_FAR_SWARD_FADE_START_METRES,
+                NEAR_TO_FAR_SWARD_FADE_END_METRES,
+                FAR_LOD_GAP_FILL_FRACTION,
                 0.0,
             ),
             // x/y are the authoritative playable half extents. The detail
@@ -1255,9 +1162,14 @@ mod tests {
         assert!(shader.contains("let litter_mapped_normal = normalize("));
         assert!(shader.contains("let sward_color = terrain.grass_color.rgb"));
         assert!(!shader.contains("sward_color = color *"));
-        assert!(shader.contains("sward_dither < sward_amount"));
+        assert!(shader.contains("let near_to_far_sward = smoothstep("));
+        assert!(shader.contains("terrain.lod_sward.z"));
+        assert!(
+            shader.contains("let sward_coverage = mix(near_to_far_sward, 1.0, terminal_sward)")
+        );
+        assert!(shader.contains("color = mix(color, sward_target, sward_amount)"));
         assert!(shader.contains("abs(position.x) - terrain.playable_bounds.x"));
-        assert!(shader.contains("sward_dither < outside_sward"));
+        assert!(shader.contains("color = mix(color, sward_target, outside_sward)"));
         assert!(shader.contains("terrain.detail_patch.x > 0.5"));
         assert!(shader.contains("discard"));
         assert!(!shader.contains("sward_amount >= 0.5"));
@@ -1273,9 +1185,17 @@ mod tests {
     }
 
     #[test]
-    fn terminal_terrain_sward_starts_when_the_final_grass_lod_fades() {
+    fn terrain_sward_fills_far_lod_gaps_then_completes_with_vista_fade() {
+        let near = grass_lod_visibility(GrassMeshLod::Near);
+        let far = grass_lod_visibility(GrassMeshLod::Far);
         let vista = grass_lod_visibility(GrassMeshLod::Vista);
-        assert_eq!(vista.end_margin, 55.0..65.0);
+        assert_eq!(
+            near.end_margin,
+            NEAR_TO_FAR_SWARD_FADE_START_METRES..NEAR_TO_FAR_SWARD_FADE_END_METRES
+        );
+        assert_eq!(far.start_margin, near.end_margin);
+        assert_eq!(FAR_LOD_GAP_FILL_FRACTION, 0.75);
+        assert_eq!(vista.end_margin, 42.0..50.0);
         assert_eq!(vista.end_margin.start, TERMINAL_SWARD_FADE_START_METRES);
         assert_eq!(vista.end_margin.end, TERMINAL_SWARD_FADE_END_METRES);
     }
@@ -1413,14 +1333,19 @@ mod tests {
     }
 
     #[test]
-    fn camera_local_detail_patch_is_bounded_deterministic_and_morphs_flat_at_its_edge() {
-        let terrain = SceneTerrain::new(64, 64, 1.0, |point| point.x * 0.01 + point.y * 0.02);
+    fn camera_local_detail_patch_samples_canonical_surface_and_morphs_to_coarse_lod() {
+        let coarse = SceneTerrain::new(64, 64, 1.0, |point| point.x * 0.01 + point.y * 0.02);
+        let terrain = coarse
+            .refined(0.5, |point, base| {
+                base + (point.x * core::f32::consts::PI).sin()
+                    * (point.y * core::f32::consts::PI).sin()
+                    * 0.04
+            })
+            .unwrap();
         let environment = SceneEnvironmentFixture::TemperateHills.snapshot("detail-patch");
         let vista = ActiveVistaSurface::default();
-        let first =
-            terrain_detail_patch_mesh(&terrain, None, &environment, &vista, Vec2::ZERO, &[], &[]);
-        let repeated =
-            terrain_detail_patch_mesh(&terrain, None, &environment, &vista, Vec2::ZERO, &[], &[]);
+        let first = terrain_detail_patch_mesh(&terrain, &environment, &vista, Vec2::ZERO);
+        let repeated = terrain_detail_patch_mesh(&terrain, &environment, &vista, Vec2::ZERO);
         let positions = match first.attribute(Mesh::ATTRIBUTE_POSITION).unwrap() {
             VertexAttributeValues::Float32x3(values) => values,
             other => panic!("unexpected positions {other:?}"),
@@ -1430,10 +1355,14 @@ mod tests {
             other => panic!("unexpected positions {other:?}"),
         };
         assert_eq!(positions, repeated_positions);
-        assert_eq!(positions.len(), 161 * 161);
-        let triangle_count = first.indices().unwrap().len() / 3;
+        assert_eq!(positions.len(), 49 * 49);
+        let indices = match first.indices().unwrap() {
+            Indices::U32(indices) => indices,
+            other => panic!("unexpected indices {other:?}"),
+        };
+        let triangle_count = indices.len() / 3;
         assert!(
-            (39_000..=41_000).contains(&triangle_count),
+            (3_500..=3_700).contains(&triangle_count),
             "{triangle_count}"
         );
         const {
@@ -1445,20 +1374,48 @@ mod tests {
             );
         }
 
-        let mut minimum_relief = f32::INFINITY;
-        let mut maximum_relief = f32::NEG_INFINITY;
+        let mut minimum_lod_delta = f32::INFINITY;
+        let mut maximum_lod_delta = f32::NEG_INFINITY;
         for position in positions {
             let point = Vec2::new(position[0], position[2]);
-            let relief = position[1] - terrain.height_at(point).unwrap();
-            assert!((-0.075_01..=0.105_01).contains(&relief), "relief {relief}");
-            minimum_relief = minimum_relief.min(relief);
-            maximum_relief = maximum_relief.max(relief);
+            if point.length() <= DETAIL_PATCH_MORPH_START_METRES {
+                let canonical = terrain.height_at(point).unwrap();
+                assert!((position[1] - canonical).abs() < 0.000_01);
+                let lod_delta = canonical - terrain.coarse_height_at(point).unwrap();
+                minimum_lod_delta = minimum_lod_delta.min(lod_delta);
+                maximum_lod_delta = maximum_lod_delta.max(lod_delta);
+            }
         }
-        assert!(minimum_relief < -0.005, "signed relief needs depressions");
         assert!(
-            maximum_relief > 0.025,
-            "relief was not visually meaningful: {maximum_relief}"
+            minimum_lod_delta < -0.02,
+            "fine canonical surface needs depressions"
         );
+        assert!(
+            maximum_lod_delta > 0.02,
+            "fine canonical surface was not meaningfully distinct: {maximum_lod_delta}"
+        );
+        for triangle in indices.as_chunks::<3>().0 {
+            let vertices = [
+                positions[triangle[0] as usize],
+                positions[triangle[1] as usize],
+                positions[triangle[2] as usize],
+            ];
+            let point = vertices
+                .iter()
+                .map(|position| Vec2::new(position[0], position[2]))
+                .sum::<Vec2>()
+                / 3.0;
+            if vertices.iter().any(|position| {
+                Vec2::new(position[0], position[2]).length() > DETAIL_PATCH_MORPH_START_METRES
+            }) {
+                continue;
+            }
+            let rendered_height = vertices.iter().map(|position| position[1]).sum::<f32>() / 3.0;
+            assert!(
+                (rendered_height - terrain.height_at(point).unwrap()).abs() < 0.000_01,
+                "detail triangle must match the canonical collider triangle at {point}"
+            );
+        }
         let normals = match first.attribute(Mesh::ATTRIBUTE_NORMAL).unwrap() {
             VertexAttributeValues::Float32x3(values) => values,
             other => panic!("unexpected normals {other:?}"),
@@ -1475,7 +1432,7 @@ mod tests {
             if point.length() < DETAIL_PATCH_RADIUS_METRES - DETAIL_PATCH_SPACING_METRES * 1.5 {
                 continue;
             }
-            let expected = terrain.height_at(point).unwrap();
+            let expected = terrain.coarse_height_at(point).unwrap();
             assert!((position[1] - expected).abs() < 0.000_01);
         }
     }

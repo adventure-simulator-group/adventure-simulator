@@ -10,18 +10,21 @@ pub(in crate::animation) struct OrdinaryLocomotionIkState {
     evaluation_tick: Option<u64>,
 }
 
-pub(super) fn owns(skeleton: &SkeletonState) -> bool {
+pub(in crate::animation::procedural) fn owns(skeleton: &SkeletonState) -> bool {
     skeleton.is_grounded()
         && !skeleton.is_posture_transitioning()
         && skeleton.posture() == Posture::Upright
-        && skeleton.action_kind() == SkeletonAction::None
-        && (skeleton.weapon_guard() == WeaponGuardState::Lowered
-            || skeleton.guarded_sprint_locomotion())
+        && !skeleton.is_quickstep()
+        && ((skeleton.weapon_guard() == WeaponGuardState::Lowered
+            && skeleton.action_kind() == SkeletonAction::None)
+            || (skeleton.weapon_guard() == WeaponGuardState::Raised
+                && skeleton.raised_locomotion().is_moving()))
 }
 
-/// Overgrowth-style ordinary locomotion IK: semantic evaluation supplies the
-/// complete FK pose and authored foot weights; this pass only conforms weighted ankles
-/// to terrain, applies one shared hip correction, and solves each leg once.
+/// Authored upright-locomotion IK: semantic evaluation supplies the complete
+/// FK pose and frame-specific foot weights. This pass only conforms weighted
+/// ankles to terrain, applies one shared hip correction, and solves each leg
+/// once; it never plans a step or changes the authored horizontal trajectory.
 #[expect(
     clippy::too_many_arguments,
     reason = "Bevy injects each independently borrowed locomotion IK resource and query as a system parameter"
@@ -39,6 +42,7 @@ pub(in crate::animation) fn apply(
     mut transforms: ParamSet<(TransformHelper, Query<&mut Transform>)>,
     mut commands: Commands,
 ) {
+    let _spike = crate::animation::diagnostics::SpikeGuard::new("apply_ordinary_locomotion_ik");
     let terrain = terrain.single().ok();
     for (owner, rig) in &rigs {
         let Ok((skeleton, playback)) = owners.get(owner) else {
@@ -108,8 +112,15 @@ pub(in crate::animation) fn apply(
             let Some(height) = terrain.height_at(foot_position.xz()) else {
                 continue;
             };
-            let terrain_target = foot_position
-                .with_y(height + MEASURED_ANKLE_SOLE_OFFSET_METRES - SOLE_CONTACT_MARGIN_METRES);
+            // Pose-buffer terrain conformity owns the upcoming sample. This
+            // compatibility solve may lift the rendered sample further when
+            // terrain rises, but must never lower the authored flat-ground
+            // clearance toward a fixed ankle offset.
+            let terrain_target = foot_position.with_y(
+                foot_position
+                    .y
+                    .max(height + MEASURED_ANKLE_SOLE_OFFSET_METRES - SOLE_CONTACT_MARGIN_METRES),
+            );
             let target = foot_position.lerp(terrain_target, weight.clamp(0.0, 1.0));
             targets[index] = Some(target);
 
@@ -157,6 +168,12 @@ pub(in crate::animation) fn apply(
             else {
                 continue;
             };
+            if target.distance(foot_snapshot.global.translation()) <= 0.0001 {
+                // Preserve an already-clear authored chain exactly. Solving an
+                // identity ankle target can still rotate it through a newly
+                // selected knee pole.
+                continue;
+            }
             let upper_length = upper_snapshot
                 .global
                 .translation()
@@ -307,19 +324,30 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ordinary_ownership_selects_guarded_sprint_but_excludes_guard_steps_and_actions() {
+    fn authored_ownership_routes_only_translating_raised_guard_to_locomotion_ik() {
         let ordinary = SkeletonState::default();
         assert!(owns(&ordinary));
 
-        let guard_step = ordinary.clone().with_weapon_guard(WeaponGuardState::Raised);
-        assert!(!owns(&guard_step));
+        let stationary_guard = ordinary.clone().with_weapon_guard(WeaponGuardState::Raised);
+        assert!(!owns(&stationary_guard));
 
-        let guarded_sprint = guard_step.with_guarded_sprint_locomotion(true);
+        let guard_step = stationary_guard
+            .clone()
+            .with_raised_locomotion(RaisedLocomotionIntent::moving(Vec2::X, 1.0));
+        assert!(owns(&guard_step));
+
+        let guarded_sprint = guard_step.clone().with_guarded_sprint_locomotion(true);
         assert!(owns(&guarded_sprint));
 
-        let mut attacking = ordinary.clone();
+        let mut attacking = guard_step;
         attacking.begin_attack(AttackSpec::default(), 0, 1).unwrap();
-        assert!(!owns(&attacking));
+        assert!(owns(&attacking));
+
+        let mut quickstep = stationary_guard;
+        quickstep
+            .begin_dodge(DodgeSpec::quickstep(Vec2::X).unwrap(), 0, 100)
+            .unwrap();
+        assert!(!owns(&quickstep));
     }
 
     #[test]

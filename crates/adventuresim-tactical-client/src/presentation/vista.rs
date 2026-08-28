@@ -129,9 +129,12 @@ pub(super) fn on_scene_vista_bundle(
         let half_extent = f32::from(lod.width.saturating_sub(1)) * lod.spacing_metres * 0.5;
         for (chunk, mesh) in meshes_for_lod.into_iter().enumerate() {
             presented_chunk_count += 1;
+            let triangle_count = mesh_triangle_count(&mesh);
             commands.spawn((
                 Name::new(format!("Tactical vista LOD {} chunk {chunk}", lod.level)),
                 VistaTerrain(lod.level),
+                VistaTerrainMesh(lod.level),
+                TerrainTriangleCount(triangle_count),
                 NotShadowCaster,
                 Mesh3d(meshes.add(mesh)),
                 MeshMaterial3d(material.clone()),
@@ -853,7 +856,19 @@ fn spawn_vista_trees(
                     Name::new(format!("Distant vista {} billboard", species.name())),
                     VistaTerrain(lod.level),
                     VistaTreePresentation,
-                    NoFrustumCulling,
+                    // The impostor shader yaws the card toward the camera, so
+                    // the mesh's static bounds would mis-cull near screen
+                    // edges. This rotation-safe box restores frustum culling:
+                    // off-screen stands previously always rendered through
+                    // `NoFrustumCulling`, roughly half the vista vertex cost.
+                    bevy::camera::primitives::Aabb {
+                        center: bevy::math::Vec3A::new(0.0, card_height * 0.5, 0.0),
+                        half_extents: bevy::math::Vec3A::new(
+                            card_height * 0.8,
+                            card_height * 0.6,
+                            card_height * 0.8,
+                        ),
+                    },
                     NotShadowCaster,
                     Mesh3d(cached.mesh.clone()),
                     MeshMaterial3d(cached.material.clone()),
@@ -1401,6 +1416,7 @@ fn vista_sample_color(sample: EnvironmentalSample, weather: WeatherSnapshot) -> 
         latitude_microdegrees: 53_500_000,
         longitude_microdegrees: 10_000_000,
         absolute_minute: 12 * 60,
+        lunar_phase_minute: 12 * 60,
         absolute_elevation_metres: 20,
         weather,
         canopy_bps: sample.canopy_bps,
@@ -1484,6 +1500,11 @@ fn clear_vista_weather() -> WeatherSnapshot {
 #[derive(Component)]
 pub(crate) struct VistaTerrain(pub(crate) u8);
 
+/// A terrain-surface chunk, excluding vista grass, rocks, and tree cards that
+/// also carry [`VistaTerrain`] for broad visibility isolation.
+#[derive(Component)]
+pub(crate) struct VistaTerrainMesh(pub(crate) u8);
+
 #[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
 pub(in crate::presentation) struct TacticalVistaExtension {
     #[uniform(100)]
@@ -1533,7 +1554,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn vista_ground_uses_solid_palette_colors_and_geometry_normals() {
+    fn vista_ground_uses_continuous_palette_colors_and_geometry_normals() {
         let shader = include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../assets/shaders/tactical_vista.wgsl"
@@ -1542,7 +1563,7 @@ mod tests {
         assert!(!shader.contains("textureSample"));
         assert!(!shader.contains("composed_normal"));
         assert!(shader.contains("let sward_color = vista.grass_color.rgb"));
-        assert!(shader.contains("sward_dither < sward"));
+        assert!(shader.contains("color = mix(color, sward_target, sward)"));
         assert!(!shader.contains("sward_color = color *"));
         assert!(shader.contains("let molded_rock = vec3<f32>(0.31, 0.30, 0.275)"));
     }
@@ -1560,7 +1581,7 @@ mod tests {
         // aligned lattice, so the playable-to-vista seam cannot extend the
         // physical-grass budget beyond the terrain handoff.
         let vista = grass_lod_visibility(GrassMeshLod::Vista);
-        assert_eq!(vista.end_margin, 55.0..65.0);
+        assert_eq!(vista.end_margin, 42.0..50.0);
         assert_eq!(vista.end_margin.start, TERMINAL_SWARD_FADE_START_METRES);
         assert_eq!(vista.end_margin.end, TERMINAL_SWARD_FADE_END_METRES);
     }
@@ -1869,6 +1890,7 @@ mod tests {
             latitude_microdegrees: 53_500_000,
             longitude_microdegrees: 10_000_000,
             absolute_minute: 12 * 60,
+            lunar_phase_minute: 12 * 60,
             absolute_elevation_metres: 20,
             weather: clear_vista_weather(),
             canopy_bps: 0,

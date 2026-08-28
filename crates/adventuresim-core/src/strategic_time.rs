@@ -5,7 +5,9 @@ use crate::{
     strategic_schedule::{DailySchedule, settlement_leisure_outcome},
 };
 
-pub const MINUTES_PER_DAY: u64 = 24 * 60;
+pub const HOURS_PER_DAY: u16 = 24;
+pub const MINUTES_PER_HOUR: u16 = 60;
+pub const MINUTES_PER_DAY: u64 = HOURS_PER_DAY as u64 * MINUTES_PER_HOUR as u64;
 pub const DAYS_PER_YEAR: u64 = 365;
 pub const MINUTES_PER_YEAR: u64 = DAYS_PER_YEAR * MINUTES_PER_DAY;
 /// Longest settlement rest request accepted by the shared strategic contract.
@@ -17,6 +19,10 @@ const DAYLIGHT_END_MINUTE: u16 = 20 * 60;
 pub const WORLD_START_DAY_OF_YEAR: u64 = 231;
 pub const WORLD_START_MINUTE: u64 = WORLD_START_DAY_OF_YEAR * MINUTES_PER_DAY;
 pub const DEFAULT_WALKING_MINUTES_PER_DAY: u16 = 8 * 60;
+/// Default journey-local departure time, at 08:00.
+pub const DEFAULT_JOURNEY_START_MINUTE_OF_DAY: u16 = 8 * 60;
+/// Default journey-local departure time for a night itinerary, at 20:00.
+pub const DEFAULT_NIGHT_JOURNEY_START_MINUTE_OF_DAY: u16 = 20 * 60;
 pub const MIN_WALKING_MINUTES_PER_DAY: u16 = 1;
 pub const MAX_WALKING_MINUTES_PER_DAY: u16 = 24 * 60;
 /// Baseline overland pace used when converting route distance into travel time.
@@ -31,9 +37,31 @@ pub const HEALTH_RECOVERED_PER_DAY: f32 = 0.05;
 pub struct StrategicMinuteOfDay(u16);
 
 impl StrategicMinuteOfDay {
+    /// Construct a validated position within one strategic day.
+    pub const fn new(minute_of_day: u16) -> Option<Self> {
+        if (minute_of_day as u64) < MINUTES_PER_DAY {
+            Some(Self(minute_of_day))
+        } else {
+            None
+        }
+    }
+
+    /// Construct a validated position from a clock hour and minute.
+    pub const fn from_hour_minute(hour: u16, minute: u16) -> Option<Self> {
+        if hour < HOURS_PER_DAY && minute < MINUTES_PER_HOUR {
+            Some(Self(hour * MINUTES_PER_HOUR + minute))
+        } else {
+            None
+        }
+    }
+
     /// Normalize an absolute strategic minute to its position within the day.
     pub const fn from_absolute(absolute_minute: u64) -> Self {
         Self((absolute_minute % MINUTES_PER_DAY) as u16)
+    }
+
+    pub const fn get(self) -> u16 {
+        self.0
     }
 
     /// Whether this minute lies outside the shared daylight window.
@@ -453,6 +481,21 @@ mod tests {
         assert_eq!(before_night.minutes_until_night(), 1);
         assert!(night.is_night());
         assert_eq!(night.minutes_until_night(), 0);
+    }
+
+    #[test]
+    fn strategic_minute_of_day_validates_clock_input() {
+        assert_eq!(
+            StrategicMinuteOfDay::from_hour_minute(8, 30).map(StrategicMinuteOfDay::get),
+            Some(8 * MINUTES_PER_HOUR + 30)
+        );
+        assert_eq!(
+            StrategicMinuteOfDay::new(0).map(StrategicMinuteOfDay::get),
+            Some(0)
+        );
+        assert!(StrategicMinuteOfDay::new(MINUTES_PER_DAY as u16).is_none());
+        assert!(StrategicMinuteOfDay::from_hour_minute(HOURS_PER_DAY, 0).is_none());
+        assert!(StrategicMinuteOfDay::from_hour_minute(0, MINUTES_PER_HOUR).is_none());
     }
 
     #[test]

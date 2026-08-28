@@ -414,7 +414,7 @@ pub fn delete_character_reputation(ctx: &ReducerContext, character_id: u64) {
 mod tests {
     #[test]
     fn case_battles_use_public_identity_but_events_keep_canonical_identity() {
-        let source = include_str!("reputation.rs");
+        let source = crate::production_source(include_str!("reputation.rs"));
         let award = source
             .split("pub(crate) fn case_resolution_participant_ids")
             .nth(1)

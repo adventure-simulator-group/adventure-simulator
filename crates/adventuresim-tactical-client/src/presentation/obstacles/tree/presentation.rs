@@ -19,11 +19,12 @@ use super::{
     procedural_woody_crown_mesh, procedural_woody_mid_trunk_mesh, procedural_woody_plant_leaves,
     procedural_woody_plant_skeleton,
 };
+use crate::presentation::TacticalGameplayCamera;
 use crate::presentation::{
     ActiveTacticalScene, ActiveVistaSurface, ProceduralEnvironmentAssets, SceneEnvironment,
     obstacle_seed, unit_hash,
 };
-use adventuresim_tactical_core::prelude::{SceneGround, SceneObstacle, SceneTerrain};
+use adventuresim_tactical_core::prelude::SceneTerrain;
 use bevy::{
     camera::{primitives::Aabb, visibility::NoFrustumCulling},
     light::NotShadowCaster,
@@ -676,7 +677,7 @@ fn ensure_tree_assets_resident(
 )]
 pub(in crate::presentation) fn stream_tree_lod_children(
     mut commands: Commands,
-    camera: Single<(&GlobalTransform, &Projection), With<Camera3d>>,
+    camera: Single<(&GlobalTransform, &Projection), With<TacticalGameplayCamera>>,
     lod_override: Res<TreeLodRenderOverride>,
     mut trees: Query<(Entity, &GlobalTransform, &mut StreamedTreePresentation)>,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -836,9 +837,6 @@ pub(in crate::presentation) fn present_pending_trees(
     active: Res<ActiveTacticalScene>,
     environments: Query<&SceneEnvironment>,
     terrains: Query<&SceneTerrain>,
-    grounds: Query<&SceneGround>,
-    obstacles: Query<(&SceneObstacle, &Transform)>,
-    vista: Res<ActiveVistaSurface>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut bark_materials: ResMut<Assets<TacticalTreeBarkMaterial>>,
     mut aggregate_bark_materials: ResMut<Assets<TacticalTreeAggregateBarkMaterial>>,
@@ -857,7 +855,6 @@ pub(in crate::presentation) fn present_pending_trees(
     let Some(terrain) = active.entity.and_then(|entity| terrains.get(entity).ok()) else {
         return;
     };
-    let ground = active.entity.and_then(|entity| grounds.get(entity).ok());
     if tree_cache.terrain_scene_digest.as_deref() != Some(&environment.scene_digest) {
         tree_cache.variants.clear();
         tree_cache.oak_bark_material = None;
@@ -865,13 +862,7 @@ pub(in crate::presentation) fn present_pending_trees(
         tree_cache.oak_aggregate_bark_material = None;
         tree_cache.beech_aggregate_bark_material = None;
         let (heightmap, height_range) =
-            crate::presentation::terrain::terrain_contact_heightmap_image(
-                terrain,
-                ground,
-                environment,
-                &vista,
-                &obstacles,
-            );
+            crate::presentation::terrain::terrain_contact_heightmap_image(terrain);
         tree_cache.terrain_heightmap = Some(images.add(heightmap));
         tree_cache.terrain_height_range = height_range;
         tree_cache.terrain_scene_digest = Some(environment.scene_digest.clone());
@@ -1115,6 +1106,7 @@ mod tests {
             latitude_microdegrees: 53_500_000,
             longitude_microdegrees: 10_000_000,
             absolute_minute: 340_440,
+            lunar_phase_minute: 340_440,
             absolute_elevation_metres: 420,
             weather: WeatherSnapshot {
                 rules_version: adventuresim_tactical_core::prelude::WEATHER_RULES_VERSION,

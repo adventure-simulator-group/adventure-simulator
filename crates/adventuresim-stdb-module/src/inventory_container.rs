@@ -801,7 +801,10 @@ mod tests {
 
     #[test]
     fn generic_solid_containers_are_authoring_driven() {
-        let source = include_str!("inventory_container.rs");
+        let source = include_str!("inventory_container.rs")
+            .rsplit_once("pub(crate) fn require_object")
+            .expect("post-test production section")
+            .1;
         assert!(source.contains("parent_definition.container_capacity_ml == 0"));
         assert!(!source.contains("GENERIC_CONTAINER_IDS"));
     }
@@ -821,7 +824,10 @@ mod tests {
 
     #[test]
     fn empty_container_reconciliation_covers_removal_and_automatic_drain() {
-        let source = include_str!("inventory_container.rs");
+        let source = include_str!("inventory_container.rs")
+            .rsplit_once("pub(crate) fn require_object")
+            .expect("post-test production section")
+            .1;
         let remove = source
             .split("pub fn remove_inventory_item_from_container")
             .nth(1)
@@ -838,14 +844,17 @@ mod tests {
             .split("fn require_mutable")
             .next()
             .unwrap();
-        assert!(drain.contains("carried_location_custody"));
         assert!(drain.contains("resolve_object_custody"));
+        assert!(drain.contains("resolved.root == *expected_custody"));
         assert!(drain.contains("merge_empty_container(ctx, liquid.container_object_id)"));
     }
 
     #[test]
     fn direct_object_mutators_require_resolved_actor_custody() {
-        let source = include_str!("inventory_container.rs");
+        let source = include_str!("inventory_container.rs")
+            .rsplit_once("pub(crate) fn require_object")
+            .expect("post-test production section")
+            .1;
         for reducer in [
             "pub fn remove_inventory_item_from_container",
             "pub fn discard_container_water",
@@ -853,12 +862,18 @@ mod tests {
             let body = source.split(reducer).nth(1).expect("direct object reducer");
             assert!(body.contains("require_actor_carried_object"));
         }
-        assert!(source.contains("duplicate physical object identities"));
+        let lookup = include_str!("inventory_container.rs")
+            .split("pub(crate) fn object_for_row")
+            .nth(1)
+            .and_then(|tail| tail.split("fn insert_carried_object").next())
+            .expect("physical object lookup");
+        assert!(lookup.contains("if matches.next().is_some()"));
+        assert!(lookup.contains("duplicate physical object identities"));
     }
 
     #[test]
     fn empty_container_merge_authenticates_exact_root_before_mutation() {
-        let source = include_str!("inventory_container.rs");
+        let source = crate::production_source(include_str!("inventory_container.rs"));
         let merge = source
             .split("pub(crate) fn merge_empty_container")
             .nth(1)
@@ -877,8 +892,7 @@ mod tests {
 
     #[test]
     fn subtree_alias_failure_is_preflighted_before_every_delete() {
-        let source = include_str!("inventory_container.rs");
-        let deletion = source
+        let deletion = include_str!("inventory_container.rs")
             .split("pub(crate) fn delete_subtree")
             .nth(1)
             .and_then(|tail| tail.split("fn require_exact_carried_backing").next())
@@ -894,12 +908,15 @@ mod tests {
 
     #[test]
     fn water_exists_only_in_physical_containers() {
-        let source = include_str!("inventory_container.rs");
+        let source = include_str!("inventory_container.rs")
+            .rsplit_once("pub(crate) fn require_object")
+            .expect("post-test production section")
+            .1;
         assert!(!source.contains("carried_water_ml"));
         assert!(!source.contains("pooled_water_ml"));
         assert!(!source.contains("pour_water_into_container"));
         assert!(source.contains("take_container_water_contributions"));
-        let deletion = source
+        let deletion = include_str!("inventory_container.rs")
             .split("pub(crate) fn delete_subtree")
             .nth(1)
             .unwrap()

@@ -686,7 +686,7 @@ mod tests {
             "\"weight_kg\": 1.1",
             "\"accuracy\": 1.5",
             "\"reach_m\": 0.8",
-            "\"balance\": 0.55",
+            "\"moment_of_inertia_kg_m2\": 0.136294",
             "\"id\": \"buckler\"",
             "\"block\": 1.5",
         ] {

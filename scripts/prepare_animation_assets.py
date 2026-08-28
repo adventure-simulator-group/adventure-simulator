@@ -10,20 +10,33 @@ motions are skipped so the pack can be rebuilt incrementally while animating.
 from __future__ import annotations
 
 import argparse
+import copy
+from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 import tempfile
 
+import numpy as np
+
 from build_locomotion_cycles import MOTIONS as LOCOMOTION_MOTIONS, build_cycle
 from mirror_gait_assets import MIRRORED_MOTIONS, mirrored_glb
-from prepare_animation_motion import ANIMATION_FPS, accessor_view, prepare_motion
-from prepare_rig_base import GlbError, read_glb
+from prepare_animation_motion import (
+    ANIMATION_FPS,
+    accessor_view,
+    append_float_accessor,
+    prepare_motion,
+)
+from prepare_rig_base import GlbError, encode_glb, read_glb
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_DIR = ROOT / "assets_src" / "biped" / "unarmed"
 RUNTIME_DIR = ROOT / "assets" / "animations" / "biped" / "unarmed"
 RUNTIME_BASE = RUNTIME_DIR / "base.glb"
+GRIP_SOURCE_DIR = ROOT / "assets_src" / "biped"
+GRIP_RUNTIME_DIR = ROOT / "assets" / "animations" / "biped"
+GRIP_POSES = ("grip_hilt", "grip_polearm")
+BARE_KNUCKLE_OVERLAY = GRIP_SOURCE_DIR / "grip_bare_knuckle.glb"
 
 # Keep this table aligned with AnimationPackCatalog::biped_root. Generated
 # locomotion and mirrored counterparts are deliberately absent.
@@ -32,6 +45,7 @@ DIRECT_MOTIONS = {
     "prone_idle": (0,),
     "supine_idle": (0,),
     "prone_crawl": (0,),
+    "prone_strafe": tuple(range(7)),
     "supine_scamper": (0,),
     "dive": (0,),
     "airborne_center": (0,),
@@ -42,7 +56,19 @@ DIRECT_MOTIONS = {
     "prone_transition": (0,),
     "prone_supine_roll_left": (0,),
     "supine_transition": (0,),
+    "combat_stance": (0,),
+    # Preserve Cascadeur's baked in-betweens: reducing these motions to only
+    # their five authored landmarks measurably changes the feet between keys.
+    # Lateral root translation is still neutralized below.
+    "quickstep_forward": tuple(range(13)),
+    "quickstep_right": tuple(range(13)),
+    "quickstep_left": tuple(range(13)),
+    "quickstep_back": tuple(range(13)),
 }
+
+COMBAT_CYCLE_MOTIONS = ("strafe", "skip")
+COMBAT_CYCLE_AUTHORED_FRAMES = (0, 6, 12, 18)
+COMBAT_CYCLE_LAST_FRAME = 24
 
 VARIABLE_ATTACK_FRAMES = {"swing", "thrust", "offhand"}
 
@@ -73,6 +99,60 @@ class PublicationReport:
     skipped: tuple[str, ...]
 
 
+def close_combat_cycle(source: Path) -> bytes:
+    """Copy every frame-0 key to frame 24, closing a 0/6/12/18 combat cycle."""
+    document, source_binary = read_glb(source)
+    closed = copy.deepcopy(document)
+    binary = bytearray(source_binary)
+    try:
+        animation = closed["animations"][0]
+        source_animation = document["animations"][0]
+    except (KeyError, IndexError, TypeError) as error:
+        raise GlbError(f"combat cycle animation is malformed: {source}") from error
+    if len(closed.get("animations", ())) != 1:
+        raise GlbError(f"combat cycle must contain exactly one animation: {source}")
+
+    for sampler, source_sampler in zip(
+        animation.get("samplers", ()), source_animation.get("samplers", ())
+    ):
+        interpolation = source_sampler.get("interpolation", "LINEAR")
+        if interpolation not in {"LINEAR", "STEP"}:
+            raise GlbError("combat cycle source must use LINEAR or STEP interpolation")
+        times = accessor_view(document, source_binary, source_sampler["input"])[:, 0]
+        values = accessor_view(document, source_binary, source_sampler["output"])
+        zero = np.flatnonzero(np.isclose(times, 0.0, atol=1e-5))
+        if zero.size != 1:
+            raise GlbError("combat cycle must expose exactly one frame-0 key per track")
+        required = COMBAT_CYCLE_AUTHORED_FRAMES[-1] / ANIMATION_FPS
+        if float(times[-1]) + 0.5 / ANIMATION_FPS < required:
+            raise GlbError("combat cycle does not cover its authored frame-18 pose")
+        cycle_time = COMBAT_CYCLE_LAST_FRAME / ANIMATION_FPS
+        before_close = times < cycle_time - 1e-5
+        closed_times = np.concatenate(
+            (
+                times[before_close],
+                np.asarray([cycle_time], dtype="<f4"),
+            )
+        )
+        closed_values = np.concatenate(
+            (values[before_close], values[zero[0] : zero[0] + 1]), axis=0
+        )
+        sampler["input"] = append_float_accessor(
+            closed,
+            binary,
+            closed_times.reshape(-1, 1),
+            "SCALAR",
+            minimum=[float(closed_times[0])],
+            maximum=[float(closed_times[-1])],
+        )
+        output_type = document["accessors"][source_sampler["output"]]["type"]
+        sampler["output"] = append_float_accessor(
+            closed, binary, closed_values, output_type
+        )
+    closed["buffers"][0]["byteLength"] = len(binary)
+    return encode_glb(closed, bytes(binary))
+
+
 def write_generated(path: Path, payload: bytes, *, check: bool) -> None:
     if check:
         if not path.is_file() or path.read_bytes() != payload:
@@ -88,12 +168,19 @@ def publish_animation_assets(
     source_dir: Path = SOURCE_DIR,
     runtime_dir: Path = RUNTIME_DIR,
     runtime_base: Path = RUNTIME_BASE,
+    grip_source_dir: Path = GRIP_SOURCE_DIR,
+    grip_runtime_dir: Path = GRIP_RUNTIME_DIR,
+    bare_knuckle_overlay: Path = BARE_KNUCKLE_OVERLAY,
     check: bool = False,
 ) -> PublicationReport:
     if not runtime_base.is_file():
         raise GlbError(f"runtime MHR base is unavailable: {runtime_base}")
 
-    generated_names = set(LOCOMOTION_MOTIONS) | set(MIRRORED_MOTIONS.values())
+    generated_names = (
+        set(LOCOMOTION_MOTIONS)
+        | set(COMBAT_CYCLE_MOTIONS)
+        | set(MIRRORED_MOTIONS.values())
+    )
     # Retain superseded authoring sources without publishing them. Artists may
     # keep the old files while the runtime contract now derives guard from the
     # frame-0 attack anchors and continuation from frames 8/12.
@@ -114,9 +201,36 @@ def publish_animation_assets(
             "source motions are absent from the publication contract: "
             + ", ".join(unknown)
         )
+    available_attacks = sorted(
+        motion
+        for motion in VARIABLE_ATTACK_FRAMES
+        if (source_dir / f"{motion}.glb").is_file()
+    )
+    if available_attacks and not bare_knuckle_overlay.is_file():
+        raise GlbError(
+            "bare-knuckle grip overlay is required to publish unarmed attacks: "
+            f"{bare_knuckle_overlay}"
+        )
 
     published: list[str] = []
     skipped: list[str] = []
+    for motion in GRIP_POSES:
+        source = grip_source_dir / f"{motion}.glb"
+        if not source.is_file():
+            skipped.append(motion)
+            continue
+        prepare_motion(
+            source,
+            runtime_base,
+            grip_runtime_dir / f"{motion}.glb",
+            last_frame=0,
+            kept_frames=(0,),
+            target_subtree_roots=("l_wrist", "r_wrist"),
+            preserve_default_target_nodes=("r_weapon",) if motion == "grip_hilt" else (),
+            check=check,
+        )
+        published.append(motion)
+
     for motion, kept_frames in DIRECT_MOTIONS.items():
         source = source_dir / f"{motion}.glb"
         if not source.is_file():
@@ -129,14 +243,30 @@ def publish_animation_assets(
                 raise GlbError(
                     f"{motion} does not expose its required attack anchors"
                 )
-        prepare_motion(
-            source,
-            runtime_base,
-            runtime_dir / f"{motion}.glb",
-            last_frame=max(kept_frames),
-            kept_frames=kept_frames,
-            check=check,
+        uses_bare_knuckles = motion in VARIABLE_ATTACK_FRAMES
+        temporary_overlay = (
+            tempfile.TemporaryDirectory() if uses_bare_knuckles else nullcontext(None)
         )
+        with temporary_overlay as temporary:
+            overlay_poses: tuple[tuple[Path, tuple[str, ...]], ...] = ()
+            if uses_bare_knuckles:
+                mirrored_overlay = Path(temporary) / "grip_bare_knuckle_mirrored.glb"
+                mirrored_overlay.write_bytes(mirrored_glb(bare_knuckle_overlay))
+                overlay_poses = (
+                    (bare_knuckle_overlay, ("r_wrist",)),
+                    (mirrored_overlay, ("l_wrist",)),
+                )
+            prepare_motion(
+                source,
+                runtime_base,
+                runtime_dir / f"{motion}.glb",
+                last_frame=max(kept_frames),
+                kept_frames=kept_frames,
+                remove_root_lateral_motion=motion.startswith("quickstep_"),
+                overlay_poses=overlay_poses,
+                overlay_target_subtree_roots=("l_wrist", "r_wrist"),
+                check=check,
+            )
         published.append(motion)
 
     for motion in LOCOMOTION_MOTIONS:
@@ -159,6 +289,24 @@ def publish_animation_assets(
             )
             published.append(mirrored_motion)
 
+    for motion in COMBAT_CYCLE_MOTIONS:
+        source = source_dir / f"{motion}.glb"
+        if not source.is_file():
+            skipped.append(motion)
+            continue
+        with tempfile.TemporaryDirectory() as temporary:
+            closed_source = Path(temporary) / f"{motion}.glb"
+            closed_source.write_bytes(close_combat_cycle(source))
+            prepare_motion(
+                closed_source,
+                runtime_base,
+                runtime_dir / f"{motion}.glb",
+                last_frame=COMBAT_CYCLE_LAST_FRAME,
+                kept_frames=(*COMBAT_CYCLE_AUTHORED_FRAMES, COMBAT_CYCLE_LAST_FRAME),
+                check=check,
+            )
+        published.append(motion)
+
     for source_motion, output_motion in MIRRORED_MOTIONS.items():
         if source_motion in LOCOMOTION_MOTIONS:
             continue
@@ -176,6 +324,7 @@ def publish_animation_assets(
                 runtime_dir / f"{output_motion}.glb",
                 last_frame=max(kept_frames),
                 kept_frames=kept_frames,
+                remove_root_lateral_motion=output_motion.startswith("quickstep_"),
                 check=check,
             )
         published.append(output_motion)

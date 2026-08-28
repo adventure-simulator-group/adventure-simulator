@@ -20,6 +20,7 @@ pub(super) fn resolve_ranged_attack(
     q_ids: Query<&CharacterId>,
     mut consequences: ResMut<TacticalConsequenceAccumulator>,
     time: Res<Time<()>>,
+    config: Res<TacticalCombatConfig>,
 ) {
     let attacker = event.attacker;
     let Ok(attacker_view) = viewer.get(attacker) else {
@@ -53,6 +54,10 @@ pub(super) fn resolve_ranged_attack(
         reported_precision: event.reported_precision,
         weapon_is_ranged: attacker_view.weapon_is_ranged(),
         weapon_range: attacker_view.weapon_reach(),
+        range_latency_tolerance: config
+            .realtime_authority
+            .ranged
+            .range_latency_tolerance_metres,
         separation: target_character.map(|(_, transform)| {
             attacker_transform
                 .translation
@@ -63,6 +68,7 @@ pub(super) fn resolve_ranged_attack(
                 attacker_look.yaw,
                 attacker_transform.translation,
                 transform.translation,
+                config.realtime_authority.ranged.aim_half_angle_degrees,
             )
         }),
         authority_permits: authority.permits(now),
@@ -103,7 +109,8 @@ pub(super) fn resolve_ranged_attack(
             return;
         }
     }
-    let Some(authorized) = authority.authorize_shot(validated, now, RANGED_COOLDOWN) else {
+    let cooldown = CombatDuration::from_secs_f32(config.realtime_authority.ranged.cooldown_seconds);
+    let Some(authorized) = authority.authorize_shot(validated, now, cooldown) else {
         return;
     };
     let shot = authorized;
@@ -142,8 +149,12 @@ pub(super) fn resolve_ranged_attack(
     let (a2, a1) = shot.attacker_yaw().sin_cos();
     let (d2, d1) = target_yaw.sin_cos();
     let flanking = flanking_from_dir((a1, a2), (d1, d2));
-    let defender_response =
-        resolve_defender_response(q_pending.get(target).ok(), &time, &defender_view);
+    let defender_response = resolve_defender_response(
+        q_pending.get(target).ok(),
+        &time,
+        &defender_view,
+        &config.realtime_authority.defense,
+    );
     cmd.entity(target).remove::<PendingDefenderResponse>();
     let fallback_categories = BestiaryCategories::default();
     let defender_categories = q_bestiary_categories
@@ -169,6 +180,23 @@ pub(super) fn resolve_ranged_attack(
         Some(BodySide::Left) => EquipSlot::HoldingLeft,
         _ => EquipSlot::HoldingRight,
     };
+    let target_position = target_character
+        .map_or(attacker_transform.translation, |(_, transform)| {
+            transform.translation
+        });
+    let (hits_attacker, impact_velocity_change) = hit_velocity_change(
+        result,
+        attacker_transform.translation,
+        target_position,
+        attacker_view.body_weight() + attacker_view.inventory_weight(),
+        defender_view.body_weight() + defender_view.inventory_weight(),
+        &config.realtime_authority.impact,
+    );
+    let impact_recipient = if hits_attacker {
+        shot.attacker()
+    } else {
+        target
+    };
     cmd.trigger(ApplyMeleeAttackResult {
         attacker: shot.attacker(),
         target,
@@ -177,6 +205,8 @@ pub(super) fn resolve_ranged_attack(
         attacker_weapon_slot,
         defender_parry_slot,
         attacker_weapon_contact: false,
+        impact_recipient,
+        impact_velocity_change,
     });
     cmd.server_trigger(ToClients {
         targets: SendTargets::All,
@@ -187,6 +217,8 @@ pub(super) fn resolve_ranged_attack(
             result,
             flanking,
             defender_response,
+            impact_recipient,
+            impact_velocity_change,
         },
     });
 }

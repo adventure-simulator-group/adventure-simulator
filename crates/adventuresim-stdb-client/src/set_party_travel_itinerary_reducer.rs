@@ -10,6 +10,7 @@ pub(super) struct SetPartyTravelItineraryArgs {
     pub character_id: u64,
     pub walking_minutes_per_day: u16,
     pub travel_at_night: bool,
+    pub journey_start_minute_of_day: u16,
 }
 
 impl From<SetPartyTravelItineraryArgs> for super::Reducer {
@@ -18,6 +19,7 @@ impl From<SetPartyTravelItineraryArgs> for super::Reducer {
             character_id: args.character_id,
             walking_minutes_per_day: args.walking_minutes_per_day,
             travel_at_night: args.travel_at_night,
+            journey_start_minute_of_day: args.journey_start_minute_of_day,
         }
     }
 }
@@ -42,11 +44,13 @@ pub trait set_party_travel_itinerary {
         character_id: u64,
         walking_minutes_per_day: u16,
         travel_at_night: bool,
+        journey_start_minute_of_day: u16,
     ) -> __sdk::Result<()> {
         self.set_party_travel_itinerary_then(
             character_id,
             walking_minutes_per_day,
             travel_at_night,
+            journey_start_minute_of_day,
             |_, _| {},
         )
     }
@@ -62,6 +66,7 @@ pub trait set_party_travel_itinerary {
         character_id: u64,
         walking_minutes_per_day: u16,
         travel_at_night: bool,
+        journey_start_minute_of_day: u16,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -77,6 +82,7 @@ impl set_party_travel_itinerary for super::RemoteReducers {
         character_id: u64,
         walking_minutes_per_day: u16,
         travel_at_night: bool,
+        journey_start_minute_of_day: u16,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -89,6 +95,7 @@ impl set_party_travel_itinerary for super::RemoteReducers {
                 character_id,
                 walking_minutes_per_day,
                 travel_at_night,
+                journey_start_minute_of_day,
             },
             callback,
         )

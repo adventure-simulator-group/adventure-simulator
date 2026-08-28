@@ -7,8 +7,11 @@ repository.workspace = true
 license.workspace = true
 
 [features]
-default = ["debug"]
+default = ["debug", "instanced-grass"]
 debug = ["bevy/debug", "bevy/bevy_remote", "adventuresim-tactical-core/avian_debug"]
+# GPU-instanced grass through bevy_eidolon. Native-first: the browser build
+# keeps the legacy patch renderer until the wasm indirect-draw fallback lands.
+instanced-grass = ["dep:bevy_eidolon"]
 tracy = ["bevy/trace_tracy", "dep:tracing-tracy", "dep:tracing-subscriber", "dep:tracy-client-sys"]
 # See src/lib.rs - only used by crates/adventuresim-tactical-brp-generator.
 remote-types = ["debug"]
@@ -28,12 +31,16 @@ serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
 web-time.workspace = true
+todo-or-die = { version = "0.1.2", features = ["crate"] }
 tracing-tracy = { version = "0.11", optional = true }
 tracing-subscriber = { version = "0.3", optional = true }
 tracy-client-sys = { version = "=0.28.0", optional = true }
 
 [target."cfg(not(target_family = \"wasm\"))".dependencies]
 bevy = { workspace = true, default-features = true, features = ["file_watcher", "jpeg"] }
+# Declared native-only so `instanced-grass` in default features stays inert
+# for the browser bundle until the wasm indirect-draw fallback lands.
+bevy_eidolon = { workspace = true, optional = true }
 
 [target."cfg(target_family = \"wasm\")".dependencies]
 bevy = { workspace = true, default-features = false, features = [

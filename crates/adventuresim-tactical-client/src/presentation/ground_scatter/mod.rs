@@ -5,7 +5,7 @@ use bevy::{
     pbr::Material,
     prelude::{
         AlphaMode, Asset, Assets, Color, Commands, Component, Entity, GlobalTransform, Handle,
-        Image, Mesh, Quat, Query, Reflect, Res, ResMut, Resource, StandardMaterial, Time,
+        Image, Local, Mesh, Quat, Query, Reflect, Res, ResMut, Resource, StandardMaterial, Time,
         Transform, Vec2, Vec3, Vec4, With, Without, default,
     },
     render::render_resource::{
@@ -15,6 +15,8 @@ use bevy::{
 };
 use fabelgeist_determinism::splitmix64;
 
+#[cfg(any(not(feature = "instanced-grass"), target_family = "wasm"))]
+use super::grass_cover_mask_image;
 use super::obstacles::tree::{
     BLACKTHORN_PARAMETERS, COMMON_HAWTHORN_PARAMETERS, COMMON_HAZEL_PARAMETERS,
     TacticalTreeBarkMaterial, TacticalTreeImpostorMaterial, TacticalTreeLeafCardMaterial,
@@ -24,28 +26,43 @@ use super::obstacles::tree::{
     procedural_woody_plant_skeleton, procedural_woody_sparse_leaf_card_mesh,
 };
 use super::{
-    PresentedCelestialLighting, ProceduralEnvironmentAssets, bps, grass_cover_mask_image,
-    stable_text_seed, unit_hash,
+    PresentedCelestialLighting, ProceduralEnvironmentAssets, bps, stable_text_seed, unit_hash,
 };
 
 // Ground-scatter orchestration and shared presentation contracts.
 
 mod grass;
+#[cfg(all(feature = "instanced-grass", not(target_family = "wasm")))]
+mod instanced_grass;
+#[cfg(all(feature = "instanced-grass", not(target_family = "wasm")))]
+mod instanced_understory;
 mod litter;
 mod loose_stone;
 mod understory;
 
-pub(in crate::presentation) use grass::{
-    GRASS_PATCH_SPACING, GrassCommunity, GrassCommunityProfile, GrassMeshLod, GrassTopology,
-    TERMINAL_SWARD_FADE_END_METRES, TERMINAL_SWARD_FADE_START_METRES, VISTA_GRASS_PATCH_SPACING,
-    grass_community_at, grass_lod_visibility, grass_patch_mesh, vista_grass_material,
+#[cfg(all(feature = "instanced-grass", not(target_family = "wasm")))]
+pub(in crate::presentation) use instanced_grass::InstancedGrassPlugin;
+#[cfg(all(feature = "instanced-grass", not(target_family = "wasm")))]
+pub(in crate::presentation) use instanced_understory::{
+    TacticalShrubBarkInstancedMaterial, TacticalShrubLeafInstancedMaterial,
 };
+
+pub(in crate::presentation) use grass::{
+    FAR_LOD_GAP_FILL_FRACTION, GRASS_PATCH_SPACING, GrassCommunity, GrassCommunityProfile,
+    GrassMeshLod, GrassTopology, NEAR_TO_FAR_SWARD_FADE_END_METRES,
+    NEAR_TO_FAR_SWARD_FADE_START_METRES, TERMINAL_SWARD_FADE_END_METRES,
+    TERMINAL_SWARD_FADE_START_METRES, VISTA_GRASS_PATCH_SPACING, grass_community_at,
+    grass_lod_visibility, grass_patch_mesh, vista_grass_material,
+};
+#[cfg(any(not(feature = "instanced-grass"), target_family = "wasm"))]
 use grass::{GrassGroundMaskMode, GrassMaterialHandles, grass_material};
 use litter::{
     DRY_LEAF_MESH_VARIANTS, TWIG_MESH_VARIANTS, dry_leaf_patch_mesh, forest_floor_leaf_material,
     twig_patch_mesh,
 };
-pub(crate) use loose_stone::{LooseStonePebblePatch, TacticalPebbleBillboardMaterial};
+pub(crate) use loose_stone::{
+    LooseStonePebblePatch, TacticalPebbleBillboardMaterial, TacticalPebbleMaterial,
+};
 
 /// Real generated litter placements retained independently of batched mesh origins.
 /// Capture diagnostics use this bounded pair to frame dry leaves and twigs without
@@ -71,8 +88,15 @@ pub(crate) struct GroundLitterDiagnostics {
 pub(in crate::presentation) struct WoodyUnderstoryPresentation {
     branches: Option<Handle<Mesh>>,
     cambered_leaves: Option<Handle<Mesh>>,
+    minimal_leaf_cards: Option<Handle<Mesh>>,
+    // Full-coverage leaf cards consumed only by the instanced shrub renderer,
+    // which draws its own leaf-card representation tier. The legacy patch
+    // renderer uses `minimal_leaf_cards`, so this field is dead on wasm/legacy.
+    #[cfg_attr(
+        any(not(feature = "instanced-grass"), target_family = "wasm"),
+        allow(dead_code, reason = "instanced shrub renderer is native-only")
+    )]
     leaf_cards: Option<Handle<Mesh>>,
-    sparse_leaf_cards: Option<Handle<Mesh>>,
     bark: Option<Handle<StandardMaterial>>,
     leaves: Option<Handle<TacticalTreeLeafCardMaterial>>,
 }
@@ -120,8 +144,9 @@ pub(super) fn foliage_material(wind_scale: f32, ground_foliage: bool) -> Tactica
         // reserved future shaping control. Understory cards retain the older
         // crossed-plane deformation path.
         shape: Vec4::ZERO,
-        // Far and vista grass set `quality.x` to select the cheap path before
-        // any interactive ribbon reconstruction or full PBR work begins.
+        // Far and vista grass set `quality.x` to select reduced vertex work
+        // before any interactive curved-ribbon reconstruction begins. Fragment
+        // lighting is selected independently through `quality.z`.
         quality: Vec4::ZERO,
         lighting: Vec3::new(0.35, 0.86, 0.25).normalize().extend(1.0),
         ambient: Vec4::new(1.0, 1.0, 1.0, 0.28),
@@ -136,12 +161,26 @@ pub(super) fn update_grass_interaction(
     mut state: ResMut<GrassInteractionState>,
     mut materials: ResMut<Assets<TacticalFoliageMaterial>>,
 ) {
+    // `Assets::iter_mut` flags every yielded asset as modified, so mutable
+    // walks are reserved for frames that actually change values, and writes
+    // target only the interactive materials via their collected ids.
+    let interactive_ids = |materials: &Assets<TacticalFoliageMaterial>| {
+        materials
+            .iter()
+            .filter(|(_, material)| material.shading.w > 0.5)
+            .map(|(id, _)| id)
+            .collect::<Vec<_>>()
+    };
     let Some(position) = interactors.iter().next().map(GlobalTransform::translation) else {
         state.previous_position = None;
         state.smoothed_velocity = Vec3::ZERO;
-        for (_, material) in materials.iter_mut() {
-            material.interaction = Vec4::ZERO;
-            material.interaction_motion = Vec4::ZERO;
+        if state.written.take().is_some() {
+            for id in interactive_ids(&materials) {
+                if let Some(mut material) = materials.get_mut(id) {
+                    material.interaction = Vec4::ZERO;
+                    material.interaction_motion = Vec4::ZERO;
+                }
+            }
         }
         return;
     };
@@ -153,11 +192,24 @@ pub(super) fn update_grass_interaction(
     let response = 1.0 - (-delta_seconds * 10.0).exp();
     state.smoothed_velocity = state.smoothed_velocity.lerp(velocity, response);
     state.previous_position = Some(position);
+
+    // Idle interactors converge to constants; stop dirtying material assets
+    // once the written values are close enough that no motion is visible.
+    if state
+        .written
+        .is_some_and(|(written_position, written_velocity)| {
+            written_position.distance_squared(position) < 1e-6
+                && written_velocity.distance_squared(state.smoothed_velocity) < 1e-6
+        })
+    {
+        return;
+    }
+
     let speed = state.smoothed_velocity.length();
-    for (_, material) in materials.iter_mut() {
-        if material.shading.w <= 0.5 {
+    for id in interactive_ids(&materials) {
+        let Some(mut material) = materials.get_mut(id) else {
             continue;
-        }
+        };
         material.interaction = position.extend(1.35);
         material.interaction_motion = Vec4::new(
             state.smoothed_velocity.x,
@@ -166,6 +218,7 @@ pub(super) fn update_grass_interaction(
             (0.7 + speed * 0.11).clamp(0.7, 1.35),
         );
     }
+    state.written = Some((position, state.smoothed_velocity));
 }
 
 pub(super) fn update_celestial_material_lighting(
@@ -173,6 +226,7 @@ pub(super) fn update_celestial_material_lighting(
     mut bark_materials: ResMut<Assets<TacticalTreeBarkMaterial>>,
     mut impostor_materials: ResMut<Assets<TacticalTreeImpostorMaterial>>,
     mut pebble_materials: ResMut<Assets<TacticalPebbleBillboardMaterial>>,
+    mut written: Local<Option<(Vec4, Vec4)>>,
     mut foliage_materials: ResMut<Assets<TacticalFoliageMaterial>>,
 ) {
     if !celestial.is_changed() {
@@ -188,20 +242,31 @@ pub(super) fn update_celestial_material_lighting(
     } else {
         Vec3::new(0.25, 0.92, 0.3).normalize()
     };
+    // The presented snapshot refreshes on every replicated environment tick,
+    // but celestial motion is glacial on gameplay timescales. Rewriting the
+    // material assets dirties them and re-queues every tree and pebble, so
+    // skip the write until the change would be visible.
+    let lighting = direction.extend(celestial.material_light_factor);
+    let ambient = celestial
+        .ambient_color
+        .extend(celestial.material_ambient_response);
+    if written.is_some_and(|(written_lighting, written_ambient)| {
+        written_lighting.distance_squared(lighting) < 1e-6
+            && written_ambient.distance_squared(ambient) < 1e-6
+    }) {
+        return;
+    }
+    *written = Some((lighting, ambient));
     for (_, material) in bark_materials.iter_mut() {
-        material.extension.lighting = direction.extend(celestial.material_light_factor);
+        material.extension.lighting = lighting;
     }
     for (_, material) in impostor_materials.iter_mut() {
-        material.lighting = direction.extend(celestial.material_light_factor);
-        material.ambient = celestial
-            .ambient_color
-            .extend(celestial.material_ambient_response);
+        material.lighting = lighting;
+        material.ambient = ambient;
     }
     for (_, material) in pebble_materials.iter_mut() {
-        material.lighting = direction.extend(celestial.material_light_factor);
-        material.ambient = celestial
-            .ambient_color
-            .extend(celestial.material_ambient_response);
+        material.lighting = lighting;
+        material.ambient = ambient;
     }
     for (_, material) in foliage_materials.iter_mut() {
         if material.quality.x > 0.5 {
@@ -222,6 +287,7 @@ pub(super) fn spawn_ground_foliage(
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<TacticalFoliageMaterial>,
     standard_materials: &mut Assets<StandardMaterial>,
+    pebble_materials: &mut Assets<TacticalPebbleMaterial>,
     pebble_billboard_materials: &mut Assets<TacticalPebbleBillboardMaterial>,
     leaf_materials: &mut Assets<TacticalTreeLeafCardMaterial>,
     understory_cache: &mut WoodyUnderstoryPresentationCache,
@@ -232,6 +298,10 @@ pub(super) fn spawn_ground_foliage(
     terrain: &SceneTerrain,
     ground: &SceneGround,
     environment: &SceneEnvironment,
+    #[cfg(all(feature = "instanced-grass", not(target_family = "wasm")))]
+    shrub_bark_materials: &mut Assets<TacticalShrubBarkInstancedMaterial>,
+    #[cfg(all(feature = "instanced-grass", not(target_family = "wasm")))]
+    shrub_leaf_materials: &mut Assets<TacticalShrubLeafInstancedMaterial>,
 ) {
     let canopy = bps(environment.canopy_bps);
     let water = bps(environment.water_bps);
@@ -242,7 +312,10 @@ pub(super) fn spawn_ground_foliage(
     // closed oak canopy suppresses grass well before it suppresses woody
     // understory. Keep the expensive new density in open terrain instead of
     // charging every woodland for meadow-level geometry beneath deep shade.
+    #[cfg(any(not(feature = "instanced-grass"), target_family = "wasm"))]
     let grass_density = grass_scatter_density(canopy, water, cultivation, snow);
+    #[cfg(all(feature = "instanced-grass", not(target_family = "wasm")))]
+    let _ = (water, snow, &images);
     // Equal-area QHD benchmarks show that the full woody hazel/reed-like
     // specimen, rather than the trees themselves, dominates dense woodland
     // and wetland cost. Keep sparse woodland's established occupancy while
@@ -250,8 +323,12 @@ pub(super) fn spawn_ground_foliage(
     // traversable openings and gives every terrain family a comparable GPU
     // budget without reducing the much cheaper canopy-tree population.
     let understory_chance = understory_scatter_chance(canopy, wetland, cultivation);
+    // The playable grass sward itself is generated by `instanced_grass` when
+    // the eidolon renderer is compiled in; only the legacy patch renderer
+    // builds macro-patch meshes, masks, and foliage materials here.
+    #[cfg(any(not(feature = "instanced-grass"), target_family = "wasm"))]
     let (grass_color, grass_dryness) = grass_pigment(environment);
-    let grass_profile = GrassCommunityProfile::from_environment(environment);
+    #[cfg(any(not(feature = "instanced-grass"), target_family = "wasm"))]
     let grass_community_meshes = GrassCommunity::ALL.map(|community| {
         grass::CommunityMeshes::new(|lod, topology| {
             meshes.add(grass_patch_mesh(
@@ -269,11 +346,14 @@ pub(super) fn spawn_ground_foliage(
         understory_cache,
         procedural_assets,
     );
+    #[cfg(any(not(feature = "instanced-grass"), target_family = "wasm"))]
     let grass_wind_scale = 0.16 + bps(environment.weather.wind_speed_bps) * 0.36;
+    #[cfg(any(not(feature = "instanced-grass"), target_family = "wasm"))]
     let grass_mask = images.add(grass_cover_mask_image(
         ground,
         stable_text_seed(&environment.scene_digest),
     ));
+    #[cfg(any(not(feature = "instanced-grass"), target_family = "wasm"))]
     let grass_near_materials = GrassMaterialHandles {
         boundary: materials.add(grass_material(
             grass_wind_scale,
@@ -294,6 +374,7 @@ pub(super) fn spawn_ground_foliage(
             GrassGroundMaskMode::Interior,
         )),
     };
+    #[cfg(any(not(feature = "instanced-grass"), target_family = "wasm"))]
     let grass_far_materials = GrassMaterialHandles {
         boundary: materials.add(grass_material(
             grass_wind_scale,
@@ -314,6 +395,7 @@ pub(super) fn spawn_ground_foliage(
             GrassGroundMaskMode::Interior,
         )),
     };
+    #[cfg(any(not(feature = "instanced-grass"), target_family = "wasm"))]
     let grass_vista_materials = GrassMaterialHandles {
         boundary: materials.add(grass_material(
             grass_wind_scale,
@@ -378,13 +460,13 @@ pub(super) fn spawn_ground_foliage(
     // randomly shrinking/rotating the square footprint opened visible seams.
     // Aligning each patch to the sampled terrain normal keeps the shared plane
     // seated on slopes while its blades retain deterministic local variation.
-    let grass_seed = stable_text_seed(&environment.scene_digest) ^ 0x6772_6173_735f_6c6f;
+    #[cfg(any(not(feature = "instanced-grass"), target_family = "wasm"))]
     grass::spawn(
         commands,
         terrain,
         ground,
-        grass_seed,
-        grass_profile,
+        stable_text_seed(&environment.scene_digest) ^ 0x6772_6173_735f_6c6f,
+        GrassCommunityProfile::from_environment(environment),
         &grass::Assets {
             community_meshes: grass_community_meshes,
             near_materials: grass_near_materials,
@@ -393,6 +475,27 @@ pub(super) fn spawn_ground_foliage(
         },
     );
 
+    let understory_habitat = understory::UnderstoryHabitat {
+        canopy,
+        wetland,
+        cultivation,
+        moisture: bps(environment.weather.ground_moisture_bps),
+    };
+    #[cfg(all(feature = "instanced-grass", not(target_family = "wasm")))]
+    instanced_understory::spawn(
+        commands,
+        shrub_bark_materials,
+        shrub_leaf_materials,
+        standard_materials,
+        leaf_materials,
+        understory_cache,
+        terrain,
+        ground,
+        base_seed,
+        understory_chance,
+        understory_habitat,
+    );
+    #[cfg(any(not(feature = "instanced-grass"), target_family = "wasm"))]
     understory::spawn(
         commands,
         terrain,
@@ -400,12 +503,7 @@ pub(super) fn spawn_ground_foliage(
         understory_cache,
         base_seed,
         understory_chance,
-        understory::UnderstoryHabitat {
-            canopy,
-            wetland,
-            cultivation,
-            moisture: bps(environment.weather.ground_moisture_bps),
-        },
+        understory_habitat,
     );
 
     litter::spawn(
@@ -427,7 +525,7 @@ pub(super) fn spawn_ground_foliage(
     loose_stone::spawn(
         commands,
         meshes,
-        standard_materials,
+        pebble_materials,
         pebble_billboard_materials,
         terrain,
         ground,
@@ -436,12 +534,18 @@ pub(super) fn spawn_ground_foliage(
 }
 
 fn understory_scatter_chance(canopy: f32, wetland: f32, cultivation: f32) -> f32 {
-    (canopy * 0.52 + wetland * 0.3 + cultivation * 0.08).clamp(0.0, 0.24)
+    // This is intentionally about 70% below the original physical-shrub
+    // occupancy. Community multipliers retain dense, readable clumps rather
+    // than turning the reduced population into evenly spaced specimens.
+    (canopy * 0.156 + wetland * 0.09 + cultivation * 0.024).clamp(0.0, 0.075)
 }
 
 fn grass_scatter_density(canopy: f32, water: f32, cultivation: f32, snow: f32) -> f32 {
-    (0.98 - canopy * 0.95 - water * 0.88 + cultivation * 0.04).clamp(0.25, 0.98)
-        * (1.0 - snow * 0.36)
+    // Deep shade and standing water should expose litter, mud, and hummocks;
+    // a quarter-density floor still read as an implausible meadow and made
+    // woodland traversal a wall of overlapping rectangular blade ribbons.
+    (0.98 - canopy * 0.95 - water * 0.88 + cultivation * 0.04).clamp(0.08, 0.98)
+        * (1.0 - snow * 1.25).clamp(0.12, 1.0)
 }
 
 pub(in crate::presentation) fn grass_pigment(environment: &SceneEnvironment) -> (Color, f32) {
@@ -476,9 +580,9 @@ pub(in crate::presentation) fn grass_pigment(environment: &SceneEnvironment) -> 
 pub(in crate::presentation) fn grass_terminal_pigment(environment: &SceneEnvironment) -> Color {
     let linear = grass_pigment(environment).0.to_linear().to_f32_array();
     Color::LinearRgba(LinearRgba::new(
-        linear[0] * 0.22,
-        linear[1] * 0.25,
-        linear[2] * 0.05,
+        linear[0] * 0.34,
+        linear[1] * 0.38,
+        linear[2] * 0.18,
         1.0,
     ))
 }
@@ -524,12 +628,17 @@ pub(super) fn present_ground_scatter(
     mut meshes: ResMut<Assets<Mesh>>,
     mut foliage_materials: ResMut<Assets<TacticalFoliageMaterial>>,
     mut standard_materials: ResMut<Assets<StandardMaterial>>,
+    mut pebble_materials: ResMut<Assets<TacticalPebbleMaterial>>,
     mut pebble_billboard_materials: ResMut<Assets<TacticalPebbleBillboardMaterial>>,
     mut leaf_materials: ResMut<Assets<TacticalTreeLeafCardMaterial>>,
     mut images: ResMut<Assets<Image>>,
     mut understory_cache: ResMut<WoodyUnderstoryPresentationCache>,
     mut ground_foliage_cache: ResMut<GroundFoliagePresentationCache>,
     procedural_assets: Res<ProceduralEnvironmentAssets>,
+    #[cfg(all(feature = "instanced-grass", not(target_family = "wasm")))]
+    mut shrub_bark_materials: ResMut<Assets<TacticalShrubBarkInstancedMaterial>>,
+    #[cfg(all(feature = "instanced-grass", not(target_family = "wasm")))]
+    mut shrub_leaf_materials: ResMut<Assets<TacticalShrubLeafInstancedMaterial>>,
 ) {
     for (entity, scene_id, terrain, ground, environment) in &scenes {
         let started = web_time::Instant::now();
@@ -539,6 +648,7 @@ pub(super) fn present_ground_scatter(
             &mut meshes,
             &mut foliage_materials,
             &mut standard_materials,
+            &mut pebble_materials,
             &mut pebble_billboard_materials,
             &mut leaf_materials,
             &mut understory_cache,
@@ -549,6 +659,10 @@ pub(super) fn present_ground_scatter(
             terrain,
             ground,
             environment,
+            #[cfg(all(feature = "instanced-grass", not(target_family = "wasm")))]
+            &mut shrub_bark_materials,
+            #[cfg(all(feature = "instanced-grass", not(target_family = "wasm")))]
+            &mut shrub_leaf_materials,
         );
         tracing::info!(
             elapsed_ms = started.elapsed().as_millis(),
@@ -599,8 +713,13 @@ fn ensure_understory_presentations(
         let leaves = procedural_woody_plant_leaves(seed, &branches, 0.0, parameters);
         cache.branches = Some(meshes.add(procedural_woody_branch_mesh(&branches, 3)));
         cache.cambered_leaves = Some(meshes.add(procedural_woody_cambered_leaf_mesh(&leaves)));
+        // A single minimal card tier replaces the former full-card and far
+        // sparse-card tiers. It carries the close shrub silhouette only until
+        // the terrain and distant canopy can take over.
+        cache.minimal_leaf_cards =
+            Some(meshes.add(procedural_woody_sparse_leaf_card_mesh(&leaves)));
+        // Full-coverage cards for the instanced shrub renderer's leaf-card tier.
         cache.leaf_cards = Some(meshes.add(procedural_woody_leaf_card_mesh(&leaves)));
-        cache.sparse_leaf_cards = Some(meshes.add(procedural_woody_sparse_leaf_card_mesh(&leaves)));
         cache.bark = Some(materials.add(StandardMaterial {
             base_color: bark_color,
             perceptual_roughness: 0.96,
@@ -687,6 +806,10 @@ pub(crate) struct GrassInteractor;
 pub(in crate::presentation) struct GrassInteractionState {
     previous_position: Option<Vec3>,
     smoothed_velocity: Vec3,
+    /// Last values written to the interactive materials, to skip redundant
+    /// asset writes (each write re-uploads the uniform and re-queues every
+    /// entity using the material).
+    written: Option<(Vec3, Vec3)>,
 }
 
 const FOLIAGE_SHADER: &str = "shaders/tactical_foliage.wgsl";

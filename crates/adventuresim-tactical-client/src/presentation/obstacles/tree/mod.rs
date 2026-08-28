@@ -32,7 +32,7 @@ pub(crate) use materials::{
 pub(in crate::presentation) use materials::{
     TacticalTreeImpostorMaterial, beech_aggregate_bark_material, beech_bark_material,
     beech_leaf_material, blackthorn_leaf_material, hawthorn_leaf_material, hazel_leaf_material,
-    leaf_material, update_tree_leaf_wind,
+    leaf_material,
 };
 pub(in crate::presentation) use presentation::canopy_competition;
 pub(in crate::presentation) use presentation::{

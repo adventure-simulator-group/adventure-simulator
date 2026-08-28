@@ -343,6 +343,133 @@ pub fn bootstrap_development_world(
     Ok(())
 }
 
+/// Reject a dev-bootstrap call whose token does not match the compiled
+/// capability. Shared by every split bootstrap reducer so the granular seed
+/// path is gated exactly like [`bootstrap_development_world`].
+fn require_dev_bootstrap_token(bootstrap_token: &str) -> Result<(), String> {
+    if !adventuresim_core::simulation_security::simulation_bootstrap_authorized(
+        COMPILED_DEV_BOOTSTRAP_TOKEN,
+        bootstrap_token,
+    ) {
+        return Err("Development bootstrap is disabled or unauthorized".into());
+    }
+    Ok(())
+}
+
+/// Settlement ids in a stable, id-sorted order so a caller can drive
+/// per-settlement seeding by index across separate transactions.
+fn sorted_settlement_ids(ctx: &ReducerContext) -> Vec<String> {
+    let mut ids: Vec<String> = ctx.db.settlement().iter().map(|s| s.id).collect();
+    ids.sort();
+    ids
+}
+
+/// First split of [`bootstrap_development_world`]: seed geography, settlements,
+/// and the errantry demo chapter, WITHOUT materializing per-settlement
+/// strategic activity (that expensive work is done by
+/// [`dev_bootstrap_settlement_activity`]). Kept under the per-reducer compute
+/// budget so it can run as its own transaction.
+#[reducer]
+pub fn dev_bootstrap_base(ctx: &ReducerContext, bootstrap_token: String) -> Result<(), String> {
+    require_dev_bootstrap_token(&bootstrap_token)?;
+    seed_world_rows(ctx, true, false)?;
+    Ok(())
+}
+
+/// Second split of [`bootstrap_development_world`]: materialize strategic
+/// activity for a single settlement, addressed by its index into the
+/// id-sorted settlement list. Out-of-range indices are a no-op so the caller
+/// can loop `0..count` without racing the exact settlement total. Each call is
+/// its own transaction, keeping the heavy per-settlement work under budget.
+///
+/// `quest_batch` caps how many NEW quests are generated on this call (0 means
+/// "no cap"). The cheap idempotent ensures (smith, residence, population,
+/// incidents, recruiting) run every call; passing a small `quest_batch` and
+/// repeating the call lets a settlement whose full quest generation would
+/// exceed the compute budget be filled across several transactions.
+#[reducer]
+pub fn dev_bootstrap_settlement_activity(
+    ctx: &ReducerContext,
+    bootstrap_token: String,
+    index: u32,
+) -> Result<(), String> {
+    require_dev_bootstrap_token(&bootstrap_token)?;
+    let ids = sorted_settlement_ids(ctx);
+    let Some(settlement_id) = ids.get(index as usize) else {
+        return Ok(());
+    };
+    // One settlement's full activity is well under the per-reducer budget, so a
+    // single call materializes all of its quests (`quest_batch == 0` = no cap);
+    // this avoids re-running the idempotent population/incident work per quest.
+    ensure_settlement_activity_batched(ctx, settlement_id, 0)?;
+    crate::repair::ensure_settlement_smith(ctx, settlement_id);
+    Ok(())
+}
+
+/// The number of discrete finalize steps [`dev_bootstrap_finalize`] exposes;
+/// a caller drives `0..DEV_BOOTSTRAP_FINALIZE_STEPS` to complete the world.
+pub const DEV_BOOTSTRAP_FINALIZE_STEPS: u32 = 7;
+
+/// Final split of [`bootstrap_development_world`]: everything after the world
+/// and its strategic activity - the demo characters, social demo, and the
+/// development scenario gallery. Each `step` runs one sub-seed as its own
+/// transaction so no single call exceeds the per-reducer compute budget; the
+/// union of steps `0..DEV_BOOTSTRAP_FINALIZE_STEPS` reproduces the tail of
+/// `bootstrap_development_world` exactly. Every sub-seed is idempotent, and an
+/// out-of-range `step` is a no-op so the caller can loop without racing.
+#[reducer]
+pub fn dev_bootstrap_finalize(
+    ctx: &ReducerContext,
+    bootstrap_token: String,
+) -> Result<(), String> {
+    require_dev_bootstrap_token(&bootstrap_token)?;
+    // The demo characters are individually cheap, so one call seeds them all.
+    // The development scenario gallery stays separate (via `dev_bootstrap_gallery`
+    // / `dev_bootstrap_gallery_validate`) because it exceeds the budget alone.
+    crate::disease::seed_sick_character(ctx)?;
+    crate::character::seed_damaged_character(ctx)?;
+    crate::character::seed_religion_scholar_character(ctx)?;
+    crate::character::seed_bestiary_scholar_character(ctx)?;
+    crate::social::seed_social_demo(ctx)?;
+    crate::character::seed_herbalism_demo_character(ctx)?;
+    Ok(())
+}
+
+/// Materialize one development-gallery item (see `materialize_gallery_item`).
+/// The whole gallery is too heavy for a single reducer transaction, so callers
+/// invoke this with `index` 0, 1, 2, ... until a call materializes nothing new,
+/// then run `dev_bootstrap_gallery_validate` once. Idempotent per item.
+#[reducer]
+pub fn dev_bootstrap_gallery(
+    ctx: &ReducerContext,
+    bootstrap_token: String,
+    offset: u32,
+    count: u32,
+) -> Result<(), String> {
+    require_dev_bootstrap_token(&bootstrap_token)?;
+    // Materialize a contiguous batch of gallery items in one transaction (a
+    // batch of several stays well under the budget); stop early once past the
+    // end so an over-long final batch is harmless.
+    let start = offset as usize;
+    for index in start..start.saturating_add(count as usize) {
+        if !materialize_gallery_item(ctx, index)? {
+            break;
+        }
+    }
+    Ok(())
+}
+
+/// Run the gallery postcondition check once every item has been materialized by
+/// `dev_bootstrap_gallery`. Fails if any scenario lacks its primary character.
+#[reducer]
+pub fn dev_bootstrap_gallery_validate(
+    ctx: &ReducerContext,
+    bootstrap_token: String,
+) -> Result<(), String> {
+    require_dev_bootstrap_token(&bootstrap_token)?;
+    validate_gallery_postcondition(ctx)
+}
+
 /// Seed a standalone tactical mission: a solo party occupying a typed case
 /// site with a bound hostile group, mission, tactical-server request, and
 /// its authorized claim.
@@ -354,6 +481,63 @@ pub fn bootstrap_development_world(
 /// launch the tactical server with (as `ADVENTURESIM_TACTICAL_CLAIM`); only
 /// its hash is stored, mirroring [`crate::tactical::authorize_tactical_server_claim`].
 /// Gated by the same development capability as [`bootstrap_development_world`].
+fn configure_animation_lab_enemies(
+    ctx: &ReducerContext,
+    hostile_group_id: &str,
+) -> Result<(), String> {
+    use adventuresim_core::starting_character::StartingSlot;
+    use adventuresim_core::tactical_fixture::AnimationLabEnemyRole;
+
+    const PADDED_BASE: &[(&str, StartingSlot)] = &[
+        ("quilted_sleeve", StartingSlot::LeftArm),
+        ("quilted_sleeve", StartingSlot::RightArm),
+        ("arming_cap", StartingSlot::Head),
+        ("arming_doublet", StartingSlot::Chest),
+        ("padded_skirt", StartingSlot::Stomach),
+        ("padded_chausses", StartingSlot::LeftLeg),
+        ("padded_chausses", StartingSlot::RightLeg),
+    ];
+
+    let enemy_ids = crate::world_actor::context_character_ids(ctx, hostile_group_id);
+    if enemy_ids.len() != AnimationLabEnemyRole::ALL.len() {
+        return Err(format!(
+            "Animation lab requires exactly {} enemies, got {}",
+            AnimationLabEnemyRole::ALL.len(),
+            enemy_ids.len()
+        ));
+    }
+    for (character_id, role) in enemy_ids.into_iter().zip(AnimationLabEnemyRole::ALL) {
+        let mut character = ctx
+            .db
+            .character()
+            .id()
+            .find(character_id)
+            .ok_or("Animation lab enemy disappeared")?;
+        character.name = role.name().into();
+        ctx.db.character().id().update(character);
+
+        let mut loadout = PADDED_BASE.to_vec();
+        match role {
+            AnimationLabEnemyRole::Passive | AnimationLabEnemyRole::Dodger => {}
+            AnimationLabEnemyRole::ShieldBlocker => {
+                loadout.push(("buckler", StartingSlot::LeftHand));
+            }
+            AnimationLabEnemyRole::DemiLancer => {
+                loadout.extend([
+                    ("morion", StartingSlot::Head),
+                    ("cuirass", StartingSlot::Chest),
+                    ("tassets", StartingSlot::Stomach),
+                    ("vambrace", StartingSlot::LeftArm),
+                    ("vambrace", StartingSlot::RightArm),
+                ]);
+            }
+        }
+        crate::character::replace_development_loadout(ctx, character_id, &loadout)?;
+        crate::character::add_and_equip_basic_clothing(ctx, character_id)?;
+    }
+    Ok(())
+}
+
 #[reducer]
 pub fn seed_standalone_tactical_mission(
     ctx: &ReducerContext,
@@ -387,12 +571,22 @@ pub fn seed_standalone_tactical_mission(
     }
     adventuresim_core::mission::MissionId::new(mission_id.clone()).map_err(str::to_string)?;
 
+    if !ctx
+        .db
+        .settlement()
+        .iter()
+        .any(|settlement| settlement.scene_key == scene_key)
+    {
+        seed_tactical_host_world(ctx)?;
+    }
     if ctx.db.character().id().find(character_id).is_none() {
         let default =
             adventuresim_core::starting_character::default_character_with_id(character_id);
         crate::character::insert_starting_character(ctx, &default)?;
     }
     let party_id = create_solo_party_for_character(ctx, character_id)?;
+    crate::tactical::retire_interrupted_standalone_server_for_character(ctx, character_id)?;
+    retire_interrupted_standalone_requests(ctx, character_id, &party_id, &mission_id)?;
 
     let settlement = ctx
         .db
@@ -480,6 +674,9 @@ pub fn seed_standalone_tactical_mission(
         &group.enemy_type,
         group.enemy_count,
     )?;
+    if mission_id.starts_with("mission:animation-") {
+        configure_animation_lab_enemies(ctx, &hostile_group_id)?;
+    }
     let objective_id = format!("objective:standalone:{mission_id}");
     if ctx.db.case_authority().id().find(&case_id).is_none() {
         use adventuresim_core::case::{
@@ -518,7 +715,11 @@ pub fn seed_standalone_tactical_mission(
         .ok_or("Party not found")?;
     party.current_settlement_id = None;
     party.current_case_site_id = Some(case_site.id.clone());
-    ctx.db.party_authority().id().update(party);
+    if party.wilderness_canonical_anchor_minute.is_none() {
+        party.wilderness_canonical_anchor_minute = Some(crate::time::refresh_clock(ctx)?);
+        party.wilderness_elapsed_minutes = 0;
+    }
+    ctx.db.party_authority().id().update(party.clone());
     crate::investigation::set_character_case_site(
         ctx,
         character_id,
@@ -631,15 +832,10 @@ pub fn seed_standalone_tactical_mission(
             requested_by: character_id,
             longitude_e7: case_site.longitude_e7,
             latitude_e7: case_site.latitude_e7,
-            absolute_minute: ctx
-                .db
-                .character_time()
-                .character_id()
-                .find(character_id)
-                .map_or(
-                    adventuresim_core::strategic_time::WORLD_START_MINUTE,
-                    |time| time.minutes,
-                ),
+            absolute_minute: party_wilderness_environment_minutes(&party)
+                .map_or(adventuresim_core::strategic_time::WORLD_START_MINUTE, |value| value.0),
+            lunar_phase_minute: party_wilderness_environment_minutes(&party)
+                .map_or(adventuresim_core::strategic_time::WORLD_START_MINUTE, |value| value.1),
             expected_party_members,
             authorized_party_member_ids,
             required_enemy_kills,
@@ -661,9 +857,60 @@ pub fn seed_standalone_tactical_mission(
     Ok(())
 }
 
+fn retire_interrupted_standalone_requests(
+    ctx: &ReducerContext,
+    character_id: u64,
+    party_id: &str,
+    next_mission_id: &str,
+) -> Result<(), String> {
+    let requests: Vec<_> = ctx
+        .db
+        .tactical_server_request_authority()
+        .iter()
+        .filter(|request| {
+            request.requested_by == character_id
+                && request.party_id == party_id
+                && request.mission_id != next_mission_id
+        })
+        .collect();
+    for request in requests {
+        let mission = ctx
+            .db
+            .mission_authority()
+            .id()
+            .find(&request.mission_id)
+            .ok_or("Interrupted tactical request has no mission authority")?;
+        if !mission.case_id.starts_with("case:standalone:") {
+            return Err("Refusing to retire a non-standalone tactical request".into());
+        }
+        ctx.db
+            .tactical_server_request_authority()
+            .mission_id()
+            .delete(&request.mission_id);
+        ctx.db
+            .tactical_server_claim()
+            .mission_id()
+            .delete(&request.mission_id);
+        fail_bound_mission_attempt(ctx, &request.mission_id)?;
+    }
+    Ok(())
+}
+
 pub(crate) fn seed_world(
     ctx: &ReducerContext,
     include_errantry_demo_chapter: bool,
+) -> Result<(), String> {
+    seed_world_rows(ctx, include_errantry_demo_chapter, true)
+}
+
+fn seed_tactical_host_world(ctx: &ReducerContext) -> Result<(), String> {
+    seed_world_rows(ctx, false, false)
+}
+
+fn seed_world_rows(
+    ctx: &ReducerContext,
+    include_errantry_demo_chapter: bool,
+    materialize_strategic_activity: bool,
 ) -> Result<(), String> {
     const DEMO_SOURCES: &str = "- **Fabelgeist renderer demo:** Hand-authored geographic fixture for exercising map and terrain-routing UI.";
 
@@ -881,6 +1128,10 @@ pub(crate) fn seed_world(
         }
     }
 
+    if !materialize_strategic_activity {
+        return Ok(());
+    }
+
     let settlement_ids: Vec<_> = ctx
         .db
         .settlement()
@@ -920,6 +1171,20 @@ fn settlement_activity_stage_error(
 fn ensure_settlement_activity_inner(
     ctx: &ReducerContext,
     settlement_id: &str,
+) -> Result<(), String> {
+    ensure_settlement_activity_batched(ctx, settlement_id, 0)
+}
+
+/// Like [`ensure_settlement_activity_inner`], but generates at most
+/// `quest_batch` new quests when `quest_batch > 0` (0 means "no cap", the
+/// behavior [`ensure_settlement_activity_inner`] relies on). The cheap
+/// idempotent ensures run unconditionally; only quest generation is throttled,
+/// letting a heavy settlement be filled across several transactions while the
+/// `active..target` loop still converges on the same final quest count.
+fn ensure_settlement_activity_batched(
+    ctx: &ReducerContext,
+    settlement_id: &str,
+    quest_batch: u32,
 ) -> Result<(), String> {
     // World import writes only canonical settlement facts. These derived
     // service rows are instead materialized when settlement activity is used.
@@ -1003,7 +1268,11 @@ fn ensure_settlement_activity_inner(
             )
         })?;
     let active = active_contracts.saturating_add(active_generated_cases);
-    for _ in active..settlement_activity_target(settlement_id) {
+    let target = settlement_activity_target(settlement_id);
+    for (generated, _) in (active..target).enumerate() {
+        if quest_batch != 0 && generated as u32 >= quest_batch {
+            break;
+        }
         generate_quest_for_settlement(ctx, settlement_id).map_err(|error| {
             settlement_activity_stage_error(settlement_id, "quest generation", error)
         })?;
@@ -2361,9 +2630,9 @@ mod developer_quest_source_tests {
             )
         );
 
-        let source = include_str!("mission_bootstrap.rs");
+        let source = crate::production_source(include_str!("mission_bootstrap.rs"));
         let seed = source
-            .split("pub(crate) fn seed_world")
+            .split("fn seed_world_rows")
             .nth(1)
             .unwrap()
             .split("pub fn ensure_settlement_activity")
@@ -2379,7 +2648,7 @@ mod developer_quest_source_tests {
             .find("ensure_settlement_activity_inner")
             .expect("canonical representative population seeding");
         assert!(canonical_chapter < settlement_insert && settlement_insert < population);
-        let population_source = include_str!("../settlement_population.rs");
+        let population_source = crate::production_source(include_str!("../settlement_population.rs"));
         let representative_seed = population_source
             .split("for organization in adventuresim_core::organization::organizations_for_chapter")
             .nth(1)
@@ -2390,6 +2659,42 @@ mod developer_quest_source_tests {
         assert!(representative_seed.contains("organization_representative_id"));
         assert!(representative_seed.contains("representative.organization_id = organization.id"));
         assert!(representative_seed.contains("\"organization-representative\""));
+
+        let standalone = source
+            .split("pub fn seed_standalone_tactical_mission")
+            .nth(1)
+            .unwrap()
+            .split("pub(crate) fn seed_world")
+            .next()
+            .unwrap();
+        assert!(standalone.contains("seed_tactical_host_world(ctx)"));
+        let create_party = standalone
+            .find("create_solo_party_for_character")
+            .expect("standalone party creation");
+        let retire_server = standalone
+            .find("retire_interrupted_standalone_server_for_character")
+            .expect("interrupted server retirement");
+        let retire_request = standalone
+            .find("retire_interrupted_standalone_requests")
+            .expect("interrupted request retirement");
+        let new_case_site = standalone
+            .find("let case_site_id")
+            .expect("fresh standalone case site");
+        assert!(create_party < retire_server);
+        assert!(retire_server < retire_request);
+        assert!(retire_request < new_case_site);
+        assert!(
+            standalone.find("seed_tactical_host_world(ctx)").unwrap()
+                < standalone.find("ctx.db.character().id()").unwrap()
+        );
+        let tactical_host = source
+            .split("fn seed_tactical_host_world")
+            .nth(1)
+            .unwrap()
+            .split("fn seed_world_rows")
+            .next()
+            .unwrap();
+        assert!(tactical_host.contains("seed_world_rows(ctx, false, false)"));
 
         let bootstrap = source
             .split("pub fn bootstrap_development_world")
@@ -2420,8 +2725,8 @@ mod developer_quest_source_tests {
             include_str!("../simulation.rs").contains("crate::strategic::seed_world(ctx, false)")
         );
 
-        let challenges = include_str!("challenges.rs");
-        let gallery = include_str!("development_scenarios.rs");
+        let challenges = crate::production_source(include_str!("challenges.rs"));
+        let gallery = crate::production_source(include_str!("development_scenarios.rs"));
         assert!(!challenges.contains("pub fn load_puzzle_demo"));
         assert!(gallery.contains("ErrantryLaunch::DirectDemoCamp(kind)"));
         assert!(gallery.contains("PuzzleKind::ResourceAllocation"));
@@ -2584,7 +2889,7 @@ mod developer_quest_source_tests {
 
     #[test]
     fn hearing_referred_testimony_triggers_passive_insight_after_persistence() {
-        let source = STRATEGIC_SOURCE;
+        let source = crate::production_source(include_str!("dialogue_effects.rs"));
         let effect = source
             .split("adventuresim_dialogue::Effect::ReceiveReferredTestimony =>")
             .nth(1)
@@ -2644,7 +2949,7 @@ mod developer_quest_source_tests {
 
     #[test]
     fn organization_effects_resolve_only_from_the_bound_live_representative() {
-        let source = STRATEGIC_SOURCE;
+        let source = crate::production_source(include_str!("dialogue_effects.rs"));
         let resolver = source
             .split("fn exact_organization_representative")
             .nth(1)
@@ -2655,7 +2960,7 @@ mod developer_quest_source_tests {
         assert!(resolver.contains("organization_representative_id"));
         assert!(resolver.contains("session.settlement_id"));
         assert!(resolver.contains("session.location_id"));
-        assert!(resolver.contains("\"organization-representative\""));
+        assert!(resolver.contains("exact_representative_fields_match"));
 
         let effects = source
             .split("adventuresim_dialogue::Effect::JoinOrganization =>")

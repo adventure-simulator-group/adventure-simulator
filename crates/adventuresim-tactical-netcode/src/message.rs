@@ -6,9 +6,9 @@ use serde::{Deserialize, Serialize};
 ///
 /// This is a simplified version of [`DefenderResponse`] that omits
 /// `input_reflex` — the server computes reflex from timestamp delta.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Event, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Event, Serialize, Deserialize)]
 pub enum DefendRequest {
-    Dodge,
+    Dodge { direction: Vec2 },
     Roll,
     Parry,
 }
@@ -43,9 +43,19 @@ pub struct SceneVistaBundle {
     pub lods: Vec<VistaLod>,
 }
 
+/// Canonical tuning selected by the tactical server for this process lifetime.
+/// Clients consume this snapshot instead of loading an independent local file.
+#[derive(Debug, Clone, Event, Serialize, Deserialize)]
+pub struct TacticalCombatConfigSnapshot(pub TacticalCombatConfig);
+
 #[derive(Debug, Clone, Copy, Default, Event, Serialize, Deserialize, Reflect)]
 #[reflect(Default)]
 pub struct PlayerInputRequest {
+    /// Client fixed tick that sampled this complete input state. The server
+    /// rejects older samples so reordering on the unreliable channel cannot
+    /// restore stale movement or look intent. It is also the reconciliation
+    /// acknowledgement key for future client rollback.
+    pub simulation_tick: u32,
     pub movement: Option<Vec2>,
     pub look: Vec2,
     pub jump: JumpCommand,
@@ -253,27 +263,23 @@ mod equipment_action_mapping_tests {
     }
 }
 
-/// Both melee phases share one mapped ordered stream, so a completion cannot
-/// overtake its server-observed start.
 #[derive(Debug, Clone, Copy, Event, Serialize, Deserialize, MapEntities)]
-pub enum MeleeActionRequest {
-    Start {
-        strike_family: StrikeFamily,
-        hand: AttackHand,
-    },
-    Complete {
-        #[entities]
-        target: Entity,
-        body_part: BodyPart,
-        reported_precision: f32,
-    },
+pub struct MeleeActionRequest {
+    pub strike_family: StrikeFamily,
+    pub hand: AttackHand,
+    #[entities]
+    pub target: Option<Entity>,
+    pub body_part: Option<BodyPart>,
 }
 
 /// Both ranged phases share one mapped ordered stream. A completion may omit
 /// a target when the client-fired shot missed, but it still consumes ammo.
 #[derive(Debug, Clone, Copy, Event, Serialize, Deserialize, MapEntities)]
 pub enum RangedActionRequest {
-    Start,
+    Start {
+        #[entities]
+        target: Option<Entity>,
+    },
     CompleteMiss,
     CompleteHit {
         #[entities]
@@ -281,6 +287,47 @@ pub enum RangedActionRequest {
         body_part: BodyPart,
         reported_precision: f32,
     },
+}
+
+#[cfg(test)]
+mod combat_action_mapping_tests {
+    use super::{MeleeActionRequest, RangedActionRequest};
+    use adventuresim_tactical_core::prelude::{AttackHand, BodyPart, StrikeFamily};
+    use bevy::ecs::entity::MapEntities;
+    use bevy::prelude::Entity;
+
+    #[test]
+    fn attack_starts_map_their_acquired_target() {
+        let target = Entity::from_bits(21);
+        let mapped = Entity::from_bits(22);
+        let mut melee = MeleeActionRequest {
+            strike_family: StrikeFamily::Swing,
+            hand: AttackHand::Main,
+            target: Some(target),
+            body_part: Some(BodyPart::Chest),
+        };
+        let mut ranged = RangedActionRequest::Start {
+            target: Some(target),
+        };
+
+        melee.map_entities(&mut (target, mapped));
+        ranged.map_entities(&mut (target, mapped));
+
+        assert!(matches!(
+            melee,
+            MeleeActionRequest {
+                target: Some(found),
+                body_part: Some(BodyPart::Chest),
+                ..
+            } if found == mapped
+        ));
+        assert!(matches!(
+            ranged,
+            RangedActionRequest::Start {
+                target: Some(found)
+            } if found == mapped
+        ));
+    }
 }
 
 #[derive(Debug, Clone, Event, Serialize, Deserialize, MapEntities)]
@@ -293,6 +340,12 @@ pub struct SuccessfulAttackResponse {
     pub result: AttackResult,
     pub flanking: f32,
     pub defender_response: DefenderResponse,
+    /// Entity whose controller received `impact_velocity_change`.
+    #[entities]
+    pub impact_recipient: Entity,
+    /// Server-applied change in world-space linear velocity, in metres per
+    /// second. Presentation consumes the identical value for secondary motion.
+    pub impact_velocity_change: Vec3,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

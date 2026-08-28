@@ -671,7 +671,7 @@ pub fn consume_inventory_row(ctx: &ReducerContext, id: u64) -> Result<(), String
 mod tests {
     #[test]
     fn alcohol_candidates_and_consumption_observe_effective_container_custody() {
-        let source = include_str!("alcohol.rs");
+        let source = crate::production_source(include_str!("alcohol.rs"));
         assert!(source.matches("row_is_fireplace_rooted").count() >= 6);
         let consume = source
             .split("fn consume_stack")
@@ -680,7 +680,7 @@ mod tests {
             .split("fn consume_for_ethanol")
             .next()
             .unwrap();
-        assert!(consume.contains("reconcile_consumed_row(ctx, kind, row_id, false)"));
-        assert!(consume.contains("reconcile_consumed_row(ctx, kind, row_id, true)"));
+        assert!(consume.contains("reconcile_consumed_row(ctx, scope, row_id, false)"));
+        assert!(consume.contains("reconcile_consumed_row(ctx, scope, row_id, true)"));
     }
 }

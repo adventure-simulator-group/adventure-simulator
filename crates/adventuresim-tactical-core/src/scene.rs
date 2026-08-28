@@ -236,6 +236,11 @@ pub struct SceneTerrain {
     heightmap: Vec<f32>,
     width: usize,
     scale: f32,
+    /// Number of authoritative sample intervals represented by one vertex in
+    /// the coarse render LOD. Collision and spatial queries always use every
+    /// sample; this stride only avoids submitting the full-resolution field
+    /// outside the camera-local detail patch.
+    coarse_stride: usize,
 }
 
 impl SceneTerrain {
@@ -263,6 +268,7 @@ impl SceneTerrain {
             heightmap,
             width: grid_width,
             scale,
+            coarse_stride: 1,
         })
     }
 
@@ -282,7 +288,52 @@ impl SceneTerrain {
             width,
             heightmap,
             scale,
+            coarse_stride: 1,
         }
+    }
+
+    /// Refines every coarse cell by an integer factor and evaluates one
+    /// authoritative height function at the resulting vertices. The original
+    /// grid remains implicit as the coarse render LOD through `coarse_stride`.
+    pub fn refined(
+        &self,
+        target_spacing: f32,
+        height_at: impl Fn(Vec2, f32) -> f32,
+    ) -> Option<Self> {
+        if !target_spacing.is_finite() || target_spacing <= 0.0 {
+            return None;
+        }
+        let subdivisions = (self.scale / target_spacing).ceil().max(1.0) as usize;
+        let cells_x = self
+            .grid_width()
+            .checked_sub(1)?
+            .checked_mul(subdivisions)?;
+        let cells_z = self
+            .grid_depth()
+            .checked_sub(1)?
+            .checked_mul(subdivisions)?;
+        let width = cells_x.checked_add(1)?;
+        let depth = cells_z.checked_add(1)?;
+        let scale = self.scale / subdivisions as f32;
+        let half_extent = Vec2::new(self.width(), self.depth()) * 0.5;
+        let mut heights = Vec::with_capacity(width.checked_mul(depth)?);
+        for z in 0..depth {
+            for x in 0..width {
+                let point = Vec2::new(x as f32 * scale, z as f32 * scale) - half_extent;
+                let base_height = self.height_at(point)?;
+                let height = height_at(point, base_height);
+                if !height.is_finite() {
+                    return None;
+                }
+                heights.push(height);
+            }
+        }
+        Some(Self {
+            heightmap: heights,
+            width,
+            scale,
+            coarse_stride: subdivisions,
+        })
     }
 
     pub fn grid_width(&self) -> usize {
@@ -305,6 +356,60 @@ impl SceneTerrain {
         self.scale
     }
 
+    pub fn coarse_grid_scale(&self) -> f32 {
+        self.scale * self.coarse_stride.max(1) as f32
+    }
+
+    /// Constrains every cardinal edge to a maximum grade while retaining the
+    /// same immutable dimensions and LOD relationship.
+    pub fn constrain_max_grade(&mut self, maximum_grade: f32) -> bool {
+        if !maximum_grade.is_finite() || maximum_grade < 0.0 {
+            return false;
+        }
+        let maximum_step = self.scale * maximum_grade;
+        for _ in 0..4 {
+            for z in 0..self.grid_depth() {
+                for x in 1..self.grid_width() {
+                    self.clamp_height_pair(
+                        z * self.width + x - 1,
+                        z * self.width + x,
+                        maximum_step,
+                    );
+                }
+                for x in (0..self.grid_width() - 1).rev() {
+                    self.clamp_height_pair(
+                        z * self.width + x + 1,
+                        z * self.width + x,
+                        maximum_step,
+                    );
+                }
+            }
+            for x in 0..self.grid_width() {
+                for z in 1..self.grid_depth() {
+                    self.clamp_height_pair(
+                        (z - 1) * self.width + x,
+                        z * self.width + x,
+                        maximum_step,
+                    );
+                }
+                for z in (0..self.grid_depth() - 1).rev() {
+                    self.clamp_height_pair(
+                        (z + 1) * self.width + x,
+                        z * self.width + x,
+                        maximum_step,
+                    );
+                }
+            }
+        }
+        true
+    }
+
+    fn clamp_height_pair(&mut self, source: usize, target: usize, maximum_step: f32) {
+        let source_height = self.heightmap[source];
+        self.heightmap[target] = self.heightmap[target]
+            .clamp(source_height - maximum_step, source_height + maximum_step);
+    }
+
     pub fn minimum_height(&self) -> f32 {
         self.heightmap.iter().copied().fold(f32::INFINITY, f32::min)
     }
@@ -317,14 +422,20 @@ impl SceneTerrain {
     }
 
     pub fn height_at(&self, pos: Vec2) -> Option<f32> {
-        self.surface_at(pos).map(|sample| sample.0)
+        self.surface_at_stride(pos, 1).map(|sample| sample.0)
+    }
+
+    /// Samples the triangle surface used by the coarse render LOD.
+    pub fn coarse_height_at(&self, pos: Vec2) -> Option<f32> {
+        self.surface_at_stride(pos, self.coarse_stride.max(1))
+            .map(|sample| sample.0)
     }
 
     /// Samples the same triangle surface used by the rendered mesh and
     /// authoritative collider. Returning the triangle normal alongside the
     /// height keeps terrain IK from fitting a foot to a different, bilinear
     /// surface than the one visible beneath it.
-    fn surface_at(&self, pos: Vec2) -> Option<(f32, Vec3)> {
+    fn surface_at_stride(&self, pos: Vec2, stride: usize) -> Option<(f32, Vec3)> {
         if self.scale <= 0.0 || self.grid_width() < 2 || self.grid_depth() < 2 {
             return None;
         }
@@ -340,28 +451,39 @@ impl SceneTerrain {
         }
         // The final vertex has no cell to its right/below. Sample its adjacent
         // cell with a coordinate of one so edges remain well-defined.
-        let min_x = (grid.x.floor() as usize).min(self.grid_width() - 2);
-        let min_y = (grid.y.floor() as usize).min(self.grid_depth() - 2);
-        let fraction = grid - Vec2::new(min_x as f32, min_y as f32);
+        let stride = stride.max(1);
+        let last_cell_x = ((self.grid_width() - 2) / stride) * stride;
+        let last_cell_y = ((self.grid_depth() - 2) / stride) * stride;
+        let min_x = ((grid.x / stride as f32).floor() as usize * stride).min(last_cell_x);
+        let min_y = ((grid.y / stride as f32).floor() as usize * stride).min(last_cell_y);
+        let max_x = (min_x + stride).min(self.grid_width() - 1);
+        let max_y = (min_y + stride).min(self.grid_depth() - 1);
+        let cell_scale_x = (max_x - min_x) as f32 * self.scale;
+        let cell_scale_z = (max_y - min_y) as f32 * self.scale;
+        let fraction = Vec2::new(
+            (grid.x - min_x as f32) / (max_x - min_x) as f32,
+            (grid.y - min_y as f32) / (max_y - min_y) as f32,
+        );
 
         let x0y0 = *self.heightmap.get(min_x + min_y * self.width)?;
-        let x1y0 = *self.heightmap.get(min_x + 1 + min_y * self.width)?;
-        let x0y1 = *self.heightmap.get(min_x + (min_y + 1) * self.width)?;
-        let x1y1 = *self.heightmap.get(min_x + 1 + (min_y + 1) * self.width)?;
+        let x1y0 = *self.heightmap.get(max_x + min_y * self.width)?;
+        let x0y1 = *self.heightmap.get(min_x + max_y * self.width)?;
+        let x1y1 = *self.heightmap.get(max_x + max_y * self.width)?;
 
-        let (height, tangent_x, tangent_z) = if fraction.x >= fraction.y {
-            // Matches [x0y0, x1y1, x1y0] in `mesh_components`.
+        let (height, tangent_x, tangent_z) = if fraction.x + fraction.y <= 1.0 {
+            // Matches [x0y0, x0y1, x1y0] in `mesh_components_with_stride` and
+            // Avian's default heightfield subdivision.
             (
-                x0y0 + (x1y0 - x0y0) * fraction.x + (x1y1 - x1y0) * fraction.y,
-                Vec3::new(self.scale, x1y0 - x0y0, 0.0),
-                Vec3::new(0.0, x1y1 - x1y0, self.scale),
+                x0y0 + (x1y0 - x0y0) * fraction.x + (x0y1 - x0y0) * fraction.y,
+                Vec3::new(cell_scale_x, x1y0 - x0y0, 0.0),
+                Vec3::new(0.0, x0y1 - x0y0, cell_scale_z),
             )
         } else {
-            // Matches [x0y0, x0y1, x1y1] in `mesh_components`.
+            // Matches [x1y0, x0y1, x1y1].
             (
-                x0y0 + (x1y1 - x0y1) * fraction.x + (x0y1 - x0y0) * fraction.y,
-                Vec3::new(self.scale, x1y1 - x0y1, 0.0),
-                Vec3::new(0.0, x0y1 - x0y0, self.scale),
+                x1y1 + (x0y1 - x1y1) * (1.0 - fraction.x) + (x1y0 - x1y1) * (1.0 - fraction.y),
+                Vec3::new(cell_scale_x, x1y1 - x0y1, 0.0),
+                Vec3::new(0.0, x1y1 - x1y0, cell_scale_z),
             )
         };
         let normal = tangent_z.cross(tangent_x).try_normalize()?;
@@ -370,19 +492,42 @@ impl SceneTerrain {
 
     /// Returns the finite, normalized normal of the rendered/collided triangle.
     pub fn normal_at(&self, pos: Vec2) -> Option<Vec3> {
-        self.surface_at(pos).map(|sample| sample.1)
+        self.surface_at_stride(pos, 1).map(|sample| sample.1)
     }
 
     pub fn collider(&self) -> Collider {
-        let (positions, indices, _) = self.mesh_components();
-        let indices = indices.into_iter().array_chunks().collect();
-        let vertices = positions.iter().copied().map(Vec3::from_array).collect();
-        Collider::trimesh(vertices, indices)
+        let heights = self.collider_height_matrix();
+        Collider::heightfield(heights, Vec3::new(self.width(), 1.0, self.depth()))
+    }
+
+    fn collider_height_matrix(&self) -> Vec<Vec<f32>> {
+        // Avian flattens this nested Vec directly into Parry's column-major
+        // Array2. Supply X-major values while retaining Z rows and X columns
+        // as the matrix dimensions expected by Parry's heightfield.
+        let column_major = (0..self.grid_width())
+            .flat_map(|x| {
+                (0..self.grid_depth()).map(move |z| self.heightmap[x + z * self.grid_width()])
+            })
+            .collect::<Vec<_>>();
+        column_major
+            .chunks_exact(self.grid_width())
+            .map(|row| row.to_vec())
+            .collect()
     }
 
     #[cfg(feature = "meshgen")]
     pub fn mesh(&self) -> Mesh {
-        let (positions, indices, uvs) = self.mesh_components();
+        self.mesh_with_stride(1)
+    }
+
+    #[cfg(feature = "meshgen")]
+    pub fn coarse_mesh(&self) -> Mesh {
+        self.mesh_with_stride(self.coarse_stride.max(1))
+    }
+
+    #[cfg(feature = "meshgen")]
+    fn mesh_with_stride(&self, stride: usize) -> Mesh {
+        let (positions, indices, uvs) = self.mesh_components_with_stride(stride);
 
         let mut mesh = Mesh::new(
             PrimitiveTopology::TriangleList,
@@ -395,20 +540,34 @@ impl SceneTerrain {
         mesh.with_computed_area_weighted_normals()
     }
 
+    #[cfg(test)]
     fn mesh_components(&self) -> (Vec<[f32; 3]>, Vec<u32>, Vec<[f32; 2]>) {
+        self.mesh_components_with_stride(1)
+    }
+
+    #[cfg(any(feature = "meshgen", test))]
+    fn mesh_components_with_stride(
+        &self,
+        stride: usize,
+    ) -> (Vec<[f32; 3]>, Vec<u32>, Vec<[f32; 2]>) {
+        let stride = stride.max(1);
+        let xs = (0..self.grid_width()).step_by(stride).collect::<Vec<_>>();
+        let zs = (0..self.grid_depth()).step_by(stride).collect::<Vec<_>>();
+        debug_assert_eq!(xs.last().copied(), Some(self.grid_width() - 1));
+        debug_assert_eq!(zs.last().copied(), Some(self.grid_depth() - 1));
         let mesh_offset = Vec2::new(
             self.grid_width().saturating_sub(1) as f32,
             self.grid_depth().saturating_sub(1) as f32,
         ) * -0.5;
 
-        let mut positions = Vec::with_capacity(self.heightmap.len());
-        let mut uvs = Vec::with_capacity(self.heightmap.len());
+        let mut positions = Vec::with_capacity(xs.len() * zs.len());
+        let mut uvs = Vec::with_capacity(xs.len() * zs.len());
         // Keep vertices in the same row-major (z * width + x) order used by
         // height sampling and the triangle indices below. Iterating x first
         // transposed the storage without transposing the indices, which made
         // otherwise smooth terrain render as long shredded triangles.
-        for z in 0..self.grid_depth() {
-            for x in 0..self.grid_width() {
+        for &z in &zs {
+            for &x in &xs {
                 let i = z * self.grid_width() + x;
                 let y = self.heightmap[i];
 
@@ -423,18 +582,18 @@ impl SceneTerrain {
             }
         }
 
-        let mut indices = Vec::with_capacity((self.grid_width() - 1) * (self.grid_depth() - 1) * 6);
-        for x in 0..self.grid_width() - 1 {
-            for z in 0..self.grid_depth() - 1 {
-                let i = (z * self.grid_width() + x) as u32;
+        let mut indices = Vec::with_capacity((xs.len() - 1) * (zs.len() - 1) * 6);
+        for x in 0..xs.len() - 1 {
+            for z in 0..zs.len() - 1 {
+                let i = (z * xs.len() + x) as u32;
 
                 indices.extend_from_slice(&[
                     i,
-                    i + self.grid_width() as u32 + 1,
+                    i + xs.len() as u32,
                     i + 1,
-                    i,
-                    i + self.grid_width() as u32,
-                    i + self.grid_width() as u32 + 1,
+                    i + 1,
+                    i + xs.len() as u32,
+                    i + xs.len() as u32 + 1,
                 ]);
             }
         }
@@ -484,11 +643,31 @@ mod tests {
             },
         );
 
-        // The diagonal high vertex affects both triangles linearly, not as the
-        // bilinear saddle that used to diverge from mesh and collider height.
-        assert!((terrain.height_at(Vec2::new(0.25, -0.25)).unwrap() - 0.25).abs() < 0.0001);
-        assert!((terrain.height_at(Vec2::new(-0.25, 0.25)).unwrap() - 0.25).abs() < 0.0001);
-        assert_eq!(terrain.height_at(Vec2::ZERO).unwrap(), 0.5);
+        // Avian's heightfield diagonal joins the two zero-height off-diagonal
+        // vertices. The high corner therefore affects only its own triangle,
+        // and CPU queries and rendered indices must use that same split.
+        assert_eq!(terrain.height_at(Vec2::new(0.25, -0.25)).unwrap(), 0.0);
+        assert_eq!(terrain.height_at(Vec2::new(-0.25, 0.25)).unwrap(), 0.0);
+        assert_eq!(terrain.height_at(Vec2::ZERO).unwrap(), 0.0);
+        assert!((terrain.height_at(Vec2::new(0.25, 0.25)).unwrap() - 0.5).abs() < 0.0001);
+    }
+
+    #[test]
+    fn refined_surface_keeps_a_coarse_lod_without_splitting_query_authority() {
+        let coarse = SceneTerrain::new(4, 4, 1.0, |_| 0.0);
+        let refined = coarse
+            .refined(0.5, |point, base| {
+                base + (point.x * core::f32::consts::PI).sin()
+                    * (point.y * core::f32::consts::PI).sin()
+                    * 0.04
+            })
+            .unwrap();
+
+        assert_eq!(refined.grid_scale(), 0.5);
+        assert_eq!(refined.coarse_grid_scale(), 1.0);
+        let point = Vec2::splat(0.5);
+        assert!((refined.height_at(point).unwrap() - 0.04).abs() < 0.000_01);
+        assert!(refined.coarse_height_at(point).unwrap().abs() < 0.000_01);
     }
 
     #[test]
@@ -505,6 +684,44 @@ mod tests {
         let b = Vec3::from_array(positions[indices[1] as usize]);
         let c = Vec3::from_array(positions[indices[2] as usize]);
         assert!((b - a).cross(c - a).y > 0.0);
+    }
+
+    #[test]
+    fn collider_heightfield_matches_the_rendered_surface_without_transposing_axes() {
+        let terrain =
+            SceneTerrain::from_heightmap(3, 2, 1.0, vec![0.0, 1.0, 4.0, 10.0, 13.0, 20.0]).unwrap();
+        assert_eq!(
+            terrain.collider_height_matrix(),
+            vec![vec![0.0, 10.0, 1.0], vec![13.0, 4.0, 20.0]]
+        );
+
+        let collider = terrain.collider();
+        for point in [
+            Vec2::new(-0.6, -0.2),
+            Vec2::new(0.6, -0.2),
+            Vec2::new(-0.6, 0.2),
+            Vec2::new(0.6, 0.2),
+            Vec2::ZERO,
+        ] {
+            let expected_height = terrain.height_at(point).unwrap();
+            let ray_origin = Vec3::new(point.x, 30.0, point.y);
+            let (distance, _) = collider
+                .cast_ray(
+                    Vec3::ZERO,
+                    Rotation::default(),
+                    ray_origin,
+                    Vec3::NEG_Y,
+                    60.0,
+                    false,
+                )
+                .expect("the downward ray should hit the terrain collider");
+            let collider_height = ray_origin.y - distance;
+
+            assert!(
+                (collider_height - expected_height).abs() < 0.0001,
+                "collider {collider_height} != sampled surface {expected_height} at {point}"
+            );
+        }
     }
 
     #[test]

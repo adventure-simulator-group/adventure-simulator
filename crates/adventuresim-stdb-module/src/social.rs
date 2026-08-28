@@ -3400,7 +3400,7 @@ mod contract_tests {
         assert!(actor_allows_social_prayer(conviction_code(
             crate::personality::Conviction::Irreverent
         )));
-        let source = include_str!("social.rs");
+        let source = crate::production_source(include_str!("social.rs"));
         let check = source
             .split("fn target_religion_check")
             .nth(1)
@@ -3421,7 +3421,7 @@ mod contract_tests {
         );
         assert!(discovery_axes(SocialActionKind::Reassure, SocialTopic::Injury, false).is_empty());
 
-        let source = include_str!("social.rs");
+        let source = crate::production_source(include_str!("social.rs"));
         let automatic = source
             .split("fn automatic_social_action")
             .nth(1)
@@ -3447,7 +3447,7 @@ mod contract_tests {
 
     #[test]
     fn self_discovery_updates_one_skills_row_and_unsupported_contexts_do_not_check() {
-        let source = include_str!("social.rs");
+        let source = crate::production_source(include_str!("social.rs"));
         let training = source
             .split("fn award_discovery_training")
             .nth(1)
@@ -3476,7 +3476,7 @@ mod contract_tests {
 
     #[test]
     fn contact_observes_obvious_presentation_but_checks_ambiguous_presentation() {
-        let source = include_str!("social.rs");
+        let source = crate::production_source(include_str!("social.rs"));
         let contact = source
             .split("fn observe_presentation_on_contact")
             .nth(1)
@@ -3497,7 +3497,7 @@ mod contract_tests {
 
     #[test]
     fn persisted_beliefs_are_typed_and_invalid_values_fail_closed() {
-        let source = include_str!("social.rs");
+        let source = crate::production_source(include_str!("social.rs"));
         assert!(source.contains("pub axis: PersonalityAxis"));
         assert!(source.contains("if !axis.legal_values().contains(&perceived_value)"));
         assert_eq!(
@@ -3535,7 +3535,7 @@ mod contract_tests {
 
     #[test]
     fn manual_and_automatic_actions_share_actor_trait_gates_and_rally_bonus() {
-        let source = include_str!("social.rs");
+        let source = crate::production_source(include_str!("social.rs"));
         let automatic = source
             .split("fn automatic_social_action")
             .nth(1)
@@ -3567,7 +3567,7 @@ mod contract_tests {
 
     #[test]
     fn automatic_selection_uses_the_same_target_clock_as_execution() {
-        let source = include_str!("social.rs");
+        let source = crate::production_source(include_str!("social.rs"));
         let automatic = source
             .split("fn automatic_social_action")
             .nth(1)
@@ -3581,7 +3581,7 @@ mod contract_tests {
 
     #[test]
     fn settlement_chat_rejects_a_target_not_born_at_the_actor_frontier() {
-        let source = include_str!("social.rs");
+        let source = crate::production_source(include_str!("social.rs"));
         let chat = source
             .split("pub fn spend_time_with_settlement_resident")
             .nth(1)
@@ -3595,7 +3595,7 @@ mod contract_tests {
 
     #[test]
     fn disabled_automatic_preferences_are_not_retained_in_the_projection() {
-        let source = include_str!("social.rs");
+        let source = crate::production_source(include_str!("social.rs"));
         let setter = source
             .split("pub fn set_automatic_social_chat")
             .nth(1)
@@ -3620,7 +3620,7 @@ mod contract_tests {
 
     #[test]
     fn automatic_failures_propagate_and_no_fallible_work_follows_first_auxiliary_write() {
-        let source = include_str!("social.rs");
+        let source = crate::production_source(include_str!("social.rs"));
         let automatic = source
             .split("pub(crate) fn apply_automatic_social_chats")
             .nth(1)
@@ -3657,7 +3657,7 @@ mod contract_tests {
 
     #[test]
     fn manual_witness_responses_use_five_authoritative_minutes() {
-        let source = include_str!("social.rs");
+        let source = crate::production_source(include_str!("social.rs"));
         let witness = source
             .split("pub fn approach_dialogue_witness")
             .nth(1)
@@ -3672,7 +3672,7 @@ mod contract_tests {
 
     #[test]
     fn witness_insight_is_passive_persisted_and_untimed() {
-        let source = include_str!("social.rs");
+        let source = crate::production_source(include_str!("social.rs"));
         let assessment = source
             .split("fn persist_claim_assessments")
             .nth(1)
@@ -3688,7 +3688,7 @@ mod contract_tests {
 
     #[test]
     fn routine_gateway_projection_is_compact_current_address_state() {
-        let source = include_str!("social.rs");
+        let source = crate::production_source(include_str!("social.rs"));
         let view = source
             .split("pub fn backend_social_addresses")
             .nth(1)
@@ -3702,7 +3702,7 @@ mod contract_tests {
 
     #[test]
     fn witness_claim_projection_keeps_truth_private() {
-        let source = include_str!("social.rs");
+        let source = crate::production_source(include_str!("social.rs"));
         let authority = source
             .split("pub struct DialogueWitnessClaim")
             .nth(1)
@@ -3725,7 +3725,7 @@ mod contract_tests {
 
     #[test]
     fn witness_actions_are_claim_scoped_idempotent_and_revision_bound() {
-        let source = include_str!("social.rs");
+        let source = crate::production_source(include_str!("social.rs"));
         let requirement = source
             .split("fn require_witness_social_action")
             .nth(1)
@@ -3747,7 +3747,7 @@ mod contract_tests {
 
     #[test]
     fn casual_npc_chat_is_replay_first_and_fits_the_presence_window() {
-        let source = include_str!("social.rs");
+        let source = crate::production_source(include_str!("social.rs"));
         let reducer = source
             .split("pub fn spend_time_with_settlement_resident")
             .nth(1)
@@ -3767,7 +3767,7 @@ mod contract_tests {
         assert_eq!(relationship_band(50.0), AffinityBand::Trusted);
         assert_eq!(familiarity_band(60), FamiliarityBand::Known);
         assert_eq!(morale_band(-20.0), MoraleBand::Distressed);
-        let source = include_str!("social.rs");
+        let source = crate::production_source(include_str!("social.rs"));
         let receipt = source
             .split("pub struct SocialChatReceipt")
             .nth(1)
@@ -3781,7 +3781,7 @@ mod contract_tests {
 
     #[test]
     fn settlement_resident_affinity_projection_uses_observer_elapsed_time() {
-        let source = include_str!("social.rs");
+        let source = crate::production_source(include_str!("social.rs"));
         let projection = source
             .split("pub fn backend_settlement_resident_relationships")
             .nth(1)
@@ -3800,7 +3800,7 @@ mod contract_tests {
 
     #[test]
     fn witness_challenge_requires_owned_unresolved_claim_and_release_is_structured() {
-        let source = include_str!("social.rs");
+        let source = crate::production_source(include_str!("social.rs"));
         let approach = source
             .split("pub fn approach_dialogue_witness")
             .nth(1)
@@ -3816,7 +3816,7 @@ mod contract_tests {
 
     #[test]
     fn witness_controls_require_a_heard_event_in_the_current_session() {
-        let source = include_str!("social.rs");
+        let source = crate::production_source(include_str!("social.rs"));
         let projection = source
             .split("pub fn backend_dialogue_witness_claims")
             .nth(1)
@@ -3835,7 +3835,7 @@ mod contract_tests {
 
     #[test]
     fn only_successful_untrue_claims_release_bound_testimony() {
-        let source = include_str!("social.rs");
+        let source = crate::production_source(include_str!("social.rs"));
         let reducer = source
             .split("pub fn approach_dialogue_witness")
             .nth(1)

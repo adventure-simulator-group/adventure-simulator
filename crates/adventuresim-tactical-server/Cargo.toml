@@ -13,12 +13,14 @@ path = "src/main.rs"
 
 [features]
 default = []
-debug = ["bevy/debug", "bevy/bevy_remote", "bevy/scene", "dep:ron", "dep:serde"]
+debug = ["bevy/debug", "bevy/bevy_remote", "bevy/scene", "dep:ron"]
 # See src/lib.rs - only used by crates/adventuresim-tactical-brp-generator.
 remote-types = ["debug"]
 
 [dependencies]
 rand.workspace = true
+serde-saphyr.workspace = true
+serde.workspace = true
 
 # Bevy + shared Aeronet/Replicon netcode
 bevy = { workspace = true, features = ["multi_threaded"] }
@@ -36,7 +38,6 @@ clap = { workspace = true }
 
 # Debug-only world dump loading
 ron = { workspace = true, optional = true }
-serde = { workspace = true, optional = true }
 
 [lints]
 workspace = true

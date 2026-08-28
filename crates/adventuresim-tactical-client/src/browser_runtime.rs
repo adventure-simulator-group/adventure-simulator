@@ -25,7 +25,9 @@ use bevy::{
 };
 use serde::Deserialize;
 
-use crate::{Args, player::LocalCharacterId, ui::TacticalUiRoot};
+use crate::{
+    Args, player::LocalCharacterId, presentation::TacticalGameplayCamera, ui::TacticalUiRoot,
+};
 
 static COMMANDS: OnceLock<Mutex<VecDeque<BrowserCommand>>> = OnceLock::new();
 
@@ -154,7 +156,7 @@ fn drain_browser_commands(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut cameras: Query<
         (&mut Transform, &mut Exposure),
-        (With<Camera3d>, Without<StrategicSceneRoot>),
+        (With<TacticalGameplayCamera>, Without<StrategicSceneRoot>),
     >,
     mut scene_roots: Query<&mut Transform, (With<StrategicSceneRoot>, Without<Camera3d>)>,
     mut preview_view: ResMut<ForgePreviewView>,

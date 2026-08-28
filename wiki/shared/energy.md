@@ -1,6 +1,12 @@
-Energy is an abstraction representing approximately the maximum amount of calories can be used in a day. The lower it gets, the less effective you are, because your body is resorting to more difficult-to-extract energy sources (fat or protein instead of blood sugar, depleted glycogen reserves in muscles, etc). Additionally, your metabolism can only actually absorb so much nutrients in a given day, it takes time to digest food and extract nutrients from it.
+Energy is an abstraction representing approximately the maximum amount of
+calories can be used in a day. The lower it gets, the less effective you are,
+because your body is resorting to more difficult-to-extract energy sources (fat
+or protein instead of blood sugar, depleted glycogen reserves in muscles, etc).
+Additionally, your metabolism can only actually absorb so much nutrients in a
+given day, it takes time to digest food and extract nutrients from it.
 
-The exact biological functions aren't really relevant to gameplay, but they are physical processes to base our equations on.
+The exact biological functions aren't really relevant to gameplay, but they are
+physical processes to base our equations on.
 
 # Points of reference
 - A small, sedentary person uses ~1500 kcal/day
@@ -20,7 +26,7 @@ The exact biological functions aren't really relevant to gameplay, but they are 
 
 Food and water advance only with a character's authoritative strategic clock.
 Settlement life currently assumes that ordinary meals and drinking water are
-provided, including lazy catch-up and explicit rest. Entering a settlement
+provided during settlement downtime and explicit rest. Entering a settlement
 restores one day of short-term food and hydration reserve and refills every
 owned waterskin.
 

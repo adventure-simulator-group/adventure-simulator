@@ -234,3 +234,60 @@ pub(super) fn log_animation_diagnostics(
 
 #[cfg(target_family = "wasm")]
 pub(super) fn log_animation_diagnostics() {}
+
+// --- Temporary per-system frame-time probe (diagnostic; safe to remove) -----
+// Records the maximum wall time a handful of movement/animation systems take
+// per frame and logs the ranking once a second, so `just client` reveals which
+// system carries a running/jumping FPS drop without needing a Tracy capture.
+static PERF_MAX_MS: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<&'static str, f32>>,
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
+/// Drop guard that stamps its label's per-frame max on scope exit, so it
+/// captures the cost even when a system returns early.
+pub(in crate::animation) struct SpikeGuard {
+    label: &'static str,
+    start: web_time::Instant,
+}
+
+impl SpikeGuard {
+    pub(in crate::animation) fn new(label: &'static str) -> Self {
+        Self {
+            label,
+            start: web_time::Instant::now(),
+        }
+    }
+}
+
+impl Drop for SpikeGuard {
+    fn drop(&mut self) {
+        let ms = self.start.elapsed().as_secs_f32() * 1000.0;
+        if let Ok(mut map) = PERF_MAX_MS.lock() {
+            let entry = map.entry(self.label).or_insert(0.0);
+            *entry = entry.max(ms);
+        }
+    }
+}
+
+pub(in crate::animation) fn report_system_spikes(time: Res<Time>, mut elapsed: Local<f32>) {
+    *elapsed += time.delta_secs();
+    if *elapsed < 1.0 {
+        return;
+    }
+    *elapsed = 0.0;
+    let Ok(mut map) = PERF_MAX_MS.lock() else {
+        return;
+    };
+    if map.is_empty() {
+        return;
+    }
+    let mut rows = map.iter().map(|(k, v)| (*k, *v)).collect::<Vec<_>>();
+    rows.sort_by(|a, b| b.1.total_cmp(&a.1));
+    let summary = rows
+        .iter()
+        .map(|(label, ms)| format!("{label} {ms:.2}ms"))
+        .collect::<Vec<_>>()
+        .join("  |  ");
+    info!("PERF/frame-max (last 1s): {summary}");
+    map.clear();
+}

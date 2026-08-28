@@ -27,10 +27,7 @@ fn action_graph_covers_all_methods_and_enforces_authoritative_boundaries() {
     assert!(source.contains("validate_pickup_custody"));
     assert!(source.contains("current.holder_kind != CustodyHolderKind::Site"));
     assert!(source.contains("resolution.risk_triggered"));
-    let production = source
-        .split("#[cfg(test)]")
-        .next()
-        .expect("production source");
+    let production = source;
     assert!(!production.contains("ResolveHostileGroup"));
     assert!(!production.contains("commit_hostile_battle_resolution"));
     assert!(!production.contains("ensure_bound_mission_authority"));
@@ -39,13 +36,12 @@ fn action_graph_covers_all_methods_and_enforces_authoritative_boundaries() {
     let position = production
         .split("fn validate_action_position")
         .nth(1)
-        .and_then(|tail| tail.split("fn validate_live_action_prerequisites").next())
+        .and_then(|tail| tail.split("fn validate_generated_pattern_condition").next())
         .expect("position authority");
     assert!(position.contains("settlement_resident_presence()"));
     assert!(position.contains("actor.current_settlement_id.as_deref()"));
     assert!(position.contains("presence.settlement_id.as_str()"));
     assert!(position.contains("validate_tracking_action_origin"));
-    assert!(position.contains("validate_action_position("));
     assert!(position.contains("coordinate_area_contains_e7("));
     assert!(position.contains("area.coordinates_are_geographic"));
     assert!(position.contains("site.coordinates_are_geographic"));
@@ -104,7 +100,8 @@ fn action_graph_covers_all_methods_and_enforces_authoritative_boundaries() {
     assert!(terminal_branch.contains("return Ok(())"));
     assert!(!terminal_branch.contains("commit_action_consequence"));
     assert!(!terminal_branch.contains("persist_action_result_lead"));
-    assert!(!terminal_branch.contains("investigation_action_attempt()"));
+    assert!(terminal_branch.contains("investigation_action_attempt()"));
+    assert!(terminal_branch.contains("private_interrupted_action_resolution_json"));
     assert!(reducer.contains("require_living_character(ctx, normalized_party.leader_id)"));
     assert!(reducer.contains(".find(normalized_party.leader_id)"));
 }
@@ -201,14 +198,13 @@ fn generated_physical_and_social_reveals_execute_from_known_origins() {
     let position = source
         .split("fn validate_action_position")
         .nth(1)
-        .and_then(|tail| tail.split("fn validate_live_action_prerequisites").next())
+        .and_then(|tail| tail.split("fn validate_generated_pattern_condition").next())
         .expect("real position validator");
     assert!(position.contains("\"site\" =>"));
     assert!(position.contains("InvestigationActionKind::FollowTracks"));
     assert!(position.contains("InvestigationActionKind::ReacquireTracks"));
     assert!(position.contains("validate_tracking_action_origin"));
     assert!(position.contains("\"tracks\" | \"route\" =>"));
-    assert!(position.contains("validate_action_position("));
     let generated = concat!(
         include_str!("../../../../adventuresim-core/src/quest_generation/model.rs"),
         include_str!("../../../../adventuresim-core/src/quest_generation/projection.rs"),
@@ -239,9 +235,16 @@ fn generated_pattern_actions_require_the_exact_earned_clue() {
         .nth(1)
         .and_then(|tail| tail.split("fn validate_live_action_prerequisites").next())
         .expect("pattern-condition validator");
-    assert!(validator.contains("GeneratedActionOutput::PatternCondition"));
+    assert!(validator.contains("generated_pattern_authority("));
+    assert!(validator.contains("GeneratedPatternAuthority::Pattern"));
     assert!(validator.contains("investigation_evidence_knowledge()"));
-    assert!(validator.contains("knowledge.evidence_id.as_str() == evidence_id.as_str()"));
+    let clue_authority = source
+        .split("fn observer_pattern_route_has_live_corroborated_clue")
+        .nth(1)
+        .and_then(|tail| tail.split("fn capability_has_live_pattern_support_view").next())
+        .expect("typed corroborated-clue authority");
+    assert!(clue_authority.contains("proposition.case_id.as_str() == case_id"));
+    assert!(clue_authority.contains("proposition.evidence_id.as_str() == evidence_id"));
     assert!(validator.contains("started_at % adventuresim_core::strategic_time::MINUTES_PER_DAY"));
     assert!(validator.contains("capability.target_kind != \"route\""));
     assert!(validator.contains("InvestigationActionKind::SearchArea"));
@@ -255,7 +258,7 @@ fn generated_pattern_actions_require_the_exact_earned_clue() {
     assert!(
         !source.contains("#[table(accessor = investigation_pattern_target_authority, public)]")
     );
-    let generated_client = include_str!("../../../../adventuresim-stdb-client/src/mod.rs");
+    let generated_client = crate::production_source(include_str!("../../../../adventuresim-stdb-client/src/mod.rs"));
     assert!(!generated_client.contains("investigation_pattern_target_authority_table"));
     let performer = source
         .split("pub(crate) fn perform_investigation_action_authorized")
@@ -646,7 +649,7 @@ fn generated_pattern_authority_fails_closed_and_manual_actions_remain_permissive
         assert!(body.contains(".public_case_id()"));
         assert!(body.contains(".filter("));
         assert!(body.contains("exactly_one_generated_authority"));
-        assert!(!body.contains(".iter()"));
+        assert!(!body.contains(".quest_generation_authority()\n            .iter()"));
     }
     let candidate_validator = source
         .split("fn validated_generated_authority_candidate")
@@ -982,14 +985,17 @@ fn exact_site_actions_replan_typed_effects_without_replacing_replay_or_private_r
     assert!(adapter.contains("InvestigationActionKind::InspectSite"));
     assert!(adapter.contains("investigation-plan-snapshot-v2"));
     assert!(adapter.contains("resolution_input"));
-    assert!(adapter.contains("rights.evidence()"));
+    assert!(adapter.contains(".evidence()"));
+    assert!(adapter.contains("rights: rights.clone()"));
     assert!(adapter.contains("question_digest"));
 
     let knowledge = INVESTIGATION_SOURCE
         .split("fn observer_pattern_route_has_live_corroborated_clue")
         .nth(1)
+        .and_then(|tail| tail.split("fn capability_has_live_pattern_support_view").next())
         .expect("knowledge authority");
-    assert!(knowledge.contains("knowledge.owner_character_id == owner_character_id"));
+    assert!(knowledge.contains("row.owner_character_id != owner_character_id"));
+    assert!(knowledge.contains("proposition.evidence_id.as_str() == evidence_id"));
     assert!(knowledge.contains("adapt_evidence_knowledge"));
     assert!(knowledge.contains("observer_personal_minute"));
     assert!(!knowledge.contains("u64::MAX"));

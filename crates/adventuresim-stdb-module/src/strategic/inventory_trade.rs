@@ -304,11 +304,12 @@ mod durable_custody_tests {
             .split("fn item_is_durable")
             .nth(1)
             .unwrap()
-            .split("#[cfg(test)]")
+            .split("fn item_is_medication")
             .next()
             .unwrap();
         assert!(durable_policy.contains("definition.repairable"));
         assert!(!durable_policy.contains("ItemKind::"));
+        let custody_source = include_str!("inventory_trade.rs");
         for (start, end) in [
             ("fn add_to_party_inventory_checked", "fn credit_party_stake"),
             (
@@ -320,9 +321,9 @@ mod durable_custody_tests {
                 "pub fn liquidate_party_inventory",
             ),
         ] {
-            let custody_path = source
-                .split(start)
-                .nth(1)
+            let custody_path = custody_source
+                .rsplit(start)
+                .next()
                 .unwrap()
                 .split(end)
                 .next()
@@ -398,11 +399,13 @@ mod physical_object_custody_tests {
             assert!(!destruction.contains("object.filter(|object|"));
         }
 
-        let storefront = section(
-            source,
-            "fn finalize_storefront_trade_impl(ctx: &ReducerContext",
-            "#[reducer]",
-        );
+        let storefront = include_str!("inventory_trade.rs")
+            .rsplit("fn finalize_storefront_trade_impl(")
+            .next()
+            .unwrap()
+            .split("#[reducer]")
+            .next()
+            .unwrap();
         assert!(storefront.contains("physical_object_row_is_atomic(container_object.is_some()"));
         assert!(storefront.contains("if let Some(object) = object"));
         assert!(storefront.contains("delete_subtree"));
@@ -432,9 +435,15 @@ mod medication_custody_tests {
             .split("fn credit_party_stake")
             .next()
             .unwrap();
-        assert!(party_add.contains("kind == Some(crate::ItemKind::Medication)"));
+        assert!(party_add.contains("requires_stable_object(definition.as_ref(), food, measured)"));
         assert!(party_add.contains("for _ in 0..quantity"));
         assert!(party_add.contains("quantity: 1"));
+        let stable_object_policy = crate::production_source(include_str!("../item.rs"))
+            .split("pub(crate) fn requires_stable_object")
+            .nth(1)
+            .and_then(|tail| tail.split("pub(crate) fn add_inventory_item_checked").next())
+            .unwrap();
+        assert!(stable_object_policy.contains("definition.kind == ItemKind::Medication"));
 
         let withdrawal = source
             .rsplit("pub fn withdraw_party_inventory_item")

@@ -2020,6 +2020,7 @@ impl LiveRunner {
                                     character_id,
                                     walking_minutes_per_day,
                                     travel_at_night,
+                                    None,
                                 )?;
                             }
                             DepartureReadiness::WaitForSafeDeparture {
@@ -2061,13 +2062,13 @@ impl LiveRunner {
                             }
                             DepartureReadiness::Deferred(reason) => {
                                 self.event(
-                                agent,
-                                CoreLoopEventKind::QuestSuppressed,
-                                format!(
-                                    "generated_case={};reason={reason};phase=route_thermal_readiness",
-                                    bounded_event_field(case_id),
-                                ),
-                            );
+                                    agent,
+                                    CoreLoopEventKind::QuestSuppressed,
+                                    format!(
+                                        "generated_case={};reason={reason};phase=route_thermal_readiness",
+                                        bounded_event_field(case_id),
+                                    ),
+                                );
                                 return Ok(false);
                             }
                         }

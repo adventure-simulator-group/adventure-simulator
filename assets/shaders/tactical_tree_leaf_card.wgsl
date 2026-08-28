@@ -4,11 +4,16 @@
 }
 
 #ifdef PREPASS_PIPELINE
+// The prepass view layout binds the globals uniform at slot 1, but ships no
+// importable WGSL module for it, so declare the binding directly.
+#import bevy_render::globals::Globals
+@group(0) @binding(1) var<uniform> globals: Globals;
 #import bevy_pbr::prepass_io::{Vertex, VertexOutput}
 #ifdef PREPASS_FRAGMENT
 #import bevy_pbr::prepass_io::FragmentOutput
 #endif
 #else
+#import bevy_pbr::mesh_view_bindings::globals
 #import bevy_pbr::{
     forward_io::{Vertex, VertexOutput, FragmentOutput},
     pbr_fragment::pbr_input_from_vertex_output,
@@ -69,7 +74,10 @@ fn displaced_world_position(vertex: Vertex) -> vec4<f32> {
     let wind_cross = vec2<f32>(-wind_direction.y, wind_direction.x);
     let position_phase = dot(world_position.xz, wind_direction) * 0.31
         + world_position.y * 0.17;
-    let time = leaf_card.parameters.w;
+    // Shader-side clock; a CPU-written phase uniform would dirty every leaf
+    // material asset each frame and force the retained render path to
+    // re-specialize all leaf-card entities.
+    let time = globals.time * 1.15;
     let gust = 0.7 + 0.3 * sin(time * 0.37 + position_phase * 0.63);
     let primary = sin(time + position_phase);
     let flutter = sin(time * 3.11 - position_phase * 1.73);

@@ -1406,6 +1406,9 @@ pub struct Party {
     pub camp_fatigue_percent: u8,
     pub walking_minutes_per_day: u16,
     pub travel_at_night: bool,
+    pub journey_start_minute_of_day: u16,
+    pub wilderness_canonical_anchor_minute: Option<u64>,
+    pub wilderness_elapsed_minutes: u64,
     pub camp_destination: Option<JourneyEndpoint>,
     pub camp_remaining_minutes: u64,
     pub physiology_target: f32,
@@ -2108,6 +2111,8 @@ pub struct ItemDefinition {
     #[serde(default)]
     pub precise: bool,
     #[serde(default)]
+    pub moment_of_inertia_kg_m_2: f32,
+    #[serde(default)]
     pub balance: f32,
     #[serde(default)]
     pub melee: bool,
@@ -2246,6 +2251,7 @@ impl Default for ItemDefinition {
             flexibility: 0.0,
             range_of_motion: 0.0,
             precise: false,
+            moment_of_inertia_kg_m_2: 0.0,
             balance: 0.0,
             melee: false,
             ranged: false,
@@ -2846,6 +2852,9 @@ mod tests {
             "camp_fatigue_percent": 50,
             "walking_minutes_per_day": 480,
             "travel_at_night": false,
+            "journey_start_minute_of_day": 480,
+            "wilderness_canonical_anchor_minute": null,
+            "wilderness_elapsed_minutes": 0,
             "camp_destination": null,
             "camp_remaining_minutes": 0,
             "physiology_target": 0.0,

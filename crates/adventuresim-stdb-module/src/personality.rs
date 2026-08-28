@@ -1242,10 +1242,10 @@ mod tests {
 
     #[test]
     fn score_and_development_tables_have_no_public_views_and_delete_with_character() {
-        let personality_source = include_str!("personality.rs");
+        let personality_source = crate::production_source(include_str!("personality.rs"));
         assert!(!personality_source.contains("#[view(accessor = character_personality_scores"));
         assert!(!personality_source.contains("#[view(accessor = personality_development_event"));
-        let deletion = include_str!("character.rs");
+        let deletion = crate::production_source(include_str!("character.rs"));
         assert!(deletion.contains("character_personality_scores()"));
         assert!(deletion.contains("personality_development_event()"));
         assert!(deletion.contains(".character_id()\n        .filter(character.id)"));

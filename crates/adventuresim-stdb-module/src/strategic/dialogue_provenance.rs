@@ -158,7 +158,13 @@ mod referral_variant_tests {
             .nth(1)
             .and_then(|tail| tail.split("pub fn join_dialogue_session").next())
             .expect("dialogue startup");
-        assert!(start.contains("&npc_actor_id,\n            &delivery"));
+        let render_call = start
+            .split("render_quest_referral_variant(")
+            .nth(1)
+            .and_then(|tail| tail.split(")?,").next())
+            .expect("referral renderer call");
+        assert!(render_call.contains("npc_character_id"));
+        assert!(render_call.contains("&delivery"));
 
         let renderer = source
             .split("fn render_quest_referral_variant")

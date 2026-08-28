@@ -21,6 +21,9 @@ pub struct Party {
     pub camp_fatigue_percent: u8,
     pub walking_minutes_per_day: u16,
     pub travel_at_night: bool,
+    pub journey_start_minute_of_day: u16,
+    pub wilderness_canonical_anchor_minute: Option<u64>,
+    pub wilderness_elapsed_minutes: u64,
     pub camp_destination: Option<JourneyEndpoint>,
     pub camp_remaining_minutes: u64,
     pub physiology_target: f32,
@@ -47,6 +50,9 @@ pub struct PartyCols {
     pub camp_fatigue_percent: __sdk::__query_builder::Col<Party, u8>,
     pub walking_minutes_per_day: __sdk::__query_builder::Col<Party, u16>,
     pub travel_at_night: __sdk::__query_builder::Col<Party, bool>,
+    pub journey_start_minute_of_day: __sdk::__query_builder::Col<Party, u16>,
+    pub wilderness_canonical_anchor_minute: __sdk::__query_builder::Col<Party, Option<u64>>,
+    pub wilderness_elapsed_minutes: __sdk::__query_builder::Col<Party, u64>,
     pub camp_destination: __sdk::__query_builder::Col<Party, Option<JourneyEndpoint>>,
     pub camp_remaining_minutes: __sdk::__query_builder::Col<Party, u64>,
     pub physiology_target: __sdk::__query_builder::Col<Party, f32>,
@@ -81,6 +87,18 @@ impl __sdk::__query_builder::HasCols for Party {
                 "walking_minutes_per_day",
             ),
             travel_at_night: __sdk::__query_builder::Col::new(table_name, "travel_at_night"),
+            journey_start_minute_of_day: __sdk::__query_builder::Col::new(
+                table_name,
+                "journey_start_minute_of_day",
+            ),
+            wilderness_canonical_anchor_minute: __sdk::__query_builder::Col::new(
+                table_name,
+                "wilderness_canonical_anchor_minute",
+            ),
+            wilderness_elapsed_minutes: __sdk::__query_builder::Col::new(
+                table_name,
+                "wilderness_elapsed_minutes",
+            ),
             camp_destination: __sdk::__query_builder::Col::new(table_name, "camp_destination"),
             camp_remaining_minutes: __sdk::__query_builder::Col::new(
                 table_name,

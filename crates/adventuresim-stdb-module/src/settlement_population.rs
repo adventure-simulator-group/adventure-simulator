@@ -922,7 +922,7 @@ mod tests {
 
     #[test]
     fn backend_settlement_resident_view_is_an_explicit_fail_closed_projection() {
-        let source = include_str!("settlement_population.rs");
+        let source = crate::production_source(include_str!("settlement_population.rs"));
         let row = source
             .split("pub struct BackendSettlementResident {")
             .nth(1)
@@ -973,7 +973,7 @@ mod tests {
 
     #[test]
     fn every_authored_chapter_seeds_one_bound_persistent_representative() {
-        let source = include_str!("settlement_population.rs");
+        let source = crate::production_source(include_str!("settlement_population.rs"));
         let ensure = source
             .split("pub fn ensure_settlement_population")
             .nth(1)
@@ -984,13 +984,18 @@ mod tests {
         assert!(ensure.contains("representative.organization_id = organization.id.clone()"));
         assert!(ensure.contains("\"organization-representative\""));
         assert!(ensure.contains("organization_representative_id"));
-        assert!(source.contains("id = format!(\"npc:{settlement_id}:{location}:{ordinal}\")"));
+        assert!(
+            source
+                .contains("let seed = format!(\"resident:{settlement_id}:{location}:{ordinal}\")")
+        );
+        assert!(ensure.contains("insert_resident_with_seed("));
+        assert!(ensure.contains("resident:organization-representative:{settlement_id}"));
         assert!(ensure.contains("physical_location == chapter.location_id.as_str()"));
     }
 
     #[test]
     fn authoritative_presence_reconstructs_historical_outbreak_state_without_mutation() {
-        let source = include_str!("settlement_population.rs");
+        let source = crate::production_source(include_str!("settlement_population.rs"));
         let typed_projection = source
             .split("pub fn npc_strategic_presence_at")
             .nth(1)

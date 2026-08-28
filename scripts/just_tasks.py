@@ -65,6 +65,7 @@ def wait_for_port(port: int, timeout: float, process: subprocess.Popen[object] |
 
 
 def spacetime_version_check(version: str = SPACETIME_VERSION) -> int:
+    started_at = time.monotonic()
     spacetime = executable(
         "spacetime",
         f"Missing 'spacetime' CLI. Install version {version} before running.",
@@ -81,6 +82,10 @@ def spacetime_version_check(version: str = SPACETIME_VERSION) -> int:
         print(f"Expected SpacetimeDB CLI and library {version}, but found:", file=sys.stderr)
         print(result.stdout, file=sys.stderr, end="")
         return 1
+    print(
+        "[startup] phase='SpacetimeDB CLI version preflight' "
+        f"duration={time.monotonic() - started_at:.3f}s"
+    )
     return 0
 
 

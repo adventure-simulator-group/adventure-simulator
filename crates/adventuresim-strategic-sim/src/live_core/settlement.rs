@@ -1592,101 +1592,33 @@ impl LiveRunner {
             return Ok(false);
         }
         let starting_party = self.party_for(character_id)?;
-        let party_id = starting_party.id.clone();
-        let Some(original_settlement_id) = starting_party.current_settlement_id else {
+        if starting_party.current_settlement_id.is_none() {
             return Ok(false);
-        };
-        let members = self.living_party_member_ids(&party_id);
-        let party_frontier = members
+        }
+        let current_minute = self
+            .connection
+            .db
+            .backend_character_times()
             .iter()
-            .filter_map(|member_id| {
-                self.connection
-                    .db
-                    .backend_character_times()
-                    .iter()
-                    .find(|row| row.character_id == *member_id)
-                    .map(|row| row.minutes)
-            })
-            .max()
-            .ok_or("safe-departure party has no public clock")?;
-        let target_minute = party_frontier.saturating_add(wait_minutes);
+            .find(|row| row.character_id == character_id)
+            .ok_or("safe-departure leader has no public clock")?
+            .minutes;
+        let journey_start_minute_of_day =
+            u16::try_from(current_minute.saturating_add(wait_minutes) % MINUTES_PER_DAY)
+                .map_err(|_| "journey start time is outside one day")?;
         self.configure_safe_departure_itinerary(
             character_id,
             walking_minutes_per_day,
             travel_at_night,
+            Some(journey_start_minute_of_day),
         )?;
-        let mut modes = Vec::new();
-        for member_id in members {
-            let member_minute = self
-                .connection
-                .db
-                .backend_character_times()
-                .iter()
-                .find(|row| row.character_id == member_id)
-                .map_or(party_frontier, |row| row.minutes);
-            let member_wait = target_minute.saturating_sub(member_minute);
-            if !(60..=MINUTES_PER_DAY).contains(&member_wait) {
-                continue;
-            }
-            let Ok(Some(venue)) = self.settlement_activity_venue(member_id, 0) else {
-                continue;
-            };
-            let result = reducer_call!(self, "wait_for_safe_departure", |cb| self
-                .connection
-                .reducers
-                .rest_at_settlement_hours_then(
-                    member_id,
-                    member_wait,
-                    stdb_settlement_action_service(venue),
-                    cb,
-                ));
-            self.call(result)?;
-            if !self.party_is_still_at_original_settlement(&party_id, &original_settlement_id)? {
-                self.event(
-                    agent,
-                    CoreLoopEventKind::SafeDepartureWaitRelocated,
-                    format!(
-                        "case={};reason=safe_departure_wait_relocated;origin_settlement={};rested_member={member_id}",
-                        bounded_event_field(case_id),
-                        bounded_event_field(&original_settlement_id),
-                    ),
-                );
-                return Ok(false);
-            }
-            modes.push(settlement_action_service_label(venue));
-        }
-        let actual_party_floor = self
-            .living_party_member_ids(&party_id)
-            .into_iter()
-            .filter_map(|member_id| {
-                self.connection
-                    .db
-                    .backend_character_times()
-                    .iter()
-                    .find(|row| row.character_id == member_id)
-                    .map(|row| row.minutes)
-            })
-            .min()
-            .unwrap_or(0);
-        if actual_party_floor < target_minute {
-            self.event(
-                agent,
-                CoreLoopEventKind::QuestSuppressed,
-                format!(
-                    "case={};reason=safe_departure_wait_incomplete;requested_party_frontier={target_minute};actual_party_floor={actual_party_floor}",
-                    bounded_event_field(case_id),
-                ),
-            );
-            return Ok(false);
-        }
         self.event(
             agent,
             CoreLoopEventKind::SafeDepartureWait,
             format!(
-                "case={};reason={};wait_minutes={wait_minutes};walking_minutes_per_day={walking_minutes_per_day};mode={}",
+                "case={};reason={};requested_wait_minutes={wait_minutes};walking_minutes_per_day={walking_minutes_per_day};mode=journey_local_clock",
                 bounded_event_field(case_id),
                 bounded_event_field(reason),
-                bounded_event_field(&modes.join(",")),
             ),
         );
         Ok(true)
@@ -1697,6 +1629,7 @@ impl LiveRunner {
         character_id: u64,
         walking_minutes_per_day: u16,
         travel_at_night: bool,
+        journey_start_minute_of_day: Option<u16>,
     ) -> Result<(), String> {
         let result = reducer_call!(self, "configure_safe_departure_window", |cb| self
             .connection
@@ -1705,6 +1638,12 @@ impl LiveRunner {
                 character_id,
                 walking_minutes_per_day,
                 travel_at_night,
+                journey_start_minute_of_day
+                    .unwrap_or(if travel_at_night {
+                        DEFAULT_NIGHT_JOURNEY_START_MINUTE_OF_DAY
+                    } else {
+                        DEFAULT_JOURNEY_START_MINUTE_OF_DAY
+                    }),
                 cb,
             ));
         self.call(result)?;

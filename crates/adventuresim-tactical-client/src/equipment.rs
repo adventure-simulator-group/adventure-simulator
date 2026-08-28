@@ -1,6 +1,9 @@
 //! Tactical grab input, QWERTY slot HUD, and placeholder item presentation.
 
-use std::collections::HashMap;
+use std::{
+    collections::{BTreeMap, HashMap},
+    sync::LazyLock,
+};
 
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::{
@@ -12,26 +15,35 @@ use adventuresim_weapon_model::{
     generate_icon,
 };
 use bevy::{
-    asset::RenderAssetUsages,
-    mesh::{Indices, PrimitiveTopology},
+    asset::{LoadState, RenderAssetUsages},
+    camera::visibility::NoFrustumCulling,
+    gltf::{Gltf, GltfAssetLabel, GltfMesh, GltfNode, GltfSkin},
+    mesh::{
+        Indices, PrimitiveTopology,
+        skinning::{SkinnedMesh, SkinnedMeshInverseBindposes},
+    },
     prelude::*,
     render::render_resource::{Extent3d, TextureDimension, TextureFormat},
 };
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, EguiTextureHandle, egui};
 use bevy_mod_outline::{OutlineMode, OutlinePlugin, OutlineVolume};
+use serde::Deserialize;
 
 use crate::{
     animation::{
-        AuthoredBindTransform, BoneRole, HandSide, HeldWeaponConstraint, HumanoidRig,
+        AuthoredBindTransform, BoneRole, HandSide, HeldWeaponConstraint, HumanoidRig, MhrBone,
         authored_bind_global,
     },
     player::ClientPlayer,
+    presentation::TacticalGameplayCamera,
+    targeting::auto_aim_candidate,
 };
 
 const PICKUP_RANGE_M: f32 = 2.0;
 const INVALID_FLASH_SECS: f32 = 0.18;
 const TACTICAL_WEAPON_ICON_SIZE: u16 = 64;
 const TACTICAL_WEAPON_ICON_SUPERSAMPLING: u8 = 4;
+const EQUIPMENT_SOCKET_NODE_PREFIX: &str = "equipment_socket_";
 const EQUIPMENT_ICON_SLUGS: [&str; 56] = [
     "ancient-sword",
     "arm-bandage",
@@ -120,9 +132,13 @@ impl Plugin for TacticalEquipmentPlugin {
                 Update,
                 (
                     spawn_item_placeholders,
+                    request_procedural_equipment_models,
+                    resolve_procedural_equipment_models,
+                    sync_procedural_equipment_skins,
                     update_item_placeholders,
                     update_pickup_outlines,
-                ),
+                )
+                    .chain(),
             )
             .add_systems(EguiPrimaryContextPass, draw_slot_hud);
     }
@@ -199,6 +215,87 @@ struct ItemPlaceholder(Entity);
 #[derive(Component)]
 struct PickupOutline(Entity);
 
+#[derive(Deserialize)]
+struct ProceduralEquipmentManifest {
+    assets: Vec<ProceduralEquipmentManifestAsset>,
+}
+
+#[derive(Deserialize)]
+struct ProceduralEquipmentManifestAsset {
+    item_id: String,
+    placement_id: String,
+    file: String,
+}
+
+static PROCEDURAL_EQUIPMENT_ASSETS: LazyLock<BTreeMap<String, BTreeMap<String, String>>> =
+    LazyLock::new(|| {
+        let manifest: ProceduralEquipmentManifest = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/equipment/procedural/manifest.json"
+        )))
+        .expect("committed procedural equipment manifest must be valid");
+        let mut assets = BTreeMap::<String, BTreeMap<String, String>>::new();
+        for asset in manifest.assets {
+            let replaced = assets
+                .entry(asset.item_id)
+                .or_default()
+                .insert(asset.placement_id, asset.file);
+            assert!(
+                replaced.is_none(),
+                "procedural equipment manifest keys must be unique"
+            );
+        }
+        assets
+    });
+
+fn procedural_equipment_file(item_id: &str, placement_id: Option<&str>) -> Option<&'static str> {
+    let placements = PROCEDURAL_EQUIPMENT_ASSETS.get(item_id)?;
+    match placement_id {
+        Some(placement_id) => placements.get(placement_id),
+        None => placements.values().next(),
+    }
+    .map(String::as_str)
+}
+
+fn procedural_equipment_asset_path(file: &str) -> String {
+    let path = format!("equipment/procedural/{file}");
+    #[cfg(not(target_family = "wasm"))]
+    {
+        format!("workspace://{path}")
+    }
+    #[cfg(target_family = "wasm")]
+    {
+        path
+    }
+}
+
+#[derive(Component)]
+struct ProceduralEquipmentPresentation {
+    asset_path: String,
+}
+
+#[derive(Component)]
+struct ProceduralEquipmentRequest(Handle<Gltf>);
+
+#[derive(Component)]
+struct ProceduralEquipmentResolved;
+
+#[derive(Component)]
+struct ProceduralEquipmentFailed;
+
+#[derive(Component)]
+struct ItemFallback(Entity);
+
+#[derive(Component)]
+struct ProceduralEquipmentPart {
+    item: Entity,
+    inverse_bindposes: Handle<SkinnedMeshInverseBindposes>,
+    joint_names: Vec<String>,
+}
+
+#[derive(Component, Default)]
+struct EquipmentAttachmentSockets(BTreeMap<String, Transform>);
+
 fn held_item(
     actor: Entity,
     hand: EquipmentHand,
@@ -249,7 +346,7 @@ fn update_grab_input(
     topologies: Query<(Entity, &ItemOf, &EquipmentTopology, &ItemProperties)>,
     properties: Query<&ItemProperties>,
     action_states: Query<&EquipmentActionState>,
-    cameras: Query<&GlobalTransform, With<Camera3d>>,
+    cameras: Query<&GlobalTransform, With<TacticalGameplayCamera>>,
     scene_items: Query<(Entity, &GlobalTransform, &EquipmentPhysical), With<TacticalSceneItem>>,
     spatial: SpatialQuery,
     mut session: ResMut<GrabSession>,
@@ -354,7 +451,7 @@ fn update_grab_input(
 
 fn auto_aim_scene_item(
     actor: &GlobalTransform,
-    cameras: &Query<&GlobalTransform, With<Camera3d>>,
+    cameras: &Query<&GlobalTransform, With<TacticalGameplayCamera>>,
     scene_items: &Query<(Entity, &GlobalTransform, &EquipmentPhysical), With<TacticalSceneItem>>,
     spatial: &SpatialQuery,
 ) -> Option<Entity> {
@@ -364,6 +461,7 @@ fn auto_aim_scene_item(
         camera.translation(),
         camera.forward().as_vec3(),
         actor.translation(),
+        PICKUP_RANGE_M,
         scene_items
             .iter()
             .filter_map(|(entity, transform, physical)| {
@@ -380,39 +478,9 @@ fn auto_aim_scene_item(
                             &SpatialQueryFilter::from_mask(TACTICAL_TERRAIN_LAYER),
                         )
                         .is_none();
-                visible.then_some((entity, position))
+                visible.then_some((entity, position, entity.to_bits()))
             }),
     )
-}
-
-fn auto_aim_candidate(
-    camera_origin: Vec3,
-    camera_forward: Vec3,
-    actor_position: Vec3,
-    candidates: impl IntoIterator<Item = (Entity, Vec3)>,
-) -> Option<Entity> {
-    let camera_forward = camera_forward.try_normalize()?;
-    candidates
-        .into_iter()
-        .filter_map(|(entity, position)| {
-            let actor_distance_squared = position.distance_squared(actor_position);
-            if actor_distance_squared > PICKUP_RANGE_M * PICKUP_RANGE_M {
-                return None;
-            }
-            let camera_delta = position - camera_origin;
-            let alignment = camera_delta
-                .try_normalize()
-                .map_or(-1.0, |direction| direction.dot(camera_forward));
-            let angular_error = 1.0 - alignment.clamp(-1.0, 1.0);
-            Some((entity, angular_error, actor_distance_squared))
-        })
-        .min_by(|left, right| {
-            left.1
-                .total_cmp(&right.1)
-                .then(left.2.total_cmp(&right.2))
-                .then(left.0.to_bits().cmp(&right.0.to_bits()))
-        })
-        .map(|(entity, _, _)| entity)
 }
 
 fn scene_grab_selection(
@@ -1269,12 +1337,17 @@ fn spawn_item_placeholders(
         (
             Entity,
             &EquipmentPhysical,
+            Option<&EquipmentTopology>,
             Option<&ItemProperties>,
             Option<&WeaponAppearance>,
             Option<&WeaponHolderAppearance>,
         ),
         Or<(
             Added<EquipmentPhysical>,
+            Added<EquipmentTopology>,
+            Changed<EquipmentTopology>,
+            Added<ItemProperties>,
+            Changed<ItemProperties>,
             Added<WeaponAppearance>,
             Changed<WeaponAppearance>,
             Added<WeaponHolderAppearance>,
@@ -1286,7 +1359,7 @@ fn spawn_item_placeholders(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut cache: ResMut<WeaponMeshCache>,
 ) {
-    for (item, physical, properties, appearance, holder_appearance) in &added {
+    for (item, physical, topology, properties, appearance, holder_appearance) in &added {
         if !physical.is_valid() {
             continue;
         }
@@ -1295,16 +1368,26 @@ fn spawn_item_placeholders(
                 commands.entity(root).despawn();
             }
         }
-        let root = commands
-            .spawn((
-                Name::new("Tactical item placeholder"),
-                ItemPlaceholder(item),
-                Transform::default(),
-                // Attachment is resolved on the following update. Keeping the
-                // root hidden avoids a one-frame flash at the world origin.
-                Visibility::Hidden,
-            ))
-            .id();
+        commands.entity(item).remove::<EquipmentAttachmentSockets>();
+        let mut root_commands = commands.spawn((
+            Name::new("Tactical item placeholder"),
+            ItemPlaceholder(item),
+            Transform::default(),
+            // Attachment is resolved on the following update. Keeping the
+            // root hidden avoids a one-frame flash at the world origin.
+            Visibility::Hidden,
+        ));
+        if let Some(file) = properties.and_then(|properties| {
+            procedural_equipment_file(
+                &properties.id,
+                topology.and_then(|topology| topology.placement_id.as_deref()),
+            )
+        }) {
+            root_commands.insert(ProceduralEquipmentPresentation {
+                asset_path: procedural_equipment_asset_path(file),
+            });
+        }
+        let root = root_commands.id();
         let (generated, part_name) = if let Some(holder) =
             holder_appearance.and_then(|appearance| {
                 cached_holder(appearance, &mut cache, &mut meshes, &mut materials)
@@ -1349,6 +1432,7 @@ fn spawn_item_placeholders(
         } else {
             commands.entity(root).with_child((
                 Name::new("Tactical item fallback"),
+                ItemFallback(item),
                 Mesh3d(meshes.add(Cuboid::new(
                     physical.dimensions_m.x,
                     physical.dimensions_m.y,
@@ -1370,6 +1454,215 @@ fn spawn_item_placeholders(
                 },
                 OutlineMode::FloodFlat,
             ));
+        }
+    }
+}
+
+fn request_procedural_equipment_models(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    pending: Query<(Entity, &ProceduralEquipmentPresentation), Without<ProceduralEquipmentRequest>>,
+) {
+    for (entity, presentation) in &pending {
+        commands.entity(entity).insert(ProceduralEquipmentRequest(
+            asset_server.load(&presentation.asset_path),
+        ));
+    }
+}
+
+fn mark_procedural_equipment_failed(
+    commands: &mut Commands,
+    entity: Entity,
+    path: &str,
+    reason: &str,
+) {
+    warn!(asset = path, %reason, "Procedural equipment asset is unusable; retaining cuboid fallback");
+    commands.entity(entity).insert(ProceduralEquipmentFailed);
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    reason = "Bevy injects each procedural-equipment asset store and resolution query independently"
+)]
+fn resolve_procedural_equipment_models(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    gltfs: Res<Assets<Gltf>>,
+    gltf_meshes: Res<Assets<GltfMesh>>,
+    gltf_skins: Res<Assets<GltfSkin>>,
+    gltf_nodes: Res<Assets<GltfNode>>,
+    pending: Query<
+        (
+            Entity,
+            &ItemPlaceholder,
+            &ProceduralEquipmentPresentation,
+            &ProceduralEquipmentRequest,
+        ),
+        (
+            Without<ProceduralEquipmentResolved>,
+            Without<ProceduralEquipmentFailed>,
+        ),
+    >,
+    fallbacks: Query<(Entity, &ItemFallback)>,
+) {
+    for (root, placeholder, presentation, request) in &pending {
+        if matches!(
+            asset_server.load_state(request.0.id()),
+            LoadState::Failed(_)
+        ) {
+            mark_procedural_equipment_failed(
+                &mut commands,
+                root,
+                &presentation.asset_path,
+                "root glTF failed to load",
+            );
+            continue;
+        }
+        let Some(gltf) = gltfs.get(&request.0) else {
+            continue;
+        };
+        let Some(gltf_mesh) = gltf.meshes.first().and_then(|mesh| gltf_meshes.get(mesh)) else {
+            mark_procedural_equipment_failed(
+                &mut commands,
+                root,
+                &presentation.asset_path,
+                "missing mesh zero",
+            );
+            continue;
+        };
+        let Some(primitive) = gltf_mesh.primitives.first() else {
+            mark_procedural_equipment_failed(
+                &mut commands,
+                root,
+                &presentation.asset_path,
+                "mesh zero has no primitive",
+            );
+            continue;
+        };
+        let Some(skin) = gltf.skins.first().and_then(|skin| gltf_skins.get(skin)) else {
+            continue;
+        };
+        let Some(joint_names) = skin
+            .joints
+            .iter()
+            .map(|joint| gltf_nodes.get(joint).map(|node| node.name.clone()))
+            .collect::<Option<Vec<_>>>()
+        else {
+            continue;
+        };
+        let Some(attachment_sockets) = gltf
+            .named_nodes
+            .iter()
+            .filter_map(|(name, node)| {
+                name.strip_prefix(EQUIPMENT_SOCKET_NODE_PREFIX)
+                    .map(|attachment_point_id| (attachment_point_id, node))
+            })
+            .map(|(attachment_point_id, node)| {
+                gltf_nodes
+                    .get(node)
+                    .map(|node| (attachment_point_id.to_owned(), node.transform))
+            })
+            .collect::<Option<BTreeMap<_, _>>>()
+        else {
+            continue;
+        };
+        let Some(material) = primitive.material.as_ref() else {
+            mark_procedural_equipment_failed(
+                &mut commands,
+                root,
+                &presentation.asset_path,
+                "primitive has no material",
+            );
+            continue;
+        };
+        let Some(material_index) = gltf
+            .materials
+            .iter()
+            .position(|candidate| candidate.id() == material.id())
+        else {
+            mark_procedural_equipment_failed(
+                &mut commands,
+                root,
+                &presentation.asset_path,
+                "primitive material is absent from the glTF material table",
+            );
+            continue;
+        };
+        let material_label = format!(
+            "{}/std",
+            GltfAssetLabel::Material {
+                index: material_index,
+                is_scale_inverted: false,
+            }
+        );
+        let material: Handle<StandardMaterial> =
+            asset_server.load(format!("{}#{material_label}", presentation.asset_path));
+        commands.entity(root).with_child((
+            Name::new("Procedural armor or clothing"),
+            Mesh3d(primitive.mesh.clone()),
+            MeshMaterial3d(material),
+            Transform::IDENTITY,
+            NoFrustumCulling,
+            ProceduralEquipmentPart {
+                item: placeholder.0,
+                inverse_bindposes: skin.inverse_bind_matrices.clone(),
+                joint_names,
+            },
+            PickupOutline(placeholder.0),
+            OutlineVolume {
+                visible: false,
+                colour: Color::WHITE,
+                width: 4.0,
+            },
+            OutlineMode::FloodFlat,
+        ));
+        commands
+            .entity(placeholder.0)
+            .insert(EquipmentAttachmentSockets(attachment_sockets));
+        for (fallback, item) in &fallbacks {
+            if item.0 == placeholder.0 {
+                commands.entity(fallback).despawn();
+            }
+        }
+        commands.entity(root).insert(ProceduralEquipmentResolved);
+    }
+}
+
+fn sync_procedural_equipment_skins(
+    mut commands: Commands,
+    parts: Query<(Entity, &ProceduralEquipmentPart, Option<&SkinnedMesh>)>,
+    items: Query<(Option<&ItemOf>, Has<TacticalSceneItem>)>,
+    bones: Query<(Entity, &MhrBone, &Name)>,
+) {
+    let mut rig_bones = HashMap::<Entity, HashMap<String, Entity>>::new();
+    for (entity, bone, name) in &bones {
+        rig_bones
+            .entry(bone.owner)
+            .or_default()
+            .insert(name.as_str().to_owned(), entity);
+    }
+    for (entity, part, current_skin) in &parts {
+        let desired_joints = items
+            .get(part.item)
+            .ok()
+            .and_then(|(owner, scene)| (!scene).then_some(owner?.0))
+            .and_then(|owner| {
+                let bones = rig_bones.get(&owner)?;
+                part.joint_names
+                    .iter()
+                    .map(|name| bones.get(name).copied())
+                    .collect::<Option<Vec<_>>>()
+            });
+        if let Some(joints) = desired_joints {
+            if current_skin.is_none_or(|skin| skin.joints != joints) {
+                commands.entity(entity).insert(SkinnedMesh {
+                    inverse_bindposes: part.inverse_bindposes.clone(),
+                    joints,
+                });
+            }
+        } else if current_skin.is_some() {
+            commands.entity(entity).remove::<SkinnedMesh>();
         }
     }
 }
@@ -1438,17 +1731,6 @@ fn equipment_bind_correction(
     Some(bind_space_attachment_correction(bind, desired_rotation))
 }
 
-fn weapon_bind_correction(
-    role: BoneRole,
-    rig: &HumanoidRig,
-    bind_nodes: &Query<(&AuthoredBindTransform, Option<&ChildOf>)>,
-) -> Option<Transform> {
-    let &socket = rig.get(&role)?;
-    let owner = bind_nodes.get(socket).ok()?.0.owner;
-    let bind = authored_bind_global(socket, owner, bind_nodes)?;
-    Some(bind_space_attachment_correction(bind, Quat::IDENTITY))
-}
-
 #[expect(
     clippy::type_complexity,
     reason = "the Bevy queries describe equipment ownership, topology, rig bindings, and placeholder state exactly"
@@ -1465,7 +1747,10 @@ fn update_item_placeholders(
         ),
         Without<ItemPlaceholder>,
     >,
-    topologies: Query<&EquipmentTopology, Without<ItemPlaceholder>>,
+    topologies: Query<
+        (&EquipmentTopology, Option<&EquipmentAttachmentSockets>),
+        Without<ItemPlaceholder>,
+    >,
     rigs: Query<&HumanoidRig, With<Player>>,
     bind_nodes: Query<(&AuthoredBindTransform, Option<&ChildOf>)>,
     mut placeholders: Query<(
@@ -1474,9 +1759,12 @@ fn update_item_placeholders(
         &mut Transform,
         &mut Visibility,
         Option<&ChildOf>,
+        Has<ProceduralEquipmentResolved>,
     )>,
 ) {
-    for (entity, placeholder, mut transform, mut visibility, parent) in &mut placeholders {
+    for (entity, placeholder, mut transform, mut visibility, parent, procedural) in
+        &mut placeholders
+    {
         let Ok((item_transform, owner, slot, topology, scene)) = items.get(placeholder.0) else {
             commands.entity(entity).despawn();
             continue;
@@ -1488,6 +1776,21 @@ fn update_item_placeholders(
             *transform = *item_transform;
             *visibility = Visibility::Inherited;
             commands.entity(entity).remove::<HeldWeaponConstraint>();
+        } else if procedural {
+            let rig_scene = resolve_character_location(topology, &topologies)
+                .and(owner)
+                .and_then(|owner| rigs.get(owner.0).ok())
+                .and_then(HumanoidRig::rig_scene);
+            if let Some(rig_scene) = rig_scene {
+                if parent.is_none_or(|parent| parent.parent() != rig_scene) {
+                    commands.entity(entity).insert(ChildOf(rig_scene));
+                }
+                *transform = Transform::IDENTITY;
+                *visibility = Visibility::Inherited;
+            } else {
+                *visibility = Visibility::Hidden;
+            }
+            commands.entity(entity).remove::<HeldWeaponConstraint>();
         } else if let (Some(owner), Some(primary_hand)) = (owner, holding_side(slot)) {
             if parent.is_some() {
                 commands.entity(entity).remove::<ChildOf>();
@@ -1497,11 +1800,11 @@ fn update_item_placeholders(
                     HandSide::Left => BoneRole::WeaponLeft,
                     HandSide::Right => BoneRole::WeaponRight,
                 };
+                rig.get(&role)?;
                 Some(HeldWeaponConstraint {
                     owner: owner.0,
                     primary_hand,
                     secondary_grip_local: None,
-                    socket_bind_correction: weapon_bind_correction(role, rig, &bind_nodes)?,
                 })
             });
             if let Some(constraint) = constraint {
@@ -1515,7 +1818,15 @@ fn update_item_placeholders(
             let rig = rigs.get(owner.0).ok()?;
             let role = equipment_location_bone(resolve_character_location(topology, &topologies)?);
             let bone = rig.get(&role).copied()?;
-            Some((bone, equipment_bind_correction(role, rig, &bind_nodes)?))
+            let correction =
+                if let Some(socket) = resolve_equipment_attachment_socket(topology, &topologies) {
+                    // Generated attachment sockets are authored pelvis-local, so
+                    // they can be consumed directly as children of the pelvis.
+                    socket
+                } else {
+                    equipment_bind_correction(role, rig, &bind_nodes)?
+                };
+            Some((bone, correction))
         }) {
             if parent.is_none_or(|parent| parent.parent() != bone) {
                 commands.entity(entity).insert(ChildOf(bone));
@@ -1532,7 +1843,10 @@ fn update_item_placeholders(
 
 fn resolve_character_location(
     topology: &EquipmentTopology,
-    topologies: &Query<&EquipmentTopology, Without<ItemPlaceholder>>,
+    topologies: &Query<
+        (&EquipmentTopology, Option<&EquipmentAttachmentSockets>),
+        Without<ItemPlaceholder>,
+    >,
 ) -> Option<EquipmentLocation> {
     let mut topology = topology;
     let mut visited = std::collections::BTreeSet::new();
@@ -1558,7 +1872,40 @@ fn resolve_character_location(
         if !visited.insert(parent) {
             return None;
         }
-        topology = topologies.get(parent).ok()?;
+        topology = topologies.get(parent).ok()?.0;
+    }
+    None
+}
+
+fn resolve_equipment_attachment_socket(
+    topology: &EquipmentTopology,
+    topologies: &Query<
+        (&EquipmentTopology, Option<&EquipmentAttachmentSockets>),
+        Without<ItemPlaceholder>,
+    >,
+) -> Option<Transform> {
+    let mut topology = topology;
+    let mut visited = std::collections::BTreeSet::new();
+    for _ in 0..32 {
+        let (parent, attachment_point_id) =
+            topology
+                .occupancies
+                .iter()
+                .find_map(|occupancy| match &occupancy.anchor {
+                    TacticalEquipmentAnchor::ItemAttachment {
+                        parent,
+                        attachment_point_id,
+                    } => Some((*parent, attachment_point_id.as_str())),
+                    TacticalEquipmentAnchor::CharacterLocation(_) => None,
+                })?;
+        if !visited.insert(parent) {
+            return None;
+        }
+        let (parent_topology, sockets) = topologies.get(parent).ok()?;
+        if let Some(socket) = sockets.and_then(|sockets| sockets.0.get(attachment_point_id)) {
+            return Some(*socket);
+        }
+        topology = parent_topology;
     }
     None
 }
@@ -1602,6 +1949,124 @@ fn holding_side(slot: Option<&EquipSlot>) -> Option<HandSide> {
 mod tests {
     use super::*;
     use bevy::ecs::system::RunSystemOnce;
+
+    #[test]
+    fn procedural_equipment_manifest_selects_exact_and_dropped_variants() {
+        assert_eq!(
+            procedural_equipment_file("mail_sleeve", Some("right")),
+            Some("mail_sleeve--right.glb")
+        );
+        assert_eq!(
+            procedural_equipment_file("mail_sleeve", None),
+            Some("mail_sleeve--left.glb")
+        );
+        assert_eq!(
+            procedural_equipment_file("mail_sleeve", Some("left_hand")),
+            None
+        );
+        assert_eq!(
+            procedural_equipment_file("leather_belt", Some("worn")),
+            Some("leather_belt--worn.glb")
+        );
+        assert_eq!(
+            procedural_equipment_file("leather_belt", None),
+            Some("leather_belt--worn.glb")
+        );
+        assert_eq!(
+            procedural_equipment_file("linen_breeches", Some("worn")),
+            Some("linen_breeches--worn.glb")
+        );
+        assert_eq!(
+            procedural_equipment_file("leather_boot", Some("right")),
+            Some("leather_boot--right.glb")
+        );
+        assert_eq!(
+            procedural_equipment_file("leather_boot", None),
+            Some("leather_boot--left.glb")
+        );
+        assert_eq!(procedural_equipment_file("arming_sword", None), None);
+
+        let asset_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        for placements in PROCEDURAL_EQUIPMENT_ASSETS.values() {
+            for file in placements.values() {
+                assert!(
+                    asset_root.join("equipment/procedural").join(file).is_file(),
+                    "manifest asset {file} should exist"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn procedural_equipment_uses_live_rig_while_worn_and_rest_pose_when_dropped() {
+        let mut world = World::new();
+        let owner = world.spawn_empty().id();
+        let root = world.spawn((MhrBone { owner }, Name::new("root"))).id();
+        let spine = world.spawn((MhrBone { owner }, Name::new("c_spine0"))).id();
+        let item = world.spawn(ItemOf(owner)).id();
+        let part = world
+            .spawn(ProceduralEquipmentPart {
+                item,
+                inverse_bindposes: Handle::default(),
+                joint_names: vec!["root".into(), "c_spine0".into()],
+            })
+            .id();
+
+        world
+            .run_system_once(sync_procedural_equipment_skins)
+            .unwrap();
+        assert_eq!(
+            world.get::<SkinnedMesh>(part).unwrap().joints,
+            [root, spine]
+        );
+
+        world.entity_mut(item).insert(TacticalSceneItem);
+        world
+            .run_system_once(sync_procedural_equipment_skins)
+            .unwrap();
+        assert!(world.get::<SkinnedMesh>(part).is_none());
+    }
+
+    #[test]
+    fn armor_starts_with_fallback_while_requesting_its_procedural_model() {
+        let mut world = World::new();
+        world.insert_resource(Assets::<Mesh>::default());
+        world.insert_resource(Assets::<StandardMaterial>::default());
+        world.init_resource::<WeaponMeshCache>();
+        let item = world
+            .spawn((
+                valid_physical(),
+                EquipmentTopology {
+                    placement_id: Some("worn".into()),
+                    ..default()
+                },
+                ItemProperties {
+                    weight: 2.5,
+                    id: "arming_doublet".into(),
+                },
+            ))
+            .id();
+
+        world.run_system_once(spawn_item_placeholders).unwrap();
+
+        let presentation = world
+            .query::<(&ItemPlaceholder, &ProceduralEquipmentPresentation)>()
+            .iter(&world)
+            .find(|(placeholder, _)| placeholder.0 == item)
+            .map(|(_, presentation)| presentation)
+            .unwrap();
+        assert!(
+            presentation
+                .asset_path
+                .ends_with("equipment/procedural/arming_doublet--worn.glb")
+        );
+        assert!(
+            world
+                .query::<&ItemFallback>()
+                .iter(&world)
+                .any(|fallback| fallback.0 == item)
+        );
+    }
 
     #[test]
     fn identical_weapon_recipes_share_cached_mesh_handles() {
@@ -1940,51 +2405,6 @@ mod tests {
     }
 
     #[test]
-    fn auto_aim_prefers_cursor_alignment_over_character_distance() {
-        let pointed = Entity::from_bits(31);
-        let nearby_side = Entity::from_bits(32);
-        assert_eq!(
-            auto_aim_candidate(
-                Vec3::Y,
-                Vec3::NEG_Z,
-                Vec3::ZERO,
-                [
-                    (nearby_side, Vec3::new(0.5, 0.0, 0.0)),
-                    (pointed, Vec3::new(0.0, 0.0, -1.8)),
-                ],
-            ),
-            Some(pointed)
-        );
-    }
-
-    #[test]
-    fn auto_aim_has_no_cursor_cone_and_falls_back_to_an_item_behind() {
-        let behind = Entity::from_bits(33);
-        assert_eq!(
-            auto_aim_candidate(
-                Vec3::Y,
-                Vec3::NEG_Z,
-                Vec3::ZERO,
-                [(behind, Vec3::new(0.0, 0.0, 1.5))],
-            ),
-            Some(behind)
-        );
-    }
-
-    #[test]
-    fn auto_aim_excludes_items_outside_character_pickup_range() {
-        assert_eq!(
-            auto_aim_candidate(
-                Vec3::Y,
-                Vec3::NEG_Z,
-                Vec3::ZERO,
-                [(Entity::from_bits(34), Vec3::new(0.0, 0.0, -2.01))],
-            ),
-            None
-        );
-    }
-
-    #[test]
     fn preview_traversal_keeps_belt_attachment_points_in_their_slots() {
         let mut world = World::new();
         let actor = world.spawn_empty().id();
@@ -2185,13 +2605,17 @@ mod tests {
         }
 
         let mut world = World::new();
+        let socket = Transform::from_translation(Vec3::new(-0.31, 1.02, -0.04));
         let belt = world
-            .spawn(EquipmentTopology {
-                placement_id: Some("worn".into()),
-                occupancies: vec![occupancy(TacticalEquipmentAnchor::CharacterLocation(
-                    EquipmentLocation::LeftBelt,
-                ))],
-            })
+            .spawn((
+                EquipmentTopology {
+                    placement_id: Some("worn".into()),
+                    occupancies: vec![occupancy(TacticalEquipmentAnchor::CharacterLocation(
+                        EquipmentLocation::LeftBelt,
+                    ))],
+                },
+                EquipmentAttachmentSockets(BTreeMap::from([("mount".into(), socket)])),
+            ))
             .id();
         let sheath = world
             .spawn(EquipmentTopology {
@@ -2214,12 +2638,20 @@ mod tests {
 
         let location = world
             .run_system_once(
-                move |topologies: Query<&EquipmentTopology, Without<ItemPlaceholder>>| {
-                    resolve_character_location(topologies.get(weapon).unwrap(), &topologies)
+                move |topologies: Query<
+                    (&EquipmentTopology, Option<&EquipmentAttachmentSockets>),
+                    Without<ItemPlaceholder>,
+                >| {
+                    let topology = topologies.get(weapon).unwrap().0;
+                    (
+                        resolve_character_location(topology, &topologies),
+                        resolve_equipment_attachment_socket(topology, &topologies),
+                    )
                 },
             )
             .unwrap();
-        assert_eq!(location, Some(EquipmentLocation::LeftBelt));
+        assert_eq!(location.0, Some(EquipmentLocation::LeftBelt));
+        assert_eq!(location.1, Some(socket));
     }
 
     #[test]

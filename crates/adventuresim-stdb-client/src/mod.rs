@@ -315,6 +315,11 @@ pub mod derived_historical_vegetation_type;
 pub mod derived_industry_type;
 pub mod designate_residence_reducer;
 pub mod destination_knowledge_stage_type;
+pub mod dev_bootstrap_base_reducer;
+pub mod dev_bootstrap_finalize_reducer;
+pub mod dev_bootstrap_gallery_reducer;
+pub mod dev_bootstrap_gallery_validate_reducer;
+pub mod dev_bootstrap_settlement_activity_reducer;
 pub mod development_scenario_browser_access_type;
 pub mod development_scenario_subject_type;
 pub mod development_scenario_type;
@@ -884,8 +889,6 @@ pub mod suitability_basis_points_type;
 pub mod surface_geology_type;
 pub mod surface_lithology_type;
 pub mod surrender_to_authority_reducer;
-pub mod sync_development_clock_to_character_reducer;
-pub mod synchronize_character_time_reducer;
 pub mod synchronize_party_for_activity_reducer;
 pub mod tactical_character_consequence_type;
 pub mod tactical_consequence_receipt_type;
@@ -1259,6 +1262,11 @@ pub use derived_historical_vegetation_type::DerivedHistoricalVegetation;
 pub use derived_industry_type::DerivedIndustry;
 pub use designate_residence_reducer::designate_residence;
 pub use destination_knowledge_stage_type::DestinationKnowledgeStage;
+pub use dev_bootstrap_base_reducer::dev_bootstrap_base;
+pub use dev_bootstrap_finalize_reducer::dev_bootstrap_finalize;
+pub use dev_bootstrap_gallery_reducer::dev_bootstrap_gallery;
+pub use dev_bootstrap_gallery_validate_reducer::dev_bootstrap_gallery_validate;
+pub use dev_bootstrap_settlement_activity_reducer::dev_bootstrap_settlement_activity;
 pub use development_scenario_browser_access_type::DevelopmentScenarioBrowserAccess;
 pub use development_scenario_subject_type::DevelopmentScenarioSubject;
 pub use development_scenario_type::DevelopmentScenario;
@@ -1828,8 +1836,6 @@ pub use suitability_basis_points_type::SuitabilityBasisPoints;
 pub use surface_geology_type::SurfaceGeology;
 pub use surface_lithology_type::SurfaceLithology;
 pub use surrender_to_authority_reducer::surrender_to_authority;
-pub use sync_development_clock_to_character_reducer::sync_development_clock_to_character;
-pub use synchronize_character_time_reducer::synchronize_character_time;
 pub use synchronize_party_for_activity_reducer::synchronize_party_for_activity;
 pub use tactical_character_consequence_type::TacticalCharacterConsequence;
 pub use tactical_consequence_receipt_type::TacticalConsequenceReceipt;
@@ -2162,6 +2168,24 @@ pub enum Reducer {
     DesignateResidence {
         character_id: u64,
         holding_id: String,
+    },
+    DevBootstrapBase {
+        bootstrap_token: String,
+    },
+    DevBootstrapFinalize {
+        bootstrap_token: String,
+    },
+    DevBootstrapGallery {
+        bootstrap_token: String,
+        offset: u32,
+        count: u32,
+    },
+    DevBootstrapGalleryValidate {
+        bootstrap_token: String,
+    },
+    DevBootstrapSettlementActivity {
+        bootstrap_token: String,
+        index: u32,
     },
     DisbandParty {
         leader_id: u64,
@@ -2641,6 +2665,7 @@ pub enum Reducer {
         character_id: u64,
         walking_minutes_per_day: u16,
         travel_at_night: bool,
+        journey_start_minute_of_day: u16,
     },
     ShareInvestigationBelief {
         sender_id: u64,
@@ -2739,12 +2764,6 @@ pub enum Reducer {
     SurrenderToAuthority {
         character_id: u64,
         action_token: String,
-    },
-    SyncDevelopmentClockToCharacter {
-        character_id: u64,
-    },
-    SynchronizeCharacterTime {
-        character_id: u64,
     },
     SynchronizePartyForActivity {
         leader_id: u64,
@@ -2890,6 +2909,11 @@ impl __sdk::Reducer for Reducer {
             Reducer::DemandHostileSurrender { .. } => "demand_hostile_surrender",
             Reducer::DepositPartyInventoryItem { .. } => "deposit_party_inventory_item",
             Reducer::DesignateResidence { .. } => "designate_residence",
+            Reducer::DevBootstrapBase { .. } => "dev_bootstrap_base",
+            Reducer::DevBootstrapFinalize { .. } => "dev_bootstrap_finalize",
+            Reducer::DevBootstrapGallery { .. } => "dev_bootstrap_gallery",
+            Reducer::DevBootstrapGalleryValidate { .. } => "dev_bootstrap_gallery_validate",
+            Reducer::DevBootstrapSettlementActivity { .. } => "dev_bootstrap_settlement_activity",
             Reducer::DisbandParty { .. } => "disband_party",
             Reducer::DiscardContainerWater { .. } => "discard_container_water",
             Reducer::DiscardInventoryItems { .. } => "discard_inventory_items",
@@ -3010,10 +3034,6 @@ impl __sdk::Reducer for Reducer {
             Reducer::SubmitItemForRepair { .. } => "submit_item_for_repair",
             Reducer::SubmitPuzzleChallenge { .. } => "submit_puzzle_challenge",
             Reducer::SurrenderToAuthority { .. } => "surrender_to_authority",
-            Reducer::SyncDevelopmentClockToCharacter { .. } => {
-                "sync_development_clock_to_character"
-            }
-            Reducer::SynchronizeCharacterTime { .. } => "synchronize_character_time",
             Reducer::SynchronizePartyForActivity { .. } => "synchronize_party_for_activity",
             Reducer::TrackCaseSite { .. } => "track_case_site",
             Reducer::TransferPartyItem { .. } => "transfer_party_item",
@@ -3509,6 +3529,37 @@ impl __sdk::Reducer for Reducer {
 }             => __sats::bsatn::to_vec(&designate_residence_reducer::DesignateResidenceArgs {
                 character_id: character_id.clone(),
                 holding_id: holding_id.clone(),
+}),
+            Reducer::DevBootstrapBase{
+                bootstrap_token,
+}             => __sats::bsatn::to_vec(&dev_bootstrap_base_reducer::DevBootstrapBaseArgs {
+                bootstrap_token: bootstrap_token.clone(),
+}),
+            Reducer::DevBootstrapFinalize{
+                bootstrap_token,
+}             => __sats::bsatn::to_vec(&dev_bootstrap_finalize_reducer::DevBootstrapFinalizeArgs {
+                bootstrap_token: bootstrap_token.clone(),
+}),
+            Reducer::DevBootstrapGallery{
+                bootstrap_token,
+                offset,
+                count,
+}             => __sats::bsatn::to_vec(&dev_bootstrap_gallery_reducer::DevBootstrapGalleryArgs {
+                bootstrap_token: bootstrap_token.clone(),
+                offset: offset.clone(),
+                count: count.clone(),
+}),
+            Reducer::DevBootstrapGalleryValidate{
+                bootstrap_token,
+}             => __sats::bsatn::to_vec(&dev_bootstrap_gallery_validate_reducer::DevBootstrapGalleryValidateArgs {
+                bootstrap_token: bootstrap_token.clone(),
+}),
+            Reducer::DevBootstrapSettlementActivity{
+                bootstrap_token,
+                index,
+}             => __sats::bsatn::to_vec(&dev_bootstrap_settlement_activity_reducer::DevBootstrapSettlementActivityArgs {
+                bootstrap_token: bootstrap_token.clone(),
+                index: index.clone(),
 }),
             Reducer::DisbandParty{
                 leader_id,
@@ -4369,10 +4420,12 @@ impl __sdk::Reducer for Reducer {
                 character_id,
                 walking_minutes_per_day,
                 travel_at_night,
+                journey_start_minute_of_day,
 }             => __sats::bsatn::to_vec(&set_party_travel_itinerary_reducer::SetPartyTravelItineraryArgs {
                 character_id: character_id.clone(),
                 walking_minutes_per_day: walking_minutes_per_day.clone(),
                 travel_at_night: travel_at_night.clone(),
+                journey_start_minute_of_day: journey_start_minute_of_day.clone(),
 }),
             Reducer::ShareInvestigationBelief{
                 sender_id,
@@ -4553,16 +4606,6 @@ impl __sdk::Reducer for Reducer {
 }             => __sats::bsatn::to_vec(&surrender_to_authority_reducer::SurrenderToAuthorityArgs {
                 character_id: character_id.clone(),
                 action_token: action_token.clone(),
-}),
-            Reducer::SyncDevelopmentClockToCharacter{
-                character_id,
-}             => __sats::bsatn::to_vec(&sync_development_clock_to_character_reducer::SyncDevelopmentClockToCharacterArgs {
-                character_id: character_id.clone(),
-}),
-            Reducer::SynchronizeCharacterTime{
-                character_id,
-}             => __sats::bsatn::to_vec(&synchronize_character_time_reducer::SynchronizeCharacterTimeArgs {
-                character_id: character_id.clone(),
 }),
             Reducer::SynchronizePartyForActivity{
                 leader_id,

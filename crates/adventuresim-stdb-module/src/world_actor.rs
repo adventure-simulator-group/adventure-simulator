@@ -1501,7 +1501,7 @@ mod tests {
 
     #[test]
     fn contextual_actions_share_private_presence_decisions_and_physiology_authority() {
-        let source = include_str!("world_actor.rs");
+        let source = crate::production_source(include_str!("world_actor.rs"));
         let authorization = source
             .split("fn contextual_membership_is_visible")
             .nth(1)
@@ -1522,7 +1522,7 @@ mod tests {
 
     #[test]
     fn emergency_treatment_is_only_exact_limb_bandaging() {
-        let source = include_str!("world_actor.rs");
+        let source = crate::production_source(include_str!("world_actor.rs"));
         let treatment = source
             .split("pub(crate) fn contextual_treatment_decision")
             .nth(1)
@@ -1533,14 +1533,14 @@ mod tests {
             .expect("treatment decision");
         assert!(treatment.contains("emergency_bandage_is_necessary"));
         assert!(treatment.contains("injury_for(ctx, patient_id, limb)"));
-        assert!(treatment.contains("incapacitation >= 1.0"));
+        assert!(treatment.contains("IncapacitationStatus::Incapacitated"));
         assert!(!treatment.contains("stitch\""));
         assert!(!treatment.contains("extract\""));
     }
 
     #[test]
     fn road_combat_reuses_cast_character_identity() {
-        let source = include_str!("world_actor.rs");
+        let source = crate::production_source(include_str!("world_actor.rs"));
         let rebound = source
             .split("pub(crate) fn rebind_road_cast_to_strategic_encounter")
             .nth(1)
@@ -1553,7 +1553,7 @@ mod tests {
 
     #[test]
     fn case_context_joins_use_typed_observer_relative_presence() {
-        let source = include_str!("world_actor.rs");
+        let source = crate::production_source(include_str!("world_actor.rs"));
         let presence = source
             .split("pub(crate) fn characters_are_contextually_present")
             .nth(1)

@@ -690,7 +690,7 @@ mod hostile_negotiation_source_tests {
 
     #[test]
     fn refusal_is_non_terminal_and_acceptance_uses_battle_independent_drive_off() {
-        let source = include_str!("hostile_negotiation.rs");
+        let source = crate::production_source(include_str!("hostile_negotiation.rs"));
         let refusal = source
             .split("HostileNegotiationOutcome::Refused")
             .nth(1)
@@ -705,7 +705,7 @@ mod hostile_negotiation_source_tests {
 
     #[test]
     fn projection_and_reducer_bind_exact_private_hostile_context() {
-        let source = include_str!("hostile_negotiation.rs");
+        let source = crate::production_source(include_str!("hostile_negotiation.rs"));
         assert!(source.contains("strategic_view_is_gateway(ctx)"));
         assert!(source.contains("HOSTILE_NEGOTIATION_CONTEXT_REF"));
         assert!(source.contains("CharacterContextRole::Counterparty"));

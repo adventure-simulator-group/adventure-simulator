@@ -177,6 +177,193 @@ impl RaisedLocomotionIntent {
     }
 }
 
+/// Server-authored planar contact positions for raised-guard footwork. Values
+/// are stored in the controller's local X/Z frame and advected against body
+/// motion, so a planted virtual foot remains fixed while the root travels.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct GuardContacts {
+    left: Vec2,
+    right: Vec2,
+}
+
+impl GuardContacts {
+    pub fn left(self) -> Vec2 {
+        self.left
+    }
+
+    pub fn right(self) -> Vec2 {
+        self.right
+    }
+
+    fn advected(self, local_displacement: Vec2) -> Self {
+        Self {
+            left: self.left - local_displacement,
+            right: self.right - local_displacement,
+        }
+    }
+
+    fn with_contact(self, foot: LeadFoot, position: Vec2) -> Self {
+        match foot {
+            LeadFoot::Left => Self {
+                left: position,
+                ..self
+            },
+            LeadFoot::Right => Self {
+                right: position,
+                ..self
+            },
+        }
+    }
+
+    fn normalized(self) -> Self {
+        let finite = |value: Vec2, fallback: Vec2| {
+            if value.is_finite() { value } else { fallback }
+        };
+        Self {
+            left: finite(self.left, Vec2::new(-GUARD_DEFAULT_HALF_WIDTH_METRES, 0.0)),
+            right: finite(self.right, Vec2::new(GUARD_DEFAULT_HALF_WIDTH_METRES, 0.0)),
+        }
+    }
+}
+
+impl Default for GuardContacts {
+    fn default() -> Self {
+        Self {
+            left: Vec2::new(-GUARD_DEFAULT_HALF_WIDTH_METRES, 0.0),
+            right: Vec2::new(GUARD_DEFAULT_HALF_WIDTH_METRES, 0.0),
+        }
+    }
+}
+
+/// One complete, authoritative raised-guard swing. Contact timing and landing
+/// placement are a single plan; presentation may interpolate within it but may
+/// not postpone its contact tick.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct GuardStepPlan {
+    contacts: GuardContacts,
+    swing_foot: LeadFoot,
+    swing_start: Vec2,
+    landing: Vec2,
+    start_tick: u64,
+    contact_tick: u64,
+}
+
+impl GuardStepPlan {
+    pub fn contacts(self) -> GuardContacts {
+        self.contacts
+    }
+
+    pub fn swing_foot(self) -> LeadFoot {
+        self.swing_foot
+    }
+
+    pub fn swing_start(self) -> Vec2 {
+        self.swing_start
+    }
+
+    pub fn landing(self) -> Vec2 {
+        self.landing
+    }
+
+    pub fn start_tick(self) -> u64 {
+        self.start_tick
+    }
+
+    pub fn contact_tick(self) -> u64 {
+        self.contact_tick
+    }
+
+    pub fn progress(self, tick: u64) -> f32 {
+        let duration = self.contact_tick.saturating_sub(self.start_tick).max(1);
+        tick.saturating_sub(self.start_tick) as f32 / duration as f32
+    }
+
+    pub fn direction(self) -> Vec2 {
+        (self.landing - self.swing_start).normalize_or_zero()
+    }
+
+    fn advected(mut self, local_displacement: Vec2) -> Self {
+        self.contacts = self.contacts.advected(local_displacement);
+        self.swing_start -= local_displacement;
+        self.landing -= local_displacement;
+        self
+    }
+
+    fn normalized(mut self) -> Self {
+        self.contacts = self.contacts.normalized();
+        if !self.swing_start.is_finite() {
+            self.swing_start = match self.swing_foot {
+                LeadFoot::Left => self.contacts.left,
+                LeadFoot::Right => self.contacts.right,
+            };
+        }
+        if !self.landing.is_finite() {
+            self.landing = self.swing_start;
+        }
+        self.contact_tick = self.contact_tick.max(self.start_tick.saturating_add(1));
+        self
+    }
+}
+
+/// The complete authoritative topology for raised-guard contacts. A step can
+/// never exist without a support contact, landing, and mandatory contact tick.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum GuardFootworkPlan {
+    #[default]
+    Uninitialized,
+    Planted {
+        contacts: GuardContacts,
+        next_swing: LeadFoot,
+    },
+    Stepping(GuardStepPlan),
+}
+
+impl GuardFootworkPlan {
+    pub fn contacts(self) -> Option<GuardContacts> {
+        match self {
+            Self::Uninitialized => None,
+            Self::Planted { contacts, .. } => Some(contacts),
+            Self::Stepping(step) => Some(step.contacts),
+        }
+    }
+
+    pub fn step(self) -> Option<GuardStepPlan> {
+        match self {
+            Self::Stepping(step) => Some(step),
+            Self::Uninitialized | Self::Planted { .. } => None,
+        }
+    }
+
+    pub fn next_swing(self) -> Option<LeadFoot> {
+        match self {
+            Self::Planted { next_swing, .. } => Some(next_swing),
+            Self::Stepping(step) => Some(opposite_foot(step.swing_foot)),
+            Self::Uninitialized => None,
+        }
+    }
+
+    fn normalized(self) -> Self {
+        match self {
+            Self::Uninitialized => Self::Uninitialized,
+            Self::Planted {
+                contacts,
+                next_swing,
+            } => Self::Planted {
+                contacts: contacts.normalized(),
+                next_swing,
+            },
+            Self::Stepping(step) => Self::Stepping(step.normalized()),
+        }
+    }
+}
+
+const GUARD_DEFAULT_HALF_WIDTH_METRES: f32 = 0.15;
+pub const GUARD_CONTACT_MARGIN_METRES: f32 = 0.08;
+const GUARD_MINIMUM_STEP_SECONDS: f32 = 0.10;
+const GUARD_MAXIMUM_STEP_SECONDS: f32 = 0.32;
+const GUARD_PLANNING_REACH_METRES: f32 = 0.80;
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Reflect)]
 pub enum SkeletonAction {
     #[default]
@@ -211,14 +398,39 @@ pub enum DiveDirection {
     Right,
 }
 
+impl DiveDirection {
+    pub fn opposite(self) -> Self {
+        match self {
+            Self::Forward => Self::Backward,
+            Self::Backward => Self::Forward,
+            Self::Left => Self::Right,
+            Self::Right => Self::Left,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DiveTrajectory {
+    #[default]
+    Airborne,
+    GroundedSlide,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PostureTransitionKind {
     UprightToProne,
     ProneToUpright,
-    ProneToSupine { direction: RollDirection },
-    SupineToProne { direction: RollDirection },
+    ProneToSupine {
+        direction: RollDirection,
+    },
+    SupineToProne {
+        direction: RollDirection,
+    },
     SupineToUpright,
-    DiveToDowned { direction: DiveDirection },
+    DiveToDowned {
+        direction: DiveDirection,
+        trajectory: DiveTrajectory,
+    },
 }
 
 impl PostureTransitionKind {
@@ -237,6 +449,7 @@ impl PostureTransitionKind {
             Self::UprightToProne | Self::SupineToProne { .. } => BodyState::Prone,
             Self::DiveToDowned {
                 direction: DiveDirection::Backward,
+                ..
             } => BodyState::Supine,
             Self::DiveToDowned { .. } => BodyState::Prone,
             Self::ProneToSupine { .. } => BodyState::Supine,
@@ -370,10 +583,33 @@ impl PostureTransitionState {
     /// airborne endpoint until impact; only the second half transfers the
     /// directional pose into its canonical downed contact pose.
     pub fn dive_recovery(self) -> Option<(DiveDirection, f32)> {
-        let PostureTransitionKind::DiveToDowned { direction } = self.kind else {
+        let PostureTransitionKind::DiveToDowned {
+            direction,
+            trajectory,
+        } = self.kind
+        else {
             return None;
         };
-        Some((direction, ((self.phase - 0.5) * 2.0).clamp(0.0, 1.0)))
+        // The authored body first settles out of its tilted dive pose, then
+        // expresses the planar yaw of the downed contact. Starting root yaw at
+        // contact gets ahead of that anatomical turn and visibly twists the
+        // whole character before the supine pose catches up. Reserve the first
+        // part of recovery for settling, then transfer root yaw with zero
+        // endpoint velocity. The endpoint remains the complete canonical turn.
+        const ROOT_HANDOFF_START_FRACTION: f32 = 0.18;
+        let root_handoff_end_fraction = match trajectory {
+            // The shorter slide devotes a larger normalized share to the same
+            // fixed presentation settling time, so its handoff finishes with
+            // the transition. The longer airborne recovery can finish just
+            // before the terminal pose without outrunning the authored turn.
+            DiveTrajectory::GroundedSlide => 1.0,
+            DiveTrajectory::Airborne => 0.92,
+        };
+        let recovery = ((self.phase - 0.5) * 2.0).clamp(0.0, 1.0);
+        let handoff = ((recovery - ROOT_HANDOFF_START_FRACTION)
+            / (root_handoff_end_fraction - ROOT_HANDOFF_START_FRACTION))
+            .clamp(0.0, 1.0);
+        Some((direction, smoothstep(handoff)))
     }
 }
 
@@ -396,10 +632,11 @@ pub fn dive_landing_facing_delta(
         .map_or(1.0, |(_, progress)| progress);
     let total_yaw = match direction {
         DiveDirection::Forward => 0.0,
-        // The canonical backward dive-to-supine contact span resolves its
-        // ambiguous half turn through negative yaw. Transfer the root through
-        // the equivalent positive branch so the two rotations cancel instead
-        // of composing into a visible full flip.
+        // The authored backward-dive-to-supine blend contains the body's
+        // half-turn. Transfer the inverse half-turn to the gameplay root over
+        // the same contact-recovery interval so visible facing stays fixed
+        // while the root reaches the canonical supine orientation. This must
+        // not be omitted or applied as a single completion-tick correction.
         DiveDirection::Backward => std::f32::consts::PI,
         DiveDirection::Left => std::f32::consts::FRAC_PI_2,
         DiveDirection::Right => -std::f32::consts::FRAC_PI_2,
@@ -440,20 +677,33 @@ pub fn supine_get_up_counter_yaw_delta(
 struct ActionTimeline {
     start_tick: u64,
     preparation_ticks: u64,
+    recovery_ticks: u64,
     phase: f32,
 }
 
 impl ActionTimeline {
     fn new(start_tick: u64, contact_tick: u64) -> Self {
+        let preparation_ticks = contact_tick.saturating_sub(start_tick).max(1);
+        Self {
+            start_tick,
+            preparation_ticks,
+            recovery_ticks: preparation_ticks,
+            phase: 0.0,
+        }
+    }
+
+    fn with_recovery(start_tick: u64, contact_tick: u64, end_tick: u64) -> Self {
         Self {
             start_tick,
             preparation_ticks: contact_tick.saturating_sub(start_tick).max(1),
+            recovery_ticks: end_tick.saturating_sub(contact_tick).max(1),
             phase: 0.0,
         }
     }
 
     fn normalized(mut self) -> Self {
         self.preparation_ticks = self.preparation_ticks.max(1);
+        self.recovery_ticks = self.recovery_ticks.max(1);
         self.phase = if self.phase.is_finite() {
             self.phase.clamp(0.0, 1.0)
         } else {
@@ -476,6 +726,7 @@ enum ActionKind {
         strike_family: StrikeFamily,
         hand: AttackHand,
         continuation: bool,
+        curve: AttackCurve,
         timeline: ActionTimeline,
     },
     Block {
@@ -508,6 +759,7 @@ impl<'de> Deserialize<'de> for ActionState {
                 strike_family,
                 hand,
                 continuation,
+                curve,
                 timeline,
             } => ActionKind::Attack {
                 target_height: if target_height.is_finite() {
@@ -519,6 +771,7 @@ impl<'de> Deserialize<'de> for ActionState {
                 strike_family,
                 hand,
                 continuation,
+                curve: curve.normalized(),
                 timeline: timeline.normalized(),
             },
             ActionKind::Block {
@@ -596,6 +849,123 @@ pub enum ActionTransitionError {
     ActionBusy,
 }
 
+/// Bounded blend-coordinate curve for an attack's authored guard/contact
+/// poses. Coordinates below zero draw back through the guard pose; coordinates
+/// above one continue through contact. This mirrors Overgrowth's synced-pose
+/// overshoot without extrapolating clip time beyond authored keys.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct AttackCurve {
+    /// Fraction of preparation spent drawing back before commitment begins.
+    pub tell_fraction: f32,
+    /// Furthest negative guard-to-contact blend coordinate reached by the tell.
+    pub drawback: f32,
+    /// Fraction of recovery spent continuing beyond contact before braking.
+    pub follow_through_fraction: f32,
+    /// Furthest distance beyond the contact pose reached during follow-through.
+    pub overshoot: f32,
+}
+
+impl Default for AttackCurve {
+    fn default() -> Self {
+        Self::from_handling(0.3, 3.0)
+    }
+}
+
+impl AttackCurve {
+    pub const MAX_DRAWBACK: f32 = 0.65;
+    pub const MAX_OVERSHOOT: f32 = 0.55;
+
+    /// Produces a readable but controlled curve from physical weapon inertia
+    /// and the attacker's effective weapon skill check. High-inertia weapons
+    /// and low-skill attacks telegraph and follow through more.
+    pub fn from_handling(moment_of_inertia_kg_m2: f32, skill: f32) -> Self {
+        Self::from_handling_with_config(
+            moment_of_inertia_kg_m2,
+            skill,
+            &crate::combat_config::TacticalCombatConfig::default()
+                .presentation
+                .attack_curve,
+        )
+    }
+
+    pub fn from_handling_with_config(
+        moment_of_inertia_kg_m2: f32,
+        skill: f32,
+        config: &crate::combat_config::AttackCurveConfig,
+    ) -> Self {
+        let inertia = if moment_of_inertia_kg_m2.is_finite() {
+            moment_of_inertia_kg_m2.max(0.0)
+        } else {
+            0.3
+        };
+        let inertia_difficulty = (inertia / (inertia + config.inertia_characteristic)).sqrt();
+        let skill = finite_clamp(skill / 5.0, 0.0, 1.0, 0.0);
+        let lack_of_control =
+            inertia_difficulty * config.inertia_weight + (1.0 - skill) * config.skill_weight;
+        Self {
+            tell_fraction: config.tell_base + config.tell_span * lack_of_control,
+            drawback: config.drawback_base + config.drawback_span * lack_of_control,
+            follow_through_fraction: config.follow_through_base
+                + config.follow_through_span * lack_of_control,
+            overshoot: config.overshoot_base + config.overshoot_span * lack_of_control,
+        }
+        .normalized_with_limits(config.maximum_drawback, config.maximum_overshoot)
+    }
+
+    fn normalized(self) -> Self {
+        self.normalized_with_limits(Self::MAX_DRAWBACK, Self::MAX_OVERSHOOT)
+    }
+
+    fn normalized_with_limits(mut self, maximum_drawback: f32, maximum_overshoot: f32) -> Self {
+        self.tell_fraction = finite_clamp(self.tell_fraction, 0.15, 0.75, 0.45);
+        self.drawback = finite_clamp(self.drawback, 0.0, maximum_drawback, 0.3);
+        self.follow_through_fraction = finite_clamp(self.follow_through_fraction, 0.1, 0.65, 0.3);
+        self.overshoot = finite_clamp(self.overshoot, 0.0, maximum_overshoot, 0.2);
+        self
+    }
+
+    /// Unclamped semantic pose coordinate at a normalized action phase where
+    /// contact remains exactly 0.5.
+    pub fn coordinate(self, phase: f32) -> f32 {
+        let phase = finite_clamp(phase, 0.0, 1.0, 0.0);
+        if phase <= 0.5 {
+            let preparation = phase * 2.0;
+            if preparation <= self.tell_fraction {
+                let progress = smoothstep(preparation / self.tell_fraction);
+                -self.drawback * progress
+            } else {
+                let progress =
+                    smoothstep((preparation - self.tell_fraction) / (1.0 - self.tell_fraction));
+                -self.drawback + (1.0 + self.drawback) * progress
+            }
+        } else {
+            let recovery = (phase - 0.5) * 2.0;
+            if recovery <= self.follow_through_fraction {
+                1.0 + self.overshoot * smoothstep(recovery / self.follow_through_fraction)
+            } else {
+                let progress = smoothstep(
+                    (recovery - self.follow_through_fraction)
+                        / (1.0 - self.follow_through_fraction),
+                );
+                (1.0 + self.overshoot) * (1.0 - progress)
+            }
+        }
+    }
+}
+
+fn finite_clamp(value: f32, minimum: f32, maximum: f32, fallback: f32) -> f32 {
+    if value.is_finite() {
+        value.clamp(minimum, maximum)
+    } else {
+        fallback
+    }
+}
+
+fn smoothstep(value: f32) -> f32 {
+    let value = value.clamp(0.0, 1.0);
+    value * value * (3.0 - 2.0 * value)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct AttackSpec {
     pub target_height: f32,
@@ -603,6 +973,7 @@ pub struct AttackSpec {
     pub strike_family: StrikeFamily,
     pub hand: AttackHand,
     pub continuation: bool,
+    pub curve: AttackCurve,
 }
 
 impl Default for AttackSpec {
@@ -613,6 +984,7 @@ impl Default for AttackSpec {
             strike_family: StrikeFamily::Thrust,
             hand: AttackHand::Main,
             continuation: false,
+            curve: AttackCurve::default(),
         }
     }
 }
@@ -865,6 +1237,7 @@ pub struct SkeletonState {
     pub world_acceleration: Vec3,
     pub contact_sequence: u64,
     pub contact_foot: LeadFoot,
+    raised_footwork: GuardFootworkPlan,
     pub landing_sequence: u64,
     pub landing_impact_speed: f32,
     pub lead_foot: LeadFoot,
@@ -890,6 +1263,8 @@ struct SkeletonStateWire {
     world_acceleration: Vec3,
     contact_sequence: u64,
     contact_foot: LeadFoot,
+    #[serde(default)]
+    raised_footwork: GuardFootworkPlan,
     landing_sequence: u64,
     landing_impact_speed: f32,
     lead_foot: LeadFoot,
@@ -925,6 +1300,7 @@ impl<'de> Deserialize<'de> for SkeletonState {
             world_acceleration: finite(wire.world_acceleration),
             contact_sequence: wire.contact_sequence,
             contact_foot: wire.contact_foot,
+            raised_footwork: wire.raised_footwork.normalized(),
             landing_sequence: wire.landing_sequence,
             landing_impact_speed: if wire.landing_impact_speed.is_finite() {
                 wire.landing_impact_speed.max(0.0)
@@ -963,6 +1339,7 @@ impl Default for SkeletonState {
             world_acceleration: Vec3::ZERO,
             contact_sequence: 0,
             contact_foot: LeadFoot::Left,
+            raised_footwork: GuardFootworkPlan::default(),
             landing_sequence: 0,
             landing_impact_speed: 0.0,
             lead_foot: LeadFoot::Left,
@@ -992,11 +1369,13 @@ pub fn set_weapon_guard(skeleton: &mut SkeletonState, weapon_guard: WeaponGuardS
             skeleton.stance = StanceState::Raised {
                 locomotion: RaisedLocomotionIntent::default(),
             };
+            skeleton.raised_footwork = GuardFootworkPlan::default();
         }
         (StanceState::Lowered, WeaponGuardState::Raised) => {}
         (StanceState::Raised { .. }, WeaponGuardState::Lowered) => {
             skeleton.stance = StanceState::Lowered;
             skeleton.guarded_sprint_locomotion = false;
+            skeleton.raised_footwork = GuardFootworkPlan::default();
         }
     }
 }
@@ -1061,6 +1440,7 @@ impl SkeletonState {
         }
         if body.is_downed() {
             self.stance = StanceState::Lowered;
+            self.raised_footwork = GuardFootworkPlan::default();
             self.action = ActionState::default();
         } else if body != BodyState::Grounded(GroundedPosture::Upright)
             && let StanceState::Raised { locomotion } = self.stance
@@ -1069,6 +1449,7 @@ impl SkeletonState {
             self.stance = StanceState::Raised {
                 locomotion: RaisedLocomotionIntent::planted(),
             };
+            self.raised_footwork = GuardFootworkPlan::default();
         }
     }
     pub fn with_weapon_guard(mut self, guard: WeaponGuardState) -> Self {
@@ -1104,6 +1485,9 @@ impl SkeletonState {
             StanceState::Lowered => RaisedLocomotionIntent::default(),
             StanceState::Raised { locomotion } => locomotion,
         }
+    }
+    pub fn raised_footwork(&self) -> GuardFootworkPlan {
+        self.raised_footwork
     }
     fn set_raised_locomotion(&mut self, locomotion: RaisedLocomotionIntent) {
         if matches!(self.stance, StanceState::Raised { .. }) {
@@ -1168,6 +1552,7 @@ impl SkeletonState {
             return false;
         }
         self.stance = StanceState::Lowered;
+        self.raised_footwork = GuardFootworkPlan::default();
         self.jump_anticipation = JumpAnticipation::Inactive;
         self.guarded_sprint_locomotion = false;
         self.action = ActionState::default();
@@ -1185,6 +1570,21 @@ impl SkeletonState {
             return;
         };
         let elapsed = current_tick.saturating_sub(transition.start_tick);
+        if matches!(
+            transition.kind,
+            PostureTransitionKind::DiveToDowned {
+                trajectory: DiveTrajectory::GroundedSlide,
+                ..
+            }
+        ) {
+            if elapsed >= transition.duration_ticks {
+                self.finish_posture_transition(transition.kind);
+                return;
+            }
+            transition.phase = elapsed as f32 / transition.duration_ticks as f32;
+            self.posture_transition = Some(transition);
+            return;
+        }
         if matches!(transition.kind, PostureTransitionKind::DiveToDowned { .. }) {
             if !self.body.is_surface_supported() {
                 transition.dive_was_airborne = true;
@@ -1205,7 +1605,14 @@ impl SkeletonState {
                 return;
             }
             if elapsed >= transition.duration_ticks {
-                self.finish_posture_transition(transition.kind);
+                // A delayed or missed unsupported-controller sample must not
+                // skip directly from the loading half to the final contact
+                // pose. Enter the same bounded recovery used after a detected
+                // landing so pose and facing remain continuous.
+                transition.dive_was_airborne = true;
+                transition.dive_landing_tick = Some(current_tick);
+                transition.phase = 0.5;
+                self.posture_transition = Some(transition);
                 return;
             }
             transition.phase = 0.5 * elapsed as f32 / transition.duration_ticks as f32;
@@ -1231,6 +1638,7 @@ impl SkeletonState {
         self.downed_facing = match kind {
             PostureTransitionKind::DiveToDowned {
                 direction: DiveDirection::Left,
+                ..
             } => Some(DownedFacingState {
                 half_turns: -0.5,
                 target: DownedFacingPose::RollLeft,
@@ -1238,6 +1646,7 @@ impl SkeletonState {
             }),
             PostureTransitionKind::DiveToDowned {
                 direction: DiveDirection::Right,
+                ..
             } => Some(DownedFacingState {
                 half_turns: 0.5,
                 target: DownedFacingPose::RollRight,
@@ -1259,7 +1668,9 @@ impl SkeletonState {
         aim_held: bool,
         maximum_step: f32,
     ) -> bool {
-        if !self.body.is_downed() || self.posture_transition.is_some() {
+        if !matches!(self.body, BodyState::Prone | BodyState::Supine)
+            || self.posture_transition.is_some()
+        {
             self.downed_facing = None;
             return false;
         }
@@ -1402,6 +1813,12 @@ impl SkeletonState {
             })
         )
     }
+    pub fn attack_curve(&self) -> AttackCurve {
+        match self.action {
+            ActionState(ActionKind::Attack { curve, .. }) => curve,
+            _ => AttackCurve::default(),
+        }
+    }
     pub fn attack_animation(&self) -> Option<AttackAnimation> {
         match self.action {
             ActionState(ActionKind::Attack { animation, .. }) => Some(animation),
@@ -1498,7 +1915,7 @@ impl SkeletonState {
     }
 
     pub fn quickstep_is_launched(&self) -> bool {
-        self.is_quickstep() && self.action_phase() >= 0.125
+        self.is_quickstep() && self.action_phase() >= 0.50
     }
 
     fn action_admission(&self) -> Result<(), ActionTransitionError> {
@@ -1538,6 +1955,24 @@ impl SkeletonState {
         start_tick: u64,
         contact_tick: u64,
     ) -> Result<(), ActionTransitionError> {
+        let preparation_ticks = contact_tick.saturating_sub(start_tick).max(1);
+        self.begin_attack_timed(
+            spec,
+            start_tick,
+            contact_tick,
+            contact_tick.saturating_add(preparation_ticks),
+        )
+    }
+
+    /// Starts an attack with independently authored preparation and recovery.
+    /// Contact remains semantic phase 0.5 for presentation and gameplay.
+    pub fn begin_attack_timed(
+        &mut self,
+        spec: AttackSpec,
+        start_tick: u64,
+        contact_tick: u64,
+        end_tick: u64,
+    ) -> Result<(), ActionTransitionError> {
         self.action_admission()?;
         let may_follow = matches!(
             self.action,
@@ -1566,7 +2001,8 @@ impl SkeletonState {
             strike_family: spec.strike_family,
             hand: spec.hand,
             continuation: spec.continuation,
-            timeline: ActionTimeline::new(start_tick, contact_tick),
+            curve: spec.curve.normalized(),
+            timeline: ActionTimeline::with_recovery(start_tick, contact_tick, end_tick),
         });
         Ok(())
     }
@@ -1588,8 +2024,8 @@ impl SkeletonState {
         Ok(())
     }
 
-    /// Advances an action whose contact is the midpoint of its visual
-    /// timeline. Recovery gets the same bounded duration as preparation.
+    /// Advances an action whose semantic contact is phase 0.5. Preparation
+    /// and recovery may have different real-time durations.
     pub fn advance_action(&mut self, current_tick: u64) {
         let timeline = match &mut self.action {
             ActionState(ActionKind::Idle) => return,
@@ -1598,8 +2034,9 @@ impl SkeletonState {
             | ActionState(ActionKind::Block { timeline, .. }) => timeline,
         };
         let preparation = timeline.preparation_ticks.max(1);
+        let recovery = timeline.recovery_ticks.max(1);
         let contact_tick = timeline.start_tick.saturating_add(preparation);
-        let end_tick = contact_tick.saturating_add(preparation);
+        let end_tick = contact_tick.saturating_add(recovery);
         if current_tick >= end_tick {
             if current_tick > end_tick || end_tick == u64::MAX {
                 self.action = ActionState::default();
@@ -1611,7 +2048,7 @@ impl SkeletonState {
         timeline.phase = if current_tick <= contact_tick {
             0.5 * current_tick.saturating_sub(timeline.start_tick) as f32 / preparation as f32
         } else {
-            0.5 + 0.5 * current_tick.saturating_sub(contact_tick) as f32 / preparation as f32
+            0.5 + 0.5 * current_tick.saturating_sub(contact_tick) as f32 / recovery as f32
         };
     }
 }
@@ -1664,6 +2101,26 @@ pub fn advance_body_facing(
     weapon_guard: WeaponGuardState,
     delta_seconds: f32,
 ) -> Quat {
+    advance_body_facing_with_speed(
+        current,
+        controller_orientation,
+        linear_velocity,
+        action,
+        weapon_guard,
+        delta_seconds,
+        BODY_TURN_SPEED_RADIANS,
+    )
+}
+
+pub fn advance_body_facing_with_speed(
+    current: Quat,
+    controller_orientation: Quat,
+    linear_velocity: Vec3,
+    action: SkeletonAction,
+    weapon_guard: WeaponGuardState,
+    delta_seconds: f32,
+    turn_speed_radians: f32,
+) -> Quat {
     let current_yaw = body_yaw(current);
     let desired_forward = if weapon_guard == WeaponGuardState::Raised
         || matches!(action, SkeletonAction::Attack | SkeletonAction::Block)
@@ -1678,6 +2135,19 @@ pub fn advance_body_facing(
         };
         Vec3::new(direction.x, 0.0, direction.y)
     };
+    advance_body_facing_toward(current, desired_forward, delta_seconds, turn_speed_radians)
+}
+
+/// Advances the authored body's +Z axis toward an explicit planar target.
+/// Attack target acquisition uses this lower-level seam to share the ordinary
+/// bounded facing actuator while choosing a target independently of camera yaw.
+pub fn advance_body_facing_toward(
+    current: Quat,
+    desired_forward: Vec3,
+    delta_seconds: f32,
+    turn_speed_radians: f32,
+) -> Quat {
+    let current_yaw = body_yaw(current);
     let desired_yaw = desired_forward.x.atan2(desired_forward.z);
     let mut delta = (desired_yaw - current_yaw + std::f32::consts::PI)
         .rem_euclid(std::f32::consts::TAU)
@@ -1685,8 +2155,24 @@ pub fn advance_body_facing(
     if (delta + std::f32::consts::PI).abs() <= 1.0e-5 {
         delta = std::f32::consts::PI;
     }
-    let maximum = (BODY_TURN_SPEED_RADIANS * delta_seconds.max(0.0)).min(std::f32::consts::PI);
+    let maximum = (turn_speed_radians * delta_seconds.max(0.0)).min(std::f32::consts::PI);
     Quat::from_rotation_y(current_yaw + delta.clamp(-maximum, maximum))
+}
+
+/// Angular speed required to reach a planar facing by a deadline without an
+/// instantaneous turn. Re-evaluating this as the target moves still lands on
+/// the live heading at canonical contact.
+pub fn body_turn_speed_for_deadline(
+    current: Quat,
+    desired_forward: Vec3,
+    remaining_seconds: f32,
+    delta_seconds: f32,
+) -> f32 {
+    let Some(desired) = desired_forward.xz().try_normalize() else {
+        return 0.0;
+    };
+    let current = (current * Vec3::Z).xz().normalize_or_zero();
+    current.angle_to(desired).abs() / remaining_seconds.max(delta_seconds).max(f32::EPSILON)
 }
 
 /// Rotates a downed body's fixed head direction toward camera yaw only while
@@ -1695,6 +2181,20 @@ pub fn advance_downed_body_facing(
     current: Quat,
     controller_orientation: Quat,
     delta_seconds: f32,
+) -> Quat {
+    advance_downed_body_facing_with_speed(
+        current,
+        controller_orientation,
+        delta_seconds,
+        DOWNED_TURN_SPEED_RADIANS,
+    )
+}
+
+pub fn advance_downed_body_facing_with_speed(
+    current: Quat,
+    controller_orientation: Quat,
+    delta_seconds: f32,
+    turn_speed_radians: f32,
 ) -> Quat {
     let current_yaw = body_yaw(current);
     let desired_forward = controller_yaw(controller_orientation) * Vec3::NEG_Z;
@@ -1705,7 +2205,7 @@ pub fn advance_downed_body_facing(
     if (delta + std::f32::consts::PI).abs() <= 1.0e-5 {
         delta = std::f32::consts::PI;
     }
-    let maximum = (DOWNED_TURN_SPEED_RADIANS * delta_seconds.max(0.0)).min(std::f32::consts::PI);
+    let maximum = (turn_speed_radians * delta_seconds.max(0.0)).min(std::f32::consts::PI);
     Quat::from_rotation_y(current_yaw + delta.clamp(-maximum, maximum))
 }
 
@@ -1733,6 +2233,16 @@ pub fn downed_camera_roll_target(body_rotation: Quat, controller_orientation: Qu
 /// Bone evaluation remains client-only; this is the shared server seam that
 /// keeps deterministic captures on the same stride and posture rules.
 pub fn project_skeleton_locomotion(skeleton: &mut SkeletonState, input: SkeletonLocomotionInput) {
+    project_skeleton_locomotion_with_intent(skeleton, input, None);
+}
+
+/// Server projection variant that preserves held movement intent while the
+/// physical motor temporarily brakes to zero between guard contacts.
+pub fn project_skeleton_locomotion_with_intent(
+    skeleton: &mut SkeletonState,
+    input: SkeletonLocomotionInput,
+    requested_local_direction: Option<Vec2>,
+) {
     let linear_velocity = if input.linear_velocity.is_finite() {
         input.linear_velocity
     } else {
@@ -1759,6 +2269,11 @@ pub fn project_skeleton_locomotion(skeleton: &mut SkeletonState, input: Skeleton
     skeleton.local_velocity = local_velocity;
     skeleton.world_velocity = linear_velocity;
     skeleton.locomotion_sample_tick = input.tick;
+    if skeleton.body == BodyState::Ragdolled {
+        skeleton.set_raised_locomotion(RaisedLocomotionIntent::planted());
+        skeleton.action = ActionState::default();
+        return;
+    }
     let landed = !was_supported && input.grounded;
     if landed {
         skeleton.landing_sequence = skeleton.landing_sequence.wrapping_add(1);
@@ -1795,8 +2310,8 @@ pub fn project_skeleton_locomotion(skeleton: &mut SkeletonState, input: Skeleton
     };
     if skeleton.weapon_guard() == WeaponGuardState::Raised && skeleton.posture() == Posture::Upright
     {
-        let handoffs = advance_raised_locomotion_intent(skeleton, local_velocity, delta_seconds);
-        advance_contact_identity(skeleton, handoffs, None);
+        advance_raised_locomotion_intent(skeleton, local_velocity, requested_local_direction);
+        advance_guard_footwork(skeleton, delta_seconds, input.tick);
     } else {
         skeleton.set_raised_locomotion(RaisedLocomotionIntent::planted());
         if input.grounded && ground_speed > 0.05 {
@@ -1843,8 +2358,8 @@ pub(super) fn opposite_foot(foot: LeadFoot) -> LeadFoot {
 fn advance_raised_locomotion_intent(
     skeleton: &mut SkeletonState,
     observed_local_velocity: Vec3,
-    delta_seconds: f32,
-) -> u32 {
+    requested_local_direction: Option<Vec2>,
+) {
     let intent = skeleton.raised_locomotion();
     let observed_speed = observed_local_velocity.xz().length();
     let observed = (observed_speed > 0.05).then(|| {
@@ -1853,40 +2368,232 @@ fn advance_raised_locomotion_intent(
             observed_speed,
         )
     });
-    if !intent.is_moving() {
-        let Some(observed) = observed else {
-            skeleton.gait_phase = 0.0;
-            skeleton.set_raised_locomotion(intent);
-            return 0;
-        };
-        skeleton.set_raised_locomotion(observed);
-        skeleton.gait_phase = 0.0;
-    }
-
-    let moving = observed.unwrap_or(intent);
-    skeleton.set_raised_locomotion(moving);
-    let speed = moving.speed();
-    let phase = skeleton.gait_phase.rem_euclid(1.0);
-    let profile = LocomotionProfile {
-        step_distance: guard_step_length(speed),
-        ..RAISED_GUARD_LOCOMOTION_PROFILE
-    };
-    let next_phase = phase + gait_cycle_phase_delta(profile, speed, delta_seconds.max(0.0));
-    let handoffs = ((next_phase * 2.0).floor() - (phase * 2.0).floor()).max(0.0) as u32;
-    let crossed_handoff = handoffs > 0;
-
-    if observed.is_none() && crossed_handoff {
-        skeleton.gait_phase = if phase < 0.5 { 0.5 } else { 0.0 };
-        skeleton.set_raised_locomotion(RaisedLocomotionIntent::planted());
-        return handoffs;
-    }
-
-    skeleton.gait_phase = next_phase.rem_euclid(1.0);
-    handoffs
+    let requested = requested_local_direction
+        .filter(|direction| direction.is_finite() && direction.length_squared() > f32::EPSILON)
+        .map(|direction| direction.normalize());
+    let moving = observed.or_else(|| {
+        requested
+            .map(|direction| RaisedLocomotionIntent::moving(direction, intent.speed().max(0.051)))
+    });
+    skeleton.set_raised_locomotion(match moving {
+        Some(moving) => moving,
+        None if skeleton.raised_footwork.step().is_some() => intent,
+        None => RaisedLocomotionIntent::planted(),
+    });
 }
 
-/// Ground distance covered by one procedural combat-stance step. Raised
-/// movement uses compact shuffles rather than ordinary walking strides.
-pub fn guard_step_length(speed: f32) -> f32 {
-    (0.26 + speed.max(0.0) * 0.06).clamp(0.28, 0.42)
+fn advance_guard_footwork(skeleton: &mut SkeletonState, delta_seconds: f32, tick: u64) {
+    let displacement = skeleton.local_velocity.xz() * delta_seconds.max(0.0);
+    let physical_velocity = skeleton.local_velocity.xz();
+    let physical_speed = physical_velocity.length();
+    let physical_direction = physical_velocity.normalize_or_zero();
+    let mut plan = match skeleton.raised_footwork {
+        GuardFootworkPlan::Uninitialized => GuardFootworkPlan::Planted {
+            contacts: GuardContacts::default(),
+            next_swing: guard_movement_front_foot(
+                skeleton.lead_foot,
+                skeleton.raised_locomotion().local_direction(),
+            ),
+        },
+        GuardFootworkPlan::Planted {
+            contacts,
+            next_swing,
+        } => GuardFootworkPlan::Planted {
+            contacts: contacts.advected(displacement),
+            next_swing,
+        },
+        GuardFootworkPlan::Stepping(step) => {
+            GuardFootworkPlan::Stepping(step.advected(displacement))
+        }
+    };
+
+    if let GuardFootworkPlan::Stepping(mut step) = plan {
+        let direction = if physical_direction == Vec2::ZERO {
+            step.direction()
+        } else {
+            physical_direction
+        };
+        let leading_contact = step
+            .contacts
+            .left
+            .dot(direction)
+            .max(step.contacts.right.dot(direction));
+        let contact_due = tick >= step.contact_tick || leading_contact <= 0.0;
+        if contact_due {
+            if step.landing.dot(direction) < GUARD_CONTACT_MARGIN_METRES {
+                step.landing +=
+                    direction * (GUARD_CONTACT_MARGIN_METRES - step.landing.dot(direction));
+            }
+            let contacts = step.contacts.with_contact(step.swing_foot, step.landing);
+            skeleton.contact_foot = step.swing_foot;
+            skeleton.contact_sequence = skeleton.contact_sequence.wrapping_add(1);
+            plan = GuardFootworkPlan::Planted {
+                contacts,
+                next_swing: opposite_foot(step.swing_foot),
+            };
+        }
+    }
+
+    if let GuardFootworkPlan::Planted {
+        contacts,
+        next_swing,
+    } = plan
+        && physical_speed > 0.05
+    {
+        plan = GuardFootworkPlan::Stepping(plan_guard_step(
+            contacts,
+            next_swing,
+            physical_velocity,
+            tick,
+        ));
+        skeleton.contact_foot = opposite_foot(next_swing);
+    }
+
+    skeleton.gait_phase = match plan {
+        GuardFootworkPlan::Stepping(step) => {
+            let progress = step.progress(tick).clamp(0.0, 1.0);
+            match step.swing_foot {
+                LeadFoot::Left => (0.5 + 0.5 * progress).rem_euclid(1.0),
+                LeadFoot::Right => 0.5 * progress,
+            }
+        }
+        GuardFootworkPlan::Uninitialized | GuardFootworkPlan::Planted { .. } => {
+            match skeleton.contact_foot {
+                LeadFoot::Left => 0.0,
+                LeadFoot::Right => 0.5,
+            }
+        }
+    };
+    skeleton.raised_footwork = plan;
+}
+
+fn plan_guard_step(
+    contacts: GuardContacts,
+    swing_foot: LeadFoot,
+    local_velocity: Vec2,
+    start_tick: u64,
+) -> GuardStepPlan {
+    let speed = local_velocity.length().max(0.05);
+    let direction = local_velocity.normalize_or_zero();
+    let available_reach = GUARD_PLANNING_REACH_METRES - GUARD_CONTACT_MARGIN_METRES;
+    let reach_seconds = available_reach / speed;
+    let leading_contact = contacts
+        .left
+        .dot(direction)
+        .max(contacts.right.dot(direction));
+    let support_seconds = if leading_contact > 0.0 {
+        leading_contact / speed
+    } else {
+        1.0 / LOCOMOTION_SAMPLE_HZ
+    };
+    let duration_seconds = reach_seconds
+        .min(support_seconds)
+        .clamp(GUARD_MINIMUM_STEP_SECONDS, GUARD_MAXIMUM_STEP_SECONDS);
+    let duration_ticks = (duration_seconds * LOCOMOTION_SAMPLE_HZ).ceil().max(1.0) as u64;
+    let forward = (speed * duration_ticks as f32 / LOCOMOTION_SAMPLE_HZ
+        + GUARD_CONTACT_MARGIN_METRES)
+        .min(GUARD_PLANNING_REACH_METRES);
+    let side = match swing_foot {
+        LeadFoot::Left => -GUARD_DEFAULT_HALF_WIDTH_METRES,
+        LeadFoot::Right => GUARD_DEFAULT_HALF_WIDTH_METRES,
+    };
+    let mut landing = direction * forward + Vec2::X * side;
+    let along_shortfall = forward - landing.dot(direction);
+    if along_shortfall > 0.0 {
+        landing += direction * along_shortfall;
+    }
+    landing = landing.clamp_length_max(GUARD_PLANNING_REACH_METRES);
+    let swing_start = match swing_foot {
+        LeadFoot::Left => contacts.left,
+        LeadFoot::Right => contacts.right,
+    };
+    GuardStepPlan {
+        contacts,
+        swing_foot,
+        swing_start,
+        landing,
+        start_tick,
+        contact_tick: start_tick.saturating_add(duration_ticks),
+    }
+}
+
+// Measured hip-knee-ankle chain of the current humanoid rig. The animation
+// client uses its live rig measurement; this is the server-side fallback until
+// anatomical dimensions become part of character state.
+const REFERENCE_HUMANOID_GUARD_LEG_LENGTH_METRES: f32 = 0.840_348;
+/// Prevents loss of propulsion from stretching an unsupported opening step
+/// into a multi-second feedback loop at movement startup.
+pub const GUARD_MAXIMUM_UNSUPPORTED_CONTACT_SECONDS: f32 = 0.35;
+
+/// Ground distance covered by one procedural combat-stance contact interval.
+pub fn guard_step_length(_speed: f32) -> f32 {
+    guard_contact_travel_distance(REFERENCE_HUMANOID_GUARD_LEG_LENGTH_METRES, Vec2::NEG_Y)
+}
+
+/// Anatomical foot leading a close-guard shuffle in local controller space.
+/// Forward local velocity is -Y; backward therefore swaps the authored lead.
+/// A predominantly lateral shuffle uses the foot on the movement side.
+pub fn guard_movement_front_foot(lead: LeadFoot, local_direction: Vec2) -> LeadFoot {
+    let direction = local_direction.normalize_or_zero();
+    if direction == Vec2::ZERO || direction.y.abs() >= direction.x.abs() {
+        if direction.y > 0.0 {
+            opposite_foot(lead)
+        } else {
+            lead
+        }
+    } else if direction.x < 0.0 {
+        LeadFoot::Left
+    } else {
+        LeadFoot::Right
+    }
+}
+
+/// Maximum lateral open stance. Like the longitudinal opening, this is the
+/// leg-length-scaled one-yard reference stance: the moving-side foot reaches
+/// outward while the support foot remains behind the projected COM.
+pub fn guard_maximum_lateral_foot_separation(leg_length_metres: f32) -> f32 {
+    guard_maximum_foot_separation(leg_length_metres)
+}
+
+/// Direction-specific open stance, blended continuously for diagonals.
+pub fn guard_open_foot_separation(leg_length_metres: f32, local_direction: Vec2) -> f32 {
+    let direction = local_direction.normalize_or_zero();
+    let longitudinal = direction.y.abs();
+    guard_maximum_lateral_foot_separation(leg_length_metres).lerp(
+        guard_maximum_foot_separation(leg_length_metres),
+        longitudinal,
+    )
+}
+
+/// Direction-specific closed stance. Lateral shuffles retain normal
+/// anatomical width; the three-inch contract applies along the guard's
+/// longitudinal axis.
+pub fn guard_closed_foot_separation(leg_length_metres: f32, local_direction: Vec2) -> f32 {
+    let direction = local_direction.normalize_or_zero();
+    let longitudinal = direction.y.abs();
+    (leg_length_metres.max(0.0) * 0.25).lerp(
+        guard_rear_contact_separation(leg_length_metres),
+        longitudinal,
+    )
+}
+
+/// COM travel between centered open and closed contacts.
+pub fn guard_contact_travel_distance(leg_length_metres: f32, local_direction: Vec2) -> f32 {
+    (guard_open_foot_separation(leg_length_metres, local_direction)
+        - guard_closed_foot_separation(leg_length_metres, local_direction))
+    .max(0.0)
+        * 0.5
+}
+
+/// Maximum fore-aft guard stance immediately before the following foot lifts.
+/// The ratio maps a 0.851688 m average-male thigh-plus-shank chain at 5'11" to
+/// the requested one-yard stance, then scales directly with the actual rig.
+pub fn guard_maximum_foot_separation(leg_length_metres: f32) -> f32 {
+    leg_length_metres.max(0.0) * 1.073_632_5
+}
+
+/// Maximum fore-aft separation when the rear foot returns beside the front
+/// foot. This maps the same 5'11" reference leg to the requested three inches.
+pub fn guard_rear_contact_separation(leg_length_metres: f32) -> f32 {
+    leg_length_metres.max(0.0) * 0.089_469_37
 }

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { billHeadCurveSpans, billHeadOutline, buildWeapon, figureEightGuard, glaiveOutline, glaiveSpineCurveSpans, knuckleBow, maceFlangeOutline, sampleAdaptiveCurve, sampleCubicBezier, signedVolume, triangulatePolygon, tubePath, tubeRadialSegments } from "../src/mesh.js";
+import { billHeadCurveSpans, billHeadOutline, buildWeapon, figureEightGuard, glaiveOutline, glaiveSpineCurveSpans, knuckleBow, maceFlangeOutline, measureMassProperties, sampleAdaptiveCurve, sampleCubicBezier, signedVolume, triangulatePolygon, tubePath, tubeRadialSegments, validateWeapon } from "../src/mesh.js";
+import { automaticGripPoint } from "../src/glb-export.js";
 import { HEAD_KINDS, PRESETS, copyPreset, getPath, setControlValue, setPath } from "../src/presets.js";
 import { fitDistance, projectedFit } from "../src/renderer.js";
 
@@ -16,7 +17,8 @@ test("every preset produces finite nonempty geometry", () => {
     assert.ok(mesh.positions.every(Number.isFinite), preset.id);
     assert.ok(mesh.normals.every(Number.isFinite), preset.id);
     assert.ok(mesh.stats.triangles > 100, preset.id);
-    assert.ok(mesh.stats.dimensions[1] > 0.45, preset.id);
+    const isShield = preset.definition.components.some((component) => ["roundShield", "shapedShield"].includes(component.kind));
+    assert.ok(mesh.stats.dimensions[1] > (isShield ? 0.3 : 0.45), preset.id);
     assert.ok(mesh.stats.dimensions.every((value) => Number.isFinite(value) && value > 0), preset.id);
     assert.ok(mesh.stats.volume > 0, preset.id);
     for (const control of preset.controls) {
@@ -25,6 +27,45 @@ test("every preset produces finite nonempty geometry", () => {
       assert.ok(value >= control.min && value <= control.max, `${preset.id}: ${control.path}`);
     }
   }
+});
+
+test("mesh mass distribution derives realistic pommel mass and handling", () => {
+  const preset = copyPreset(PRESETS.find((candidate) => candidate.id === "landsknecht-longsword"));
+  const mesh = buildWeapon(preset.definition);
+  const baseline = measureMassProperties(mesh, automaticGripPoint(mesh.resolvedDefinition));
+  const pommelMass = baseline.components.find((component) => component.id === "pommel").massKg;
+  assert.ok(baseline.massKg > 1 && baseline.massKg < 3, baseline.massKg);
+  assert.ok(pommelMass > 0.1 && pommelMass < 0.5, pommelMass);
+  assert.ok(pommelMass < baseline.massKg * 0.25, pommelMass / baseline.massKg);
+  assert.ok(baseline.centerOfMassFromGripM > 0);
+  assert.ok(baseline.momentOfInertiaKgM2 > 0);
+  assert.ok(baseline.balance > 0 && baseline.balance < 1);
+
+  const largerPommel = preset.definition.components.find((component) => component.id === "pommel");
+  largerPommel.profile = largerPommel.profile.map(([height, radius]) => [height, radius * 1.08]);
+  const changedMesh = buildWeapon(preset.definition);
+  const changed = measureMassProperties(changedMesh, automaticGripPoint(changedMesh.resolvedDefinition));
+  assert.ok(changed.centerOfMassFromGripM < baseline.centerOfMassFromGripM);
+  assert.ok(changed.balance < baseline.balance);
+});
+
+test("sword presets expose a hand-center clearance below the guard", () => {
+  const swords = PRESETS.filter((preset) => preset.definition.gripClearance !== undefined);
+  assert.ok(swords.length >= 8);
+  for (const source of swords) {
+    const preset = copyPreset(source);
+    const control = preset.controls.find((candidate) => candidate.path === "gripClearance");
+    assert.ok(control, source.id);
+    assert.equal(preset.definition.gripClearance, 0.05, source.id);
+    const mesh = buildWeapon(preset.definition);
+    const point = automaticGripPoint(mesh.resolvedDefinition);
+    const top = mesh.resolvedDefinition._frames["grip.top"];
+    assert.ok(Math.abs(Math.hypot(...point.map((value, axis) => value - top[axis])) - 0.05) < 1e-9, source.id);
+  }
+
+  const invalid = copyPreset(swords[0]);
+  invalid.definition.gripClearance = 0.5;
+  assert.ok(validateWeapon(invalid.definition, invalid.controls).errors.some((error) => error.includes("within the modeled grip")));
 });
 
 test("preset parameters can be independently copied and changed", () => {
@@ -73,8 +114,8 @@ test("front camera fit contains every preset on portrait and landscape canvases"
   }
 });
 
-test("all twenty-one presets fit the live 1280x720 viewer canvas with margin", () => {
-  assert.equal(PRESETS.length, 21);
+test("all twenty-eight presets fit the live 1280x720 viewer canvas with margin", () => {
+  assert.equal(PRESETS.length, 28);
   const canvasAspect = (1280 - 350) / (720 - 88), fov = 35 * Math.PI / 180;
   for (const preset of PRESETS) {
     const bounds = buildWeapon(preset.definition).stats.bounds, distance = fitDistance(bounds, canvasAspect, fov);

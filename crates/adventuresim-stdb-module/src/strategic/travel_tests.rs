@@ -4,6 +4,7 @@ mod departure_invariant_tests {
         CaseSiteId, JourneyCaseSiteEndpoint, JourneyEndpoint, JourneyPrecipitation,
         JourneyRoutePlan, JourneyRoutePoint, JourneySettlementEndpoint, JourneyTerrainKind,
         JourneyTerrainSpan, JourneyTerrainWeights, Party, PartyJourneyRoute,
+        DEFAULT_JOURNEY_START_MINUTE_OF_DAY, DEFAULT_WALKING_MINUTES_PER_DAY,
         authoritative_straight_line_case_route, common_movement_prefix, core_encounter_terrain,
         departure_requires_ready_party, departure_snapshot_allows_travel,
         encode_position_e7, journey_elapsed_after_delay, party_can_continue_travel,
@@ -73,7 +74,7 @@ mod departure_invariant_tests {
     fn colocated_case_site_return_is_an_instant_exact_location_transition() {
         assert_eq!(straight_line_distance_m(10.0, 53.0, 10.0, 53.0, true), 0);
 
-        let source = include_str!("travel_reducers.rs");
+        let source = crate::production_source(include_str!("travel_reducers.rs"));
         let travel = source
             .split("fn travel_to_settlement_impl")
             .nth(1)
@@ -125,7 +126,7 @@ mod departure_invariant_tests {
 
     #[test]
     fn affordable_arrest_surrender_then_colocated_return_is_a_complete_reducer_chain() {
-        let incidents = include_str!("incidents.rs");
+        let incidents = crate::production_source(include_str!("incidents.rs"));
         let surrender = incidents
             .split("pub fn surrender_to_authority")
             .nth(1)
@@ -137,7 +138,7 @@ mod departure_invariant_tests {
         assert!(surrender.contains("IncidentStatus::Resolved"));
         assert!(!surrender.contains("set_character_case_site"));
 
-        let places = include_str!("../foraging.rs");
+        let places = crate::production_source(include_str!("../foraging.rs"));
         let provenance = places
             .split("fn actor_party_owns_incident_site")
             .nth(1)
@@ -155,7 +156,7 @@ mod departure_invariant_tests {
         }
         assert!(!provenance.contains("IncidentStatus::Pending"));
 
-        let travel = include_str!("travel_reducers.rs");
+        let travel = crate::production_source(include_str!("travel_reducers.rs"));
         let zero_return = travel
             .split("if zero_distance_case_site_return")
             .nth(1)
@@ -178,7 +179,7 @@ mod departure_invariant_tests {
 
     #[test]
     fn combat_resolved_activity_incident_retains_exact_onsite_return_provenance() {
-        let incidents = include_str!("incidents.rs");
+        let incidents = crate::production_source(include_str!("incidents.rs"));
         let combat_completion = incidents
             .split("pub(crate) fn finish_incident_for_hostile_group")
             .nth(1)
@@ -187,7 +188,7 @@ mod departure_invariant_tests {
         assert!(combat_completion.contains("IncidentStatus::Resolved"));
         assert!(!combat_completion.contains("set_character_case_site"));
 
-        let places = include_str!("../foraging.rs");
+        let places = crate::production_source(include_str!("../foraging.rs"));
         let provenance = places
             .split("fn actor_party_owns_incident_site")
             .nth(1)
@@ -254,18 +255,19 @@ mod departure_invariant_tests {
 
     #[test]
     fn journey_refresh_keeps_case_site_forecast_to_the_active_leg() {
-        let source = include_str!("journey_camp.rs");
+        let source = crate::production_source(include_str!("journey_camp.rs"));
         let refresh = source
             .split("pub(crate) fn refresh_party_journey_forecast")
             .nth(1)
             .expect("journey refresh");
-        assert!(refresh.contains("journey.total_movement_minutes"));
+        assert!(refresh.contains(".total_movement_minutes"));
+        assert!(refresh.contains(".saturating_sub(journey.completed_movement_minutes)"));
         assert!(!refresh.contains("total_movement_minutes.saturating_mul(2)"));
     }
 
     #[test]
     fn canonical_camp_identity_requires_coherent_current_journey_authority() {
-        let camp_source = include_str!("journey_camp.rs");
+        let camp_source = crate::production_source(include_str!("journey_camp.rs"));
         let predicate = camp_source
             .split("pub(crate) fn party_journey_is_current_camp")
             .nth(1)
@@ -282,7 +284,7 @@ mod departure_invariant_tests {
         assert!(predicate.contains("reached_camp_movement_minutes"));
         assert!(!predicate.contains("forecast_camp_intervals"));
 
-        let travel_source = include_str!("travel_reducers.rs");
+        let travel_source = crate::production_source(include_str!("travel_reducers.rs"));
         let continuation = travel_source
             .split("pub fn continue_camp_travel")
             .nth(1)
@@ -298,7 +300,7 @@ mod departure_invariant_tests {
 
     #[test]
     fn every_uninterrupted_departure_camp_records_even_zero_movement_identity() {
-        let travel_source = include_str!("travel_reducers.rs");
+        let travel_source = crate::production_source(include_str!("travel_reducers.rs"));
         assert_eq!(
             travel_source
                 .matches("record_party_journey_camp(ctx,")
@@ -311,7 +313,7 @@ mod departure_invariant_tests {
                 .contains("if leg_minutes > 0 {\n                record_party_journey_camp"),
             "an initial nighttime camp at movement minute zero is still a reached camp",
         );
-        let camp_source = include_str!("journey_camp.rs");
+        let camp_source = crate::production_source(include_str!("journey_camp.rs"));
         let recorder = camp_source
             .split("fn record_party_journey_camp")
             .nth(1)
@@ -536,7 +538,7 @@ mod departure_invariant_tests {
     }
 
     #[test]
-    fn zero_minute_terminal_is_settled_before_survivors_retry() {
+fn zero_minute_terminal_is_settled_before_survivors_retry() {
         let first_prefixes = [12, 0];
         let first = common_movement_prefix(12, first_prefixes);
         assert_eq!(first, 0);
@@ -564,8 +566,11 @@ mod departure_invariant_tests {
             active_contract_id: None,
             is_solo: true,
             camp_fatigue_percent: 50,
-            walking_minutes_per_day: 480,
+            walking_minutes_per_day: DEFAULT_WALKING_MINUTES_PER_DAY,
             travel_at_night: false,
+            journey_start_minute_of_day: DEFAULT_JOURNEY_START_MINUTE_OF_DAY,
+            wilderness_canonical_anchor_minute: Some(10_000),
+            wilderness_elapsed_minutes: 0,
             camp_destination: Some(JourneyEndpoint::Settlement(JourneySettlementEndpoint {
                 id: "destination".into(),
                 name: "Destination".into(),
@@ -646,7 +651,7 @@ mod departure_invariant_tests {
 
     #[test]
     fn terminal_departure_sync_commits_and_stops_before_creating_a_journey() {
-        let source = include_str!("travel_reducers.rs");
+        let source = crate::production_source(include_str!("travel_reducers.rs"));
         assert_eq!(
             source
                 .matches(
@@ -662,4 +667,34 @@ mod departure_invariant_tests {
             2
         );
     }
+}
+
+#[test]
+fn journey_local_time_wraps_without_advancing_the_frozen_date() {
+    let journey = PartyJourney {
+        party_id: "party".into(),
+        gateway_bucket: 0,
+        origin: JourneyEndpoint::Settlement(JourneySettlementEndpoint {
+            id: "origin".into(),
+            name: "Origin".into(),
+        }),
+        destination: JourneyEndpoint::Settlement(JourneySettlementEndpoint {
+            id: "destination".into(),
+            name: "Destination".into(),
+        }),
+        total_movement_minutes: 60,
+        completed_movement_minutes: 0,
+        reached_camp_movement_minutes: Vec::new(),
+        actual_camp_intervals: Vec::new(),
+        forecast_camp_intervals: Vec::new(),
+        fatigue_percent: 0,
+        departure_minute: 10 * MINUTES_PER_DAY + 23 * MINUTES_PER_HOUR,
+        total_elapsed_minutes: 60,
+        completed_elapsed_minutes: 0,
+        walking_minutes_per_day: DEFAULT_WALKING_MINUTES_PER_DAY,
+        travel_at_night: false,
+    };
+    let expected = 10 * MINUTES_PER_DAY + MINUTES_PER_HOUR;
+    assert_eq!(journey_local_minute(&journey, 120), expected);
+    assert_eq!(journey_local_minute(&journey, 90 * MINUTES_PER_DAY + 120), expected);
 }

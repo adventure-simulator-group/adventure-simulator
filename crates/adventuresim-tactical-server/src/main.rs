@@ -40,9 +40,10 @@ use crate::{
         process_terminal_submission_results,
     },
     player_projection::{
-        PlayerProjectionSet, brake_quickstep_landing, expire_disconnected_players,
-        launch_pending_quicksteps, on_client_disconnected, on_join_request, on_player_added,
-        on_player_input, restore_authoritative_movement_intent, spawn_connected_players,
+        PlayerProjectionSet, expire_disconnected_players, on_client_disconnected, on_join_request,
+        on_player_added, on_player_input, restore_authoritative_movement_intent,
+        spawn_connected_players, trace_authoritative_quickstep_after_collision,
+        update_attack_facing_targets, update_character_motion_snapshots,
         update_skeleton_locomotion,
     },
     stdb::{SpacetimeDb, SpacetimeDbReady},
@@ -50,6 +51,7 @@ use crate::{
 
 const MISSION_TIMEOUT_SECS: f32 = 300.0;
 const DEFAULT_SCENE_INPUT: &str = "assets/tactical-scenes/dense-woodland.json";
+const DEFAULT_COMBAT_CONFIG: &str = "content/tactical/combat.yaml";
 
 #[derive(Parser, Debug, Clone, Resource)]
 #[command(name = "adventuresim-tactical-server")]
@@ -67,12 +69,18 @@ struct Args {
     /// fixture for standalone tactical development.
     #[arg(long)]
     scene_input: Option<PathBuf>,
+    /// Versioned tactical combat tuning loaded once for this server process.
+    #[arg(long)]
+    combat_config: Option<PathBuf>,
     #[arg(long)]
     required_enemy_kills: u32,
     #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
     expected_party_members: u32,
     #[arg(long)]
     enemy_combat_scale_bps: u32,
+    /// Install the passive/block/dodge/armored animation laboratory packages.
+    #[arg(long, action = ArgAction::SetTrue)]
+    animation_behavior_lab: bool,
     #[arg(long, default_value = "http://localhost:3000")]
     spacetimedb_url: String,
     #[arg(long, default_value = "adventuresim-stdb-module")]
@@ -103,6 +111,34 @@ fn default_scene_input_path() -> PathBuf {
         .join(DEFAULT_SCENE_INPUT)
 }
 
+fn default_combat_config_path() -> PathBuf {
+    let working_directory_path = PathBuf::from(DEFAULT_COMBAT_CONFIG);
+    if working_directory_path.is_file() {
+        return working_directory_path;
+    }
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join(DEFAULT_COMBAT_CONFIG)
+}
+
+fn load_combat_config(path: &std::path::Path) -> Result<TacticalCombatConfig, String> {
+    const MAX_COMBAT_CONFIG_BYTES: u64 = 64 * 1024;
+    let length = std::fs::metadata(path)
+        .map_err(|error| format!("could not inspect {}: {error}", path.display()))?
+        .len();
+    if length == 0 || length > MAX_COMBAT_CONFIG_BYTES {
+        return Err("combat config must contain between 1 byte and 64 KiB".into());
+    }
+    let text = std::fs::read_to_string(path)
+        .map_err(|error| format!("could not read {}: {error}", path.display()))?;
+    let config: TacticalCombatConfig = serde_saphyr::from_str(&text)
+        .map_err(|error| format!("{} is not valid YAML: {error}", path.display()))?;
+    config
+        .validate()
+        .map_err(|error| format!("{}: {error}", path.display()))?;
+    Ok(config)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -117,6 +153,13 @@ mod tests {
             input.source,
             SceneSource::SyntheticFixture("dense-woodland".into())
         );
+    }
+
+    #[test]
+    fn committed_combat_config_matches_canonical_defaults() {
+        let loaded = load_combat_config(&default_combat_config_path())
+            .expect("committed tactical combat config should remain valid");
+        assert_eq!(loaded, TacticalCombatConfig::default());
     }
 }
 
@@ -140,6 +183,24 @@ fn main() {
             std::process::exit(2);
         }
     };
+    let combat_config_path = args
+        .combat_config
+        .clone()
+        .unwrap_or_else(default_combat_config_path);
+    let combat_config = match load_combat_config(&combat_config_path) {
+        Ok(config) => config,
+        Err(error) => {
+            eprintln!("refusing invalid tactical combat config: {error}");
+            std::process::exit(2);
+        }
+    };
+    let combat_config_digest = combat_config
+        .digest()
+        .expect("loaded tactical combat config was validated");
+    eprintln!(
+        "[startup] tactical combat config path={} digest={combat_config_digest}",
+        combat_config_path.display()
+    );
     let scene_vista_bundle = Some(SceneVistaBundle {
         scene_digest: loaded_scene_input
             .digest()
@@ -155,22 +216,27 @@ fn main() {
         lods: loaded_scene_input.vista.lods.clone(),
     });
     let mut app = App::new();
-    // Registered before any other plugin (in particular, before
-    // `AdventureSimulatorNetPlugins` below) - see `on_client_disconnected`'s
-    // own doc comment for why the ordering here is load-bearing, not
-    // cosmetic.
+    app.insert_resource(combat_config);
+    // Registered separately from Aeronet's session-despawn observer. The
+    // reconnect snapshot is owned before either observer's commands apply, so
+    // correctness does not depend on their registration order.
     if !standalone {
         app.add_observer(on_client_disconnected);
     }
-    app.add_plugins(DefaultPlugins.set(bevy::log::LogPlugin {
-        filter: "adventuresim_tactical_server=info,bevy_app=warn,bevy_ecs=warn".to_string(),
-        ..default()
-    }))
+    app.add_plugins(
+        DefaultPlugins.set(bevy::log::LogPlugin {
+            filter:
+                "adventuresim_tactical_server=info,quickstep_trace=info,bevy_app=warn,bevy_ecs=warn"
+                    .to_string(),
+            ..default()
+        }),
+    )
     .add_plugins((
         AdventureSimulatorCorePlugins
             .build()
             .set(AdventureSimulatorPhysicsPlugin {
                 enable_simulation: true,
+                enable_presentation_simulation: false,
             }),
         AdventureSimulatorNetPlugins,
     ))
@@ -193,13 +259,14 @@ fn main() {
     .add_systems(
         FixedPostUpdate,
         (
+            restore_authoritative_movement_intent
+                .before(AdventureSimulatorPhysicsSet::ApplyCharacterMotor),
             (
-                launch_pending_quicksteps,
-                restore_authoritative_movement_intent,
+                trace_authoritative_quickstep_after_collision,
+                update_attack_facing_targets,
+                update_skeleton_locomotion,
+                update_character_motion_snapshots,
             )
-                .chain()
-                .before(AdventureSimulatorPhysicsSet::ApplyMovementSpeed),
-            (brake_quickstep_landing, update_skeleton_locomotion)
                 .chain()
                 .after(AhoySystems::MoveCharacters),
         ),
@@ -330,13 +397,18 @@ fn on_debug_dump_world_request(_request: On<FromClient<DebugDumpWorldRequest>>, 
         .allow_component::<Attributes>()
         .allow_component::<Stats>()
         .allow_component::<TacticalCombatState>()
-        .allow_component::<crate::combat::TacticalCombatSide>()
+        .allow_component::<TacticalCombatSide>()
         .allow_component::<Transform>()
         .allow_component::<SceneId>()
         .allow_component::<SceneTerrain>()
         .allow_component::<crate::bot::MissionEnemy>()
         .allow_component::<crate::bot::OffensiveCombatAi>()
+        .allow_component::<crate::bot::CombatantBehaviorPackages>()
+        .allow_component::<crate::bot::ReactiveDefenseAi>()
         .allow_component::<crate::bot::DefenseChances>()
+        .allow_component::<crate::bot::RaisedGuardAi>()
+        .allow_component::<crate::bot::AimAtNearestOpponentAi>()
+        .allow_component::<crate::bot::RecoverToUprightAi>()
         // Inventory items are separate entities (linked back to their
         // owning character via `ItemOf`), not components on the character
         // itself - without these, a dumped/loaded character's equipment is
@@ -506,12 +578,14 @@ mod debug_dump_world_tests {
             required_enemy_kills: 1,
             expected_party_members: 1,
             enemy_combat_scale_bps: 0,
+            animation_behavior_lab: false,
             spacetimedb_url: String::new(),
             spacetimedb_module: String::new(),
             timeout: 0.0,
             no_timeout: true,
             brp_port: None,
             world_dump,
+            combat_config: None,
         }
     }
 
@@ -643,15 +717,14 @@ mod debug_dump_world_tests {
                     accuracy: 1.0,
                     penetration: 1.0,
                     reach: 0.8,
-                    balance: 0.0,
+                    grip_to_tip_m: 0.8,
+                    moment_of_inertia_kg_m2: 0.0,
                     precise: false,
                     melee: true,
                     ranged: false,
                     blunt: false,
                     slash: true,
                     pierce: false,
-                    windup_secs: 0.3,
-                    offhand_windup_secs: 0.34,
                     swing_precision: 0.0,
                     stab_precision: 0.0,
                     prefers_stab: false,

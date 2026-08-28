@@ -955,7 +955,7 @@
 								"l_clavicle",
 								"l_uparm"
 							],
-							"Strength": 25.000000,
+							"Strength": 0.000000,
 							"Axis": 1
 						},
 						{
@@ -971,7 +971,7 @@
 								"l_clavicle",
 								"l_uparm"
 							],
-							"Strength": 50.000000,
+							"Strength": 0.000000,
 							"Axis": 1
 						},
 						{
@@ -987,7 +987,7 @@
 								"l_clavicle",
 								"l_uparm"
 							],
-							"Strength": 75.000000,
+							"Strength": 0.000000,
 							"Axis": 1
 						},
 						{
@@ -1003,7 +1003,7 @@
 								"l_clavicle",
 								"l_uparm"
 							],
-							"Strength": 100.000000,
+							"Strength": 0.000000,
 							"Axis": 1
 						}
 					]
@@ -1025,7 +1025,7 @@
 								"l_uparm",
 								"l_lowarm"
 							],
-							"Strength": 20.000000,
+							"Strength": 0.000000,
 							"Axis": 1
 						},
 						{
@@ -1042,7 +1042,7 @@
 								"l_uparm",
 								"l_lowarm"
 							],
-							"Strength": 40.000000,
+							"Strength": 0.000000,
 							"Axis": 1
 						},
 						{
@@ -1059,7 +1059,7 @@
 								"l_uparm",
 								"l_lowarm"
 							],
-							"Strength": 60.000000,
+							"Strength": 0.000000,
 							"Axis": 1
 						},
 						{
@@ -1076,7 +1076,7 @@
 								"l_uparm",
 								"l_lowarm"
 							],
-							"Strength": 80.000000,
+							"Strength": 0.000000,
 							"Axis": 1
 						}
 					]
@@ -1113,7 +1113,7 @@
 								"r_clavicle",
 								"r_uparm"
 							],
-							"Strength": 25.000000,
+							"Strength": 0.000000,
 							"Axis": 1
 						},
 						{
@@ -1129,7 +1129,7 @@
 								"r_clavicle",
 								"r_uparm"
 							],
-							"Strength": 50.000000,
+							"Strength": 0.000000,
 							"Axis": 1
 						},
 						{
@@ -1145,7 +1145,7 @@
 								"r_clavicle",
 								"r_uparm"
 							],
-							"Strength": 75.000000,
+							"Strength": 0.000000,
 							"Axis": 1
 						},
 						{
@@ -1161,7 +1161,7 @@
 								"r_clavicle",
 								"r_uparm"
 							],
-							"Strength": 100.000000,
+							"Strength": 0.000000,
 							"Axis": 1
 						}
 					]
@@ -1183,7 +1183,7 @@
 								"r_uparm",
 								"r_lowarm"
 							],
-							"Strength": 20.000000,
+							"Strength": 0.000000,
 							"Axis": 1
 						},
 						{
@@ -1200,7 +1200,7 @@
 								"r_uparm",
 								"r_lowarm"
 							],
-							"Strength": 40.000000,
+							"Strength": 0.000000,
 							"Axis": 1
 						},
 						{
@@ -1217,7 +1217,7 @@
 								"r_uparm",
 								"r_lowarm"
 							],
-							"Strength": 60.000000,
+							"Strength": 0.000000,
 							"Axis": 1
 						},
 						{
@@ -1234,7 +1234,7 @@
 								"r_uparm",
 								"r_lowarm"
 							],
-							"Strength": 80.000000,
+							"Strength": 0.000000,
 							"Axis": 1
 						}
 					]
@@ -1250,7 +1250,7 @@
 								"root",
 								"l_upleg"
 							],
-							"Strength": 20.000000,
+							"Strength": 0.000000,
 							"Axis": 1
 						},
 						{
@@ -1261,7 +1261,7 @@
 								"root",
 								"l_upleg"
 							],
-							"Strength": 40.000000,
+							"Strength": 0.000000,
 							"Axis": 1
 						},
 						{
@@ -1272,7 +1272,7 @@
 								"root",
 								"l_upleg"
 							],
-							"Strength": 60.000000,
+							"Strength": 0.000000,
 							"Axis": 1
 						},
 						{
@@ -1283,7 +1283,7 @@
 								"root",
 								"l_upleg"
 							],
-							"Strength": 80.000000,
+							"Strength": 0.000000,
 							"Axis": 1
 						}
 					]
@@ -1300,7 +1300,7 @@
 								"l_upleg",
 								"l_lowleg"
 							],
-							"Strength": 20.000000,
+							"Strength": 0.000000,
 							"Axis": 1
 						},
 						{
@@ -1312,7 +1312,7 @@
 								"l_upleg",
 								"l_lowleg"
 							],
-							"Strength": 40.000000,
+							"Strength": 0.000000,
 							"Axis": 1
 						},
 						{
@@ -1324,7 +1324,7 @@
 								"l_upleg",
 								"l_lowleg"
 							],
-							"Strength": 60.000000,
+							"Strength": 0.000000,
 							"Axis": 1
 						},
 						{
@@ -1336,7 +1336,7 @@
 								"l_upleg",
 								"l_lowleg"
 							],
-							"Strength": 80.000000,
+							"Strength": 0.000000,
 							"Axis": 1
 						}
 					]
@@ -1352,7 +1352,7 @@
 								"root",
 								"r_upleg"
 							],
-							"Strength": 20.000000,
+							"Strength": 0.000000,
 							"Axis": 1
 						},
 						{
@@ -1363,7 +1363,7 @@
 								"root",
 								"r_upleg"
 							],
-							"Strength": 40.000000,
+							"Strength": 0.000000,
 							"Axis": 1
 						},
 						{
@@ -1374,7 +1374,7 @@
 								"root",
 								"r_upleg"
 							],
-							"Strength": 60.000000,
+							"Strength": 0.000000,
 							"Axis": 1
 						},
 						{
@@ -1385,7 +1385,7 @@
 								"root",
 								"r_upleg"
 							],
-							"Strength": 80.000000,
+							"Strength": 0.000000,
 							"Axis": 1
 						}
 					]
@@ -1402,7 +1402,7 @@
 								"r_upleg",
 								"r_lowleg"
 							],
-							"Strength": 20.000000,
+							"Strength": 0.000000,
 							"Axis": 1
 						},
 						{
@@ -1414,7 +1414,7 @@
 								"r_upleg",
 								"r_lowleg"
 							],
-							"Strength": 40.000000,
+							"Strength": 0.000000,
 							"Axis": 1
 						},
 						{
@@ -1426,7 +1426,7 @@
 								"r_upleg",
 								"r_lowleg"
 							],
-							"Strength": 60.000000,
+							"Strength": 0.000000,
 							"Axis": 1
 						},
 						{

@@ -1971,7 +1971,7 @@ mod tests {
 
     #[test]
     fn authority_tables_are_private_and_gateway_projection_is_observer_scoped() {
-        let source = include_str!("corpse.rs");
+        let source = crate::production_source(include_str!("corpse.rs"));
         for table in [
             "strategic_corpse",
             "corpse_body_state",
@@ -1991,7 +1991,7 @@ mod tests {
 
     #[test]
     fn reducers_encode_retry_permission_and_location_authority() {
-        let source = include_str!("corpse.rs");
+        let source = crate::production_source(include_str!("corpse.rs"));
         assert!(source.contains("validate_client_action_id(&action_id)"));
         assert!(source.contains(
             "action_receipt_id(\n        actor_id,\n        &corpse_id,\n        \"examine\""
@@ -2034,7 +2034,7 @@ mod tests {
             None
         );
 
-        let source = include_str!("corpse.rs");
+        let source = crate::production_source(include_str!("corpse.rs"));
         assert!(source.matches("permission_kind_for_npc(ctx,").count() >= 2);
         assert!(!source.contains("service_id == \"keep\""));
         assert!(!source.contains("local_role.contains"));
@@ -2057,7 +2057,7 @@ mod tests {
 
     #[test]
     fn permission_uses_relationship_and_local_reputation_inputs() {
-        let source = include_str!("corpse.rs");
+        let source = crate::production_source(include_str!("corpse.rs"));
         assert!(source.contains("local_reputation(ctx, actor_id, &corpse.settlement_id)"));
         assert!(source.contains("npc_reaction_modifier(fame, infamy, familiarity_bps)"));
         assert!(source.contains("resolve_permission_petition"));
@@ -2072,14 +2072,14 @@ mod tests {
             Some((CREMATION_INFAMY, CREMATION_FAMILY_AFFINITY_DELTA))
         );
         assert_eq!(burning_social_penalty(true), None);
-        let source = include_str!("corpse.rs");
-        assert!(source.contains("Ask permission to exhume a buried body"));
+        let source = crate::production_source(include_str!("corpse.rs"));
+        assert!(source.contains("format!(\"{approach_label} to exhume the buried body\")"));
         assert!(!source.contains("Ask permission to exhume {}"));
     }
 
     #[test]
     fn corpse_family_bindings_have_an_explicit_materialization_seam() {
-        let source = include_str!("corpse.rs");
+        let source = crate::production_source(include_str!("corpse.rs"));
         assert!(source.contains("materialize_corpse_family_bindings"));
         assert!(source.contains("family_resident_character_ids: &[u64]"));
         assert!(!source.contains(".household"));

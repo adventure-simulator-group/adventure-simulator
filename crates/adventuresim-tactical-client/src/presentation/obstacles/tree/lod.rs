@@ -1,5 +1,6 @@
 use super::TREE_PRIMARY_GROUP_COUNT;
 use super::impostor::{tree_leaf_visibility, tree_projected_lod_visibility};
+use crate::presentation::TacticalGameplayCamera;
 use bevy::{camera::visibility::VisibilityRange, prelude::*};
 
 #[derive(Component, Clone, Copy, Debug, Eq, PartialEq)]
@@ -72,7 +73,7 @@ pub(crate) struct TreeLodRenderOverride {
     reason = "the Bevy queries encode the exact tree representation markers controlled by projected LOD"
 )]
 pub(in crate::presentation) fn update_tree_projected_lod_ranges(
-    cameras: Query<(&Camera, &Projection), With<Camera3d>>,
+    cameras: Query<(&Camera, &Projection), With<TacticalGameplayCamera>>,
     lod_override: Res<TreeLodRenderOverride>,
     isolation: Res<TacticalTreeBenchmarkIsolation>,
     mut lods: Query<(
@@ -229,6 +230,7 @@ mod tests {
         app.world_mut().spawn((
             Camera::default(),
             Camera3d::default(),
+            TacticalGameplayCamera,
             Projection::Perspective(PerspectiveProjection {
                 fov: 80.0_f32.to_radians(),
                 ..default()
@@ -284,6 +286,7 @@ mod tests {
         app.world_mut().spawn((
             Camera::default(),
             Camera3d::default(),
+            TacticalGameplayCamera,
             Projection::Perspective(PerspectiveProjection {
                 fov: 80.0_f32.to_radians(),
                 ..default()

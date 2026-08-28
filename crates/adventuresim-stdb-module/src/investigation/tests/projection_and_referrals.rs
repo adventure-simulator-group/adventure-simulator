@@ -189,10 +189,16 @@ fn bounded_progress_covers_every_generated_kind_and_replay_precedes_history() {
             kind,
         ));
     }
-    assert!(reducer.contains("\"attempt_number\""));
-    assert!(reducer.contains("\"persistent_progress_bps\""));
-    assert!(reducer.contains("\"success_threshold_bps\""));
-    assert!(reducer.contains("\"guaranteed_by_attempt\""));
+    assert!(reducer.contains("private_action_resolution_json"));
+    let receipt = source
+        .split("fn private_action_resolution_json")
+        .nth(1)
+        .and_then(|tail| tail.split("fn capability_progress_depends_on_exact_lead").next())
+        .expect("bounded progress receipt serializer");
+    assert!(receipt.contains("\"attempt_number\""));
+    assert!(receipt.contains("\"persistent_progress_bps\""));
+    assert!(receipt.contains("\"success_threshold_bps\""));
+    assert!(receipt.contains("\"guaranteed_by_attempt\""));
 }
 
 #[test]
@@ -210,10 +216,12 @@ fn exact_site_projection_and_travel_require_explicit_case_provenance() {
         .and_then(|tail| tail.split("fn case_site_provenance_view").next())
         .unwrap();
     for required in [
-        "\"manual\" if case.generated_case_id.is_empty() && authorities.is_empty()",
-        "\"generated\" if case.generated_case_id == case.id && authorities.len() == 1",
+        "InvestigationProvenanceKind::Manual",
+        "case.generated_case_id.is_empty() && authorities.is_empty()",
+        "InvestigationProvenanceKind::Generated",
+        "case.generated_case_id == case.id && authorities.len() == 1",
         "validate_quest_generation_authority",
-        "canonical_case_id == case.id",
+        "validated.manifest.canonical_case_id == case.id",
     ] {
         assert!(provenance.contains(required), "{required}");
     }
@@ -223,9 +231,9 @@ fn exact_site_projection_and_travel_require_explicit_case_provenance() {
         .and_then(|tail| tail.split("fn lead_projects_exact_case_site_pin").next())
         .unwrap();
     let travel = source
-        .split("pub(crate) fn exact_case_site_for_observer")
+        .split("pub(crate) fn exact_case_site_for_observer_at")
         .nth(1)
-        .and_then(|tail| tail.split("pub(crate) fn disclose_exact_case_site").next())
+        .and_then(|tail| tail.split("pub(crate) fn case_site_presence_for_observer").next())
         .unwrap();
     assert!(pins.contains("case_site_provenance_view"));
     assert!(travel.contains("case_site_provenance_reducer"));
@@ -621,12 +629,8 @@ fn root_rumor_then_every_referred_witness_pipeline_is_valid_in_both_families() {
 
                 if authored_claims == 1 {
                     let mut invalid = pipeline;
-                    invalid.receipt_identity = inv::compound_id(&[
-                        "generated-testimony",
-                        &character_id.to_string(),
-                        &witness.id.0,
-                        &index.to_string(),
-                    ]);
+                    invalid.receipt_identity =
+                        inv::compound_id(&["generated-testimony", &"x".repeat(257)]);
                     assert_eq!(
                         inv::process_report(invalid.clone()).unwrap_err(),
                         ValidationError::InvalidId

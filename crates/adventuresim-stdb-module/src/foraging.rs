@@ -1252,7 +1252,7 @@ mod tests {
 
     #[test]
     fn gateway_and_immutable_replay_precede_live_character_reads() {
-        let source = include_str!("foraging.rs");
+        let source = crate::production_source(include_str!("foraging.rs"));
         let reducer = source
             .split("pub fn forage_current_vicinity")
             .nth(1)
@@ -1276,7 +1276,7 @@ mod tests {
 
     #[test]
     fn planner_revalidation_and_material_receipts_are_mandatory() {
-        let source = include_str!("foraging.rs");
+        let source = crate::production_source(include_str!("foraging.rs"));
         let reducer = source
             .split("pub fn forage_current_vicinity")
             .nth(1)
@@ -1288,14 +1288,15 @@ mod tests {
         assert!(reducer.contains("validate_commit("));
         assert!(reducer.contains("post_vicinity != vicinity"));
         assert!(reducer.contains("ForagePlanEffect::CommitResolution"));
-        assert!(reducer.contains("forage_harvest_material().insert"));
+        assert!(reducer.contains(".forage_harvest_material()"));
+        assert!(reducer.contains(".insert(ForageHarvestMaterial {"));
         assert!(reducer.contains("lot.material_revision != 1"));
         assert!(reducer.contains("lot.ingredient_quantities != vec![1.0]"));
     }
 
     #[test]
     fn planner_uses_committing_time_policy_and_checked_attempt_generation() {
-        let source = include_str!("foraging.rs");
+        let source = crate::production_source(include_str!("foraging.rs"));
         let preview = source
             .split("fn forage_terminal_minute")
             .nth(1)
@@ -1320,7 +1321,7 @@ mod tests {
 
     #[test]
     fn public_receipt_omits_private_environment_entropy_and_material_ids() {
-        let source = include_str!("foraging.rs");
+        let source = crate::production_source(include_str!("foraging.rs"));
         let projection = source
             .split("pub struct BackendForageReceipt")
             .nth(1)
@@ -1343,7 +1344,7 @@ mod tests {
 
     #[test]
     fn incident_site_provenance_survives_resolution_but_remains_exact() {
-        let source = include_str!("foraging.rs");
+        let source = crate::production_source(include_str!("foraging.rs"));
         let authority = source
             .split("fn actor_party_owns_incident_site")
             .nth(1)
@@ -1383,7 +1384,7 @@ mod tests {
 
     #[test]
     fn fresh_forage_rejects_pending_exact_incident_after_immutable_replay() {
-        let source = include_str!("foraging.rs");
+        let source = crate::production_source(include_str!("foraging.rs"));
         let pending = source
             .split("fn actor_party_has_pending_incident_at_current_site")
             .nth(1)

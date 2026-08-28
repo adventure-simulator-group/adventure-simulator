@@ -1,14 +1,14 @@
 use adventuresim_tactical_core::prelude::{GroundCover, RockLithology, SceneGround, SceneTerrain};
 use bevy::{
     asset::RenderAssetUsages,
-    camera::visibility::{NoFrustumCulling, VisibilityRange},
+    camera::visibility::VisibilityRange,
     color::ColorToComponents,
     light::NotShadowCaster,
     mesh::{Indices, PrimitiveTopology},
     pbr::Material,
     prelude::{
         Asset, Assets, Color, Commands, Component, Mesh, Mesh3d, MeshMaterial3d, Name, Quat,
-        Reflect, StandardMaterial, Transform, Vec2, Vec3, Vec4,
+        Reflect, Transform, Vec2, Vec3, Vec4,
     },
     render::render_resource::{
         AsBindGroup, RenderPipelineDescriptor, SpecializedMeshPipelineError,
@@ -23,6 +23,11 @@ use crate::presentation::unit_hash;
 use super::GroundScatterLayer;
 
 const PEBBLE_BILLBOARD_SHADER: &str = "shaders/tactical_pebble_billboard.wgsl";
+const PEBBLE_SHADER: &str = "shaders/tactical_pebble.wgsl";
+// Flat-ambient scale standing in for the sky IBL the old StandardMaterial path
+// evaluated. Solid rock carries no diffuse transmission, so the lit face is
+// energy-neutral with PBR; only this ambient term is an approximation.
+const PEBBLE_AMBIENT_SCALE: f32 = 0.85;
 const MESH_VARIANTS: u64 = 8;
 const PEBBLE_CANDIDATES_PER_PATCH: usize = 49;
 const PEBBLE_PATCH_COLUMNS: usize = 7;
@@ -82,6 +87,44 @@ impl Material for TacticalPebbleBillboardMaterial {
     }
 }
 
+/// Cheap fragment path for the hero and near pebble LODs. Reuses the shared
+/// patch meshes and their automatic batching; only the shading model changes,
+/// dropping the per-fragment image-based lighting and specular the previous
+/// `StandardMaterial` path evaluated for foreground rock.
+#[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
+pub(crate) struct TacticalPebbleMaterial {
+    /// Linear albedo in rgb, flat-ambient scale in w.
+    #[uniform(0)]
+    surface: Vec4,
+}
+
+impl TacticalPebbleMaterial {
+    fn new(color: Color) -> Self {
+        Self {
+            surface: Vec3::from_array(color.to_linear().to_f32_array_no_alpha())
+                .extend(PEBBLE_AMBIENT_SCALE),
+        }
+    }
+}
+
+impl Material for TacticalPebbleMaterial {
+    fn vertex_shader() -> ShaderRef {
+        PEBBLE_SHADER.into()
+    }
+
+    fn fragment_shader() -> ShaderRef {
+        PEBBLE_SHADER.into()
+    }
+
+    fn enable_prepass() -> bool {
+        false
+    }
+
+    fn enable_shadows() -> bool {
+        false
+    }
+}
+
 #[derive(Component)]
 pub(crate) struct LooseStonePebblePatch {
     pub(crate) physical_pebbles: usize,
@@ -124,7 +167,7 @@ impl PebbleDensity {
 pub(super) fn spawn(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
-    materials: &mut Assets<StandardMaterial>,
+    pebble_materials: &mut Assets<TacticalPebbleMaterial>,
     billboard_materials: &mut Assets<TacticalPebbleBillboardMaterial>,
     terrain: &SceneTerrain,
     ground: &SceneGround,
@@ -154,16 +197,11 @@ pub(super) fn spawn(
             )));
         }
     }
-    let stone_material = materials.add(StandardMaterial {
-        base_color: rock_color(RockLithology::Granite),
-        perceptual_roughness: 1.0,
-        ..Default::default()
-    });
-    let woodland_stone_material = materials.add(StandardMaterial {
-        base_color: Color::srgb_u8(104, 91, 70),
-        perceptual_roughness: 1.0,
-        ..Default::default()
-    });
+    let stone_material = pebble_materials.add(TacticalPebbleMaterial::new(rock_color(
+        RockLithology::Granite,
+    )));
+    let woodland_stone_material =
+        pebble_materials.add(TacticalPebbleMaterial::new(Color::srgb_u8(104, 91, 70)));
     let billboard_material = billboard_materials.add(TacticalPebbleBillboardMaterial {
         color: Vec4::from_array(
             rock_color(RockLithology::Granite)
@@ -270,7 +308,13 @@ pub(super) fn spawn(
                 LooseStonePebblePatch {
                     physical_pebbles: 0,
                 },
-                NoFrustumCulling,
+                // The shader yaws each pebble quad toward the camera, so the
+                // mesh's static bounds would mis-cull; this rotation-safe box
+                // restores frustum culling for off-screen patches.
+                bevy::camera::primitives::Aabb {
+                    center: bevy::math::Vec3A::new(0.0, 0.1, 0.0),
+                    half_extents: bevy::math::Vec3A::new(half_extent + 0.3, 0.4, half_extent + 0.3),
+                },
                 NotShadowCaster,
                 Mesh3d(billboard_meshes[variant].clone()),
                 MeshMaterial3d(billboard_material.clone()),
@@ -712,6 +756,28 @@ mod tests {
             pebble_lod_visibility(PebbleMeshLod::Near).end_margin,
             pebble_lod_visibility(PebbleMeshLod::Billboard).start_margin
         );
+    }
+
+    #[test]
+    fn hero_and_near_pebbles_use_the_cheap_lit_material() {
+        let shader = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/shaders/tactical_pebble.wgsl"
+        ));
+        // Fast model: flat ambient plus a single clamped cascade fetch, the
+        // same shape the distant grass tiers use.
+        assert!(shader.contains("lights.ambient_color"));
+        assert!(shader.contains("shadows::fetch_directional_shadow"));
+        assert!(shader.contains("visibility_range_dither"));
+        // Must NOT drag the foreground rock back through the full PBR path
+        // that this material exists to avoid.
+        assert!(!shader.contains("apply_pbr_lighting"));
+        assert!(!shader.contains("pbr_input_from_standard_material"));
+
+        // Foreground LODs render on the cheap material; only the distant
+        // stochastic billboard keeps its dedicated camera-facing shader.
+        let granite = TacticalPebbleMaterial::new(rock_color(RockLithology::Granite));
+        assert_eq!(granite.surface.w, PEBBLE_AMBIENT_SCALE);
     }
 
     #[test]

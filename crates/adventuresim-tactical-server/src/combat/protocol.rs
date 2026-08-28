@@ -12,17 +12,15 @@ pub(crate) struct PendingDefenderResponse {
     pub(crate) set_at: CombatInstant,
 }
 
-/// Transient allegiance is independent from connectivity and bot control.
-#[derive(Component, Clone, Copy, Debug, PartialEq, Eq, Reflect)]
-#[reflect(Component)]
-pub(crate) enum TacticalCombatSide {
-    Party,
-    Enemy,
-}
-
-/// Emitted once per transition from active to incapacitated.
+/// Authoritative defensive action requested by either an authenticated client
+/// or a server-owned behavior package. Source-specific code may choose the
+/// actor, but all validation, animation state, and combat timing happens after
+/// this seam.
 #[derive(Event, Clone, Copy, Debug)]
-pub(crate) struct TacticalCombatantDefeated(pub(crate) Entity);
+pub(crate) struct DefendIntent {
+    pub(crate) defender: Entity,
+    pub(crate) choice: DefendRequest,
+}
 
 /// Both network clients and server-owned AI enter melee through this seam.
 #[derive(Event, Clone, Copy, Debug)]
@@ -38,8 +36,21 @@ pub(crate) struct MeleeAttackIntent {
 #[derive(Event, Clone, Copy, Debug)]
 pub(crate) struct MeleeAttackStartedIntent {
     pub(crate) attacker: Entity,
-    pub(crate) target: Entity,
+    pub(crate) target: Option<Entity>,
+    pub(crate) body_part: Option<BodyPart>,
     pub(crate) windup: CombatDuration,
+    pub(crate) reported_precision: ReportedPrecision,
+    pub(crate) strike_family: StrikeFamily,
+    pub(crate) hand: AttackHand,
+}
+
+#[derive(Component, Clone, Copy, Debug)]
+pub(crate) struct PendingMeleeContact {
+    pub(crate) attack_key: u64,
+    pub(crate) target: Option<Entity>,
+    pub(crate) body_part: Option<BodyPart>,
+    pub(crate) resolve_at: CombatInstant,
+    pub(crate) reported_precision: ReportedPrecision,
     pub(crate) strike_family: StrikeFamily,
     pub(crate) hand: AttackHand,
 }

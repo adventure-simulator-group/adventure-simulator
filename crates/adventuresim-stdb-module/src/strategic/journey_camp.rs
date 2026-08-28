@@ -575,7 +575,47 @@ fn advance_party_movement(
     for (character_id, excess) in mastery_excess {
         crate::condition::record_mastery_training_morale(ctx, character_id, actual_minutes, excess);
     }
+    advance_party_wilderness_elapsed(ctx, party_id, actual_minutes)?;
     Ok((actual_minutes, all_survived))
+}
+
+pub(crate) fn advance_party_wilderness_elapsed(
+    ctx: &ReducerContext,
+    party_id: &str,
+    elapsed: u64,
+) -> Result<(), String> {
+    if elapsed == 0 {
+        return Ok(());
+    }
+    let mut party = ctx
+        .db
+        .party_authority()
+        .id()
+        .find(party_id.to_string())
+        .ok_or("Party not found")?;
+    if party.wilderness_canonical_anchor_minute.is_none() {
+        return Err("Party wilderness clock is not initialized".into());
+    }
+    party.wilderness_elapsed_minutes =
+        party.wilderness_elapsed_minutes.saturating_add(elapsed);
+    ctx.db.party_authority().id().update(party);
+    Ok(())
+}
+
+pub(crate) fn journey_local_minute(journey: &PartyJourney, elapsed: u64) -> u64 {
+    let frozen_day = journey.departure_minute / MINUTES_PER_DAY * MINUTES_PER_DAY;
+    let minute_of_day = (journey.departure_minute % MINUTES_PER_DAY + elapsed)
+        % MINUTES_PER_DAY;
+    frozen_day.saturating_add(minute_of_day)
+}
+
+pub(crate) fn party_wilderness_environment_minutes(party: &Party) -> Option<(u64, u64)> {
+    let anchor = party.wilderness_canonical_anchor_minute?;
+    let frozen_day = anchor / MINUTES_PER_DAY * MINUTES_PER_DAY;
+    let minute_of_day = (u64::from(party.journey_start_minute_of_day)
+        + party.wilderness_elapsed_minutes)
+        % MINUTES_PER_DAY;
+    Some((frozen_day.saturating_add(minute_of_day), anchor))
 }
 
 fn zero_boundary_requires_settlement(actual_minutes: u64, safe_prefix: u64) -> bool {
@@ -595,6 +635,10 @@ fn set_party_journey_state(
     party.current_case_site_id = current_case_site_id;
     party.camp_destination = camp_destination;
     party.camp_remaining_minutes = camp_remaining_minutes;
+    if party.current_settlement_id.is_some() {
+        party.wilderness_canonical_anchor_minute = None;
+        party.wilderness_elapsed_minutes = 0;
+    }
 }
 
 fn party_can_continue_travel(party: &Party, character_id: u64) -> bool {
@@ -626,9 +670,7 @@ pub(crate) fn refresh_party_journey_forecast(
         .id()
         .find(party_id.to_string())
         .ok_or("Party not found")?;
-    let start = journey
-        .departure_minute
-        .saturating_add(journey.completed_elapsed_minutes);
+    let start = journey_local_minute(&journey, journey.completed_elapsed_minutes);
     // A persisted journey always describes its active leg. A return trip is a
     // new journey and must not be folded into a refreshed outbound forecast.
     let remaining = journey
@@ -675,6 +717,7 @@ pub(crate) fn record_party_camp_rest(
     average_end: f32,
     maximum_end: f32,
 ) -> Result<(), String> {
+    advance_party_wilderness_elapsed(ctx, party_id, elapsed)?;
     let Some(mut journey) = ctx
         .db
         .party_journey_authority()

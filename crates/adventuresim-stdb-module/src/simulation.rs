@@ -692,7 +692,7 @@ mod tests {
 
     #[test]
     fn claim_checks_bootstrap_capability_before_world_freshness() {
-        let source = include_str!("simulation.rs");
+        let source = crate::production_source(include_str!("simulation.rs"));
         let claim = source
             .split("pub fn claim_simulation_run")
             .nth(1)
@@ -709,7 +709,7 @@ mod tests {
 
     #[test]
     fn quest_fixture_public_provenance_requires_an_initial_rumor_receipt() {
-        let source = include_str!("simulation.rs");
+        let source = crate::production_source(include_str!("simulation.rs"));
         let authority = source
             .split("pub struct SimulationQuestFixtureAuthority")
             .nth(1)
@@ -737,7 +737,7 @@ mod tests {
 
     #[test]
     fn quest_fixture_preserves_designated_direct_and_generated_leaders() {
-        let source = include_str!("simulation.rs");
+        let source = crate::production_source(include_str!("simulation.rs"));
         let reducer = source
             .split("pub fn seed_simulation_quest_fixture")
             .nth(1)

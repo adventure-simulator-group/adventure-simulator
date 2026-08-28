@@ -27,7 +27,6 @@ mod rest_form_tests {
             unit: unit.into(),
             requested_minutes,
             shelter: "bivouac".into(),
-            advance_development_clock: false,
         }
     }
 

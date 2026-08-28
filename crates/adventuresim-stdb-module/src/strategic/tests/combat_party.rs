@@ -179,13 +179,13 @@ fn private_chat_projection_only_emits_rows_for_the_two_parties() {
         gateway_bucket: 0,
         audience_party_id: "party:a".into(),
         other_party_id: "party:b".into(),
-        resident_character_id: Some(41),
+        resident_character_id: None,
         sender_id: 10,
         sender_name: "Ada".into(),
         body: "Meet by the well.".into(),
         created_micros: 20,
     };
-    let projected = project_local_chat_message(row, &[10, 11], &[20]);
+    let projected = project_local_chat_message(row.clone(), &[10, 11], &[20]);
     assert_eq!(
         projected
             .iter()
@@ -201,7 +201,38 @@ fn private_chat_projection_only_emits_rows_for_the_two_parties() {
     assert_eq!(projected[0].subject_party_id, "party:b");
     assert_eq!(projected[2].subject_party_id, "party:a");
     assert!(
-        !projected
+        projected
+            .iter()
+            .all(|message| message.conversation_kind == "player")
+    );
+
+    let npc_projected = project_local_chat_message(
+        LocalChatMessage {
+            resident_character_id: Some(41),
+            ..row
+        },
+        &[10, 11],
+        &[20],
+    );
+    assert_eq!(
+        npc_projected
+            .iter()
+            .map(|message| message.owner_character_id)
+            .collect::<Vec<_>>(),
+        vec![10, 11]
+    );
+    assert!(
+        npc_projected
+            .iter()
+            .all(|message| message.conversation_kind == "npc")
+    );
+    assert!(
+        npc_projected
+            .iter()
+            .all(|message| message.subject_resident_character_id == "41")
+    );
+    assert!(
+        !npc_projected
             .iter()
             .any(|message| message.owner_character_id == 30)
     );
@@ -436,7 +467,7 @@ fn surrender_preview_refresh_is_revisioned_receipted_and_retry_safe() {
 
 #[test]
 fn final_encounter_resolution_establishes_only_the_exact_incomplete_journey_stop() {
-    let camp_source = include_str!("../journey_camp.rs");
+    let camp_source = crate::production_source(include_str!("../journey_camp.rs"));
     let helper = camp_source
         .split("fn establish_resolved_encounter_journey_camp")
         .nth(1)
@@ -466,7 +497,7 @@ fn final_encounter_resolution_establishes_only_the_exact_incomplete_journey_stop
     );
     assert!(helper.contains("bind_errantry_trials_to_current_camp"));
 
-    let encounters = include_str!("../encounters.rs");
+    let encounters = crate::production_source(include_str!("../encounters.rs"));
     let reducer = encounters
         .split("pub fn resolve_strategic_encounter")
         .nth(1)
@@ -484,7 +515,7 @@ fn final_encounter_resolution_establishes_only_the_exact_incomplete_journey_stop
         .find("encounter.revision != expected_revision")
         .expect("stale encounter revision gate");
     let final_status = reducer
-        .find("encounter.status = \"resolved\"")
+        .find("encounter.status = StrategicEncounterStatus::Resolved")
         .expect("final encounter state");
     let establish = reducer
         .find("establish_resolved_encounter_journey_camp(ctx, &encounter)?")
@@ -496,7 +527,7 @@ fn final_encounter_resolution_establishes_only_the_exact_incomplete_journey_stop
 
 #[test]
 fn random_and_authored_encounters_share_the_only_constructor_literal() {
-    let encounters = include_str!("../encounters.rs");
+    let encounters = crate::production_source(include_str!("../encounters.rs"));
     assert_eq!(encounters.matches("StrategicEncounter {").count(), 1);
     let random = encounters
         .split("fn maybe_interrupt_travel")
@@ -507,7 +538,7 @@ fn random_and_authored_encounters_share_the_only_constructor_literal() {
         })
         .expect("random encounter materialization");
     assert!(random.contains("build_strategic_encounter("));
-    let authored = include_str!("../challenges.rs");
+    let authored = crate::production_source(include_str!("../challenges.rs"));
     assert!(authored.contains("build_strategic_encounter("));
 }
 
@@ -523,7 +554,7 @@ fn recovery_direction_is_delegated_only_to_a_ready_member_for_an_unready_leader(
     assert!(direction.contains("party.current_settlement_id.is_none()"));
     assert!(direction.contains("ready_companion_may_direct_recovery"));
 
-    let time = include_str!("../../time.rs");
+    let time = crate::production_source(include_str!("../../time.rs"));
     let camp = time
         .split("pub fn rest_at_camp")
         .nth(1)
@@ -555,8 +586,8 @@ fn unresolved_encounters_guard_party_and_preview_mutations() {
         ),
     ] {
         let body = source
-            .split(&format!("pub fn {function}"))
-            .nth(1)
+            .rsplit(&format!("pub fn {function}"))
+            .next()
             .and_then(|tail| tail.split("#[reducer]").next())
             .unwrap_or_else(|| panic!("{function} reducer body"));
         assert!(body.contains(guard), "{function} must call {guard}");
@@ -578,11 +609,11 @@ fn quest_autoresolve_routes_consequences_through_shared_commit() {
 
 #[test]
 fn contract_schema_has_no_destination_or_tracking_authority() {
-    let source = STRATEGIC_SOURCE;
+    let source = crate::production_source(include_str!("../authority_model.rs"));
     let schema = source
         .split("pub struct Contract {")
         .nth(1)
-        .and_then(|tail| tail.split("pub struct CaseOutcome").next())
+        .and_then(|tail| tail.split("pub struct BackendContract").next())
         .expect("contract schema");
     for forbidden in [
         "location_description",
@@ -813,7 +844,7 @@ fn all_dead_party_teardown_clears_only_strategic_ghost_state() {
         assert!(!teardown.contains(preserved), "must preserve {preserved}");
     }
 
-    let time = include_str!("../../time.rs");
+    let time = crate::production_source(include_str!("../../time.rs"));
     let camp = time
         .split("pub fn rest_at_camp")
         .nth(1)

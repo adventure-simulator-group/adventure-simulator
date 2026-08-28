@@ -13,10 +13,9 @@ use super::{
     GroundScatterLayer, TreeLeafRepresentation, WoodyUnderstoryPresentationCache, foliage_transform,
 };
 
-const SHRUB_WOOD_END: std::ops::Range<f32> = 24.0..30.0;
-const SHRUB_LEAF_CARD_START: std::ops::Range<f32> = 12.0..18.0;
-const SHRUB_LEAF_CARD_END: std::ops::Range<f32> = 24.0..30.0;
-const SHRUB_SPARSE_LEAF_CARD_END: std::ops::Range<f32> = 38.0..45.0;
+const SHRUB_WOOD_END: std::ops::Range<f32> = 10.0..12.0;
+const SHRUB_CAMBERED_LEAF_END: std::ops::Range<f32> = 6.0..8.0;
+const SHRUB_MINIMAL_LEAF_CARD_END: std::ops::Range<f32> = 20.0..24.0;
 
 fn shrub_wood_visibility() -> VisibilityRange {
     VisibilityRange {
@@ -29,23 +28,15 @@ fn shrub_wood_visibility() -> VisibilityRange {
 fn shrub_cambered_leaf_visibility() -> VisibilityRange {
     VisibilityRange {
         start_margin: 0.0..0.0,
-        end_margin: SHRUB_LEAF_CARD_START,
+        end_margin: SHRUB_CAMBERED_LEAF_END,
         use_aabb: true,
     }
 }
 
-fn shrub_leaf_card_visibility() -> VisibilityRange {
+fn shrub_minimal_leaf_card_visibility() -> VisibilityRange {
     VisibilityRange {
-        start_margin: SHRUB_LEAF_CARD_START,
-        end_margin: SHRUB_LEAF_CARD_END,
-        use_aabb: true,
-    }
-}
-
-fn shrub_sparse_leaf_card_visibility() -> VisibilityRange {
-    VisibilityRange {
-        start_margin: SHRUB_LEAF_CARD_END,
-        end_margin: SHRUB_SPARSE_LEAF_CARD_END,
+        start_margin: SHRUB_CAMBERED_LEAF_END,
+        end_margin: SHRUB_MINIMAL_LEAF_CARD_END,
         use_aabb: true,
     }
 }
@@ -127,20 +118,30 @@ fn ground_allows_species(surface: GroundSurface, species: UnderstorySpecies) -> 
     }
 }
 
-pub(super) fn spawn(
-    commands: &mut Commands,
+/// One shrub site produced by the shared placement walk, consumed by both
+/// the legacy per-entity renderer and the instanced batches.
+pub(super) struct ShrubPlacement {
+    pub(super) species: UnderstorySpecies,
+    pub(super) world_x: f32,
+    pub(super) world_z: f32,
+    pub(super) hash: u64,
+}
+
+/// Deterministic shrub placement walk shared by both renderers, so the
+/// instanced path reproduces the legacy thickets exactly.
+pub(super) fn placements(
     terrain: &SceneTerrain,
     ground: &SceneGround,
-    cache: &WoodyUnderstoryPresentationCache,
     base_seed: u64,
     chance: f32,
     habitat: UnderstoryHabitat,
-) {
+) -> Vec<ShrubPlacement> {
     let spacing = 3.2;
     let count_x = (terrain.width() / spacing).floor() as i32;
     let count_z = (terrain.depth() / spacing).floor() as i32;
     let half_x = terrain.width() * 0.5;
     let half_z = terrain.depth() * 0.5;
+    let mut sites = Vec::new();
     for z in 0..count_z {
         for x in 0..count_x {
             let cell = ((x as u32 as u64) << 32) | z as u32 as u64;
@@ -161,6 +162,38 @@ pub(super) fn spawn(
             {
                 continue;
             }
+            sites.push(ShrubPlacement {
+                species,
+                world_x,
+                world_z,
+                hash,
+            });
+        }
+    }
+    sites
+}
+
+#[cfg_attr(
+    all(feature = "instanced-grass", not(target_family = "wasm")),
+    allow(dead_code, reason = "legacy shrub renderer remains the wasm path")
+)]
+pub(super) fn spawn(
+    commands: &mut Commands,
+    terrain: &SceneTerrain,
+    ground: &SceneGround,
+    cache: &WoodyUnderstoryPresentationCache,
+    base_seed: u64,
+    chance: f32,
+    habitat: UnderstoryHabitat,
+) {
+    for placement in placements(terrain, ground, base_seed, chance, habitat) {
+        {
+            let ShrubPlacement {
+                species,
+                world_x,
+                world_z,
+                hash,
+            } = placement;
             let Some(transform) = foliage_transform(terrain, world_x, world_z, hash) else {
                 continue;
             };
@@ -188,21 +221,12 @@ pub(super) fn spawn(
                 transform,
             ));
             commands.spawn((
-                Name::new(format!("Shared {common_name} alpha-card leaves")),
+                Name::new(format!("Shared {common_name} minimal alpha-card leaves")),
                 GroundScatterLayer::Understory,
                 TreeLeafRepresentation::AlphaCard,
-                Mesh3d(presentation.leaf_cards.as_ref().unwrap().clone()),
+                Mesh3d(presentation.minimal_leaf_cards.as_ref().unwrap().clone()),
                 MeshMaterial3d(presentation.leaves.as_ref().unwrap().clone()),
-                shrub_leaf_card_visibility(),
-                transform,
-            ));
-            commands.spawn((
-                Name::new(format!("Shared {common_name} sparse far alpha-card leaves")),
-                GroundScatterLayer::Understory,
-                TreeLeafRepresentation::AlphaCard,
-                Mesh3d(presentation.sparse_leaf_cards.as_ref().unwrap().clone()),
-                MeshMaterial3d(presentation.leaves.as_ref().unwrap().clone()),
-                shrub_sparse_leaf_card_visibility(),
+                shrub_minimal_leaf_card_visibility(),
                 transform,
             ));
         }
@@ -214,7 +238,7 @@ mod tests {
     use super::*;
     use crate::presentation::obstacles::tree::{
         BLACKTHORN_PARAMETERS, COMMON_HAWTHORN_PARAMETERS, COMMON_HAZEL_PARAMETERS,
-        procedural_woody_leaf_card_mesh, procedural_woody_plant_leaves,
+        procedural_oak_leaf_card_mesh, procedural_woody_plant_leaves,
         procedural_woody_plant_skeleton, procedural_woody_sparse_leaf_card_mesh,
     };
     use bevy::prelude::Mesh;
@@ -322,35 +346,26 @@ mod tests {
     }
 
     #[test]
-    fn shrub_lod_ranges_pin_the_sparse_far_handoff_and_overlap_continuously() {
+    fn shrub_lod_ranges_pin_the_close_detail_and_minimal_card_budget() {
         let wood = shrub_wood_visibility();
         let cambered = shrub_cambered_leaf_visibility();
-        let cards = shrub_leaf_card_visibility();
-        let sparse_cards = shrub_sparse_leaf_card_visibility();
+        let cards = shrub_minimal_leaf_card_visibility();
 
-        assert_eq!(cambered.end_margin, 12.0..18.0);
-        assert_eq!(cards.start_margin, 12.0..18.0);
-        assert_eq!(cards.end_margin, 24.0..30.0);
-        assert_eq!(sparse_cards.start_margin, 24.0..30.0);
-        assert_eq!(sparse_cards.end_margin, 38.0..45.0);
-        assert_eq!(wood.end_margin, 24.0..30.0);
+        assert_eq!(cambered.end_margin, 6.0..8.0);
+        assert_eq!(cards.start_margin, 6.0..8.0);
+        assert_eq!(cards.end_margin, 20.0..24.0);
+        assert_eq!(wood.end_margin, 10.0..12.0);
 
-        // The two leaf representations share one fade band, so the crown has
-        // no uncovered interval during the cambered-to-card handoff.
+        // The detailed and minimal representations share one fade band, so
+        // the crown has no uncovered interval during the handoff.
         assert_eq!(cambered.end_margin, cards.start_margin);
-
-        // Full cards and the sparse terminal tier share one fade band, so the
-        // shrub never reveals a distance gap as its detailed geometry ends.
-        assert_eq!(cards.end_margin, sparse_cards.start_margin);
-        // Wood fades entirely beneath full cards; the new sparse tier remains
-        // after wood is gone, which intentionally gives the far shrub a
-        // foliage-only silhouette.
-        assert_eq!(wood.end_margin, cards.end_margin);
-        assert!(sparse_cards.end_margin.end > wood.end_margin.end);
+        // Wood ends beneath the minimal cards, and no physical shrub tier
+        // remains after the 24-metre terminal margin.
+        assert!(wood.end_margin.end < cards.end_margin.start);
     }
 
     #[test]
-    fn sparse_far_shrub_cards_pin_the_per_species_geometry_budget() {
+    fn minimal_shrub_cards_pin_the_per_species_geometry_budget() {
         let mut budgets = Vec::new();
         for parameters in [
             COMMON_HAZEL_PARAMETERS,
@@ -359,7 +374,7 @@ mod tests {
         ] {
             let branches = procedural_woody_plant_skeleton(42, 0.0, parameters);
             let leaves = procedural_woody_plant_leaves(42, &branches, 0.0, parameters);
-            let full = procedural_woody_leaf_card_mesh(&leaves);
+            let full = procedural_oak_leaf_card_mesh(&leaves);
             let sparse = procedural_woody_sparse_leaf_card_mesh(&leaves);
             budgets.push((
                 full.count_vertices(),
@@ -382,7 +397,7 @@ mod tests {
     }
 
     #[test]
-    fn sparse_far_shrub_cards_are_deterministic_when_source_order_changes() {
+    fn minimal_shrub_cards_are_deterministic_when_source_order_changes() {
         let branches = procedural_woody_plant_skeleton(42, 0.0, COMMON_HAZEL_PARAMETERS);
         let leaves = procedural_woody_plant_leaves(42, &branches, 0.0, COMMON_HAZEL_PARAMETERS);
         let first = procedural_woody_sparse_leaf_card_mesh(&leaves);

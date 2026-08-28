@@ -5,13 +5,17 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
+use adventuresim_tactical_core::animation::AttackCurve;
 use adventuresim_tactical_core::prelude::*;
 #[cfg(not(target_family = "wasm"))]
 use adventuresim_tactical_netcode::message::PlayerInputRequest;
 use adventuresim_tactical_netcode::message::SuccessfulAttackResponse;
 use bevy::{
-    animation::AnimationTargetId, asset::LoadState, ecs::hierarchy::ChildSpawnerCommands,
-    gltf::Gltf, prelude::*,
+    animation::AnimationTargetId,
+    asset::{AssetId, LoadState},
+    ecs::hierarchy::ChildSpawnerCommands,
+    gltf::Gltf,
+    prelude::*,
 };
 
 pub(crate) mod jitter;
@@ -21,12 +25,14 @@ mod procedural;
 pub(crate) use procedural::{
     ArmIkState, BoneRole, HandIkTarget, HandSide, HeldWeaponConstraint, HumanoidBone,
     HumanoidIkTargets, HumanoidRig, LegIkDiagnostics, LegIkState, LocomotionBodyResponseState,
-    LocomotionHeightState, MEASURED_ANKLE_SOLE_OFFSET_METRES, ProceduralAnimationClock,
+    LocomotionHeightState, MEASURED_ANKLE_SOLE_OFFSET_METRES, MhrBone, ProceduralAnimationClock,
     RaisedFootworkState, SOLE_CONTACT_TOLERANCE_METRES, authored_bind_global,
     locomotion_support_weights,
 };
 const HUMANOID_UNARMED_PACK: &str = "humanoid_unarmed";
 const BIPED_BASE_GLB: &str = "animations/biped/unarmed/base.glb";
+const BIPED_GRIP_HILT_GLB: &str = "animations/biped/grip_hilt.glb";
+const BIPED_GRIP_POLEARM_GLB: &str = "animations/biped/grip_polearm.glb";
 const ANIMATION_FPS: f32 = 30.0;
 // Player transforms sit at the center of the 1.9 m server collider, while
 // authored rigs use a floor-level origin. Keep visual feet on the collider's
@@ -70,6 +76,49 @@ pub(crate) mod catalog;
 pub use catalog::AnimationPackCatalog;
 use catalog::*;
 
+/// Per-step travel measured from the loaded authored foot curves. Until a
+/// motion and rig are both available, presentation retains the shared
+/// simulation profile instead of guessing from clip duration.
+#[derive(Resource, Debug, Clone, Default)]
+pub(super) struct AuthoredLocomotionStrides {
+    walk: Option<f32>,
+    run: Option<f32>,
+    strafe: Option<f32>,
+    skip: Option<f32>,
+    measured_clips: BTreeMap<String, AssetId<AnimationClip>>,
+}
+
+impl AuthoredLocomotionStrides {
+    fn ordinary(&self, speed: f32) -> Option<f32> {
+        let walk = self.walk?;
+        let blend = ((speed - WALK_LOCOMOTION_PROFILE.reference_speed)
+            / (RUN_LOCOMOTION_PROFILE.reference_speed - WALK_LOCOMOTION_PROFILE.reference_speed))
+            .clamp(0.0, 1.0);
+        if blend <= f32::EPSILON {
+            Some(walk)
+        } else {
+            Some(walk.lerp(self.run?, blend))
+        }
+    }
+
+    fn combat(&self, direction: Vec2) -> Option<f32> {
+        let strafe_weight = direction.x.abs();
+        let skip_weight = direction.y.abs();
+        let total = strafe_weight + skip_weight;
+        if total <= f32::EPSILON {
+            return None;
+        }
+        let mut stride = 0.0;
+        if strafe_weight > f32::EPSILON {
+            stride += self.strafe? * strafe_weight;
+        }
+        if skip_weight > f32::EPSILON {
+            stride += self.skip? * skip_weight;
+        }
+        Some(stride / total)
+    }
+}
+
 #[derive(Debug, Clone)]
 struct LoadedClip {
     handle: Handle<AnimationClip>,
@@ -94,6 +143,24 @@ enum ClipLayer {
     Whole,
     Upper,
     Lower,
+    Hands,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum WeaponGrip {
+    Hilt,
+    Polearm,
+}
+
+impl WeaponGrip {
+    const ALL: [Self; 2] = [Self::Hilt, Self::Polearm];
+
+    const fn path(self) -> &'static str {
+        match self {
+            Self::Hilt => BIPED_GRIP_HILT_GLB,
+            Self::Polearm => BIPED_GRIP_POLEARM_GLB,
+        }
+    }
 }
 
 #[derive(Resource, Default)]
@@ -107,6 +174,10 @@ pub(super) struct AnimationRuntime {
     unavailable_motions: BTreeSet<(String, String)>,
     clip_handles: BTreeMap<(String, String), Handle<AnimationClip>>,
     clips: BTreeMap<(String, String), LoadedClip>,
+    requested_grips: BTreeMap<WeaponGrip, Handle<Gltf>>,
+    processed_grips: BTreeSet<WeaponGrip>,
+    unavailable_grips: BTreeSet<WeaponGrip>,
+    grips: BTreeMap<WeaponGrip, LoadedClip>,
     library: AnimationPackLibrary,
     canonical_targets: HashSet<AnimationTargetId>,
 }
@@ -122,6 +193,7 @@ impl AnimationRuntime {
 #[derive(Component, Debug)]
 pub(super) struct AnimationPlayback {
     clips: Vec<WeightedClip>,
+    extrapolated_spans: Vec<ExtrapolatedSpan>,
     use_authored_bind_pose: bool,
     pub(super) whole_body_mirror: f32,
     pub(super) foot_ik_weights: Vec2,
@@ -131,7 +203,8 @@ pub(super) struct AnimationPlayback {
 
 impl AnimationPlayback {
     pub(super) fn authored_pose_is_ready(&self) -> bool {
-        !self.use_authored_bind_pose && !self.clips.is_empty()
+        !self.use_authored_bind_pose
+            && (!self.clips.is_empty() || !self.extrapolated_spans.is_empty())
     }
 
     pub(super) fn presentation_is_settled(&self) -> bool {
@@ -143,6 +216,7 @@ impl Default for AnimationPlayback {
     fn default() -> Self {
         Self {
             clips: Vec::new(),
+            extrapolated_spans: Vec::new(),
             use_authored_bind_pose: true,
             whole_body_mirror: 0.0,
             foot_ik_weights: Vec2::ZERO,
@@ -161,8 +235,20 @@ struct WeightedClip {
 }
 
 #[derive(Debug, Clone)]
+struct ExtrapolatedSpan {
+    start: LoadedClip,
+    start_time_seconds: f32,
+    end: LoadedClip,
+    end_time_seconds: f32,
+    coordinate: f32,
+    weight: f32,
+    mirrored_weight: f32,
+}
+
+#[derive(Debug, Clone)]
 struct PlaybackPose {
     clips: Vec<WeightedClip>,
+    extrapolated_spans: Vec<ExtrapolatedSpan>,
     use_authored_bind_pose: bool,
     whole_body_mirror: f32,
     foot_ik_weights: Vec2,
@@ -189,12 +275,18 @@ pub(crate) struct AuthoredBindTransform {
 #[derive(Component, Debug, Clone, Copy)]
 pub(super) struct ImpactReaction {
     pub(super) remaining: f32,
-    pub(super) duration: f32,
-    pub(super) strength: f32,
+    pub(super) velocity_change: Vec3,
+    pub(super) body_part: BodyPart,
 }
 
+mod full_ragdoll;
 mod loading;
+pub(crate) mod secondary_physics;
 use loading::*;
+#[expect(
+    clippy::type_complexity,
+    reason = "the Bevy query couples each presented skeleton with its route, inventory, and playback state"
+)]
 fn evaluate_skeletons(
     mut commands: Commands,
     catalog: Res<AnimationPackCatalog>,
@@ -204,12 +296,14 @@ fn evaluate_skeletons(
             Entity,
             &PresentedSkeleton,
             &semantic_route::SemanticRouteTrace,
+            Option<&InventoryItems>,
             Option<&mut AnimationPlayback>,
         ),
         With<Player>,
     >,
+    weapons: Query<&WeaponItem>,
 ) {
-    for (entity, skeleton, route_trace, playback) in players {
+    for (entity, skeleton, route_trace, inventory, playback) in players {
         // The preceding chained system directly routes authoritative
         // presentation state into deterministic semantic samples.
         let evaluation = route_trace.evaluation.clone();
@@ -219,6 +313,7 @@ fn evaluate_skeletons(
             &evaluation.action
         };
         let mut weighted = Vec::<WeightedClip>::new();
+        let mut extrapolated_spans = Vec::<ExtrapolatedSpan>::new();
         let base_layer = if !evaluation.lower_body.is_empty() {
             ClipLayer::Upper
         } else {
@@ -227,6 +322,7 @@ fn evaluate_skeletons(
         for sample in samples {
             append_resolved_sample_layer(
                 &mut weighted,
+                &mut extrapolated_spans,
                 &runtime,
                 &catalog,
                 &skeleton.animation_pack,
@@ -237,6 +333,7 @@ fn evaluate_skeletons(
         for sample in &evaluation.lower_body {
             append_resolved_sample_layer(
                 &mut weighted,
+                &mut extrapolated_spans,
                 &runtime,
                 &catalog,
                 &skeleton.animation_pack,
@@ -244,23 +341,44 @@ fn evaluate_skeletons(
                 ClipLayer::Lower,
             );
         }
-        let target = PlaybackPose {
-            use_authored_bind_pose: weighted.is_empty(),
-            whole_body_mirror: {
-                let total = weighted.iter().map(|clip| clip.weight).sum::<f32>();
-                if total > f32::EPSILON {
-                    (weighted
+        let whole_body_mirror = {
+            let total = weighted.iter().map(|clip| clip.weight).sum::<f32>()
+                + extrapolated_spans
+                    .iter()
+                    .map(|span| span.weight)
+                    .sum::<f32>();
+            if total > f32::EPSILON {
+                ((weighted
+                    .iter()
+                    .map(|clip| clip.mirrored_weight)
+                    .sum::<f32>()
+                    + extrapolated_spans
                         .iter()
-                        .map(|clip| clip.mirrored_weight)
-                        .sum::<f32>()
-                        / total)
-                        .clamp(0.0, 1.0)
-                } else {
-                    0.0
-                }
-            },
+                        .map(|span| span.mirrored_weight)
+                        .sum::<f32>())
+                    / total)
+                    .clamp(0.0, 1.0)
+            } else {
+                0.0
+            }
+        };
+        if let Some(grip) = equipped_weapon_grip(inventory, &weapons)
+            && let Some(clip) = runtime.grips.get(&grip)
+        {
+            append_weighted_clip(
+                &mut weighted,
+                &clip.at_anchor_layer(0, ClipLayer::Hands),
+                false,
+                0.0,
+                1.0,
+            );
+        }
+        let target = PlaybackPose {
+            use_authored_bind_pose: weighted.is_empty() && extrapolated_spans.is_empty(),
+            whole_body_mirror,
             foot_ik_weights: semantic_foot_ik_weights(&evaluation),
             clips: weighted,
+            extrapolated_spans,
         };
         let ordinary_locomotion_candidate = ordinary_locomotion_candidate(skeleton);
         if let Some(mut playback) = playback {
@@ -281,6 +399,7 @@ fn evaluate_skeletons(
                 ordinary_locomotion_candidate && skeleton.animation_speed() > 0.05;
             commands.entity(entity).insert(AnimationPlayback {
                 clips: target.clips,
+                extrapolated_spans: target.extrapolated_spans,
                 use_authored_bind_pose: target.use_authored_bind_pose,
                 whole_body_mirror: target.whole_body_mirror,
                 foot_ik_weights: target.foot_ik_weights,
@@ -289,6 +408,24 @@ fn evaluate_skeletons(
             });
         }
     }
+}
+
+fn weapon_grip(skill_weights: &[f32; 9]) -> WeaponGrip {
+    if skill_weights[0] > f32::EPSILON {
+        WeaponGrip::Polearm
+    } else {
+        WeaponGrip::Hilt
+    }
+}
+
+fn equipped_weapon_grip(
+    inventory: Option<&InventoryItems>,
+    weapons: &Query<&WeaponItem>,
+) -> Option<WeaponGrip> {
+    inventory
+        .and_then(InventoryItems::holding_weapon)
+        .and_then(|entity| weapons.get(entity).ok())
+        .map(|weapon| weapon_grip(&weapon.skill_weights))
 }
 
 fn ordinary_locomotion_candidate(skeleton: &SkeletonState) -> bool {
@@ -301,6 +438,7 @@ fn ordinary_locomotion_candidate(skeleton: &SkeletonState) -> bool {
 
 fn apply_playback_pose(playback: &mut AnimationPlayback, pose: PlaybackPose) {
     playback.clips = pose.clips;
+    playback.extrapolated_spans = pose.extrapolated_spans;
     playback.use_authored_bind_pose = pose.use_authored_bind_pose;
     playback.whole_body_mirror = pose.whole_body_mirror;
     playback.foot_ik_weights = pose.foot_ik_weights;
@@ -310,7 +448,9 @@ fn apply_playback_pose(playback: &mut AnimationPlayback, pose: PlaybackPose) {
 /// The curve shapes are animation metadata: walk keeps one supported foot,
 /// run has genuine intervals with neither foot loaded, and idle loads both.
 fn semantic_foot_ik_weights(evaluation: &AnimationEvaluation) -> Vec2 {
-    let samples = if evaluation.action.is_empty() {
+    let samples = if !evaluation.lower_body.is_empty() {
+        &evaluation.lower_body
+    } else if evaluation.action.is_empty() {
         &evaluation.base
     } else {
         return Vec2::ZERO;
@@ -320,6 +460,18 @@ fn semantic_foot_ik_weights(evaluation: &AnimationEvaluation) -> Vec2 {
     for sample in samples {
         let mut weights = match (sample.pose, sample.sampling) {
             (SemanticPose::IdleRelaxed, _) => Vec2::ONE,
+            (SemanticPose::CombatStance, _) => Vec2::ONE,
+            (
+                SemanticPose::StrafeCycle | SemanticPose::SkipCycle,
+                PoseSampling::Cycle { phase },
+            ) => combat_cycle_ik_weights(phase),
+            (
+                SemanticPose::QuickstepForwardTakeoff
+                | SemanticPose::QuickstepRightTakeoff
+                | SemanticPose::QuickstepLeftTakeoff
+                | SemanticPose::QuickstepBackTakeoff,
+                PoseSampling::Timeline { .. },
+            ) => Vec2::ZERO,
             (SemanticPose::WalkContact, PoseSampling::Cycle { phase }) => {
                 let (left, right) = gait_support_weights(WALK_LOCOMOTION_PROFILE, phase);
                 Vec2::new(left, right)
@@ -349,6 +501,19 @@ fn semantic_foot_ik_weights(evaluation: &AnimationEvaluation) -> Vec2 {
         Vec2::ZERO
     }
     .clamp(Vec2::ZERO, Vec2::ONE)
+}
+
+/// Select the single authored combat contact. Frames 0/12 are swing midpoints
+/// and frames 6/18 switch contact. The pose buffer interpolates continuously
+/// into each terrain-conformed target; support identity itself must not overlap
+/// because an outgoing foot is free as soon as the incoming foot contacts.
+fn combat_cycle_ik_weights(phase: f32) -> Vec2 {
+    let phase = phase.rem_euclid(1.0);
+    if (0.25..0.75).contains(&phase) {
+        Vec2::X
+    } else {
+        Vec2::Y
+    }
 }
 
 #[expect(
@@ -394,13 +559,14 @@ fn restore_authored_bind_pose(
 }
 
 fn on_successful_attack(event: On<SuccessfulAttackResponse>, mut commands: Commands) {
-    let strength = (event.total_damage() / 100.0).clamp(0.15, 1.0);
-    for entity in &event.hit {
-        commands.entity(*entity).insert(ImpactReaction {
-            remaining: 0.22,
-            duration: 0.22,
-            strength,
-        });
+    if event.impact_velocity_change.length_squared() > f32::EPSILON {
+        commands
+            .entity(event.impact_recipient)
+            .insert(ImpactReaction {
+                remaining: 0.22,
+                velocity_change: event.impact_velocity_change,
+                body_part: event.body_part,
+            });
     }
 }
 
@@ -424,9 +590,42 @@ struct ResolvedAnchor<'a> {
     pack_id: &'a str,
     semantic: SemanticPose,
     mirrored: bool,
+    timeline_reversed: bool,
 }
 
 fn resolve_anchor<'a>(
+    runtime: &'a AnimationRuntime,
+    catalog: &'a AnimationPackCatalog,
+    requested_pack: &str,
+    pose: SemanticPose,
+) -> Option<ResolvedAnchor<'a>> {
+    let ordinary = resolve_library_anchor(runtime, catalog, requested_pack, pose);
+    if ordinary
+        .as_ref()
+        .is_some_and(|resolved| resolved.semantic == pose)
+    {
+        return ordinary;
+    }
+
+    // A directional quickstep may omit its opposite file. In that case its
+    // takeoff resolves to the authored opposite contact and its contact to the
+    // opposite takeoff, which samples that one clip backward. Exact authored
+    // direction clips always win above.
+    if let Some(reversed_pose) = reversed_quickstep_pose(pose)
+        && let Some(reversed) =
+            resolve_library_anchor(runtime, catalog, requested_pack, reversed_pose)
+        && reversed.semantic == reversed_pose
+    {
+        return Some(ResolvedAnchor {
+            timeline_reversed: true,
+            ..reversed
+        });
+    }
+
+    ordinary
+}
+
+fn resolve_library_anchor<'a>(
     runtime: &'a AnimationRuntime,
     catalog: &'a AnimationPackCatalog,
     requested_pack: &str,
@@ -453,6 +652,22 @@ fn resolve_anchor<'a>(
         pack_id,
         semantic: resolved_pose,
         mirrored,
+        timeline_reversed: false,
+    })
+}
+
+fn reversed_quickstep_pose(pose: SemanticPose) -> Option<SemanticPose> {
+    use SemanticPose::*;
+    Some(match pose {
+        QuickstepForwardTakeoff => QuickstepBackTakeoff,
+        QuickstepForwardContact => QuickstepBackContact,
+        QuickstepBackTakeoff => QuickstepForwardTakeoff,
+        QuickstepBackContact => QuickstepForwardContact,
+        QuickstepRightTakeoff => QuickstepLeftTakeoff,
+        QuickstepRightContact => QuickstepLeftContact,
+        QuickstepLeftTakeoff => QuickstepRightTakeoff,
+        QuickstepLeftContact => QuickstepRightContact,
+        _ => return None,
     })
 }
 
@@ -522,11 +737,21 @@ fn append_resolved_sample(
     pack: &str,
     sample: PoseSample,
 ) {
-    append_resolved_sample_layer(weighted, runtime, catalog, pack, sample, ClipLayer::Whole);
+    let mut extrapolated_spans = Vec::new();
+    append_resolved_sample_layer(
+        weighted,
+        &mut extrapolated_spans,
+        runtime,
+        catalog,
+        pack,
+        sample,
+        ClipLayer::Whole,
+    );
 }
 
 fn append_resolved_sample_layer(
     weighted: &mut Vec<WeightedClip>,
+    extrapolated_spans: &mut Vec<ExtrapolatedSpan>,
     runtime: &AnimationRuntime,
     catalog: &AnimationPackCatalog,
     pack: &str,
@@ -544,11 +769,28 @@ fn append_resolved_sample_layer(
             append_weighted_anchor(weighted, &start, start.anchor.frame, sample.weight, layer)
         }
         PoseSampling::Cycle { phase } => {
+            let clip = start.clip.at_anchor_layer(start.anchor.frame, layer);
             append_weighted_clip(
                 weighted,
-                start.clip,
+                &clip,
                 start.mirrored,
                 start.clip.duration_seconds * phase.rem_euclid(1.0),
+                sample.weight,
+            );
+        }
+        PoseSampling::Timeline { progress } => {
+            let progress = progress.clamp(0.0, 1.0);
+            let timeline = if start.timeline_reversed {
+                1.0 - progress
+            } else {
+                progress
+            };
+            let clip = start.clip.at_anchor_layer(start.anchor.frame, layer);
+            append_weighted_clip(
+                weighted,
+                &clip,
+                start.mirrored,
+                start.clip.duration_seconds * timeline,
                 sample.weight,
             );
         }
@@ -639,6 +881,71 @@ fn append_resolved_sample_layer(
                     layer,
                 );
             }
+        }
+        PoseSampling::CurveSpan { end, coordinate } => {
+            let end_pose = end;
+            let coordinate =
+                coordinate.clamp(-AttackCurve::MAX_DRAWBACK, 1.0 + AttackCurve::MAX_OVERSHOOT);
+            let Some(end) = resolve_anchor(runtime, catalog, pack, end_pose) else {
+                append_weighted_anchor(weighted, &start, start.anchor.frame, sample.weight, layer);
+                return;
+            };
+            let (span_start, start_frame, span_end, end_frame) =
+                if start.pack_id == end.pack_id && start.anchor.motion == end.anchor.motion {
+                    (
+                        start.clone(),
+                        start.anchor.frame,
+                        end.clone(),
+                        end.anchor.frame,
+                    )
+                } else if let Some(reference) = catalog.packs[end.pack_id]
+                    .references
+                    .get(&end.anchor.motion)
+                    .and_then(|references| {
+                        references
+                            .iter()
+                            .filter(|reference| reference.pose == sample.pose)
+                            .min_by_key(|reference| reference.frame.abs_diff(end.anchor.frame))
+                    })
+                {
+                    (end.clone(), reference.frame, end.clone(), end.anchor.frame)
+                } else if let Some(reference) = catalog.packs[start.pack_id]
+                    .references
+                    .get(&start.anchor.motion)
+                    .and_then(|references| {
+                        references
+                            .iter()
+                            .filter(|reference| reference.pose == end_pose)
+                            .min_by_key(|reference| reference.frame.abs_diff(start.anchor.frame))
+                    })
+                {
+                    (
+                        start.clone(),
+                        start.anchor.frame,
+                        start.clone(),
+                        reference.frame,
+                    )
+                } else {
+                    (
+                        start.clone(),
+                        start.anchor.frame,
+                        end.clone(),
+                        end.anchor.frame,
+                    )
+                };
+            extrapolated_spans.push(ExtrapolatedSpan {
+                start: span_start.clip.at_anchor_layer(start_frame, layer),
+                start_time_seconds: frame_seconds(start_frame),
+                end: span_end.clip.at_anchor_layer(end_frame, layer),
+                end_time_seconds: frame_seconds(end_frame),
+                coordinate,
+                weight: sample.weight,
+                mirrored_weight: if span_start.mirrored {
+                    sample.weight
+                } else {
+                    0.0
+                },
+            });
         }
     }
 }
@@ -757,6 +1064,34 @@ mod contract_tests {
         assert_eq!(root.poses[&SemanticPose::AttackSwing].motion, "swing");
         assert_eq!(root.poses[&SemanticPose::ContinueSwing].motion, "swing");
         assert_eq!(root.poses[&SemanticPose::AttackOffhand].motion, "offhand");
+    }
+
+    #[test]
+    fn combat_cycle_ik_switches_exclusive_support_at_authored_contacts() {
+        assert_eq!(combat_cycle_ik_weights(0.0), Vec2::Y);
+        assert_eq!(combat_cycle_ik_weights(0.125), Vec2::Y);
+        assert_eq!(combat_cycle_ik_weights(0.25), Vec2::X);
+        assert_eq!(combat_cycle_ik_weights(0.375), Vec2::X);
+        assert_eq!(combat_cycle_ik_weights(0.5), Vec2::X);
+        assert_eq!(combat_cycle_ik_weights(0.625), Vec2::X);
+        assert_eq!(combat_cycle_ik_weights(0.75), Vec2::Y);
+        assert_eq!(combat_cycle_ik_weights(0.875), Vec2::Y);
+    }
+
+    #[test]
+    fn authored_quickstep_timeline_never_requests_leg_ik() {
+        let mut state = SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised);
+        state
+            .begin_dodge(DodgeSpec::quickstep(Vec2::X).unwrap(), 0, 100)
+            .unwrap();
+        // The first half is the interpolation from the planted stance into
+        // authored takeoff. Once frame 0 owns the lower body, every authored
+        // quickstep pose remains completely free of leg IK.
+        for tick in [100, 150, 199] {
+            state.advance_action(tick);
+            let evaluation = AnimationEvaluation::from_skeleton(&state);
+            assert_eq!(semantic_foot_ik_weights(&evaluation), Vec2::ZERO, "{tick}");
+        }
     }
 }
 

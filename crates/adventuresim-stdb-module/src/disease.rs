@@ -2840,7 +2840,7 @@ pub fn purchase_from_herbalist(
 mod herbalist_purchase_source_tests {
     #[test]
     fn purchase_adds_requested_quantity_once_through_kind_aware_helper() {
-        let source = include_str!("disease.rs");
+        let source = crate::production_source(include_str!("disease.rs"));
         let purchase = source
             .split("pub fn purchase_from_herbalist")
             .nth(1)
@@ -2852,7 +2852,7 @@ mod herbalist_purchase_source_tests {
 
     #[test]
     fn interval_authority_assembles_community_contact_and_blood_exposure() {
-        let source = include_str!("disease.rs");
+        let source = crate::production_source(include_str!("disease.rs"));
         let plan = source
             .split("pub fn plan_party_disease_interval")
             .nth(1)
@@ -2876,7 +2876,7 @@ mod herbalist_purchase_source_tests {
 
     #[test]
     fn interval_plan_prefetches_private_presence_through_both_indexes() {
-        let source = include_str!("disease.rs");
+        let source = crate::production_source(include_str!("disease.rs"));
         let helper = source
             .split("fn bounded_physiology_spans")
             .nth(1)
@@ -2902,7 +2902,7 @@ mod herbalist_purchase_source_tests {
 
     #[test]
     fn shared_interval_plan_is_bounded_order_stable_and_used_by_all_party_time_paths() {
-        let disease = include_str!("disease.rs");
+        let disease = crate::production_source(include_str!("disease.rs"));
         let plan = disease
             .split("pub fn plan_party_disease_interval")
             .nth(1)
@@ -2917,19 +2917,19 @@ mod herbalist_purchase_source_tests {
         assert!(plan.contains("horizons"));
         assert!(plan.contains("resolve_acquisition_timeline"));
 
-        let time = include_str!("time.rs");
+        let time = crate::production_source(include_str!("time.rs"));
         let rest = time.split("pub fn rest_at_camp").nth(1).unwrap();
         assert!(rest.contains("plan_party_disease_interval"));
         assert!(rest.contains("preview_elapsed_for_disease_in_plan"));
         assert!(rest.contains("clip_elapsed_for_disease_in_plan"));
 
-        let journey = include_str!("strategic/journey_camp.rs");
+        let journey = crate::production_source(include_str!("strategic/journey_camp.rs"));
         let movement = journey.split("fn advance_party_movement").nth(1).unwrap();
         assert!(movement.contains("plan_party_disease_interval"));
         assert!(movement.contains("preview_travel_time_in_plan"));
         assert!(movement.contains("advance_travel_time_in_plan"));
 
-        let surgery = include_str!("surgery.rs");
+        let surgery = crate::production_source(include_str!("surgery.rs"));
         let treatment = surgery.split("fn align_and_advance").nth(1).unwrap();
         assert!(treatment.contains("plan_party_disease_interval"));
         assert!(treatment.contains("preview_elapsed_for_disease_in_plan"));
@@ -3048,7 +3048,7 @@ mod fantastic_differential_tests {
 
     #[test]
     fn disease_terminal_preview_is_side_effect_free() {
-        let source = include_str!("disease.rs");
+        let source = crate::production_source(include_str!("disease.rs"));
         let preview = source
             .split("fn preview_disease_boundary_planned")
             .nth(1)
@@ -3073,7 +3073,7 @@ mod fantastic_differential_tests {
 
     #[test]
     fn medicinal_interventions_use_nonemergency_treatment_decisions() {
-        let source = include_str!("disease.rs");
+        let source = crate::production_source(include_str!("disease.rs"));
         let relationship = source
             .split("pub(crate) fn require_intervention_relationship")
             .nth(1)
