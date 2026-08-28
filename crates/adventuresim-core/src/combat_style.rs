@@ -6,7 +6,10 @@ use serde::{Deserialize, Serialize};
 /// `Swing` covers cuts, chops, and swung impact/pick attacks; `Stab` covers
 /// punches and point-first thrusts.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+#[cfg_attr(
+    all(feature = "spacetimedb", runtime_catalog),
+    derive(spacetimedb::SpacetimeType)
+)]
 #[serde(rename_all = "snake_case")]
 pub enum MeleeAttackStyle {
     #[default]

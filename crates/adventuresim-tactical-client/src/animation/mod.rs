@@ -217,6 +217,10 @@ enum ClipLayer {
     Whole,
     Upper,
     Lower,
+    /// Combat upper-body motion owns the pelvis rotation while the paired
+    /// locomotion layer owns its translation.
+    CombatUpper,
+    CombatLower,
     Hands,
 }
 
@@ -393,7 +397,15 @@ fn evaluate_skeletons(
         };
         let mut weighted = Vec::<WeightedClip>::new();
         let mut extrapolated_spans = Vec::<ExtrapolatedSpan>::new();
-        let base_layer = if !evaluation.lower_body.is_empty() {
+        let split_combat_pelvis = !evaluation.lower_body.is_empty()
+            && skeleton.posture() == Posture::Upright
+            && skeleton.weapon_guard() == WeaponGuardState::Raised
+            && skeleton.raised_locomotion().is_moving()
+            && !skeleton.is_quickstep()
+            && !skeleton.is_posture_transitioning();
+        let base_layer = if split_combat_pelvis {
+            ClipLayer::CombatUpper
+        } else if !evaluation.lower_body.is_empty() {
             ClipLayer::Upper
         } else {
             ClipLayer::Whole
@@ -412,12 +424,17 @@ fn evaluate_skeletons(
                 base_layer,
             );
         }
+        let lower_layer = if split_combat_pelvis {
+            ClipLayer::CombatLower
+        } else {
+            ClipLayer::Lower
+        };
         for sample in &evaluation.lower_body {
             sample_resolver.append_layer(
                 &mut weighted,
                 &mut extrapolated_spans,
                 *sample,
-                ClipLayer::Lower,
+                lower_layer,
             );
         }
         let whole_body_mirror = {

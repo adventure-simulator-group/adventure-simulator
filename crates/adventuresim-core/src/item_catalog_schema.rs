@@ -144,7 +144,10 @@ pub enum EquipmentAnatomicalRegion {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+#[cfg_attr(
+    all(feature = "spacetimedb", runtime_catalog),
+    derive(spacetimedb::SpacetimeType)
+)]
 #[serde(rename_all = "snake_case")]
 pub enum EquipmentChannel {
     Held,
@@ -266,7 +269,10 @@ fn default_equipment_range_of_motion() -> f32 {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+#[cfg_attr(
+    all(feature = "spacetimedb", runtime_catalog),
+    derive(spacetimedb::SpacetimeType)
+)]
 #[serde(rename_all = "snake_case")]
 pub enum EquipmentBodyPart {
     LeftArm,
@@ -281,7 +287,10 @@ pub enum EquipmentBodyPart {
 /// Fine-grained equipment topology. This is intentionally separate from the
 /// seven-part combat/health `BodyPart` ABI.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+#[cfg_attr(
+    all(feature = "spacetimedb", runtime_catalog),
+    derive(spacetimedb::SpacetimeType)
+)]
 #[serde(rename_all = "snake_case")]
 pub enum EquipmentLocation {
     Head,
@@ -375,7 +384,10 @@ pub enum WeaponCarry {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+#[cfg_attr(
+    all(feature = "spacetimedb", runtime_catalog),
+    derive(spacetimedb::SpacetimeType)
+)]
 #[serde(rename_all = "snake_case")]
 pub enum Slot {
     #[default]
