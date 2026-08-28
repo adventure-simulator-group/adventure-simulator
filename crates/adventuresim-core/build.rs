@@ -1,3 +1,8 @@
+#![expect(
+    unexpected_cfgs,
+    reason = "shared catalog types enable runtime-only derives outside the build script"
+)]
+
 use sha2::{Digest, Sha256};
 use std::{
     env, fs,

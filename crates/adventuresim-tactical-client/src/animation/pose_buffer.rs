@@ -109,6 +109,14 @@ struct LocalPose {
     scale: Vec3,
 }
 
+#[derive(Debug)]
+struct SampledPlan {
+    pose: Vec<LocalPose>,
+    /// Pelvis rotation sampled from combat locomotion before the attack/guard
+    /// rotation is applied. This is the FK reference for compensating leg IK.
+    locomotion_pelvis_rotation: Option<Quat>,
+}
+
 impl LocalPose {
     fn from_transform(transform: Transform) -> Self {
         Self {
@@ -452,14 +460,17 @@ pub(super) fn update_pose_buffers(
         let key = PosePlanKey::from_playback(playback);
         let transition = !rig.active || rig.plan.as_ref() != Some(&key);
         rig.sample_accumulator += delta_seconds;
-        let Some(mut target) =
+        let Some(mut sampled) =
             sample_plan(playback, &rig.definition, &clips, &mut bank, &mut metrics)
         else {
             continue;
         };
-        if terrain_ik_enabled.0
-            && procedural::authored_locomotion_ik_owns(skeleton)
-            && let Ok(terrain) = terrain.single()
+        let terrain = terrain_ik_enabled
+            .0
+            .then(|| terrain.single().ok())
+            .flatten();
+        if procedural::authored_locomotion_ik_owns(skeleton)
+            && (terrain.is_some() || sampled.locomotion_pelvis_rotation.is_some())
         {
             let definition = Arc::clone(&rig.definition);
             // Buffered joint poses are relative to the authored scene, not to
@@ -475,12 +486,15 @@ pub(super) fn update_pose_buffers(
                 .unwrap_or(*owner_transform);
             conform_upcoming_pose_to_terrain(
                 &definition,
-                &mut target,
-                &presentation_transform,
-                playback.foot_ik_weights,
-                terrain,
+                &mut sampled.pose,
                 &mut rig.terrain_plants,
-                false,
+                PoseConformity {
+                    owner: &presentation_transform,
+                    weights: playback.foot_ik_weights,
+                    terrain,
+                    contact_plants: ContactPlantPolicy::Reset,
+                    locomotion_pelvis_rotation: sampled.locomotion_pelvis_rotation,
+                },
             );
             // Translating authored cycles own their complete XZ trajectories.
             // Stationary guard turning uses the separate procedural pole-limit
@@ -489,6 +503,7 @@ pub(super) fn update_pose_buffers(
         } else {
             rig.terrain_plants = [None; 2];
         }
+        let target = sampled.pose;
         if transition {
             let capture_displayed = rig.active;
             for (joint, target_pose) in target.iter().copied().enumerate() {
@@ -581,11 +596,14 @@ fn sample_plan(
     clips: &Assets<AnimationClip>,
     bank: &mut BakedClipBank,
     metrics: &mut PoseBufferMetrics,
-) -> Option<Vec<LocalPose>> {
+) -> Option<SampledPlan> {
     if playback.use_authored_bind_pose
         || (playback.clips.is_empty() && playback.extrapolated_spans.is_empty())
     {
-        return Some(definition.joints.iter().map(|joint| joint.bind).collect());
+        return Some(SampledPlan {
+            pose: definition.joints.iter().map(|joint| joint.bind).collect(),
+            locomotion_pelvis_rotation: None,
+        });
     }
     let mut baked = Vec::with_capacity(playback.clips.len());
     for weighted in &playback.clips {
@@ -620,14 +638,25 @@ fn sample_plan(
         baked_spans.push((span, start, end));
     }
     let mut pose = Vec::with_capacity(definition.joints.len());
+    let mut locomotion_pelvis_rotation = None;
     for (joint_index, joint) in definition.joints.iter().enumerate() {
         let mut blended = joint.bind;
         let mut accumulated = 0.0_f32;
+        let pelvis = joint
+            .name
+            .as_deref()
+            .is_some_and(|name| name.eq_ignore_ascii_case("root"));
+        let mut combat_upper = joint.bind;
+        let mut combat_upper_weight = 0.0_f32;
+        let mut combat_lower = joint.bind;
+        let mut combat_lower_weight = 0.0_f32;
         for (weighted, clip, source) in &baked {
             let included = match weighted.clip.layer {
                 ClipLayer::Whole => true,
                 ClipLayer::Upper => !joint.lower_body,
                 ClipLayer::Lower => joint.lower_body,
+                ClipLayer::CombatUpper => !joint.lower_body || pelvis,
+                ClipLayer::CombatLower => joint.lower_body,
                 ClipLayer::Hands => false,
             };
             if !included || weighted.weight <= f32::EPSILON || !weighted.weight.is_finite() {
@@ -640,6 +669,24 @@ fn sample_plan(
                 clip.sample(joint_index, weighted.time_seconds)
             };
             let sample = sanitize_pose(sample, joint.bind);
+            if pelvis && weighted.clip.layer == ClipLayer::CombatUpper {
+                accumulate_local_pose(
+                    &mut combat_upper,
+                    &mut combat_upper_weight,
+                    sample,
+                    weighted.weight,
+                );
+                continue;
+            }
+            if pelvis && weighted.clip.layer == ClipLayer::CombatLower {
+                accumulate_local_pose(
+                    &mut combat_lower,
+                    &mut combat_lower_weight,
+                    sample,
+                    weighted.weight,
+                );
+                continue;
+            }
             let next_total = accumulated + weighted.weight;
             let alpha = if next_total > f32::EPSILON {
                 weighted.weight / next_total
@@ -658,6 +705,8 @@ fn sample_plan(
                 ClipLayer::Whole => true,
                 ClipLayer::Upper => !joint.lower_body,
                 ClipLayer::Lower => joint.lower_body,
+                ClipLayer::CombatUpper => !joint.lower_body || pelvis,
+                ClipLayer::CombatLower => joint.lower_body,
                 ClipLayer::Hands => false,
             };
             if !included || span.weight <= f32::EPSILON || !span.weight.is_finite() {
@@ -672,6 +721,24 @@ fn sample_plan(
                 joint.bind,
             );
             let sample = sanitize_pose(start.extrapolate(end, span.coordinate), joint.bind);
+            if pelvis && span.start.layer == ClipLayer::CombatUpper {
+                accumulate_local_pose(
+                    &mut combat_upper,
+                    &mut combat_upper_weight,
+                    sample,
+                    span.weight,
+                );
+                continue;
+            }
+            if pelvis && span.start.layer == ClipLayer::CombatLower {
+                accumulate_local_pose(
+                    &mut combat_lower,
+                    &mut combat_lower_weight,
+                    sample,
+                    span.weight,
+                );
+                continue;
+            }
             let next_total = accumulated + span.weight;
             let alpha = if next_total > f32::EPSILON {
                 span.weight / next_total
@@ -685,11 +752,15 @@ fn sample_plan(
             };
             accumulated = next_total;
         }
-        let mut result = if accumulated > f32::EPSILON {
-            blended
-        } else {
-            joint.bind
-        };
+        let mut result =
+            if pelvis && combat_upper_weight > f32::EPSILON && combat_lower_weight > f32::EPSILON {
+                locomotion_pelvis_rotation = Some(combat_lower.rotation);
+                combine_combat_pelvis(combat_upper, combat_lower)
+            } else if accumulated > f32::EPSILON {
+                blended
+            } else {
+                joint.bind
+            };
         if is_hand_animation_joint(definition, joint_index) {
             let mut hand_pose = joint.bind;
             let mut hand_weight = 0.0_f32;
@@ -718,7 +789,33 @@ fn sample_plan(
         pose.push(result);
     }
     metrics.sampled_pose_count = metrics.sampled_pose_count.saturating_add(1);
-    Some(pose)
+    Some(SampledPlan {
+        pose,
+        locomotion_pelvis_rotation,
+    })
+}
+
+fn accumulate_local_pose(
+    accumulated_pose: &mut LocalPose,
+    accumulated_weight: &mut f32,
+    sample: LocalPose,
+    weight: f32,
+) {
+    let next_total = *accumulated_weight + weight;
+    *accumulated_pose = if *accumulated_weight <= f32::EPSILON {
+        sample
+    } else {
+        accumulated_pose.interpolate(sample, weight / next_total)
+    };
+    *accumulated_weight = next_total;
+}
+
+fn combine_combat_pelvis(combat: LocalPose, locomotion: LocalPose) -> LocalPose {
+    LocalPose {
+        translation: locomotion.translation,
+        rotation: combat.rotation,
+        scale: locomotion.scale,
+    }
 }
 
 fn sample_source_clip(clip: &AnimationClip, joint: &RigJoint, time_seconds: f32) -> LocalPose {
@@ -783,18 +880,56 @@ fn is_hand_animation_joint(definition: &RigDefinition, mut joint: usize) -> bool
 /// renderer subsequently interpolates `previous -> next`, so terrain
 /// conformity follows exactly the same continuous local-pose interpolation as
 /// authored FK instead of being switched onto the already displayed frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ContactPlantPolicy {
+    Reset,
+    Retain,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PoseConformity<'a> {
+    owner: &'a GlobalTransform,
+    weights: Vec2,
+    terrain: Option<&'a SceneTerrain>,
+    contact_plants: ContactPlantPolicy,
+    locomotion_pelvis_rotation: Option<Quat>,
+}
+
 fn conform_upcoming_pose_to_terrain(
     definition: &RigDefinition,
     pose: &mut [LocalPose],
-    owner: &GlobalTransform,
-    weights: Vec2,
-    terrain: &SceneTerrain,
     plants: &mut [Option<AuthoredContactPlant>; 2],
-    retain_combat_plants: bool,
+    conformity: PoseConformity<'_>,
 ) {
-    if !retain_combat_plants {
+    let PoseConformity {
+        owner,
+        weights,
+        terrain,
+        contact_plants,
+        locomotion_pelvis_rotation,
+    } = conformity;
+    if contact_plants == ContactPlantPolicy::Reset {
         *plants = [None; 2];
     }
+    let locomotion_reference = locomotion_pelvis_rotation.and_then(|rotation| {
+        definition
+            .joints
+            .iter()
+            .position(|joint| {
+                joint
+                    .name
+                    .as_deref()
+                    .is_some_and(|name| name.eq_ignore_ascii_case("root"))
+            })
+            .map(|pelvis| {
+                let mut reference = pose.to_vec();
+                reference[pelvis].rotation = rotation;
+                reference
+            })
+    });
+    let mut locomotion_reference_cache = locomotion_reference
+        .as_ref()
+        .map(|reference| vec![None; reference.len()]);
     for (index, (left, weight, names)) in [
         (true, weights.x, ["l_upleg", "l_lowleg", "l_foot"]),
         (false, weights.y, ["r_upleg", "r_lowleg", "r_foot"]),
@@ -803,7 +938,7 @@ fn conform_upcoming_pose_to_terrain(
     .enumerate()
     {
         let weight = weight.clamp(0.0, 1.0);
-        if weight <= f32::EPSILON {
+        if weight <= f32::EPSILON && locomotion_pelvis_rotation.is_none() {
             plants[index] = None;
             continue;
         }
@@ -822,24 +957,36 @@ fn conform_upcoming_pose_to_terrain(
         let lower_global = local_pose_global(definition, pose, lower, &mut cache);
         let foot_global = local_pose_global(definition, pose, foot, &mut cache);
         let foot_world = owner.transform_point(foot_global.translation);
-        let foot_rotation_world = owner.rotation() * foot_global.rotation;
-        let Some(height) = terrain.height_at(foot_world.xz()) else {
-            continue;
+        let reference_foot = match (&locomotion_reference, locomotion_reference_cache.as_mut()) {
+            (Some(reference), Some(cache)) => local_pose_global(definition, reference, foot, cache),
+            _ => foot_global,
         };
-        let terrain_ankle_y = height + MEASURED_ANKLE_SOLE_OFFSET_METRES;
-        let authored_target_world = foot_world.with_y(foot_world.y.max(terrain_ankle_y));
-        let supported = retain_combat_plants && weight > 0.05;
+        let reference_foot_world = owner.transform_point(reference_foot.translation);
+        let reference_foot_rotation_world = owner.rotation() * reference_foot.rotation;
+        let terrain_target_world = terrain
+            .and_then(|terrain| terrain.height_at(reference_foot_world.xz()))
+            .map(|height| {
+                reference_foot_world.with_y(
+                    reference_foot_world
+                        .y
+                        .max(height + MEASURED_ANKLE_SOLE_OFFSET_METRES),
+                )
+            })
+            .unwrap_or(reference_foot_world);
+        let supported =
+            terrain.is_some() && contact_plants == ContactPlantPolicy::Retain && weight > 0.05;
         if !supported {
             plants[index] = None;
         } else if plants[index].is_none() {
             plants[index] = Some(AuthoredContactPlant {
-                position_world: authored_target_world,
-                rotation_world: foot_rotation_world,
+                position_world: terrain_target_world,
+                rotation_world: reference_foot_rotation_world,
                 reference_owner_position: owner
                     .affine()
                     .inverse()
-                    .transform_point3(authored_target_world),
-                reference_owner_rotation: owner.rotation().inverse() * foot_rotation_world,
+                    .transform_point3(terrain_target_world),
+                reference_owner_rotation: owner.rotation().inverse()
+                    * reference_foot_rotation_world,
             });
         }
         if let Some(mut plant) = plants[index] {
@@ -857,7 +1004,9 @@ fn conform_upcoming_pose_to_terrain(
                     (excess / distance).clamp(0.0, 1.0),
                 );
             }
-            if let Some(plant_height) = terrain.height_at(plant.position_world.xz()) {
+            if let Some(plant_height) =
+                terrain.and_then(|terrain| terrain.height_at(plant.position_world.xz()))
+            {
                 plant.position_world.y = plant
                     .position_world
                     .y
@@ -876,7 +1025,7 @@ fn conform_upcoming_pose_to_terrain(
                 owner.rotation().inverse() * plant.rotation_world,
             )
         } else {
-            (authored_target_world, foot_global.rotation)
+            (terrain_target_world, reference_foot.rotation)
         };
         if terrain_world.distance(foot_world) <= 0.0001
             && preserved_foot_rotation.angle_between(foot_global.rotation) <= 0.0001
@@ -894,7 +1043,7 @@ fn conform_upcoming_pose_to_terrain(
         let target_world = if plants[index].is_some() {
             terrain_world
         } else {
-            foot_world.lerp(terrain_world, weight)
+            reference_foot_world.lerp(terrain_world, weight)
         };
         let target = owner.affine().inverse().transform_point3(target_world);
         let hip = upper_global.translation;
@@ -1725,6 +1874,26 @@ mod tests {
     }
 
     #[test]
+    fn combat_pelvis_uses_attack_rotation_and_locomotion_translation() {
+        let combat = LocalPose {
+            translation: Vec3::splat(9.0),
+            rotation: Quat::from_rotation_y(0.7),
+            scale: Vec3::splat(2.0),
+        };
+        let locomotion = LocalPose {
+            translation: Vec3::new(0.1, 0.2, 0.3),
+            rotation: Quat::from_rotation_x(0.4),
+            scale: Vec3::splat(1.1),
+        };
+
+        let combined = combine_combat_pelvis(combat, locomotion);
+
+        assert_eq!(combined.translation, locomotion.translation);
+        assert_eq!(combined.rotation, combat.rotation);
+        assert_eq!(combined.scale, locomotion.scale);
+    }
+
+    #[test]
     fn pose_extrapolation_extends_translation_and_shortest_rotation() {
         let start = pose(Vec3::ZERO, Quat::IDENTITY);
         let end = pose(Vec3::X, Quat::from_rotation_y(0.5));
@@ -1975,11 +2144,14 @@ mod tests {
         conform_upcoming_pose_to_terrain(
             &definition,
             &mut next,
-            &GlobalTransform::IDENTITY,
-            Vec2::X,
-            &terrain,
             &mut [None; 2],
-            false,
+            PoseConformity {
+                owner: &GlobalTransform::IDENTITY,
+                weights: Vec2::X,
+                terrain: Some(&terrain),
+                contact_plants: ContactPlantPolicy::Reset,
+                locomotion_pelvis_rotation: None,
+            },
         );
 
         assert_ne!(next[1].rotation, previous[1].rotation);
@@ -2005,6 +2177,58 @@ mod tests {
         assert!(displayed_foot.y > 0.0);
         assert!(displayed_foot.y < next_foot.y);
         assert!((next_foot.y - (0.5 + MEASURED_ANKLE_SOLE_OFFSET_METRES)).abs() < 0.001);
+    }
+
+    #[test]
+    fn pelvis_rotation_compensation_keeps_an_unweighted_foot_at_locomotion_fk() {
+        let joint = |name: &str, parent: Option<usize>, translation: Vec3| RigJoint {
+            target: AnimationTargetId::from_name(&Name::new(name.to_owned())),
+            bind: pose(translation, Quat::IDENTITY),
+            parent,
+            name: Some(name.to_owned()),
+            lower_body: true,
+        };
+        let definition = RigDefinition {
+            family: "test".to_owned(),
+            joints: vec![
+                joint("root", None, Vec3::ZERO),
+                joint("l_upleg", Some(0), Vec3::new(-0.2, 1.8, 0.0)),
+                joint("l_lowleg", Some(1), Vec3::new(0.0, -0.9, 0.15)),
+                joint("l_foot", Some(2), Vec3::new(0.0, -0.85, 0.15)),
+            ],
+        };
+        let locomotion = definition
+            .joints
+            .iter()
+            .map(|joint| joint.bind)
+            .collect::<Vec<_>>();
+        let expected = local_pose_global(
+            &definition,
+            &locomotion,
+            3,
+            &mut vec![None; locomotion.len()],
+        )
+        .translation;
+        let mut combined = locomotion;
+        combined[0].rotation = Quat::from_rotation_y(0.6);
+
+        conform_upcoming_pose_to_terrain(
+            &definition,
+            &mut combined,
+            &mut [None; 2],
+            PoseConformity {
+                owner: &GlobalTransform::IDENTITY,
+                weights: Vec2::ZERO,
+                terrain: None,
+                contact_plants: ContactPlantPolicy::Reset,
+                locomotion_pelvis_rotation: Some(Quat::IDENTITY),
+            },
+        );
+
+        let compensated =
+            local_pose_global(&definition, &combined, 3, &mut vec![None; combined.len()])
+                .translation;
+        assert!(compensated.distance(expected) < 0.0002);
     }
 
     #[test]
@@ -2047,11 +2271,14 @@ mod tests {
         conform_upcoming_pose_to_terrain(
             &definition,
             &mut next,
-            &GlobalTransform::IDENTITY,
-            Vec2::X,
-            &terrain,
             &mut [None; 2],
-            false,
+            PoseConformity {
+                owner: &GlobalTransform::IDENTITY,
+                weights: Vec2::X,
+                terrain: Some(&terrain),
+                contact_plants: ContactPlantPolicy::Reset,
+                locomotion_pelvis_rotation: None,
+            },
         );
 
         let after =
@@ -2114,15 +2341,18 @@ mod tests {
             conform_upcoming_pose_to_terrain(
                 &definition,
                 &mut conformed,
-                &GlobalTransform::IDENTITY,
-                if sample_index % 2 == 0 {
-                    Vec2::X
-                } else {
-                    Vec2::Y
-                },
-                &terrain,
                 &mut [None; 2],
-                false,
+                PoseConformity {
+                    owner: &GlobalTransform::IDENTITY,
+                    weights: if sample_index % 2 == 0 {
+                        Vec2::X
+                    } else {
+                        Vec2::Y
+                    },
+                    terrain: Some(&terrain),
+                    contact_plants: ContactPlantPolicy::Reset,
+                    locomotion_pelvis_rotation: None,
+                },
             );
             let after = [3, 6].map(|foot| {
                 local_pose_global(
@@ -2172,11 +2402,14 @@ mod tests {
         conform_upcoming_pose_to_terrain(
             &definition,
             &mut first,
-            &GlobalTransform::IDENTITY,
-            Vec2::X,
-            &terrain,
             &mut plants,
-            true,
+            PoseConformity {
+                owner: &GlobalTransform::IDENTITY,
+                weights: Vec2::X,
+                terrain: Some(&terrain),
+                contact_plants: ContactPlantPolicy::Retain,
+                locomotion_pelvis_rotation: None,
+            },
         );
         let acquired = plants[0].expect("supported foot should acquire a plant");
 
@@ -2186,11 +2419,14 @@ mod tests {
         conform_upcoming_pose_to_terrain(
             &definition,
             &mut modest,
-            &modest_owner,
-            Vec2::new(0.25, 0.0),
-            &terrain,
             &mut plants,
-            true,
+            PoseConformity {
+                owner: &modest_owner,
+                weights: Vec2::new(0.25, 0.0),
+                terrain: Some(&terrain),
+                contact_plants: ContactPlantPolicy::Retain,
+                locomotion_pelvis_rotation: None,
+            },
         );
         let retained = plants[0].expect("plant should remain owned");
         assert!(retained.position_world.distance(acquired.position_world) < 0.0001);
@@ -2223,11 +2459,14 @@ mod tests {
         conform_upcoming_pose_to_terrain(
             &definition,
             &mut far,
-            &far_owner,
-            Vec2::X,
-            &terrain,
             &mut plants,
-            true,
+            PoseConformity {
+                owner: &far_owner,
+                weights: Vec2::X,
+                terrain: Some(&terrain),
+                contact_plants: ContactPlantPolicy::Retain,
+                locomotion_pelvis_rotation: None,
+            },
         );
         let slid = plants[0].expect("plant should slide rather than release");
         let authored_foot = local_pose_global(
