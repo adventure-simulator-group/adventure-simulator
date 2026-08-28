@@ -1339,7 +1339,10 @@ pub fn open_corpse(
     corpse.handling_damage_bps = corpse.handling_damage_bps.saturating_add(obscuration / 8);
     corpse.revision = corpse.revision.saturating_add(1);
     ctx.db.strategic_corpse().id().update(corpse);
-    let exposure = adventuresim_core::surgery::procedure_blood_exposure("open-body", true);
+    let exposure = adventuresim_core::surgery::procedure_blood_exposure(
+        adventuresim_core::surgery::SurgeryProcedure::OpenBody,
+        true,
+    );
     if exposure > 0 {
         crate::filth::deposit_now(
             ctx,
@@ -2005,7 +2008,7 @@ mod tests {
             "actor.current_settlement_id.as_deref() == Some(corpse.settlement_id.as_str())"
         ));
         assert!(source.contains("Resolve the active encounter before handling a corpse"));
-        assert!(source.contains("procedure_blood_exposure(\"open-body\", true)"));
+        assert!(source.contains("SurgeryProcedure::OpenBody"));
         assert!(source.contains("CorpsePermissionKind::Family"));
         assert!(source.contains("CorpsePermissionKind::Priest"));
         assert!(source.contains("CorpsePermissionKind::SecularAuthority"));

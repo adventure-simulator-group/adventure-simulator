@@ -269,7 +269,7 @@ fn disappearance_truth_selects_only_compatible_targets_and_producers() {
                         })
                         .all(|action| {
                             action.kind == InvestigationActionKind::InspectSite
-                                && action.target_kind == "site"
+                                && action.target_kind == InvestigationTargetKind::Site
                         })
                 );
             }
@@ -460,7 +460,8 @@ fn every_route_reveals_then_requires_occupied_site_resolution() {
             ));
             let occupied = route_actions
                 .find(|action| {
-                    action.target_kind == "site" && action.prerequisite.as_ref() == Some(&exact.id)
+                    action.target_kind == InvestigationTargetKind::Site
+                        && action.prerequisite.as_ref() == Some(&exact.id)
                 })
                 .expect("separate occupied-site resolution");
             assert!(matches!(

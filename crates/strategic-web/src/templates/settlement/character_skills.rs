@@ -19,7 +19,8 @@ use maud::{Markup, html};
 use super::character_health::stat_icon;
 use crate::spacetimedb::{
     CharacterAttributes, CharacterCapability, CharacterLimbs, CharacterSkills, CharacterStats,
-    CharacterTrainingSchedule, OrganizationMembership, ScheduleAllocation, Settlement,
+    CharacterTrainingSchedule, OrganizationMembership, OrganizationMembershipStatus,
+    ScheduleAllocation, Settlement,
 };
 use crate::templates::{
     game_icon, religion_icon, religion_icon_path, sidebar_section, stat_icon_path,
@@ -800,7 +801,7 @@ impl ActivityPreviewRates {
             else {
                 continue;
             };
-            if row.status != "active"
+            if row.status != OrganizationMembershipStatus::Active
                 || minute > row.dues_paid_through_minute
                 || !definition.has_chapter(settlement_id)
             {
@@ -3510,7 +3511,7 @@ mod tests {
                 role_id: role_id.into(),
                 joined_minute: 0,
                 dues_paid_through_minute: 1,
-                status: "active".into(),
+                status: OrganizationMembershipStatus::Active,
                 apprenticeship_minutes_accrued: 0,
                 practice_minutes_accrued: 0,
             };

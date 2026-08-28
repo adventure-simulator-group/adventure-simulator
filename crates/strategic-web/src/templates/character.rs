@@ -11,8 +11,9 @@ use crate::medical::MedicalPresentation;
 use crate::spacetimedb::{
     BackendDevelopmentScenario, Character, CharacterAttributes, CharacterCapability,
     CharacterLimbs, CharacterPersonality, CharacterSkills, Conscience, Conviction, Courtship,
-    Drive, Hygiene, Inclination, Mirth, Nerve, OrganizationMembership, OrganizationPresentation,
-    Outlook, Presentation, SelfKnowledge, SelfRegard, Sex, Sociability, Temperance, Transparency,
+    Drive, Hygiene, Inclination, Mirth, Nerve, OrganizationMembership,
+    OrganizationMembershipStatus, OrganizationPresentation, Outlook, Presentation, SelfKnowledge,
+    SelfRegard, Sex, Sociability, Temperance, Transparency,
 };
 use adventuresim_core::starting_character::{
     StartingAgeTier, StartingCharacterSpec, StartingInclination, StartingPersonalityTrait,
@@ -691,7 +692,7 @@ impl From<&StartingCharacterSpec> for CandidatePresentation {
                     role_id: organization.role_id.clone(),
                     joined_minute: 0,
                     dues_paid_through_minute: paid_through,
-                    status: "active".into(),
+                    status: OrganizationMembershipStatus::Active,
                     apprenticeship_minutes_accrued: 0,
                     practice_minutes_accrued: 0,
                 }

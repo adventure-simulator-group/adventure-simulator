@@ -1,6 +1,38 @@
 //! Shared deterministic surgery rules used by reducers and server rendering.
 
 use crate::strategic_time::MINUTES_PER_DAY;
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+#[serde(rename_all = "kebab-case")]
+pub enum SurgeryProcedure {
+    Bandage,
+    Stitch,
+    Splint,
+    RemoveSplint,
+    Extract,
+    OpenBody,
+}
+
+impl SurgeryProcedure {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Bandage => "bandage",
+            Self::Stitch => "stitch",
+            Self::Splint => "splint",
+            Self::RemoveSplint => "remove-splint",
+            Self::Extract => "extract",
+            Self::OpenBody => "open-body",
+        }
+    }
+}
+
+impl std::fmt::Display for SurgeryProcedure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
 
 pub const SELF_TREATMENT_PENALTY: f32 = 2.5;
 pub const UNTREATED_CUT_DETERIORATION_PER_DAY: f32 = 0.025;
@@ -8,8 +40,16 @@ pub const UNTREATED_CUT_BLOOD_LOSS_PER_DAY: f32 = 0.08;
 pub const PROJECTILE_KIT_DC_THRESHOLD: f32 = 1.0;
 /// Small visible contamination transferred by a successful bloody procedure.
 pub const PROCEDURE_BLOOD_EXPOSURE_FILTH: u16 = 2;
-pub fn procedure_blood_exposure(procedure: &str, treating_other: bool) -> u16 {
-    if treating_other && matches!(procedure, "bandage" | "stitch" | "extract" | "open-body") {
+pub fn procedure_blood_exposure(procedure: SurgeryProcedure, treating_other: bool) -> u16 {
+    if treating_other
+        && matches!(
+            procedure,
+            SurgeryProcedure::Bandage
+                | SurgeryProcedure::Stitch
+                | SurgeryProcedure::Extract
+                | SurgeryProcedure::OpenBody
+        )
+    {
         PROCEDURE_BLOOD_EXPOSURE_FILTH
     } else {
         0
@@ -28,18 +68,16 @@ pub fn effective_skill(skill: f32, self_treatment: bool) -> f32 {
 
 /// Every operative procedure directly checks Surgery. Knife and Tailoring
 /// contribute only through Surgery's ordinary skill correlations.
-pub fn procedure_skill(_procedure: &str, surgery: f32, self_treatment: bool) -> f32 {
+pub fn procedure_skill(_procedure: SurgeryProcedure, surgery: f32, self_treatment: bool) -> f32 {
     effective_skill(surgery, self_treatment)
 }
 
-pub fn procedure_duration_minutes(procedure: &str, skill: f32, dc: f32) -> u64 {
+pub fn procedure_duration_minutes(procedure: SurgeryProcedure, skill: f32, dc: f32) -> u64 {
     let base = match procedure {
-        "bandage" => 30.0,
-        "stitch" => 60.0,
-        "splint" | "remove-splint" => 45.0,
-        "extract" => 30.0 + dc.max(0.0) * 10.0,
-        "open-body" => 60.0,
-        _ => 30.0,
+        SurgeryProcedure::Bandage => 30.0,
+        SurgeryProcedure::Stitch | SurgeryProcedure::OpenBody => 60.0,
+        SurgeryProcedure::Splint | SurgeryProcedure::RemoveSplint => 45.0,
+        SurgeryProcedure::Extract => 30.0 + dc.max(0.0) * 10.0,
     };
     (base - skill.max(0.0) * 5.0).max(10.0).ceil() as u64
 }
@@ -151,20 +189,30 @@ mod tests {
     #[test]
     fn only_blood_contact_procedures_contaminate_the_actor() {
         assert_eq!(
-            procedure_blood_exposure("bandage", true),
+            procedure_blood_exposure(SurgeryProcedure::Bandage, true),
             PROCEDURE_BLOOD_EXPOSURE_FILTH
         );
         assert_eq!(
-            procedure_blood_exposure("stitch", true),
+            procedure_blood_exposure(SurgeryProcedure::Stitch, true),
             PROCEDURE_BLOOD_EXPOSURE_FILTH
         );
         assert_eq!(
-            procedure_blood_exposure("extract", true),
+            procedure_blood_exposure(SurgeryProcedure::Extract, true),
             PROCEDURE_BLOOD_EXPOSURE_FILTH
         );
-        assert_eq!(procedure_blood_exposure("splint", true), 0);
-        assert_eq!(procedure_blood_exposure("remove-splint", true), 0);
-        assert_eq!(procedure_blood_exposure("bandage", false), 0);
+        assert_eq!(
+            procedure_blood_exposure(SurgeryProcedure::OpenBody, true),
+            PROCEDURE_BLOOD_EXPOSURE_FILTH
+        );
+        assert_eq!(procedure_blood_exposure(SurgeryProcedure::Splint, true), 0);
+        assert_eq!(
+            procedure_blood_exposure(SurgeryProcedure::RemoveSplint, true),
+            0
+        );
+        assert_eq!(
+            procedure_blood_exposure(SurgeryProcedure::Bandage, false),
+            0
+        );
     }
 
     #[test]
@@ -174,10 +222,40 @@ mod tests {
 
     #[test]
     fn every_procedure_uses_the_same_direct_surgery_check() {
-        for procedure in ["bandage", "splint", "extract", "stitch"] {
+        for procedure in [
+            SurgeryProcedure::Bandage,
+            SurgeryProcedure::Splint,
+            SurgeryProcedure::Extract,
+            SurgeryProcedure::Stitch,
+            SurgeryProcedure::RemoveSplint,
+            SurgeryProcedure::OpenBody,
+        ] {
             assert_eq!(procedure_skill(procedure, 5.0, false), 5.0);
             assert_eq!(procedure_skill(procedure, 5.0, true), 2.5);
         }
+    }
+
+    #[test]
+    fn procedure_wire_names_round_trip_and_unknown_names_fail_closed() {
+        for (procedure, wire_name) in [
+            (SurgeryProcedure::Bandage, "bandage"),
+            (SurgeryProcedure::Stitch, "stitch"),
+            (SurgeryProcedure::Splint, "splint"),
+            (SurgeryProcedure::RemoveSplint, "remove-splint"),
+            (SurgeryProcedure::Extract, "extract"),
+            (SurgeryProcedure::OpenBody, "open-body"),
+        ] {
+            assert_eq!(procedure.as_str(), wire_name);
+            assert_eq!(
+                serde_json::to_string(&procedure).unwrap(),
+                format!("\"{wire_name}\"")
+            );
+            assert_eq!(
+                serde_json::from_str::<SurgeryProcedure>(&format!("\"{wire_name}\"")).unwrap(),
+                procedure
+            );
+        }
+        assert!(serde_json::from_str::<SurgeryProcedure>(r#""amputate""#).is_err());
     }
 
     #[test]

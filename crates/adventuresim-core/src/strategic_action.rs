@@ -14,6 +14,7 @@ use crate::{
         PhysicalObjectId,
     },
     strategic_place::{StrategicFixtureId, StrategicPlaceId},
+    surgery::SurgeryProcedure,
 };
 
 /// The small, public answer to a contextual Character interaction request.
@@ -65,12 +66,12 @@ pub const fn decide_contextual_action(
 
 pub fn emergency_bandage_is_necessary(
     incapacitated: bool,
-    procedure: &str,
+    procedure: SurgeryProcedure,
     selected_limb_cut_damage: f32,
     selected_limb_bandaged: bool,
 ) -> bool {
     incapacitated
-        && procedure == "bandage"
+        && procedure == SurgeryProcedure::Bandage
         && selected_limb_cut_damage > 0.0
         && !selected_limb_bandaged
 }
@@ -855,12 +856,35 @@ mod tests {
             interrupted_partition.end_minute
         );
         assert!(!emergency_bandage_is_necessary(
-            false, "bandage", 0.4, false
+            false,
+            SurgeryProcedure::Bandage,
+            0.4,
+            false
         ));
-        assert!(emergency_bandage_is_necessary(true, "bandage", 0.4, false));
-        assert!(!emergency_bandage_is_necessary(true, "stitch", 0.4, false));
-        assert!(!emergency_bandage_is_necessary(true, "bandage", 0.0, false));
-        assert!(!emergency_bandage_is_necessary(true, "bandage", 0.4, true));
+        assert!(emergency_bandage_is_necessary(
+            true,
+            SurgeryProcedure::Bandage,
+            0.4,
+            false
+        ));
+        assert!(!emergency_bandage_is_necessary(
+            true,
+            SurgeryProcedure::Stitch,
+            0.4,
+            false
+        ));
+        assert!(!emergency_bandage_is_necessary(
+            true,
+            SurgeryProcedure::Bandage,
+            0.0,
+            false
+        ));
+        assert!(!emergency_bandage_is_necessary(
+            true,
+            SurgeryProcedure::Bandage,
+            0.4,
+            true
+        ));
         assert_eq!(
             interrupted_partition.outcome,
             TimeOutcome::Interrupted(Interrupt::Encounter)

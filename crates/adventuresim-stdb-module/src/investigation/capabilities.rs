@@ -61,7 +61,6 @@ fn parse_action_terrain(value: &str) -> Result<action::Terrain, String> {
 fn validate_investigation_action_text(
     id: &str,
     case_id: &str,
-    target_kind: &str,
     target_id: &str,
     safe_summary: &str,
     known_prerequisites: &str,
@@ -72,7 +71,6 @@ fn validate_investigation_action_text(
     for text in [
         id,
         case_id,
-        target_kind,
         target_id,
         safe_summary,
         known_prerequisites,
@@ -98,7 +96,7 @@ pub(crate) fn issue_investigation_action_capability(
     provenance_kind: InvestigationProvenanceKind,
     generated_case_id: String,
     kind: action::InvestigationActionKind,
-    target_kind: String,
+    target_kind: action::InvestigationTargetKind,
     target_id: String,
     target_terrain: action::Terrain,
     seed: u64,
@@ -118,7 +116,6 @@ pub(crate) fn issue_investigation_action_capability(
     validate_investigation_action_text(
         &id,
         &case_id,
-        &target_kind,
         &target_id,
         &safe_summary,
         &known_prerequisites,
@@ -139,27 +136,28 @@ pub(crate) fn issue_investigation_action_capability(
     {
         return Err("Investigation action capability already exists".into());
     }
-    let target_exists = match target_kind.as_str() {
-        "site" => ctx
+    let target_exists = match target_kind {
+        action::InvestigationTargetKind::Site => ctx
             .db
             .case_site_authority()
             .id_key()
             .find(&target_id)
             .is_some(),
-        "area" => ctx
+        action::InvestigationTargetKind::Area => ctx
             .db
             .investigation_area_authority()
             .id()
             .find(&target_id)
             .is_some(),
-        "cohort" => ctx
+        action::InvestigationTargetKind::Cohort => ctx
             .db
             .investigation_pattern_target_authority()
             .cohort_id()
             .find(&target_id)
             .is_some_and(|target| target.case_id == case_id),
-        "contact" | "route" | "tracks" => true,
-        _ => false,
+        action::InvestigationTargetKind::Contact
+        | action::InvestigationTargetKind::Route
+        | action::InvestigationTargetKind::Tracks => true,
     };
     if !target_exists {
         return Err("Investigation action target is not authoritative".into());
@@ -265,9 +263,9 @@ fn validate_action_route_graph_structure(
                 || predecessor.case_id != capability.case_id
                 || !action::tracking_route_edge_is_coherent(
                     kind,
-                    &capability.target_kind,
+                    capability.target_kind,
                     predecessor_kind,
-                    &predecessor.target_kind,
+                    predecessor.target_kind,
                 )
             {
                 return Err("Investigation physical tracking route is incoherent".into());
@@ -290,7 +288,7 @@ fn validate_initial_action_frontier(
     if active.len() == 1 {
         let entry = active[0];
         if entry.method != "locate_contact"
-            || entry.target_kind != "contact"
+            || entry.target_kind != action::InvestigationTargetKind::Contact
             || !entry.required_action_id.is_empty()
         {
             return Err("A single investigation entry must be an exact referred contact".into());
@@ -425,7 +423,7 @@ fn activate_action_successors(
                 owner_character_id: candidate.owner_character_id,
                 case_id: candidate.case_id.clone(),
                 method: candidate.method.clone(),
-                target_kind: candidate.target_kind.clone(),
+                target_kind: candidate.target_kind,
                 target_id: candidate.target_id.clone(),
                 required_action_id: candidate.required_action_id.clone(),
                 active: candidate.active,
@@ -525,7 +523,9 @@ fn capability_has_live_support_reducer(
     if !capability_has_live_pattern_support_reducer(ctx, capability) {
         return false;
     }
-    if kind == action::InvestigationActionKind::InspectSite && capability.target_kind == "site" {
+    if kind == action::InvestigationActionKind::InspectSite
+        && capability.target_kind == action::InvestigationTargetKind::Site
+    {
         let Some(ExactActionCaseSite {
             site,
             lead,
@@ -568,7 +568,7 @@ fn capability_has_live_support_reducer(
         return false;
     }
     if prerequisites.requires_approximate_destination
-        && capability.target_kind != "area"
+        && capability.target_kind != action::InvestigationTargetKind::Area
         && !ctx
             .db
             .investigation_lead()
@@ -670,7 +670,7 @@ fn validate_referred_contact_authority(
         .filter(|capability| {
             capability.case_id == canonical_case_id
                 && capability.method == "locate_contact"
-                && capability.target_kind == "contact"
+                && capability.target_kind == action::InvestigationTargetKind::Contact
                 && capability.target_id == witness_resident_character_id.to_string()
         })
         .collect::<Vec<_>>();
@@ -784,7 +784,7 @@ fn complete_referred_contact_action(
             owner_character_id: capability.owner_character_id,
             case_id: capability.case_id.clone(),
             method: capability.method.clone(),
-            target_kind: capability.target_kind.clone(),
+            target_kind: capability.target_kind,
             target_id: capability.target_id.clone(),
             required_action_id: capability.required_action_id.clone(),
             active: capability.active,
@@ -1090,7 +1090,7 @@ fn issue_rumor_action_graph(
                 InvestigationProvenanceKind::Generated,
                 manifest.canonical_case_id.clone(),
                 generated.kind,
-                generated.target_kind.clone(),
+                generated.target_kind,
                 generated.target_id.clone(),
                 generated_action_terrain(&manifest, generated),
                 ctx.random::<u64>(),
@@ -1178,7 +1178,11 @@ fn issue_rumor_action_graph(
     let target_id = site
         .as_ref()
         .map_or_else(|| area_id.clone(), |site| site.id.value.clone());
-    let target_kind = if site.is_some() { "site" } else { "area" };
+    let target_kind = if site.is_some() {
+        action::InvestigationTargetKind::Site
+    } else {
+        action::InvestigationTargetKind::Area
+    };
     let terrain = site
         .as_ref()
         .and_then(|site| parse_action_terrain(&site.scene_key).ok())
@@ -1207,7 +1211,7 @@ fn issue_rumor_action_graph(
         (
             locate.clone(),
             action::InvestigationActionKind::LocateContact,
-            "contact",
+            action::InvestigationTargetKind::Contact,
             contact_id.to_string(),
             action::Terrain::Settlement,
             "",
@@ -1219,7 +1223,7 @@ fn issue_rumor_action_graph(
         (
             watch.clone(),
             action::InvestigationActionKind::Watch,
-            "contact",
+            action::InvestigationTargetKind::Contact,
             contact_id.to_string(),
             action::Terrain::Settlement,
             "",
@@ -1231,7 +1235,7 @@ fn issue_rumor_action_graph(
         (
             approach.clone(),
             action::InvestigationActionKind::ApproachLead,
-            "area",
+            action::InvestigationTargetKind::Area,
             area_id.clone(),
             terrain,
             locate.as_str(),
@@ -1243,7 +1247,7 @@ fn issue_rumor_action_graph(
         (
             patrol.clone(),
             action::InvestigationActionKind::Patrol,
-            "area",
+            action::InvestigationTargetKind::Area,
             area_id.clone(),
             terrain,
             watch.as_str(),
@@ -1255,7 +1259,7 @@ fn issue_rumor_action_graph(
         (
             search.clone(),
             action::InvestigationActionKind::SearchArea,
-            "area",
+            action::InvestigationTargetKind::Area,
             area_id.clone(),
             terrain,
             approach.as_str(),
@@ -1334,7 +1338,7 @@ fn issue_rumor_action_graph(
             InvestigationProvenanceKind::Manual,
             String::new(),
             kind,
-            kind_name.into(),
+            kind_name,
             target,
             terrain,
             ctx.random::<u64>(),

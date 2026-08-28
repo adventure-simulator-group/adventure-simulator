@@ -9,6 +9,14 @@ use serde::{Deserialize, Serialize};
 
 include!(concat!(env!("OUT_DIR"), "/organization_catalog.rs"));
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+#[serde(rename_all = "snake_case")]
+pub enum OrganizationMembershipStatus {
+    Active,
+    Suspended,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct OrganizationCatalog {
@@ -626,6 +634,19 @@ pub fn settlement_policy(settlement_id: &str) -> Option<&'static SettlementPolic
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn membership_status_serialization_rejects_unknown_states() {
+        assert_eq!(
+            serde_json::from_str::<OrganizationMembershipStatus>(r#""active""#).unwrap(),
+            OrganizationMembershipStatus::Active
+        );
+        assert_eq!(
+            serde_json::to_string(&OrganizationMembershipStatus::Suspended).unwrap(),
+            r#""suspended""#
+        );
+        assert!(serde_json::from_str::<OrganizationMembershipStatus>(r#""delinquent""#).is_err());
+    }
 
     #[test]
     fn second_person_register_is_asymmetric_and_plural_safe() {

@@ -200,11 +200,13 @@ fn generated_physical_and_social_reveals_execute_from_known_origins() {
         .nth(1)
         .and_then(|tail| tail.split("fn validate_generated_pattern_condition").next())
         .expect("real position validator");
-    assert!(position.contains("\"site\" =>"));
+    assert!(position.contains("action::InvestigationTargetKind::Site =>"));
     assert!(position.contains("InvestigationActionKind::FollowTracks"));
     assert!(position.contains("InvestigationActionKind::ReacquireTracks"));
     assert!(position.contains("validate_tracking_action_origin"));
-    assert!(position.contains("\"tracks\" | \"route\" =>"));
+    assert!(position.contains(
+        "action::InvestigationTargetKind::Tracks | action::InvestigationTargetKind::Route"
+    ));
     let generated = concat!(
         include_str!("../../../../adventuresim-core/src/quest_generation/model.rs"),
         include_str!("../../../../adventuresim-core/src/quest_generation/projection.rs"),
@@ -221,10 +223,10 @@ fn generated_physical_and_social_reveals_execute_from_known_origins() {
     assert!(disappearance.contains("\"locate_contact\""));
     assert!(disappearance.contains("DestinationKnowledgeStage::ApproximateArea"));
     assert!(disappearance.contains("\"approach_social\""));
-    assert!(disappearance.contains("\"route\""));
+    assert!(disappearance.contains("InvestigationTargetKind::Route"));
     assert!(disappearance.contains("DestinationKnowledgeStage::ExactBelieved"));
     assert!(disappearance.contains("\"resolve_social\""));
-    assert!(disappearance.contains("\"site\""));
+    assert!(disappearance.contains("InvestigationTargetKind::Site"));
 }
 
 #[test]
@@ -246,7 +248,9 @@ fn generated_pattern_actions_require_the_exact_earned_clue() {
     assert!(clue_authority.contains("proposition.case_id.as_str() == case_id"));
     assert!(clue_authority.contains("proposition.evidence_id.as_str() == evidence_id"));
     assert!(validator.contains("started_at % adventuresim_core::strategic_time::MINUTES_PER_DAY"));
-    assert!(validator.contains("capability.target_kind != \"route\""));
+    assert!(validator.contains(
+        "capability.target_kind != action::InvestigationTargetKind::Route"
+    ));
     assert!(validator.contains("InvestigationActionKind::SearchArea"));
     assert!(validator.contains("investigation_pattern_target_authority()"));
     assert!(validator.contains("pattern_target_matches"));
@@ -433,7 +437,7 @@ fn generated_pattern_authority_fails_closed_and_manual_actions_remain_permissive
         generated_case_id: manifest.canonical_case_id.clone(),
         method: action_method(generated.kind).into(),
         version: 0,
-        target_kind: generated.target_kind.clone(),
+        target_kind: generated.target_kind,
         target_id: generated.target_id.clone(),
         target_terrain: format!(
             "{:?}",
@@ -542,7 +546,7 @@ fn generated_pattern_authority_fails_closed_and_manual_actions_remain_permissive
         let mut changed = capability.clone();
         match mutate {
             0 => changed.method = "watch".into(),
-            1 => changed.target_kind = "site".into(),
+            1 => changed.target_kind = action::InvestigationTargetKind::Site,
             2 => changed.target_id = "wrong-target".into(),
             3 => changed.target_terrain = "water".into(),
             4 => changed.required_action_id = "wrong-required".into(),
@@ -981,7 +985,9 @@ fn exact_site_actions_replan_typed_effects_without_replacing_replay_or_private_r
                 .next()
         })
         .unwrap();
-    assert!(adapter.contains("capability.target_kind != \"site\""));
+    assert!(adapter.contains(
+        "capability.target_kind != action::InvestigationTargetKind::Site"
+    ));
     assert!(adapter.contains("InvestigationActionKind::InspectSite"));
     assert!(adapter.contains("investigation-plan-snapshot-v2"));
     assert!(adapter.contains("resolution_input"));

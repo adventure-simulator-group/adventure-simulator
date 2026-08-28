@@ -161,7 +161,7 @@ fn every_pattern_becomes_an_earned_observer_clue_and_executable_condition() {
                     assert_eq!(age_band, &target.age_band);
                     assert_eq!(sex, &target.sex);
                     assert_eq!(profession, &target.profession);
-                    assert_eq!(consumer.target_kind, "cohort");
+                    assert_eq!(consumer.target_kind, InvestigationTargetKind::Cohort);
                     assert_eq!(consumer.target_id, target.cohort_id);
                 }
                 (expected, actual) => assert_eq!(expected, actual),
@@ -177,7 +177,9 @@ fn every_pattern_becomes_an_earned_observer_clue_and_executable_condition() {
                 );
             }
             match pattern {
-                AttackPattern::Roadside => assert_eq!(consumer.target_kind, "route"),
+                AttackPattern::Roadside => {
+                    assert_eq!(consumer.target_kind, InvestigationTargetKind::Route)
+                }
                 AttackPattern::Irregular => {
                     assert_eq!(consumer.kind, InvestigationActionKind::SearchArea)
                 }

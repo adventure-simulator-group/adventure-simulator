@@ -4,6 +4,8 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::organization_membership_status_type::OrganizationMembershipStatus;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct OrganizationMembership {
@@ -12,7 +14,7 @@ pub struct OrganizationMembership {
     pub organization_id: String,
     pub joined_minute: u64,
     pub dues_paid_through_minute: u64,
-    pub status: String,
+    pub status: OrganizationMembershipStatus,
     pub apprenticeship_minutes_accrued: u64,
     pub practice_minutes_accrued: u64,
 }
@@ -30,7 +32,7 @@ pub struct OrganizationMembershipCols {
     pub organization_id: __sdk::__query_builder::Col<OrganizationMembership, String>,
     pub joined_minute: __sdk::__query_builder::Col<OrganizationMembership, u64>,
     pub dues_paid_through_minute: __sdk::__query_builder::Col<OrganizationMembership, u64>,
-    pub status: __sdk::__query_builder::Col<OrganizationMembership, String>,
+    pub status: __sdk::__query_builder::Col<OrganizationMembership, OrganizationMembershipStatus>,
     pub apprenticeship_minutes_accrued: __sdk::__query_builder::Col<OrganizationMembership, u64>,
     pub practice_minutes_accrued: __sdk::__query_builder::Col<OrganizationMembership, u64>,
 }

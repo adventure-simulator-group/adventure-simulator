@@ -85,7 +85,7 @@ fn different_hidden_causes_can_have_the_same_early_presentation() {
 }
 
 #[test]
-fn every_outbreak_has_two_routes_and_a_complete_non_corpse_path() {
+fn every_outbreak_has_two_complete_routes() {
     for seed in 0..64 {
         let case = outbreak(seed);
         let routes = case
@@ -95,11 +95,6 @@ fn every_outbreak_has_two_routes_and_a_complete_non_corpse_path() {
             .collect::<BTreeSet<_>>();
         assert!(routes.contains(&RouteClass::PhysicalTrail));
         assert!(routes.contains(&RouteClass::SocialInquiry));
-        assert!(
-            case.actions
-                .iter()
-                .all(|action| action.target_kind != "corpse")
-        );
         assert!(validate(&case).is_ok());
     }
 }

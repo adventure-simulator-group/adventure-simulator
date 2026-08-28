@@ -185,7 +185,7 @@ fn persist_action_result_lead(
         && if generated_outputs.is_some() {
             exact_site_id.is_some()
         } else {
-            capability.target_kind == "site"
+            capability.target_kind == action::InvestigationTargetKind::Site
                 && (kind == action::InvestigationActionKind::InspectSite
                     || resolution.resulting_uncertainty_bps <= 1_500)
         };
@@ -333,8 +333,8 @@ fn validate_action_position(
     capability: &InvestigationActionCapability,
     kind: action::InvestigationActionKind,
 ) -> Result<(), String> {
-    match capability.target_kind.as_str() {
-        "contact" => {
+    match capability.target_kind {
+        action::InvestigationTargetKind::Contact => {
             let resident_character_id = capability
                 .target_id
                 .parse::<u64>()
@@ -356,7 +356,7 @@ fn validate_action_position(
             }
             Ok(())
         }
-        "cohort" => {
+        action::InvestigationTargetKind::Cohort => {
             let target = ctx
                 .db
                 .investigation_pattern_target_authority()
@@ -394,7 +394,7 @@ fn validate_action_position(
             }
             Ok(())
         }
-        "area" => {
+        action::InvestigationTargetKind::Area => {
             let area = ctx
                 .db
                 .investigation_area_authority()
@@ -422,7 +422,7 @@ fn validate_action_position(
             }
             Ok(())
         }
-        "site" => {
+        action::InvestigationTargetKind::Site => {
             if matches!(
                 kind,
                 action::InvestigationActionKind::FollowTracks
@@ -437,8 +437,9 @@ fn validate_action_position(
             }
             Err("The party must occupy the action's authoritative site".into())
         }
-        "tracks" | "route" => validate_tracking_action_origin(ctx, actor, capability, kind),
-        _ => Err("Investigation action has no authoritative position binding".into()),
+        action::InvestigationTargetKind::Tracks | action::InvestigationTargetKind::Route => {
+            validate_tracking_action_origin(ctx, actor, capability, kind)
+        }
     }
 }
 
@@ -498,7 +499,7 @@ fn validate_generated_pattern_condition(
                 "The learned pattern requires acting during the nighttime window",
             ))
         }
-        C::RoadRoute if capability.target_kind != "route" => {
+        C::RoadRoute if capability.target_kind != action::InvestigationTargetKind::Route => {
             Err("The learned roadside pattern is not bound to route geography".into())
         }
         C::VictimProfile {
@@ -509,7 +510,7 @@ fn validate_generated_pattern_condition(
             profession,
         } => {
             if kind != action::InvestigationActionKind::Patrol
-                || capability.target_kind != "cohort"
+                || capability.target_kind != action::InvestigationTargetKind::Cohort
                 || capability.target_id != *cohort_id
             {
                 return Err("The learned victim profile targets another cohort".into());
@@ -610,7 +611,7 @@ fn validate_generated_pattern_condition(
         }
         C::BroadSurvey
             if kind != action::InvestigationActionKind::SearchArea
-                || capability.target_kind != "area" =>
+                || capability.target_kind != action::InvestigationTargetKind::Area =>
         {
             Err("An irregular pattern requires a broad area search".into())
         }
@@ -717,7 +718,7 @@ fn validate_live_action_prerequisites(
         return Err("No live witness referral supports this action".into());
     }
     if prereqs.requires_approximate_destination
-        && capability.target_kind != "area"
+        && capability.target_kind != action::InvestigationTargetKind::Area
         && !ctx
             .db
             .investigation_lead()
@@ -787,7 +788,7 @@ fn validate_pickup_custody(
     if current.case_id != capability.case_id
         || current.object_kind != object_kind
         || current.holder_kind != CustodyHolderKind::Site
-        || capability.target_kind != "site"
+        || capability.target_kind != action::InvestigationTargetKind::Site
         || current.holder_id != capability.target_id
     {
         return Err("Capability target is not legally present at this investigation site".into());
@@ -980,7 +981,7 @@ fn commit_generated_remediation(
     }
     if remediation_ids.len() != 1
         || capability.provenance_kind != InvestigationProvenanceKind::Generated
-        || capability.target_kind != "site"
+        || capability.target_kind != action::InvestigationTargetKind::Site
         || capability.generated_case_id.is_empty()
     {
         return Err("Generated remediation capability is incoherent".into());
@@ -1194,7 +1195,7 @@ fn capability_progress_depends_on_exact_lead(
         && capability.active
         && capability.owner_character_id == lead.owner_character_id
         && case_matches
-        && capability.target_kind == "site"
+        && capability.target_kind == action::InvestigationTargetKind::Site
         && capability.target_id == lead.exact_location_id
         && lead.destination_stage.is_exact()
         && parse_action_kind(&capability.method).is_ok_and(generated_progress_kind)
@@ -1315,7 +1316,7 @@ fn site_bound_investigation_plan(
     // This representative vertical deliberately covers exact site actions.
     // Area and route actions retain their existing domain path until they have
     // an equally canonical strategic-place representation.
-    if capability.target_kind != "site"
+    if capability.target_kind != action::InvestigationTargetKind::Site
         || resolution_input.kind != action::InvestigationActionKind::InspectSite
     {
         return Ok(None);
@@ -1356,7 +1357,7 @@ fn site_bound_investigation_plan(
     frame(capability.generated_case_id.as_bytes());
     frame(capability.case_id.as_bytes());
     frame(capability.method.as_bytes());
-    frame(capability.target_kind.as_bytes());
+    frame(capability.target_kind.as_str().as_bytes());
     frame(capability.target_id.as_bytes());
     frame(capability.target_terrain.as_bytes());
     frame(&capability.version.to_le_bytes());
@@ -1512,7 +1513,7 @@ pub(crate) fn perform_investigation_action_authorized(
         .as_ref()
         .filter(|capability| {
             capability.owner_character_id == actor_id
-                && capability.target_kind == "site"
+                && capability.target_kind == action::InvestigationTargetKind::Site
                 && capability.method == "inspect_site"
         })
         .and_then(|capability| exact_action_case_site_for_observer(ctx, capability))

@@ -45,6 +45,22 @@ pub(super) const fn reducer_intervention_route(
     }
 }
 
+pub(super) const fn reducer_surgery_procedure(
+    procedure: adventuresim_core::surgery::SurgeryProcedure,
+) -> adventuresim_stdb_client::SurgeryProcedure {
+    use adventuresim_core::surgery::SurgeryProcedure as DomainProcedure;
+    use adventuresim_stdb_client::SurgeryProcedure as TransportProcedure;
+
+    match procedure {
+        DomainProcedure::Bandage => TransportProcedure::Bandage,
+        DomainProcedure::Stitch => TransportProcedure::Stitch,
+        DomainProcedure::Splint => TransportProcedure::Splint,
+        DomainProcedure::RemoveSplint => TransportProcedure::RemoveSplint,
+        DomainProcedure::Extract => TransportProcedure::Extract,
+        DomainProcedure::OpenBody => TransportProcedure::OpenBody,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -68,6 +84,18 @@ mod tests {
         assert_eq!(
             reducer_intervention_route(adventuresim_core::physiology::InterventionRoute::Topical),
             adventuresim_stdb_client::InterventionRoute::Topical,
+        );
+    }
+
+    #[test]
+    fn shared_surgery_procedures_map_at_the_reducer_boundary() {
+        assert_eq!(
+            reducer_surgery_procedure(adventuresim_core::surgery::SurgeryProcedure::RemoveSplint),
+            adventuresim_stdb_client::SurgeryProcedure::RemoveSplint,
+        );
+        assert_eq!(
+            reducer_surgery_procedure(adventuresim_core::surgery::SurgeryProcedure::OpenBody),
+            adventuresim_stdb_client::SurgeryProcedure::OpenBody,
         );
     }
 }

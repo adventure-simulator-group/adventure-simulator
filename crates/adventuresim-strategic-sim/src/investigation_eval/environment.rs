@@ -7,6 +7,7 @@ use super::{
 };
 use adventuresim_core::{
     investigation::DestinationKnowledgeStage,
+    investigation_action::InvestigationTargetKind,
     quest_generation::{
         self as qg, Circumstance, GeneratedActionOutput, GeneratedCase, RouteClass, TemplateFamily,
         WitnessCandidate, WitnessDemographic,
@@ -67,7 +68,7 @@ pub struct InvestigationEnvironment {
 struct CompletedAction {
     action_index: usize,
     route: RouteClass,
-    target_kind: String,
+    target_kind: InvestigationTargetKind,
     target_id: String,
 }
 
@@ -300,14 +301,16 @@ impl InvestigationEnvironment {
             Capability::Action(index, _action_kind, route) => {
                 let action = self.generated.actions.get(index).ok_or("stale action")?;
                 self.current_location = self.action_location(action);
-                if action.target_kind == "site" && !self.visited_sites.contains(&action.target_id) {
+                if action.target_kind == InvestigationTargetKind::Site
+                    && !self.visited_sites.contains(&action.target_id)
+                {
                     return Err("site action requires authoritative occupancy".into());
                 }
                 self.completed_actions.insert(index);
                 self.completed_action_provenance.push(CompletedAction {
                     action_index: index,
                     route,
-                    target_kind: action.target_kind.clone(),
+                    target_kind: action.target_kind,
                     target_id: action.target_id.clone(),
                 });
                 for output in &action.outputs {
@@ -554,26 +557,28 @@ impl InvestigationEnvironment {
     }
 
     fn action_location(&self, action: &qg::GeneratedAction) -> String {
-        match action.target_kind.as_str() {
-            "site" => self
+        match action.target_kind {
+            InvestigationTargetKind::Site => self
                 .generated
                 .sites
                 .iter()
                 .find(|site| site.id.0 == action.target_id)
                 .map(|site| site.safe_label.clone()),
-            "area" => self
+            InvestigationTargetKind::Area => self
                 .generated
                 .areas
                 .iter()
                 .find(|area| area.id == action.target_id)
                 .map(|area| area.safe_label.clone()),
-            "witness" => self
+            InvestigationTargetKind::Contact => self
                 .generated
                 .witnesses
                 .iter()
-                .find(|witness| witness.id.0 == action.target_id)
+                .find(|witness| witness.resident_character_id.to_string() == action.target_id)
                 .map(|witness| witness.expected_location_label.clone()),
-            _ => None,
+            InvestigationTargetKind::Cohort
+            | InvestigationTargetKind::Route
+            | InvestigationTargetKind::Tracks => None,
         }
         .unwrap_or_else(|| self.current_location.clone())
     }
@@ -698,7 +703,7 @@ impl InvestigationEnvironment {
 
     fn action_available(&self, index: usize) -> bool {
         let action = &self.generated.actions[index];
-        if action.target_kind == "contact"
+        if action.target_kind == InvestigationTargetKind::Contact
             && !self.visible_witnesses.iter().any(|visible| {
                 self.generated
                     .witnesses
@@ -729,7 +734,8 @@ impl InvestigationEnvironment {
         {
             return false;
         }
-        action.target_kind != "site" || self.visited_sites.contains(&action.target_id)
+        action.target_kind != InvestigationTargetKind::Site
+            || self.visited_sites.contains(&action.target_id)
     }
 
     fn admissible_finale_route(&self, finale_site_id: &str) -> Option<RouteClass> {
@@ -737,7 +743,7 @@ impl InvestigationEnvironment {
             .iter()
             .rev()
             .find_map(|completed| {
-                (completed.target_kind == "site"
+                (completed.target_kind == InvestigationTargetKind::Site
                     && completed.target_id == finale_site_id
                     && self.visited_sites.contains(finale_site_id)
                     && self.action_chain_complete(completed.action_index))
@@ -1104,7 +1110,7 @@ mod tests {
         generated
             .actions
             .iter_mut()
-            .find(|action| action.target_kind == "contact")
+            .find(|action| action.target_kind == InvestigationTargetKind::Contact)
             .unwrap()
             .target_id = generated.witnesses[1].resident_character_id.to_string();
         let mut env = InvestigationEnvironment::from_generated(
@@ -1163,7 +1169,7 @@ mod tests {
                 (
                     index,
                     action.route,
-                    action.target_kind.clone(),
+                    action.target_kind,
                     action.target_id.clone(),
                 )
             })

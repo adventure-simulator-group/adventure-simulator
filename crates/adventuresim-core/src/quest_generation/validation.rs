@@ -224,7 +224,7 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                 initial_actions.len() == 1
                     && entry.kind == InvestigationActionKind::LocateContact
                     && entry.route == RouteClass::PatternSurveillance
-                    && entry.target_kind == "contact"
+                    && entry.target_kind == InvestigationTargetKind::Contact
                     && entry.prerequisite.is_none()
                     && case
                         .witnesses
@@ -235,7 +235,7 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                     && successors.iter().any(|action| {
                         action.kind == InvestigationActionKind::ApproachLead
                             && action.route == RouteClass::PhysicalTrail
-                            && action.target_kind == "area"
+                            && action.target_kind == InvestigationTargetKind::Area
                             && case.areas.iter().any(|area| area.id == action.target_id)
                             && action.alternate
                                 == successors
@@ -252,7 +252,7 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                     && successors.iter().any(|action| {
                         action.kind == InvestigationActionKind::Watch
                             && action.route == RouteClass::PatternSurveillance
-                            && action.target_kind == "contact"
+                            && action.target_kind == InvestigationTargetKind::Contact
                             && case.witnesses.iter().any(|witness| {
                                 witness.resident_character_id.to_string() == action.target_id
                             })
@@ -280,14 +280,14 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
             let physical = initial_actions.iter().find(|action| {
                 action.kind == InvestigationActionKind::SearchArea
                     && action.route == RouteClass::PhysicalTrail
-                    && action.target_kind == "area"
+                    && action.target_kind == InvestigationTargetKind::Area
                     && action.prerequisite.is_none()
                     && case.areas.iter().any(|area| area.id == action.target_id)
             });
             let social = initial_actions.iter().find(|action| {
                 action.kind == InvestigationActionKind::LocateContact
                     && action.route == RouteClass::SocialInquiry
-                    && action.target_kind == "contact"
+                    && action.target_kind == InvestigationTargetKind::Contact
                     && action.prerequisite.is_none()
                     && case.witnesses.iter().any(|witness| {
                         witness.resident_character_id.to_string() == action.target_id
@@ -549,13 +549,6 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
             }) {
                 errors.push("non-carrier outbreak has no direct source intervention".into());
             }
-            if case
-                .actions
-                .iter()
-                .any(|action| action.target_kind == "corpse")
-            {
-                errors.push("outbreak graph has no complete non-corpse route".into());
-            }
         }
     }
     if case.family != TemplateFamily::Outbreak && case.outbreak.is_some() {
@@ -609,9 +602,9 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                 .is_some_and(|predecessor| {
                     crate::investigation_action::tracking_route_edge_is_coherent(
                         action.kind,
-                        &action.target_kind,
+                        action.target_kind,
                         predecessor.kind,
-                        &predecessor.target_kind,
+                        predecessor.target_kind,
                     )
                 });
             if !coherent {
@@ -630,19 +623,22 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                 action.id.0
             ));
         }
-        let target_exists = match action.target_kind.as_str() {
-            "site" => case.sites.iter().any(|site| site.id.0 == action.target_id),
-            "area" => case.areas.iter().any(|area| area.id == action.target_id),
-            "contact" => case
+        let target_exists = match action.target_kind {
+            InvestigationTargetKind::Site | InvestigationTargetKind::Route => {
+                case.sites.iter().any(|site| site.id.0 == action.target_id)
+            }
+            InvestigationTargetKind::Area => {
+                case.areas.iter().any(|area| area.id == action.target_id)
+            }
+            InvestigationTargetKind::Contact => case
                 .witnesses
                 .iter()
                 .any(|witness| witness.resident_character_id.to_string() == action.target_id),
-            "cohort" => case
+            InvestigationTargetKind::Cohort => case
                 .pattern_targets
                 .iter()
                 .any(|target| target.cohort_id == action.target_id),
-            "route" => case.sites.iter().any(|site| site.id.0 == action.target_id),
-            _ => false,
+            InvestigationTargetKind::Tracks => false,
         };
         if !target_exists {
             errors.push(format!(
@@ -701,7 +697,7 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
             {
                 let exact_target = case.pattern_targets.iter().any(|target| {
                     target.cohort_id == *cohort_id
-                        && action.target_kind == "cohort"
+                        && action.target_kind == InvestigationTargetKind::Cohort
                         && action.target_id == target.cohort_id
                         && target.demographic == *demographic
                         && target.age_band == *age_band
@@ -854,7 +850,7 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                 .iter()
                 .any(|draft| draft.corrects_proposition_id.is_some())
                 || case.actions.iter().any(|action| {
-                    action.target_kind == "contact"
+                    action.target_kind == InvestigationTargetKind::Contact
                         && action.target_id == witness.resident_character_id.to_string()
                 });
             if route_required && !reachable.contains(&witness.id) {

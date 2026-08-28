@@ -507,7 +507,9 @@ async fn bandage_quest_counterparty(
                 json!(actor_id),
                 json!(form.patient_id),
                 json!(form.limb_slug),
-                json!("bandage"),
+                crate::spacetimedb::sats_unit_variant(
+                    adventuresim_core::surgery::SurgeryProcedure::Bandage,
+                ),
                 crate::spacetimedb::sats_option(None::<u64>),
                 json!(false),
                 json!(form.action_id),

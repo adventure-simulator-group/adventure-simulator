@@ -43,6 +43,37 @@ pub enum InvestigationActionKind {
     ApproachLead,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+#[serde(rename_all = "snake_case")]
+pub enum InvestigationTargetKind {
+    Site,
+    Area,
+    Contact,
+    Cohort,
+    Route,
+    Tracks,
+}
+
+impl InvestigationTargetKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Site => "site",
+            Self::Area => "area",
+            Self::Contact => "contact",
+            Self::Cohort => "cohort",
+            Self::Route => "route",
+            Self::Tracks => "tracks",
+        }
+    }
+}
+
+impl std::fmt::Display for InvestigationTargetKind {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
 /// Observer-safe structural rule for one edge in a physical tracking chain.
 ///
 /// This deliberately considers only projected action kinds and target kinds:
@@ -50,27 +81,39 @@ pub enum InvestigationActionKind {
 /// remain authoritative server checks.
 pub fn tracking_route_edge_is_coherent(
     action_kind: InvestigationActionKind,
-    action_target_kind: &str,
+    action_target_kind: InvestigationTargetKind,
     predecessor_kind: InvestigationActionKind,
-    predecessor_target_kind: &str,
+    predecessor_target_kind: InvestigationTargetKind,
 ) -> bool {
     match (action_kind, action_target_kind) {
-        (InvestigationActionKind::ReacquireTracks, "route" | "tracks" | "site") => {
-            predecessor_target_kind == "area"
-        }
-        (InvestigationActionKind::FollowTracks, "site") => {
+        (
+            InvestigationActionKind::ReacquireTracks,
+            InvestigationTargetKind::Route
+            | InvestigationTargetKind::Tracks
+            | InvestigationTargetKind::Site,
+        ) => predecessor_target_kind == InvestigationTargetKind::Area,
+        (InvestigationActionKind::FollowTracks, InvestigationTargetKind::Site) => {
             matches!(
                 predecessor_kind,
                 InvestigationActionKind::FollowTracks | InvestigationActionKind::ReacquireTracks
-            ) && matches!(predecessor_target_kind, "route" | "tracks")
+            ) && matches!(
+                predecessor_target_kind,
+                InvestigationTargetKind::Route | InvestigationTargetKind::Tracks
+            )
         }
-        (InvestigationActionKind::FollowTracks, "route" | "tracks") => {
-            predecessor_target_kind == "area"
+        (
+            InvestigationActionKind::FollowTracks,
+            InvestigationTargetKind::Route | InvestigationTargetKind::Tracks,
+        ) => {
+            predecessor_target_kind == InvestigationTargetKind::Area
                 || (matches!(
                     predecessor_kind,
                     InvestigationActionKind::FollowTracks
                         | InvestigationActionKind::ReacquireTracks
-                ) && matches!(predecessor_target_kind, "route" | "tracks"))
+                ) && matches!(
+                    predecessor_target_kind,
+                    InvestigationTargetKind::Route | InvestigationTargetKind::Tracks
+                ))
         }
         _ => false,
     }
@@ -1083,15 +1126,15 @@ mod tests {
     fn tracking_edges_accept_area_to_route_to_site_chain() {
         assert!(tracking_route_edge_is_coherent(
             InvestigationActionKind::ReacquireTracks,
-            "route",
+            InvestigationTargetKind::Route,
             InvestigationActionKind::SearchArea,
-            "area",
+            InvestigationTargetKind::Area,
         ));
         assert!(tracking_route_edge_is_coherent(
             InvestigationActionKind::FollowTracks,
-            "site",
+            InvestigationTargetKind::Site,
             InvestigationActionKind::ReacquireTracks,
-            "route",
+            InvestigationTargetKind::Route,
         ));
     }
 
@@ -1099,15 +1142,24 @@ mod tests {
     fn tracking_edges_reject_crossed_route_provenance() {
         assert!(!tracking_route_edge_is_coherent(
             InvestigationActionKind::FollowTracks,
-            "site",
+            InvestigationTargetKind::Site,
             InvestigationActionKind::SearchArea,
-            "area",
+            InvestigationTargetKind::Area,
         ));
         assert!(!tracking_route_edge_is_coherent(
             InvestigationActionKind::ReacquireTracks,
-            "route",
+            InvestigationTargetKind::Route,
             InvestigationActionKind::FollowTracks,
-            "site",
+            InvestigationTargetKind::Site,
         ));
+    }
+
+    #[test]
+    fn target_kind_serialization_is_canonical_and_rejects_unknown_values() {
+        assert_eq!(
+            serde_json::to_string(&InvestigationTargetKind::Tracks).unwrap(),
+            "\"tracks\""
+        );
+        assert!(serde_json::from_str::<InvestigationTargetKind>("\"corpse\"").is_err());
     }
 }

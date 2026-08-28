@@ -5,6 +5,7 @@
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::investigation_provenance_kind_type::InvestigationProvenanceKind;
+use super::investigation_target_kind_type::InvestigationTargetKind;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -16,7 +17,7 @@ pub struct InvestigationActionCapability {
     pub generated_case_id: String,
     pub method: String,
     pub version: u32,
-    pub target_kind: String,
+    pub target_kind: InvestigationTargetKind,
     pub target_id: String,
     pub target_terrain: String,
     pub seed: u64,
@@ -47,7 +48,8 @@ pub struct InvestigationActionCapabilityCols {
     pub generated_case_id: __sdk::__query_builder::Col<InvestigationActionCapability, String>,
     pub method: __sdk::__query_builder::Col<InvestigationActionCapability, String>,
     pub version: __sdk::__query_builder::Col<InvestigationActionCapability, u32>,
-    pub target_kind: __sdk::__query_builder::Col<InvestigationActionCapability, String>,
+    pub target_kind:
+        __sdk::__query_builder::Col<InvestigationActionCapability, InvestigationTargetKind>,
     pub target_id: __sdk::__query_builder::Col<InvestigationActionCapability, String>,
     pub target_terrain: __sdk::__query_builder::Col<InvestigationActionCapability, String>,
     pub seed: __sdk::__query_builder::Col<InvestigationActionCapability, u64>,

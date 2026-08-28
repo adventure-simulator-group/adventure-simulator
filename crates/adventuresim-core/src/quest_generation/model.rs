@@ -6,7 +6,7 @@ use crate::{
     },
     encounter::EncounterArchetype,
     investigation::DestinationKnowledgeStage,
-    investigation_action::{InvestigationActionKind, Terrain},
+    investigation_action::{InvestigationActionKind, InvestigationTargetKind, Terrain},
     local_problem::{Effects, Scope, Symptom},
 };
 use adventuresim_world_schema::BestiaryCategory;
@@ -739,7 +739,7 @@ pub struct GeneratedAction {
     pub id: ActionId,
     pub kind: InvestigationActionKind,
     pub route: RouteClass,
-    pub target_kind: String,
+    pub target_kind: InvestigationTargetKind,
     pub target_id: String,
     pub prerequisite: Option<ActionId>,
     pub alternate: ActionId,
@@ -755,7 +755,7 @@ pub struct ReferredContactActionState {
     pub owner_character_id: u64,
     pub case_id: String,
     pub method: String,
-    pub target_kind: String,
+    pub target_kind: InvestigationTargetKind,
     pub target_id: String,
     pub required_action_id: String,
     pub active: bool,
@@ -934,7 +934,7 @@ pub fn transition_referred_contact_action(
             capability.owner_character_id == owner_character_id
                 && capability.case_id == canonical_case_id
                 && capability.method == "locate_contact"
-                && capability.target_kind == "contact"
+                && capability.target_kind == InvestigationTargetKind::Contact
                 && capability.target_id == witness_resident_character_id.to_string()
         })
         .map(|(index, _)| index)

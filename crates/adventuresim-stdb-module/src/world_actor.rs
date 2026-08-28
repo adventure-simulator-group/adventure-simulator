@@ -305,7 +305,7 @@ pub fn backend_context_characters(ctx: &ViewContext) -> Vec<BackendContextCharac
                         .is_some_and(|injury| {
                             adventuresim_core::strategic_action::emergency_bandage_is_necessary(
                                 incapacitated,
-                                "bandage",
+                                adventuresim_core::surgery::SurgeryProcedure::Bandage,
                                 injury.cut_damage,
                                 injury.bandaged,
                             )
@@ -1034,12 +1034,11 @@ fn contextual_contact_decision(
     public_decision(membership.contact_decision)
 }
 
-pub(crate) fn contextual_treatment_decision(
+fn contextual_treatment_decision_with_emergency(
     ctx: &ReducerContext,
     actor_id: u64,
     patient_id: u64,
-    limb: adventuresim_core::physiology::BodyRegion,
-    procedure: &str,
+    emergency_medical_necessity: bool,
     claim: Option<&ContextualTreatmentClaim>,
 ) -> adventuresim_core::strategic_action::ContextualActionDecision {
     use adventuresim_core::strategic_action::ContextualActionDecision;
@@ -1117,6 +1116,21 @@ pub(crate) fn contextual_treatment_decision(
     };
     let same_party_preference = (actor.party_id.is_some() && actor.party_id == patient.party_id)
         .then_some(patient.party_treatment_decision);
+    adventuresim_core::strategic_action::decide_contextual_action(
+        false,
+        treatment_target_answer(authored, same_party_preference),
+        emergency_medical_necessity,
+    )
+}
+
+pub(crate) fn contextual_treatment_decision(
+    ctx: &ReducerContext,
+    actor_id: u64,
+    patient_id: u64,
+    limb: adventuresim_core::physiology::BodyRegion,
+    procedure: adventuresim_core::surgery::SurgeryProcedure,
+    claim: Option<&ContextualTreatmentClaim>,
+) -> adventuresim_core::strategic_action::ContextualActionDecision {
     let incapacitated = ctx
         .db
         .character_strategic_condition()
@@ -1132,10 +1146,12 @@ pub(crate) fn contextual_treatment_decision(
         injury.cut_damage,
         injury.bandaged,
     );
-    adventuresim_core::strategic_action::decide_contextual_action(
-        false,
-        treatment_target_answer(authored, same_party_preference),
+    contextual_treatment_decision_with_emergency(
+        ctx,
+        actor_id,
+        patient_id,
         emergency_bandage,
+        claim,
     )
 }
 
@@ -1146,14 +1162,7 @@ pub(crate) fn contextual_nonemergency_treatment_decision(
     actor_id: u64,
     patient_id: u64,
 ) -> adventuresim_core::strategic_action::ContextualActionDecision {
-    contextual_treatment_decision(
-        ctx,
-        actor_id,
-        patient_id,
-        adventuresim_core::physiology::BodyRegion::LeftArm,
-        "intervention",
-        None,
-    )
+    contextual_treatment_decision_with_emergency(ctx, actor_id, patient_id, false, None)
 }
 
 pub(crate) fn context_patient_is_treated(ctx: &ReducerContext, context_id: &str) -> bool {
@@ -1534,8 +1543,7 @@ mod tests {
         assert!(treatment.contains("emergency_bandage_is_necessary"));
         assert!(treatment.contains("injury_for(ctx, patient_id, limb)"));
         assert!(treatment.contains("IncapacitationStatus::Incapacitated"));
-        assert!(!treatment.contains("stitch\""));
-        assert!(!treatment.contains("extract\""));
+        assert!(treatment.contains("SurgeryProcedure"));
     }
 
     #[test]

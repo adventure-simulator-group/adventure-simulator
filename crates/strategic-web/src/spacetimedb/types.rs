@@ -6,6 +6,7 @@ pub use adventuresim_core::{
     filth::{FilthOrigin, FilthSubstance},
     food::{FoodPreparation, IngredientPreparationAction},
     item_catalog::{EquipmentBodyPart, EquipmentLocation, Slot},
+    organization::OrganizationMembershipStatus,
     physiology::BodyRegion,
 };
 use adventuresim_core::{
@@ -386,6 +387,7 @@ impl_sql_unit_variant!(IncapacitationStatus {
     Staggered,
     Incapacitated,
 });
+impl_sql_unit_variant!(OrganizationMembershipStatus { Active, Suspended });
 impl_sql_unit_variant!(MeleeAttackStyle { Swing, Stab });
 impl_sql_unit_variant!(SettlementCategory {
     Unknown,
@@ -913,6 +915,31 @@ mod typed_social_transport_tests {
             }))
             .is_err()
         );
+    }
+
+    #[test]
+    fn organization_membership_status_sql_boundary_is_typed_and_strict() {
+        let row = serde_json::json!({
+            "id": 1,
+            "character_id": 7,
+            "organization_id": "lodge_hart_king",
+            "role_id": "warden",
+            "joined_minute": 0,
+            "dues_paid_through_minute": 100,
+            "status": { "Active": [] },
+            "apprenticeship_minutes_accrued": 0,
+            "practice_minutes_accrued": 0
+        });
+        let decoded = serde_json::from_value::<OrganizationMembership>(row.clone()).unwrap();
+        assert_eq!(decoded.status, OrganizationMembershipStatus::Active);
+        assert_eq!(
+            serde_json::to_value(decoded).unwrap()["status"],
+            serde_json::json!("Active")
+        );
+
+        let mut unknown = row;
+        unknown["status"] = serde_json::json!("Delinquent");
+        assert!(serde_json::from_value::<OrganizationMembership>(unknown).is_err());
     }
 }
 
@@ -2432,7 +2459,11 @@ pub struct OrganizationMembership {
     pub role_id: String,
     pub joined_minute: u64,
     pub dues_paid_through_minute: u64,
-    pub status: String,
+    #[serde(
+        deserialize_with = "deserialize_sql_unit_variant",
+        serialize_with = "serialize_sql_unit_variant"
+    )]
+    pub status: OrganizationMembershipStatus,
     pub apprenticeship_minutes_accrued: u64,
     pub practice_minutes_accrued: u64,
 }
