@@ -73,20 +73,85 @@ pub(crate) mod catalog;
 pub use catalog::AnimationPackCatalog;
 use catalog::*;
 
-/// Per-step travel measured from the loaded authored foot curves. Until a
-/// motion and rig are both available, presentation retains the shared
-/// simulation profile instead of guessing from clip duration.
+/// Per-step travel and irreducible stance slip measured from the loaded
+/// authored foot curves. Until a motion and rig are both available,
+/// presentation retains the shared simulation profile instead of guessing
+/// from clip duration.
+#[derive(Debug, Clone, Copy)]
+struct AuthoredStrideMeasurement {
+    step_distance: f32,
+    maximum_stance_slip: f32,
+}
+
+/// Periodic authored sample phase indexed by a uniformly advancing physical
+/// gait phase. Values are deliberately left unwrapped so interpolation remains
+/// continuous across the cycle seam; callers wrap only the final result.
+#[derive(Debug, Clone)]
+struct AuthoredPhaseCurve {
+    authored_phases: Vec<f32>,
+}
+
+impl AuthoredPhaseCurve {
+    fn sample(&self, physical_phase: f32) -> f32 {
+        if self.authored_phases.len() < 2 {
+            return physical_phase.rem_euclid(1.0);
+        }
+        let phase = physical_phase.rem_euclid(1.0);
+        let coordinate = phase * (self.authored_phases.len() - 1) as f32;
+        let lower = coordinate.floor() as usize;
+        let upper = (lower + 1).min(self.authored_phases.len() - 1);
+        self.authored_phases[lower]
+            .lerp(self.authored_phases[upper], coordinate - lower as f32)
+            .rem_euclid(1.0)
+    }
+}
+
+impl AuthoredStrideMeasurement {
+    fn lerp(self, other: Self, amount: f32) -> Self {
+        Self {
+            step_distance: self.step_distance.lerp(other.step_distance, amount),
+            maximum_stance_slip: self
+                .maximum_stance_slip
+                .lerp(other.maximum_stance_slip, amount),
+        }
+    }
+}
+
 #[derive(Resource, Debug, Clone, Default)]
 pub(super) struct AuthoredLocomotionStrides {
-    walk: Option<f32>,
-    run: Option<f32>,
-    strafe: Option<f32>,
-    skip: Option<f32>,
+    walk: Option<AuthoredStrideMeasurement>,
+    run: Option<AuthoredStrideMeasurement>,
+    strafe: Option<AuthoredStrideMeasurement>,
+    skip: Option<AuthoredStrideMeasurement>,
+    phase_curves: BTreeMap<String, AuthoredPhaseCurve>,
     measured_clips: BTreeMap<String, AssetId<AnimationClip>>,
 }
 
 impl AuthoredLocomotionStrides {
-    fn ordinary(&self, speed: f32) -> Option<f32> {
+    fn clear_motion(&mut self, motion: &str) {
+        self.phase_curves.remove(motion);
+        match motion {
+            "walk" => self.walk = None,
+            "run" => self.run = None,
+            "strafe" => self.strafe = None,
+            "skip" => self.skip = None,
+            _ => {}
+        }
+    }
+
+    fn sample_phase(&self, pose: SemanticPose, physical_phase: f32) -> f32 {
+        let motion = match pose {
+            SemanticPose::WalkContact => "walk",
+            SemanticPose::RunContact => "run",
+            _ => return physical_phase.rem_euclid(1.0),
+        };
+        self.phase_curves.get(motion).map_or_else(
+            || physical_phase.rem_euclid(1.0),
+            |curve| curve.sample(physical_phase),
+        )
+    }
+
+    fn ordinary(&self, speed: f32) -> Option<AuthoredStrideMeasurement> {
         let walk = self.walk?;
         let blend = ((speed - WALK_LOCOMOTION_PROFILE.reference_speed)
             / (RUN_LOCOMOTION_PROFILE.reference_speed - WALK_LOCOMOTION_PROFILE.reference_speed))
@@ -98,21 +163,30 @@ impl AuthoredLocomotionStrides {
         }
     }
 
-    fn combat(&self, direction: Vec2) -> Option<f32> {
+    fn combat(&self, direction: Vec2) -> Option<AuthoredStrideMeasurement> {
         let strafe_weight = direction.x.abs();
         let skip_weight = direction.y.abs();
         let total = strafe_weight + skip_weight;
         if total <= f32::EPSILON {
             return None;
         }
-        let mut stride = 0.0;
+        let mut stride = AuthoredStrideMeasurement {
+            step_distance: 0.0,
+            maximum_stance_slip: 0.0,
+        };
         if strafe_weight > f32::EPSILON {
-            stride += self.strafe? * strafe_weight;
+            let strafe = self.strafe?;
+            stride.step_distance += strafe.step_distance * strafe_weight;
+            stride.maximum_stance_slip += strafe.maximum_stance_slip * strafe_weight;
         }
         if skip_weight > f32::EPSILON {
-            stride += self.skip? * skip_weight;
+            let skip = self.skip?;
+            stride.step_distance += skip.step_distance * skip_weight;
+            stride.maximum_stance_slip += skip.maximum_stance_slip * skip_weight;
         }
-        Some(stride / total)
+        stride.step_distance /= total;
+        stride.maximum_stance_slip /= total;
+        Some(stride)
     }
 }
 
@@ -230,6 +304,10 @@ struct WeightedClip {
     weight: f32,
     time_seconds: f32,
     mirrored_weight: f32,
+    /// Unwarped physical phase for ordinary sparse-pose locomotion. Its
+    /// presence selects the Bevy-side semantic-anchor sampler while
+    /// `time_seconds` retains the measured authored phase coordinate.
+    locomotion_phase: Option<f32>,
 }
 
 #[derive(Debug, Clone)]
@@ -285,6 +363,7 @@ fn evaluate_skeletons(
     mut commands: Commands,
     catalog: Res<AnimationPackCatalog>,
     runtime: Res<AnimationRuntime>,
+    locomotion_strides: Res<AuthoredLocomotionStrides>,
     players: Query<
         (
             Entity,
@@ -322,6 +401,7 @@ fn evaluate_skeletons(
                 &skeleton.animation_pack,
                 *sample,
                 base_layer,
+                &locomotion_strides,
             );
         }
         for sample in &evaluation.lower_body {
@@ -333,6 +413,7 @@ fn evaluate_skeletons(
                 &skeleton.animation_pack,
                 *sample,
                 ClipLayer::Lower,
+                &locomotion_strides,
             );
         }
         let whole_body_mirror = {
@@ -365,6 +446,7 @@ fn evaluate_skeletons(
                 false,
                 0.0,
                 1.0,
+                None,
             );
         }
         let target = PlaybackPose {
@@ -688,6 +770,7 @@ fn append_weighted_anchor(
         resolved.mirrored,
         frame_seconds(frame),
         weight,
+        None,
     );
 }
 
@@ -697,6 +780,7 @@ fn append_weighted_clip(
     mirrored: bool,
     time_seconds: f32,
     weight: f32,
+    locomotion_phase: Option<f32>,
 ) {
     if weight <= f32::EPSILON {
         return;
@@ -705,6 +789,7 @@ fn append_weighted_clip(
         existing.clip.handle.id() == clip.handle.id()
             && existing.clip.layer == clip.layer
             && (existing.time_seconds - time_seconds).abs() < 0.0001
+            && existing.locomotion_phase == locomotion_phase
     }) {
         existing.weight += weight;
         if mirrored {
@@ -716,6 +801,7 @@ fn append_weighted_clip(
             weight,
             time_seconds,
             mirrored_weight: if mirrored { weight } else { 0.0 },
+            locomotion_phase,
         });
     }
 }
@@ -728,6 +814,7 @@ fn append_resolved_sample(
     sample: PoseSample,
 ) {
     let mut extrapolated_spans = Vec::new();
+    let locomotion_strides = AuthoredLocomotionStrides::default();
     append_resolved_sample_layer(
         weighted,
         &mut extrapolated_spans,
@@ -736,6 +823,7 @@ fn append_resolved_sample(
         pack,
         sample,
         ClipLayer::Whole,
+        &locomotion_strides,
     );
 }
 
@@ -747,6 +835,7 @@ fn append_resolved_sample_layer(
     pack: &str,
     sample: PoseSample,
     layer: ClipLayer,
+    locomotion_strides: &AuthoredLocomotionStrides,
 ) {
     let start = resolve_anchor(runtime, catalog, pack, sample.pose);
     let Some(start) = start.and_then(|resolved| {
@@ -759,13 +848,19 @@ fn append_resolved_sample_layer(
             append_weighted_anchor(weighted, &start, start.anchor.frame, sample.weight, layer)
         }
         PoseSampling::Cycle { phase } => {
+            let sample_phase = locomotion_strides.sample_phase(sample.pose, phase);
             let clip = start.clip.at_anchor_layer(start.anchor.frame, layer);
             append_weighted_clip(
                 weighted,
                 &clip,
                 start.mirrored,
-                start.clip.duration_seconds * phase.rem_euclid(1.0),
+                start.clip.duration_seconds * sample_phase,
                 sample.weight,
+                matches!(
+                    sample.pose,
+                    SemanticPose::WalkContact | SemanticPose::RunContact
+                )
+                .then_some(phase.rem_euclid(1.0)),
             );
         }
         PoseSampling::Timeline { progress } => {
@@ -782,6 +877,7 @@ fn append_resolved_sample_layer(
                 start.mirrored,
                 start.clip.duration_seconds * timeline,
                 sample.weight,
+                None,
             );
         }
         PoseSampling::Span { end, progress } => {

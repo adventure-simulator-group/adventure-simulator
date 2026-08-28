@@ -1685,7 +1685,7 @@ pub(crate) fn update_skeleton_locomotion(
                 )
             };
         }
-        project_skeleton_locomotion_with_intent(
+        project_skeleton_locomotion_with_body_rotation(
             &mut skeleton,
             SkeletonLocomotionInput {
                 orientation: controller.orientation,
@@ -1694,6 +1694,7 @@ pub(crate) fn update_skeleton_locomotion(
                 delta_seconds: time.delta_secs(),
                 tick,
             },
+            transform.rotation,
             accumulated_input
                 .last_movement
                 .map(|movement| Vec2::new(movement.x, -movement.y)),

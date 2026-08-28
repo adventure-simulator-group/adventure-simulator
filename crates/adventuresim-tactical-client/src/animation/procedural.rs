@@ -515,8 +515,10 @@ fn grounded_height_wave(phase: f32, amplitude: f32) -> f32 {
 pub(crate) struct LocomotionBodyResponseState {
     pub(crate) pitch_radians: f32,
     pub(crate) roll_radians: f32,
+    angular_velocity_radians_per_second: Vec2,
     target_pitch_radians: f32,
     target_roll_radians: f32,
+    smoothed_body_acceleration: Vec3,
     last_body_velocity: Vec3,
     last_tick: Option<u64>,
     last_posture: Option<Posture>,
@@ -1517,13 +1519,17 @@ mod legacy_tests {
             WALK_LOCOMOTION_PROFILE.reference_speed / RUN_LOCOMOTION_PROFILE.reference_speed,
         );
         let stopped_braking = body_response_target(Vec3::ZERO, Vec3::NEG_Z * 12.0, 0.0);
-        let lateral = body_response_target(Vec3::ZERO, Vec3::X * 12.0, 1.0);
-        assert!((11.9..=12.1).contains(&steady_run.x.to_degrees()));
-        assert!((28.0..=30.0).contains(&forward.x.to_degrees()));
+        let stationary_lateral = body_response_target(Vec3::ZERO, Vec3::X * 12.0, 1.0);
+        let moving_lateral = body_response_target(Vec3::X * 5.5, Vec3::X * 12.0, 1.0);
+        assert!((15.9..=16.1).contains(&steady_run.x.to_degrees()));
+        assert!((17.7..=17.9).contains(&forward.x.to_degrees()));
+        assert!(forward.x > steady_run.x);
+        assert!((1.7..=1.9).contains(&(forward.x - steady_run.x).to_degrees()));
         assert!((-3.0..=-1.0).contains(&braking.x.to_degrees()));
         assert!((-1.0..=0.0).contains(&walking_braking.x.to_degrees()));
         assert!(stopped_braking.x.abs() <= f32::EPSILON);
-        assert!((11.0..=12.0).contains(&lateral.y.abs().to_degrees()));
+        assert!((1.9..=2.0).contains(&stationary_lateral.y.abs().to_degrees()));
+        assert!((17.3..=17.5).contains(&moving_lateral.y.abs().to_degrees()));
         assert!(
             body_response_target(Vec3::ZERO, Vec3::new(40.0, 0.0, 40.0), 1.0)
                 .length()

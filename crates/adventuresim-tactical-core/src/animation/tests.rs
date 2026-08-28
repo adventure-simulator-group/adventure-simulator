@@ -559,7 +559,7 @@ mod legacy_tests {
     #[test]
     fn locomotion_shares_phase_across_walk_and_run() {
         let state = SkeletonState::default()
-            .with_local_velocity(Vec3::new(3.75, 0.0, 0.0))
+            .with_local_velocity(Vec3::new(0.0, 0.0, 3.75))
             .with_gait_phase(0.25);
         let evaluation = AnimationEvaluation::from_skeleton(&state);
         assert_eq!(evaluation.base.len(), 2);
@@ -1006,7 +1006,7 @@ mod legacy_tests {
     fn low_speed_idle_and_complete_cycle_remain_unmirrored() {
         let evaluation = AnimationEvaluation::from_skeleton(
             &SkeletonState::default()
-                .with_local_velocity(Vec3::new(0.25, 0.0, 0.0))
+                .with_local_velocity(Vec3::new(0.0, 0.0, 0.25))
                 .with_gait_phase(0.375),
         );
         assert!(evaluation.base.len() >= 2);
@@ -1021,6 +1021,62 @@ mod legacy_tests {
             sample.sampling,
             PoseSampling::Cycle { phase } if (phase - 0.375).abs() < 0.0001
         )));
+    }
+
+    #[test]
+    fn ordinary_locomotion_blends_strafe_while_hips_turn_toward_velocity() {
+        let input = SkeletonLocomotionInput {
+            orientation: Quat::IDENTITY,
+            linear_velocity: Vec3::X * 2.0,
+            grounded: true,
+            delta_seconds: 1.0 / LOCOMOTION_SAMPLE_HZ,
+            tick: 1,
+        };
+
+        let mut lateral = SkeletonState::default();
+        project_skeleton_locomotion_with_body_rotation(
+            &mut lateral,
+            input,
+            Quat::IDENTITY,
+            None,
+        );
+        let lateral_evaluation = AnimationEvaluation::from_skeleton(&lateral);
+        assert!(lateral.local_velocity.abs_diff_eq(Vec3::X * 2.0, 0.0001));
+        assert_eq!(lateral_evaluation.base.len(), 1);
+        assert_eq!(lateral_evaluation.base[0].pose, SemanticPose::StrafeCycle);
+
+        let mut turning = SkeletonState::default();
+        project_skeleton_locomotion_with_body_rotation(
+            &mut turning,
+            input,
+            Quat::from_rotation_y(std::f32::consts::FRAC_PI_4),
+            None,
+        );
+        let turning_evaluation = AnimationEvaluation::from_skeleton(&turning);
+        assert!(turning_evaluation.base.iter().any(|sample| {
+            matches!(sample.pose, SemanticPose::WalkContact | SemanticPose::RunContact)
+        }));
+        assert!(
+            turning_evaluation
+                .base
+                .iter()
+                .any(|sample| sample.pose == SemanticPose::StrafeCycle)
+        );
+
+        let mut aligned = SkeletonState::default();
+        project_skeleton_locomotion_with_body_rotation(
+            &mut aligned,
+            input,
+            Quat::from_rotation_y(std::f32::consts::FRAC_PI_2),
+            None,
+        );
+        let aligned_evaluation = AnimationEvaluation::from_skeleton(&aligned);
+        assert!(
+            aligned_evaluation
+                .base
+                .iter()
+                .all(|sample| sample.pose != SemanticPose::StrafeCycle)
+        );
     }
 
     #[test]
