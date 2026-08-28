@@ -533,7 +533,7 @@ fn grass_patch_topology(ground: &SceneGround, centre: Vec2) -> Option<GrassTopol
             let coverage = ground
                 .ground_at(centre + Vec2::new(x, z) * half_extent)
                 .filter(|sample| sample.cover == GroundCover::TallGrass)
-                .map_or(0.0, |sample| f32::from(sample.cover_density_bps) / 10_000.0);
+                .map_or(0.0, |sample| bps(sample.cover_density_bps));
             total += coverage;
             samples += 1;
         }

@@ -166,13 +166,27 @@ fn create_strategic_incident(
     let enemy_count = living_party_member_ids(ctx, party_id).len().max(2) as i32;
     let current_site = current_case_site_id
         .and_then(|id| ctx.db.case_site_authority().id_key().find(id.to_string()));
+    let settlement_coordinate = if settlement.source_node_id.is_some() {
+        let coordinate = adventuresim_world_schema::coordinates::Wgs84CoordinateE7::from_longitude_latitude_degrees(
+            settlement.coord_x,
+            settlement.coord_y,
+        )
+        .ok_or("Incident settlement has invalid WGS84 coordinates")?;
+        (coordinate.longitude().get(), coordinate.latitude().get())
+    } else {
+        let longitude = adventuresim_world_schema::coordinates::UnboundedCoordinateE7::from_coordinate_units(settlement.coord_x)
+            .ok_or("Incident settlement longitude cannot be represented as E7")?;
+        let latitude = adventuresim_world_schema::coordinates::UnboundedCoordinateE7::from_coordinate_units(settlement.coord_y)
+            .ok_or("Incident settlement latitude cannot be represented as E7")?;
+        (longitude.raw(), latitude.raw())
+    };
     let (scene_key, longitude_e7, latitude_e7, coordinates_are_geographic, distance_m) =
         current_site.map_or_else(
             || {
                 (
                     settlement.scene_key.clone(),
-                    (settlement.coord_x * 10_000_000.0).round() as i32,
-                    (settlement.coord_y * 10_000_000.0).round() as i32,
+                    settlement_coordinate.0,
+                    settlement_coordinate.1,
                     settlement.source_node_id.is_some(),
                     0,
                 )

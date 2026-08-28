@@ -4,7 +4,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::physical_object::PhysicalObjectId;
+use crate::{material::Milliliters, physical_object::PhysicalObjectId};
 
 pub const MAX_CONTAINER_DEPTH: usize = 16;
 
@@ -12,11 +12,11 @@ pub const MAX_CONTAINER_DEPTH: usize = 16;
 pub struct Object {
     pub id: PhysicalObjectId,
     /// Exterior displacement when this object is an immediate child.
-    pub exterior_volume_ml: u64,
-    /// Interior capacity; zero means this object is not a container.
-    pub capacity_ml: u64,
+    pub exterior_volume: Milliliters,
+    /// Interior capacity; `None` means this object is not a container.
+    pub capacity: Option<Milliliters>,
     /// Measured liquid/material volume currently represented by this object.
-    pub measured_volume_ml: u64,
+    pub measured_volume: Option<Milliliters>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -29,10 +29,13 @@ impl ContainmentGraph {
     pub fn new(objects: impl IntoIterator<Item = Object>) -> Result<Self, &'static str> {
         let mut graph = Self::default();
         for object in objects {
-            if object.exterior_volume_ml == 0 {
+            if object.exterior_volume.is_zero() {
                 return Err("Every physical object must have a positive exterior volume");
             }
-            if object.measured_volume_ml > object.exterior_volume_ml {
+            if object
+                .measured_volume
+                .is_some_and(|volume| volume > object.exterior_volume)
+            {
                 return Err("Measured volume exceeds the object's authored exterior volume");
             }
             if graph.objects.insert(object.id, object).is_some() {
@@ -52,8 +55,8 @@ impl ContainmentGraph {
             .any(|parent| *parent == container)
     }
 
-    pub fn used_ml(&self, container: PhysicalObjectId) -> Result<u64, &'static str> {
-        let mut used = 0u64;
+    pub fn used_volume(&self, container: PhysicalObjectId) -> Result<Milliliters, &'static str> {
+        let mut used = Milliliters::ZERO;
         for child in self
             .parent_by_child
             .iter()
@@ -63,11 +66,7 @@ impl ContainmentGraph {
             // An immediate liquid lot consumes its current amount. A vessel or
             // solid consumes its exterior displacement; grandchildren are
             // already physically inside that displacement and are not added.
-            let volume = if object.measured_volume_ml > 0 {
-                object.measured_volume_ml
-            } else {
-                object.exterior_volume_ml
-            };
+            let volume = object.measured_volume.unwrap_or(object.exterior_volume);
             used = used
                 .checked_add(volume)
                 .ok_or("Container volume overflow")?;
@@ -87,15 +86,13 @@ impl ContainmentGraph {
             .objects
             .get(&parent)
             .ok_or("Unknown destination container")?;
-        if parent_object.capacity_ml == 0 {
+        let Some(parent_capacity) = parent_object.capacity else {
             return Err("Destination is not a container");
-        }
-        let child_object = self.objects.get(&child).ok_or("Unknown child object")?;
-        let child_volume = if child_object.measured_volume_ml > 0 {
-            child_object.measured_volume_ml
-        } else {
-            child_object.exterior_volume_ml
         };
+        let child_object = self.objects.get(&child).ok_or("Unknown child object")?;
+        let child_volume = child_object
+            .measured_volume
+            .unwrap_or(child_object.exterior_volume);
 
         let mut ancestor = Some(parent);
         let mut visited = BTreeSet::new();
@@ -132,10 +129,10 @@ impl ContainmentGraph {
         }
 
         let old_parent = self.parent_by_child.remove(&child);
-        let used = self.used_ml(parent)?;
+        let used = self.used_volume(parent)?;
         let fits = used
             .checked_add(child_volume)
-            .is_some_and(|next| next <= parent_object.capacity_ml);
+            .is_some_and(|next| next <= parent_capacity);
         if !fits {
             if let Some(old_parent) = old_parent {
                 self.parent_by_child.insert(child, old_parent);
@@ -184,9 +181,9 @@ mod tests {
     fn object(id: u64, exterior: u64, capacity: u64) -> Object {
         Object {
             id: PhysicalObjectId::try_new(id).unwrap(),
-            exterior_volume_ml: exterior,
-            capacity_ml: capacity,
-            measured_volume_ml: 0,
+            exterior_volume: Milliliters::new(exterior),
+            capacity: (capacity > 0).then(|| Milliliters::new(capacity)),
+            measured_volume: None,
         }
     }
 
@@ -209,16 +206,16 @@ mod tests {
             object(2, 900, 800),
             Object {
                 id: PhysicalObjectId::try_new(3).unwrap(),
-                exterior_volume_ml: 1_000,
-                capacity_ml: 0,
-                measured_volume_ml: 700,
+                exterior_volume: Milliliters::new(1_000),
+                capacity: None,
+                measured_volume: Some(Milliliters::new(700)),
             },
         ])
         .unwrap();
         graph.insert(object_id(3), object_id(2)).unwrap();
         graph.insert(object_id(2), object_id(1)).unwrap();
-        assert_eq!(graph.used_ml(object_id(2)), Ok(700));
-        assert_eq!(graph.used_ml(object_id(1)), Ok(900));
+        assert_eq!(graph.used_volume(object_id(2)), Ok(Milliliters::new(700)));
+        assert_eq!(graph.used_volume(object_id(1)), Ok(Milliliters::new(900)));
     }
 
     #[test]

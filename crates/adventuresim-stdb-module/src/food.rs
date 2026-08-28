@@ -917,12 +917,15 @@ fn material_snapshot(
     String,
 > {
     use adventuresim_core::material::{
-        ContaminantLoad, ExtensiveComponent, MaterialIdentity, MaterialLotId, MaterialMeasure,
-        MaterialPreparation, PrivateMaterialSnapshot, PrivateMaterialTruth,
+        ContaminantLoad, ExtensiveComponent, MaterialComponentMicrounits, MaterialIdentity,
+        MaterialLotId, MaterialMeasure, MaterialPreparation, Milligrams, PrivateMaterialSnapshot,
+        PrivateMaterialTruth,
     };
     use std::num::NonZeroU64;
 
-    let mass_milligrams = ((lot.mass_kg.max(0.0) as f64) * 1_000_000.0).round() as u64;
+    let mass_milligrams = Milligrams::try_from_kilograms(f64::from(lot.mass_kg))
+        .map_err(|error| format!("Ingredient material mass is invalid: {error:?}"))?
+        .get();
     let measure = MaterialMeasure::try_new(mass_milligrams, 0)
         .map_err(|error| format!("Ingredient material measure is invalid: {error:?}"))?;
     let components = ctx
@@ -930,16 +933,22 @@ fn material_snapshot(
         .medicinal_component()
         .iter()
         .filter(|row| row.carrier_kind == "food_lot" && row.carrier_id == lot.id)
-        .filter_map(|row| {
-            NonZeroU64::new((f64::from(row.potency_units.max(0.0)) * 1_000_000.0).round() as u64)
-                .map(|magnitude| ExtensiveComponent {
-                    component: herbalism::MedicinalMaterialComponent {
-                        intervention_profile_id: row.intervention_profile_id,
-                        profile_version: row.profile_version,
-                    },
-                    magnitude,
+        .map(|row| {
+            MaterialComponentMicrounits::try_from_units(row.potency_units)
+                .map_err(|error| format!("Ingredient medicinal potency is invalid: {error:?}"))
+                .map(|magnitude| {
+                    magnitude.map(|magnitude| ExtensiveComponent {
+                        component: herbalism::MedicinalMaterialComponent {
+                            intervention_profile_id: row.intervention_profile_id,
+                            profile_version: row.profile_version,
+                        },
+                        magnitude: magnitude.get(),
+                    })
                 })
         })
+        .collect::<Result<Vec<_>, String>>()?
+        .into_iter()
+        .flatten()
         .collect::<Vec<_>>();
     let contaminants = ctx
         .db

@@ -16,6 +16,41 @@ pub const METER_COUNT: usize = 10;
 pub const REGION_COUNT: usize = 7;
 pub const HUMOUR_COUNT: usize = 4;
 
+/// Validated living character body mass in kilograms.
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
+pub struct BodyMassKg(f32);
+
+impl BodyMassKg {
+    pub const MIN: Self = Self(20.0);
+    pub const MAX: Self = Self(300.0);
+    pub const DEFAULT: Self = Self(70.0);
+
+    pub fn try_new(kilograms: f32) -> Result<Self, BodyMassError> {
+        if !kilograms.is_finite() {
+            return Err(BodyMassError::NonFinite);
+        }
+        if !(Self::MIN.0..=Self::MAX.0).contains(&kilograms) {
+            return Err(BodyMassError::OutOfRange);
+        }
+        Ok(Self(kilograms))
+    }
+
+    pub const fn kilograms(self) -> f32 {
+        self.0
+    }
+
+    pub fn estimated_blood_milliliters(self) -> f32 {
+        const BLOOD_MILLILITERS_PER_KILOGRAM: f32 = 70.0;
+        self.0 * BLOOD_MILLILITERS_PER_KILOGRAM
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BodyMassError {
+    NonFinite,
+    OutOfRange,
+}
+
 /// Fixed-point medicinal dose where 1,000 milliunits is one standard dose.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct DoseMilliunits(u32);
@@ -926,6 +961,15 @@ pub fn observation_noise(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn body_mass_has_one_inclusive_validated_range() {
+        assert_eq!(BodyMassKg::try_new(20.0), Ok(BodyMassKg::MIN));
+        assert_eq!(BodyMassKg::try_new(300.0), Ok(BodyMassKg::MAX));
+        assert_eq!(BodyMassKg::try_new(19.99), Err(BodyMassError::OutOfRange));
+        assert_eq!(BodyMassKg::try_new(f32::NAN), Err(BodyMassError::NonFinite));
+        assert_eq!(BodyMassKg::DEFAULT.estimated_blood_milliliters(), 4_900.0);
+    }
 
     #[test]
     fn medicinal_dose_uses_one_thousand_milliunits_per_standard_dose() {

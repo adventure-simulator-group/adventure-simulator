@@ -3,11 +3,9 @@
 //! Persistent identifiers and reducer arguments enter as raw wire values. Reducers parse them
 //! into these types before applying authoritative database mutations.
 
-use std::{
-    fmt,
-    num::{NonZeroU32, NonZeroU64},
-};
+use std::{fmt, num::NonZeroU64};
 
+use crate::inventory_measurement::ItemQuantity;
 use crate::settlement_economy::Storefront;
 
 /// A non-zero amount of coin in a validated payment plan.
@@ -197,7 +195,7 @@ impl std::error::Error for UnknownMerchantService {}
 
 /// A non-zero quantity parsed once at a commerce reducer boundary.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct TradeQuantity(NonZeroU32);
+pub struct TradeQuantity(ItemQuantity);
 
 impl TradeQuantity {
     pub fn get(self) -> u32 {
@@ -208,7 +206,7 @@ impl TradeQuantity {
 impl TryFrom<u32> for TradeQuantity {
     type Error = TradeRequestError;
     fn try_from(value: u32) -> Result<Self, Self::Error> {
-        NonZeroU32::new(value)
+        ItemQuantity::new(value)
             .map(Self)
             .ok_or(TradeRequestError::ZeroQuantity)
     }

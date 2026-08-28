@@ -19,6 +19,106 @@ pub trait DomainConservationPolicy: Clone + fmt::Debug + Eq {}
 pub trait DomainMaterialReceipt: Clone + fmt::Debug + Eq {}
 pub trait PublicMaterialPresentation: Clone + fmt::Debug + Eq {}
 
+/// Exact mass measured in whole milligrams.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Milligrams(u64);
+
+impl Milligrams {
+    const MILLIGRAMS_PER_KILOGRAM: f64 = 1_000_000.0;
+
+    pub fn try_from_kilograms(kilograms: f64) -> Result<Self, MaterialError> {
+        if !kilograms.is_finite() || kilograms < 0.0 {
+            return Err(MaterialError::InvalidMeasure);
+        }
+        let milligrams = kilograms * Self::MILLIGRAMS_PER_KILOGRAM;
+        if milligrams > u64::MAX as f64 {
+            return Err(MaterialError::Overflow);
+        }
+        Ok(Self(milligrams.round() as u64))
+    }
+
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+
+    pub fn as_kilograms(self) -> f64 {
+        self.0 as f64 / Self::MILLIGRAMS_PER_KILOGRAM
+    }
+}
+
+/// A positive material-component quantity in millionths of an authored unit.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MaterialComponentMicrounits(NonZeroU64);
+
+impl MaterialComponentMicrounits {
+    const MICROUNITS_PER_UNIT: f64 = 1_000_000.0;
+
+    pub fn try_from_units(units: f32) -> Result<Option<Self>, MaterialError> {
+        if !units.is_finite() || units < 0.0 {
+            return Err(MaterialError::InvalidMeasure);
+        }
+        let microunits = f64::from(units) * Self::MICROUNITS_PER_UNIT;
+        if microunits > u64::MAX as f64 {
+            return Err(MaterialError::Overflow);
+        }
+        Ok(NonZeroU64::new(microunits.round() as u64).map(Self))
+    }
+
+    pub const fn get(self) -> NonZeroU64 {
+        self.0
+    }
+
+    pub fn as_units(self) -> f64 {
+        self.0.get() as f64 / Self::MICROUNITS_PER_UNIT
+    }
+}
+
+/// Exact volume measured in whole milliliters.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Milliliters(u64);
+
+impl Milliliters {
+    pub const ZERO: Self = Self(0);
+
+    pub const fn new(value: u64) -> Self {
+        Self(value)
+    }
+
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+
+    pub const fn is_zero(self) -> bool {
+        self.0 == 0
+    }
+
+    pub const fn checked_add(self, other: Self) -> Option<Self> {
+        match self.0.checked_add(other.0) {
+            Some(value) => Some(Self(value)),
+            None => None,
+        }
+    }
+
+    pub const fn checked_sub(self, other: Self) -> Option<Self> {
+        match self.0.checked_sub(other.0) {
+            Some(value) => Some(Self(value)),
+            None => None,
+        }
+    }
+}
+
+impl From<u64> for Milliliters {
+    fn from(value: u64) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<Milliliters> for u64 {
+    fn from(value: Milliliters) -> Self {
+        value.get()
+    }
+}
+
 /// Exact volume measured in microliters.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Microliters(u64);
@@ -32,8 +132,9 @@ impl Microliters {
         Self(value)
     }
 
-    pub fn try_from_milliliters(milliliters: u64) -> Result<Self, MaterialError> {
+    pub fn try_from_milliliters(milliliters: Milliliters) -> Result<Self, MaterialError> {
         milliliters
+            .get()
             .checked_mul(Self::MICROLITERS_PER_MILLILITER)
             .map(Self)
             .ok_or(MaterialError::Overflow)
@@ -75,6 +176,14 @@ impl Microliters {
 
     pub fn as_milliliters_f32(self) -> f32 {
         self.0 as f32 / Self::MICROLITERS_PER_MILLILITER as f32
+    }
+
+    pub const fn as_whole_milliliters(self) -> Option<Milliliters> {
+        if self.0.is_multiple_of(Self::MICROLITERS_PER_MILLILITER) {
+            Some(Milliliters(self.0 / Self::MICROLITERS_PER_MILLILITER))
+        } else {
+            None
+        }
     }
 
     pub fn as_water_kilograms_f32(self) -> f32 {
@@ -1200,6 +1309,7 @@ pub fn validate_material_commit<
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum MaterialError {
+    InvalidMeasure,
     ZeroLotId,
     ZeroProcessId,
     ZeroRequestId,
@@ -1231,6 +1341,7 @@ pub enum MaterialError {
 impl fmt::Display for MaterialError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
+            Self::InvalidMeasure => "Material measure must be finite and non-negative",
             Self::ZeroLotId => "Material lot identity must be nonzero",
             Self::ZeroProcessId => "Material process identity must be nonzero",
             Self::ZeroRequestId => "Material request identity must be nonzero",
@@ -1278,8 +1389,38 @@ mod tests {
     use super::*;
 
     #[test]
+    fn material_boundary_units_validate_and_round_trip() {
+        let mass = Milligrams::try_from_kilograms(1.25).unwrap();
+        let component = MaterialComponentMicrounits::try_from_units(0.75)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(mass.get(), 1_250_000);
+        assert_eq!(mass.as_kilograms(), 1.25);
+        assert_eq!(component.get().get(), 750_000);
+        assert_eq!(component.as_units(), 0.75);
+        assert!(Milligrams::try_from_kilograms(f64::NAN).is_err());
+        assert_eq!(MaterialComponentMicrounits::try_from_units(0.0), Ok(None));
+    }
+
+    #[test]
+    fn whole_milliliters_round_trip_through_microliters() {
+        let milliliters = Milliliters::new(1_250);
+        let microliters = Microliters::try_from_milliliters(milliliters).unwrap();
+
+        assert_eq!(microliters.get(), 1_250_000);
+        assert_eq!(microliters.as_whole_milliliters(), Some(milliliters));
+        assert_eq!(Microliters::new(1).as_whole_milliliters(), None);
+        assert!(
+            Milliliters::new(u64::MAX)
+                .checked_add(Milliliters::new(1))
+                .is_none()
+        );
+    }
+
+    #[test]
     fn microliters_make_water_volume_conversions_explicit() {
-        let volume = Microliters::try_from_milliliters(150).unwrap();
+        let volume = Microliters::try_from_milliliters(Milliliters::new(150)).unwrap();
         assert_eq!(volume.get(), 150_000);
         assert_eq!(volume.as_milliliters_f32(), 150.0);
         assert_eq!(volume.as_water_kilograms_f32(), 0.15);

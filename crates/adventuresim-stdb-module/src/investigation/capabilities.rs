@@ -1149,6 +1149,20 @@ fn issue_rumor_action_graph(
             .id()
             .find(settlement_id.to_string())
             .ok_or("Rumor settlement no longer exists")?;
+        let (center_longitude_e7, center_latitude_e7) = if settlement.source_node_id.is_some() {
+            let coordinate = adventuresim_world_schema::coordinates::Wgs84CoordinateE7::from_longitude_latitude_degrees(
+                settlement.coord_x,
+                settlement.coord_y,
+            )
+            .ok_or("Rumor settlement has invalid WGS84 coordinates")?;
+            (coordinate.longitude().get(), coordinate.latitude().get())
+        } else {
+            let longitude = adventuresim_world_schema::coordinates::UnboundedCoordinateE7::from_coordinate_units(settlement.coord_x)
+                .ok_or("Rumor settlement longitude cannot be represented as E7")?;
+            let latitude = adventuresim_world_schema::coordinates::UnboundedCoordinateE7::from_coordinate_units(settlement.coord_y)
+                .ok_or("Rumor settlement latitude cannot be represented as E7")?;
+            (longitude.raw(), latitude.raw())
+        };
         ctx.db
             .investigation_area_authority()
             .insert(InvestigationAreaAuthority {
@@ -1156,8 +1170,8 @@ fn issue_rumor_action_graph(
                 case_id: case_id.to_string(),
                 origin_settlement_id: settlement_id.to_string(),
                 safe_label: "the area described by local accounts".into(),
-                center_longitude_e7: (settlement.coord_x * 10_000_000.0) as i32,
-                center_latitude_e7: (settlement.coord_y * 10_000_000.0) as i32,
+                center_longitude_e7,
+                center_latitude_e7,
                 radius_m: 5_000,
                 coordinates_are_geographic: settlement.source_node_id.is_some(),
                 terrain: "settlement".into(),

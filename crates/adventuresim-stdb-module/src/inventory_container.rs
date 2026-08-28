@@ -7,7 +7,7 @@
 use adventuresim_core::{
     inventory_containers::{ContainmentGraph, Object},
     item_references::STANDARD_WATERSKIN_ID,
-    material::Microliters,
+    material::{Microliters, Milliliters},
     physical_object::{
         CarriedInventoryScope, InventoryLocation, OperationalCustody, PhysicalObjectId,
     },
@@ -999,9 +999,13 @@ fn graph(ctx: &ReducerContext) -> Result<ContainmentGraph, String> {
                 .ok_or_else(|| format!("Unknown item {}", object.item_id))?;
             Ok(Object {
                 id: PhysicalObjectId::try_new(object.id).map_err(|error| error.to_string())?,
-                exterior_volume_ml: u64::from(definition.exterior_volume_ml),
-                capacity_ml: u64::from(definition.container_capacity_ml),
-                measured_volume_ml: measured_volume_ml(ctx, &object, &definition),
+                exterior_volume: Milliliters::new(u64::from(definition.exterior_volume_ml)),
+                capacity: (definition.container_capacity_ml > 0)
+                    .then(|| Milliliters::new(u64::from(definition.container_capacity_ml))),
+                measured_volume: {
+                    let measured_volume = measured_volume_ml(ctx, &object, &definition);
+                    (measured_volume > 0).then(|| Milliliters::new(measured_volume))
+                },
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
@@ -1071,10 +1075,13 @@ fn remaining_container_capacity_ml(
         .ok_or("Container definition not found")?;
     let capacity = u64::from(definition.container_capacity_ml);
     let used = graph(ctx)?
-        .used_ml(PhysicalObjectId::try_new(container_object_id).map_err(|error| error.to_string())?)
+        .used_volume(
+            PhysicalObjectId::try_new(container_object_id).map_err(|error| error.to_string())?,
+        )
         .map_err(str::to_owned)?
-        .checked_add(liquid_used(ctx, container_object_id))
-        .ok_or("Container volume overflow")?;
+        .checked_add(Milliliters::new(liquid_used(ctx, container_object_id)))
+        .ok_or("Container volume overflow")?
+        .get();
     capacity
         .checked_sub(used)
         .ok_or_else(|| "Container contents exceed authored capacity".into())
@@ -1249,16 +1256,20 @@ pub(crate) fn require_container_capacity(
     let container_object_id =
         PhysicalObjectId::try_new(container_object_id).map_err(|error| error.to_string())?;
     let used = graph(ctx)?
-        .used_ml(container_object_id)
+        .used_volume(container_object_id)
         .map_err(str::to_owned)?
-        .checked_add(liquid_used(ctx, container_object_id.get()))
+        .checked_add(Milliliters::new(liquid_used(
+            ctx,
+            container_object_id.get(),
+        )))
         .ok_or("Container volume overflow")?;
     if used
-        .checked_add(additional_ml)
-        .is_none_or(|next| next > u64::from(definition.container_capacity_ml))
+        .checked_add(Milliliters::new(additional_ml))
+        .is_none_or(|next| next > Milliliters::new(u64::from(definition.container_capacity_ml)))
     {
         return Err(format!(
-            "Container capacity exceeded: {used} ml used of {} ml",
+            "Container capacity exceeded: {} ml used of {} ml",
+            used.get(),
             definition.container_capacity_ml
         ));
     }
@@ -1322,13 +1333,14 @@ pub fn put_inventory_item_in_container(
         .find(parent.item_id.clone())
         .ok_or("Container definition not found")?;
     let used = model
-        .used_ml(PhysicalObjectId::try_new(parent.id).map_err(|error| error.to_string())?)
+        .used_volume(PhysicalObjectId::try_new(parent.id).map_err(|error| error.to_string())?)
         .map_err(str::to_owned)?
-        .checked_add(liquid_used(ctx, parent.id))
+        .checked_add(Milliliters::new(liquid_used(ctx, parent.id)))
         .ok_or("Container volume overflow")?;
-    if used > u64::from(definition.container_capacity_ml) {
+    if used > Milliliters::new(u64::from(definition.container_capacity_ml)) {
         return Err(format!(
-            "Container capacity exceeded: {used} ml used of {} ml",
+            "Container capacity exceeded: {} ml used of {} ml",
+            used.get(),
             definition.container_capacity_ml
         ));
     }
@@ -1417,9 +1429,9 @@ pub fn discard_container_water(
     crate::outbreak::take_container_water_contributions(
         ctx,
         container_object_id,
-        Microliters::try_from_milliliters(liquid.water_ml)
+        Microliters::try_from_milliliters(Milliliters::new(liquid.water_ml))
             .map_err(|_| "Container water volume is too large")?,
-        Microliters::try_from_milliliters(requested_ml)
+        Microliters::try_from_milliliters(Milliliters::new(requested_ml))
             .map_err(|_| "Requested water volume is too large")?,
     )?;
     liquid.water_ml -= requested_ml;

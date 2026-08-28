@@ -105,16 +105,36 @@ fn actor_action_weather(
         .current_settlement_id
         .as_ref()
         .and_then(|id| ctx.db.settlement().id().find(id))
-        .map(|settlement| {
-            (
-                (settlement.coord_y * 1_000_000.0).round() as i32,
-                (settlement.coord_x * 1_000_000.0).round() as i32,
+        .and_then(|settlement| {
+            adventuresim_world_schema::coordinates::Wgs84CoordinateMicrodegrees::from_longitude_latitude_degrees(
+                settlement.coord_x,
+                settlement.coord_y,
             )
+            .map(|coordinate| (coordinate.latitude().get(), coordinate.longitude().get()))
         })
         .or_else(|| {
             character_case_site_id(ctx, actor.id)
                 .and_then(|id| ctx.db.case_site_authority().id_key().find(&id))
-                .map(|site| (site.latitude_e7 / 10, site.longitude_e7 / 10))
+                .and_then(|site| {
+                    if site.coordinates_are_geographic {
+                        adventuresim_world_schema::coordinates::Wgs84CoordinateE7::new(
+                            site.latitude_e7,
+                            site.longitude_e7,
+                        )
+                        .map(adventuresim_world_schema::coordinates::Wgs84CoordinateMicrodegrees::from_e7)
+                        .map(|coordinate| {
+                            (coordinate.latitude().get(), coordinate.longitude().get())
+                        })
+                    } else {
+                        use adventuresim_world_schema::coordinates::UnboundedCoordinateE7;
+                        Some((
+                            UnboundedCoordinateE7::from_raw(site.latitude_e7)
+                                .millionths_of_coordinate_unit(),
+                            UnboundedCoordinateE7::from_raw(site.longitude_e7)
+                                .millionths_of_coordinate_unit(),
+                        ))
+                    }
+                })
         })
         .unwrap_or((0, 0));
     let weather = adventuresim_core::weather::weather_at(

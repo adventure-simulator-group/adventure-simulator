@@ -1646,11 +1646,16 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
     let observer_entropy_hi = ctx.random::<u64>();
     let observer_entropy_lo = ctx.random::<u64>();
     let now_minute = crate::time::refresh_clock(ctx)?;
+    let weather_coordinate = adventuresim_world_schema::coordinates::Wgs84CoordinateMicrodegrees::from_longitude_latitude_degrees(
+        settlement.coord_x,
+        settlement.coord_y,
+    )
+    .ok_or("Settlement has invalid WGS84 coordinates")?;
     let incident_weather = adventuresim_core::weather::weather_at(
         adventuresim_core::weather::WORLD_WEATHER_SEED,
         now_minute.saturating_sub(180),
-        (settlement.coord_y * 1_000_000.0).round() as i32,
-        (settlement.coord_x * 1_000_000.0).round() as i32,
+        weather_coordinate.latitude().get(),
+        weather_coordinate.longitude().get(),
         0,
     )
     .precipitation;
@@ -2519,11 +2524,16 @@ pub fn spawn_developer_quest(
             Ok::<_, String>(count + u16::from(validated.context.settlement_id == settlement_id))
         })?;
     let now_minute = crate::time::refresh_clock(ctx)?;
+    let weather_coordinate = adventuresim_world_schema::coordinates::Wgs84CoordinateMicrodegrees::from_longitude_latitude_degrees(
+        settlement.coord_x,
+        settlement.coord_y,
+    )
+    .ok_or("Settlement has invalid WGS84 coordinates")?;
     let incident_weather = adventuresim_core::weather::weather_at(
         adventuresim_core::weather::WORLD_WEATHER_SEED,
         now_minute.saturating_sub(180),
-        (settlement.coord_y * 1_000_000.0).round() as i32,
-        (settlement.coord_x * 1_000_000.0).round() as i32,
+        weather_coordinate.latitude().get(),
+        weather_coordinate.longitude().get(),
         0,
     )
     .precipitation;

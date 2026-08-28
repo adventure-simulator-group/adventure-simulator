@@ -11,7 +11,7 @@ use adventuresim_core::{
     strategic_time::MINUTES_PER_DAY,
     weather::{Precipitation, WEATHER_RULES_VERSION, WeatherSnapshot},
 };
-use adventuresim_world_schema::BASIS_POINTS_PER_WHOLE;
+use adventuresim_world_schema::{BASIS_POINTS_PER_WHOLE, UnitBasisPoints};
 use bevy::prelude::Component;
 use fabelgeist_determinism::{inclusive_unit_f32, splitmix64};
 use serde::{Deserialize, Serialize};
@@ -753,7 +753,7 @@ fn drainage_relief(
     let channel = 1.0 - detail_smoothstep(0.08, 0.34, distance);
     let shoulder =
         detail_smoothstep(0.18, 0.42, distance) * (1.0 - detail_smoothstep(0.42, 0.72, distance));
-    let moisture = f32::from(moisture_bps) / 10_000.0;
+    let moisture = UnitBasisPoints::saturating(moisture_bps).as_unit_f32();
     (-channel * (0.026 + moisture * 0.012) + shoulder * 0.009) * slope_weight
 }
 

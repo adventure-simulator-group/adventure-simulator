@@ -19,7 +19,7 @@ pub(super) fn unit_hash(value: u64) -> f32 {
 }
 
 pub(super) fn bps(value: u16) -> f32 {
-    f32::from(value) / 10_000.0
+    adventuresim_world_schema::UnitBasisPoints::saturating(value).as_unit_f32()
 }
 
 pub(super) fn color_vec4(color: Color) -> Vec4 {

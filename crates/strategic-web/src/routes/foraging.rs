@@ -1,3 +1,4 @@
+use adventuresim_world_schema::coordinates::Wgs84CoordinateMicrodegrees;
 use axum::{
     Router,
     extract::{DefaultBodyLimit, RawForm, State},
@@ -15,7 +16,10 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use super::{AppState, local_return_url, persisted_route_position};
+use super::{
+    AppState, local_return_url, persisted_route_position, wgs84_e7,
+    wgs84_latitude_longitude_degrees,
+};
 use crate::{
     session::Session,
     spacetimedb::{
@@ -244,11 +248,15 @@ async fn vicinity(state: &AppState, character: &Character) -> Result<Vicinity, S
             .await
             .map_err(|error| error.to_string())?
             .ok_or("Current settlement not found")?;
+        let coordinate =
+            Wgs84CoordinateMicrodegrees::from_longitude_latitude_degrees(row.coord_x, row.coord_y)
+                .ok_or("persisted settlement coordinate is outside WGS84 bounds")?;
+        let (longitude, latitude) = coordinate.longitude_latitude_degrees();
         return Ok(Vicinity {
             kind: "settlement".into(),
             id: id.into(),
-            latitude: row.coord_y,
-            longitude: row.coord_x,
+            latitude,
+            longitude,
             settlement: true,
         });
     }
@@ -263,11 +271,14 @@ async fn vicinity(state: &AppState, character: &Character) -> Result<Vicinity, S
             .await
             .map_err(|error| error.to_string())?
             .ok_or("Current case site is not exact")?;
+        let (latitude, longitude) =
+            wgs84_latitude_longitude_degrees(row.latitude_e7, row.longitude_e7)
+                .map_err(str::to_owned)?;
         return Ok(Vicinity {
             kind: "case_site".into(),
             id: id.into(),
-            latitude: f64::from(row.latitude_e7) / 10_000_000.0,
-            longitude: f64::from(row.longitude_e7) / 10_000_000.0,
+            latitude,
+            longitude,
             settlement: false,
         });
     }
@@ -448,10 +459,12 @@ async fn environment(
         settlement: location.settlement,
         license_violation: false,
     };
+    let (latitude_e7, longitude_e7) =
+        wgs84_e7(location.latitude, location.longitude).map_err(str::to_owned)?;
     let attestation = serde_json::to_value(WireForageEnvironmentAttestation {
         package_digest: terrain.digest(),
-        latitude_e_7: (location.latitude * 10_000_000.0).round() as i32,
-        longitude_e_7: (location.longitude * 10_000_000.0).round() as i32,
+        latitude_e_7: latitude_e7,
+        longitude_e_7: longitude_e7,
         context_kind: &location.kind,
         context_id: &location.id,
         plains: mixture.plains,

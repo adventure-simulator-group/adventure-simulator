@@ -530,6 +530,7 @@ fn finite_log_component(value: f32, weight: f64) -> f64 {
 }
 
 pub fn autoresolve_combat_power(combatant: &Combatant) -> u64 {
+    const HEALTH_POWER_SCALE: f64 = 1_000_000.0;
     let attack_check = |equipment: &CombatEquipment, weights: LimbWeights| {
         equipment
             .weapon_skill_distribution()
@@ -637,7 +638,7 @@ pub fn autoresolve_combat_power(combatant: &Combatant) -> u64 {
         // outweigh (but does not erase) its range-of-motion penalties above.
         + finite_log_component(armor, 4_000_000.0)
         + if health.is_finite() {
-            f64::from(health.clamp(0.0, 1.0)) * 1_000_000.0
+            f64::from(health.clamp(0.0, 1.0)) * HEALTH_POWER_SCALE
         } else {
             0.0
         }

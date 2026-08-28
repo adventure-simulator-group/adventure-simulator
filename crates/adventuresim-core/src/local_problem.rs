@@ -3,7 +3,7 @@
 //! Hidden causes stay in the strategic authority.  Consumers receive only the
 //! bounded effects returned by [`aggregate`] and safe public symptoms.
 use crate::{encounter::EncounterArchetype, strategic_time::MINUTES_PER_DAY};
-use adventuresim_world_schema::BASIS_POINTS_PER_WHOLE;
+use adventuresim_world_schema::{BASIS_POINTS_PER_WHOLE, UnitBasisPoints};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -11,6 +11,13 @@ pub const MAX_ACTIVE_PER_SCOPE: usize = 3;
 pub const MAX_TRADE_BPS: i32 = 2_500;
 pub const MAX_ENCOUNTER_BPS: u16 = 2_000;
 pub const MAX_DISEASE_INTENSITY: u16 = 700;
+const DISEASE_INTENSITY_UNITS_PER_EXPOSURE: f32 = 1_000.0;
+
+pub fn mitigated_disease_exposure(intensity: u16, mitigation: UnitBasisPoints) -> f32 {
+    f32::from(intensity) / DISEASE_INTENSITY_UNITS_PER_EXPOSURE
+        * mitigation.complement().as_unit_f32()
+}
+
 /// The initial offence plus four follow-up incidents. This bounded ceiling is
 /// temporary until other adventuring parties can retire neglected cases.
 pub const MAX_INCIDENTS_PER_PROBLEM: u16 = 5;
@@ -576,6 +583,13 @@ impl ReferralPresentation {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn disease_mitigation_uses_the_shared_unit_fraction() {
+        assert_eq!(mitigated_disease_exposure(500, UnitBasisPoints::ZERO), 0.5);
+        assert_eq!(mitigated_disease_exposure(500, UnitBasisPoints::WHOLE), 0.0);
+    }
+
     fn ctx(seed: &str) -> GenerationContext {
         GenerationContext {
             seed: seed.into(),

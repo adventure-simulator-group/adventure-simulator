@@ -4,6 +4,27 @@
 //! implemented yet. This module is the small arithmetic boundary reducers can
 //! adopt when that schema lands.
 
+use std::num::NonZeroU32;
+
+/// A non-zero count of fungible inventory items.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ItemQuantity(NonZeroU32);
+
+impl ItemQuantity {
+    pub const ONE: Self = Self(NonZeroU32::MIN);
+
+    pub const fn new(value: u32) -> Option<Self> {
+        match NonZeroU32::new(value) {
+            Some(value) => Some(Self(value)),
+            None => None,
+        }
+    }
+
+    pub const fn get(self) -> u32 {
+        self.0.get()
+    }
+}
+
 /// One-millionth fixed-point fraction of a whole consumable item.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ConsumableFractionMicros(u32);
@@ -132,7 +153,7 @@ pub struct MeasurementBasis {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MeasuredInventoryRow {
     /// Number of full unopened units, or exactly one for measured state.
-    pub quantity: u32,
+    pub quantity: ItemQuantity,
     /// `None` is a full unopened stack. `Some` is a quantity-one measured row.
     pub remaining_amount: Option<u64>,
     /// Immutable per-object basis. Required whenever measured state exists.
@@ -149,7 +170,6 @@ pub struct EffectiveTotals {
 pub enum MeasurementError {
     ZeroCapacity,
     NonContainerHasTare,
-    ZeroQuantity,
     MeasuredRowIsNotSingleton,
     BulkLotMustBeMeasuredSingleton,
     MissingInstanceBasis,
@@ -194,11 +214,8 @@ impl MeasurementProfile {
         row: MeasuredInventoryRow,
     ) -> Result<EffectiveTotals, MeasurementError> {
         let profile = self.validate()?;
-        if row.quantity == 0 {
-            return Err(MeasurementError::ZeroQuantity);
-        }
         if profile.kind == MeasurementKind::BulkLot
-            && (row.quantity != 1 || row.remaining_amount.is_none())
+            && (row.quantity != ItemQuantity::ONE || row.remaining_amount.is_none())
         {
             return Err(MeasurementError::BulkLotMustBeMeasuredSingleton);
         }
@@ -219,15 +236,15 @@ impl MeasurementProfile {
                     .ok_or(MeasurementError::Overflow)?;
                 Ok(EffectiveTotals {
                     mass: unit_mass
-                        .checked_mul(u64::from(row.quantity))
+                        .checked_mul(u64::from(row.quantity.get()))
                         .ok_or(MeasurementError::Overflow)?,
                     value: unit_value
-                        .checked_mul(u64::from(row.quantity))
+                        .checked_mul(u64::from(row.quantity.get()))
                         .ok_or(MeasurementError::Overflow)?,
                 })
             }
             Some(amount) => {
-                if row.quantity != 1 {
+                if row.quantity != ItemQuantity::ONE {
                     return Err(MeasurementError::MeasuredRowIsNotSingleton);
                 }
                 let basis = row
@@ -425,7 +442,7 @@ mod tests {
 
     fn unopened(quantity: u32) -> MeasuredInventoryRow {
         MeasuredInventoryRow {
-            quantity,
+            quantity: ItemQuantity::new(quantity).expect("test quantity must be positive"),
             remaining_amount: None,
             instance_basis: None,
         }
@@ -433,7 +450,7 @@ mod tests {
 
     fn measured(profile: MeasurementProfile, amount: u64) -> MeasuredInventoryRow {
         MeasuredInventoryRow {
-            quantity: 1,
+            quantity: ItemQuantity::ONE,
             remaining_amount: Some(amount),
             instance_basis: Some(profile.standard_basis),
         }
@@ -518,7 +535,7 @@ mod tests {
         );
         assert_eq!(
             soap().effective_totals(MeasuredInventoryRow {
-                quantity: 2,
+                quantity: ItemQuantity::new(2).unwrap(),
                 remaining_amount: Some(50),
                 instance_basis: Some(soap().standard_basis),
             }),
@@ -528,10 +545,7 @@ mod tests {
             soap().effective_totals(measured(soap(), 101)),
             Err(MeasurementError::AmountExceedsCapacity)
         );
-        assert_eq!(
-            soap().effective_totals(unopened(0)),
-            Err(MeasurementError::ZeroQuantity)
-        );
+        assert!(ItemQuantity::new(0).is_none());
         assert_eq!(prorated_floor(1, 0, 0), Err(MeasurementError::ZeroCapacity));
     }
 
@@ -588,7 +602,7 @@ mod tests {
         };
         let totals = soap()
             .effective_totals(MeasuredInventoryRow {
-                quantity: 1,
+                quantity: ItemQuantity::ONE,
                 remaining_amount: Some(300),
                 instance_basis: Some(derived_basis),
             })
@@ -602,7 +616,7 @@ mod tests {
         );
         assert_eq!(
             soap().effective_totals(MeasuredInventoryRow {
-                quantity: 1,
+                quantity: ItemQuantity::ONE,
                 remaining_amount: Some(50),
                 instance_basis: None,
             }),

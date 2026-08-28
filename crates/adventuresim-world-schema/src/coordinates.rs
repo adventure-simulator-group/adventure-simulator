@@ -1,6 +1,7 @@
 //! Strong coordinate units shared across strategic and tactical systems.
 
 const E7_UNITS_PER_COORDINATE_UNIT: i32 = 10_000_000;
+const MILLIONTHS_PER_COORDINATE_UNIT: i32 = 1_000_000;
 
 /// An E7-scaled coordinate component without WGS84 axis bounds.
 ///
@@ -31,6 +32,10 @@ impl UnboundedCoordinateE7 {
 
     pub fn coordinate_units(self) -> f64 {
         f64::from(self.0) / f64::from(Self::UNITS_PER_COORDINATE_UNIT)
+    }
+
+    pub const fn millionths_of_coordinate_unit(self) -> i32 {
+        self.0 / (Self::UNITS_PER_COORDINATE_UNIT / MILLIONTHS_PER_COORDINATE_UNIT)
     }
 }
 
@@ -243,6 +248,61 @@ impl LongitudeMicrodegrees {
     }
 }
 
+/// A validated WGS84 coordinate stored in millionths of a degree.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Wgs84CoordinateMicrodegrees {
+    latitude: LatitudeMicrodegrees,
+    longitude: LongitudeMicrodegrees,
+}
+
+impl Wgs84CoordinateMicrodegrees {
+    pub const fn new(latitude: i32, longitude: i32) -> Option<Self> {
+        let Some(latitude) = LatitudeMicrodegrees::new(latitude) else {
+            return None;
+        };
+        let Some(longitude) = LongitudeMicrodegrees::new(longitude) else {
+            return None;
+        };
+        Some(Self {
+            latitude,
+            longitude,
+        })
+    }
+
+    pub fn from_longitude_latitude_degrees(longitude: f64, latitude: f64) -> Option<Self> {
+        Some(Self {
+            latitude: LatitudeMicrodegrees::from_degrees(latitude)?,
+            longitude: LongitudeMicrodegrees::from_degrees(longitude)?,
+        })
+    }
+
+    pub const fn from_e7(coordinate: Wgs84CoordinateE7) -> Self {
+        Self {
+            latitude: coordinate.latitude().to_microdegrees(),
+            longitude: coordinate.longitude().to_microdegrees(),
+        }
+    }
+
+    pub const fn latitude(self) -> LatitudeMicrodegrees {
+        self.latitude
+    }
+
+    pub const fn longitude(self) -> LongitudeMicrodegrees {
+        self.longitude
+    }
+
+    pub const fn to_e7(self) -> Wgs84CoordinateE7 {
+        Wgs84CoordinateE7 {
+            latitude: self.latitude.to_e7(),
+            longitude: self.longitude.to_e7(),
+        }
+    }
+
+    pub fn longitude_latitude_degrees(self) -> (f64, f64) {
+        (self.longitude.degrees(), self.latitude.degrees())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -278,6 +338,7 @@ mod tests {
 
         assert_eq!(coordinate.raw(), 1_501_250_000);
         assert_eq!(coordinate.coordinate_units(), 150.125);
+        assert_eq!(coordinate.millionths_of_coordinate_unit(), 150_125_000);
     }
 
     #[test]
@@ -360,6 +421,18 @@ mod tests {
         assert_eq!(negative.to_microdegrees().get(), -10_000_000);
         assert_eq!(positive.to_microdegrees().to_e7().get(), 535_000_000);
         assert_eq!(negative.to_microdegrees().to_e7().get(), -100_000_000);
+    }
+
+    #[test]
+    fn coordinate_pairs_round_trip_between_e7_and_microdegrees() {
+        let e7 = Wgs84CoordinateE7::new(535_000_009, 100_000_009).unwrap();
+        let microdegrees = Wgs84CoordinateMicrodegrees::from_e7(e7);
+
+        assert_eq!(microdegrees.latitude().get(), 53_500_000);
+        assert_eq!(microdegrees.longitude().get(), 10_000_000);
+        assert_eq!(microdegrees.to_e7().latitude().get(), 535_000_000);
+        assert_eq!(microdegrees.to_e7().longitude().get(), 100_000_000);
+        assert!(Wgs84CoordinateMicrodegrees::new(90_000_001, 0).is_none());
     }
 
     #[test]

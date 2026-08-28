@@ -53,7 +53,7 @@ pub(in crate::presentation) fn refresh_active_tactical_scene(
 /// transmittance and visible-disc calculation prevent this source from lighting
 /// ground surfaces from below the planet horizon.
 pub(super) fn scene_atmosphere_solar_illuminance(environment: &SceneEnvironment) -> f32 {
-    let intensity = f32::from(environment.weather.intensity_bps) / 10_000.0;
+    let intensity = bps(environment.weather.intensity_bps);
     let precipitation_transmission = match environment.weather.precipitation {
         Precipitation::Clear => 1.0,
         Precipitation::Rain => 0.62 - intensity * 0.27,
@@ -67,15 +67,15 @@ pub(super) fn cloud_solar_transmission(weather: WeatherSnapshot) -> f32 {
     weather
         .cloud_layers()
         .fold(1.0, |transmission, layer| {
-            let coverage = f32::from(layer.coverage_bps) / 10_000.0;
-            let density = f32::from(layer.optical_density_bps) / 10_000.0;
+            let coverage = bps(layer.coverage_bps);
+            let density = bps(layer.optical_density_bps);
             transmission * (1.0 - coverage * density * 0.82)
         })
         .clamp(0.12, 1.0)
 }
 
 pub(super) fn scene_distance_fog(environment: &SceneEnvironment) -> DistanceFog {
-    let intensity = f32::from(environment.weather.intensity_bps) / 10_000.0;
+    let intensity = bps(environment.weather.intensity_bps);
     let humidity = ((f32::from(environment.weather.atmosphere.relative_humidity_bps) - 7_000.0)
         / 3_000.0)
         .clamp(0.0, 1.0);

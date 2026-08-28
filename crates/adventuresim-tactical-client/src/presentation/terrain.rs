@@ -30,8 +30,8 @@ pub(super) fn scene_ground_color(environment: &SceneEnvironment) -> Color {
     } else {
         TACTICAL_DIRT_SRGB.map(f32::from)
     };
-    let snow = f32::from(environment.weather.snow_cover_bps) / 10_000.0;
-    let wet = f32::from(environment.weather.ground_moisture_bps) / 10_000.0;
+    let snow = bps(environment.weather.snow_cover_bps);
+    let wet = bps(environment.weather.ground_moisture_bps);
     for channel in &mut rgb {
         *channel *= 1.0 - wet * 0.22;
         *channel = *channel * (1.0 - snow) + 220.0 * snow;
@@ -561,7 +561,7 @@ fn drainage_relief(
     let channel = 1.0 - terrain_smoothstep(0.08, 0.34, distance);
     let shoulder =
         terrain_smoothstep(0.18, 0.42, distance) * (1.0 - terrain_smoothstep(0.42, 0.72, distance));
-    let moisture = f32::from(environment.weather.ground_moisture_bps) / 10_000.0;
+    let moisture = bps(environment.weather.ground_moisture_bps);
     (-channel * (0.026 + moisture * 0.012) + shoulder * 0.009) * slope_weight
 }
 
@@ -877,7 +877,8 @@ fn ground_surface_pixel(sample: GroundSurface) -> [u8; 4] {
     [
         cover,
         substrate,
-        (u32::from(sample.cover_density_bps) * 255 / 10_000) as u8,
+        adventuresim_world_schema::UnitBasisPoints::saturating(sample.cover_density_bps)
+            .scale_u32_floor(255) as u8,
         sample.cover_height_cm.min(255) as u8,
     ]
 }

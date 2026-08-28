@@ -89,7 +89,7 @@ fn party_encumbrance_remaining_basis_points(
     ctx: &ReducerContext,
     party_id: &str,
     member_ids: &[u64],
-) -> u32 {
+) -> Result<u32, String> {
     let personal_burden: f32 = member_ids
         .iter()
         .flat_map(|member_id| ctx.db.inventory_item().character_id().filter(*member_id))
@@ -152,21 +152,28 @@ fn party_encumbrance_remaining_basis_points(
     let body_burden: f32 = member_ids
         .iter()
         .map(|member_id| {
-            ctx.db
+            let condition = ctx
+                .db
                 .character_condition()
                 .character_id()
                 .find(*member_id)
-                .map_or(70.0, |condition| {
-                    sanitized_encounter_body_weight(condition.body_weight_kg)
-                })
+                .ok_or_else(|| format!("Character {member_id} has no body-mass authority"))?;
+            adventuresim_core::physiology::BodyMassKg::try_new(condition.body_weight_kg)
+                .map(adventuresim_core::physiology::BodyMassKg::kilograms)
+                .map_err(|_| format!("Character {member_id} has invalid body-mass authority"))
         })
+        .collect::<Result<Vec<_>, String>>()?
+        .into_iter()
         .sum();
     let remaining = adventuresim_core::equipment::encumbrance_remaining_multiplier(
         body_burden + personal_burden + party_burden,
         capacity,
     );
-    (remaining.clamp(0.0, 1.0) * f32::from(adventuresim_world_schema::BASIS_POINTS_PER_WHOLE))
-        .round() as u32
+    Ok(u32::from(
+        adventuresim_world_schema::UnitBasisPoints::from_unit_f32(remaining.clamp(0.0, 1.0))
+            .expect("clamped encumbrance multiplier is a unit fraction")
+            .get(),
+    ))
 }
 
 fn carrying_capacity_multiplier_for_condition(
@@ -176,14 +183,6 @@ fn carrying_capacity_multiplier_for_condition(
         adventuresim_core::morale::IncapacitationStatus::Ready => 1.0,
         adventuresim_core::morale::IncapacitationStatus::Staggered => 0.5,
         adventuresim_core::morale::IncapacitationStatus::Incapacitated => 0.0,
-    }
-}
-
-fn sanitized_encounter_body_weight(weight_kg: f32) -> f32 {
-    if weight_kg.is_finite() && (20.0..=300.0).contains(&weight_kg) {
-        weight_kg
-    } else {
-        70.0
     }
 }
 
@@ -281,7 +280,7 @@ pub(crate) fn build_strategic_encounter(
     let terrain = core_encounter_terrain(terrain_kind);
     let party_speed = adventuresim_core::encounter::sustainable_speed_m_per_minute(
         fatigue_percent,
-        party_encumbrance_remaining_basis_points(ctx, party_id, &member_ids),
+        party_encumbrance_remaining_basis_points(ctx, party_id, &member_ids)?,
         member_ids.len().min(u16::MAX as usize) as u16,
         terrain,
     );
@@ -701,7 +700,7 @@ fn commit_encounter_scan(
     encounter.party_speed_m_per_minute =
         adventuresim_core::encounter::sustainable_speed_m_per_minute(
             current_party_fatigue_percent(ctx, &member_ids),
-            party_encumbrance_remaining_basis_points(ctx, party_id, &member_ids),
+            party_encumbrance_remaining_basis_points(ctx, party_id, &member_ids)?,
             member_ids.len().min(u16::MAX as usize) as u16,
             terrain,
         );

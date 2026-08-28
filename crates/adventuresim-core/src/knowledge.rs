@@ -4,7 +4,7 @@
 //! grants no disclosure authority, performs no inference, and has no wire or
 //! persistence format.
 
-use adventuresim_world_schema::BASIS_POINTS_PER_WHOLE;
+use adventuresim_world_schema::UnitBasisPoints;
 use std::{fmt, num::NonZeroU64};
 
 use crate::{
@@ -72,23 +72,21 @@ impl KnowledgeRevision {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct KnowledgeConfidence(u16);
+pub struct KnowledgeConfidence(UnitBasisPoints);
 
 impl KnowledgeConfidence {
     pub fn try_new(basis_points: u16) -> Result<Self, KnowledgeError> {
-        if basis_points > BASIS_POINTS_PER_WHOLE {
-            Err(KnowledgeError::ConfidenceOutOfRange)
-        } else {
-            Ok(Self(basis_points))
-        }
+        UnitBasisPoints::new(basis_points)
+            .map(Self)
+            .ok_or(KnowledgeError::ConfidenceOutOfRange)
     }
 
     pub const fn basis_points(self) -> u16 {
-        self.0
+        self.0.get()
     }
 
     pub const fn public_band(self) -> ConfidenceBand {
-        match self.0 {
+        match self.0.get() {
             0..=3_333 => ConfidenceBand::Weak,
             3_334..=6_666 => ConfidenceBand::Plausible,
             _ => ConfidenceBand::Strong,

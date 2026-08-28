@@ -8,7 +8,9 @@ use crate::bestiary::{
     CandidateScore, EvidenceKind, ObservationDistance, ObservationVisibility, RegionalContext,
     ReportDescription, WitnessCapability, rank_candidates_in_region,
 };
+#[cfg(test)]
 use adventuresim_world_schema::BASIS_POINTS_PER_WHOLE;
+use adventuresim_world_schema::UnitBasisPoints;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -275,33 +277,33 @@ mod evidence_knowledge_adapter_tests {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-pub struct BasisPoints(u16);
+pub struct BasisPoints(UnitBasisPoints);
 impl BasisPoints {
-    pub const FULL: Self = Self(BASIS_POINTS_PER_WHOLE);
+    pub const FULL: Self = Self(UnitBasisPoints::WHOLE);
 
     pub fn new(value: u16) -> Result<Self, ValidationError> {
-        (value <= BASIS_POINTS_PER_WHOLE)
-            .then_some(Self(value))
+        UnitBasisPoints::new(value)
+            .map(Self)
             .ok_or(ValidationError::OutOfRange)
     }
+    const fn valid(value: u16) -> Self {
+        match UnitBasisPoints::new(value) {
+            Some(value) => Self(value),
+            None => panic!("basis-point constant exceeds one whole"),
+        }
+    }
     pub const fn get(self) -> u16 {
-        self.0
+        self.0.get()
     }
 
     fn scaled(self, factor: Self) -> Self {
-        Self(
-            ((u32::from(self.0) * u32::from(factor.0)) / u32::from(BASIS_POINTS_PER_WHOLE))
-                .min(u32::from(BASIS_POINTS_PER_WHOLE)) as u16,
-        )
+        Self(UnitBasisPoints::saturating(
+            self.0.scale_u32_floor(u32::from(factor.get())) as u16,
+        ))
     }
 
     fn from_ratio(numerator: u64, denominator: u64) -> Self {
-        let value = numerator
-            .saturating_mul(u64::from(BASIS_POINTS_PER_WHOLE))
-            .checked_div(denominator)
-            .unwrap_or(0)
-            .min(u64::from(BASIS_POINTS_PER_WHOLE));
-        Self(value as u16)
+        Self(UnitBasisPoints::from_ratio_floor(numerator, denominator).unwrap_or_default())
     }
 }
 
@@ -392,9 +394,9 @@ pub enum PerceptionCondition {
 impl PerceptionCondition {
     const fn confidence(self) -> BasisPoints {
         match self {
-            Self::Clear => BasisPoints(9_000),
-            Self::Darkness => BasisPoints(4_500),
-            Self::PoorPerception => BasisPoints(3_500),
+            Self::Clear => BasisPoints::valid(9_000),
+            Self::Darkness => BasisPoints::valid(4_500),
+            Self::PoorPerception => BasisPoints::valid(3_500),
         }
     }
 }
@@ -407,9 +409,9 @@ pub enum MemoryCondition {
 impl MemoryCondition {
     const fn retention(self) -> BasisPoints {
         match self {
-            Self::Accurate => BasisPoints(9_500),
-            Self::Faded => BasisPoints(6_500),
-            Self::Confused => BasisPoints(4_000),
+            Self::Accurate => BasisPoints::valid(9_500),
+            Self::Faded => BasisPoints::valid(6_500),
+            Self::Confused => BasisPoints::valid(4_000),
         }
     }
 }
@@ -429,9 +431,9 @@ pub enum TransmissionCondition {
 impl TransmissionCondition {
     const fn fidelity(self) -> BasisPoints {
         match self {
-            Self::Clear => BasisPoints(9_500),
-            Self::PoorTranslation => BasisPoints(6_000),
-            Self::Hearsay => BasisPoints(5_000),
+            Self::Clear => BasisPoints::valid(9_500),
+            Self::PoorTranslation => BasisPoints::valid(6_000),
+            Self::Hearsay => BasisPoints::valid(5_000),
         }
     }
 }
@@ -715,8 +717,8 @@ pub enum DeductionSupport {
 }
 
 impl DeductionSupport {
-    const STRONG_MINIMUM: BasisPoints = BasisPoints(7_500);
-    const PLAUSIBLE_MINIMUM: BasisPoints = BasisPoints(3_000);
+    const STRONG_MINIMUM: BasisPoints = BasisPoints::valid(7_500);
+    const PLAUSIBLE_MINIMUM: BasisPoints = BasisPoints::valid(3_000);
 
     fn from_score_ratio(score: u64, top_score: u64) -> Self {
         let relative_score = BasisPoints::from_ratio(score, top_score);

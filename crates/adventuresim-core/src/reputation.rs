@@ -266,7 +266,10 @@ mod tests {
         let values = contributions("a", 10_000, 0, &settlements, &edges);
         let local = values[0].fame;
         let spill: i32 = values.iter().skip(1).map(|value| value.fame).sum();
-        assert!(spill <= (i64::from(local) * SPILL_BUDGET_BPS / 10_000) as i32);
+        assert!(
+            spill
+                <= (i64::from(local) * SPILL_BUDGET_BPS / i64::from(BASIS_POINTS_PER_WHOLE)) as i32
+        );
         assert_eq!(values.len(), 3);
         assert_eq!(values, contributions("a", 10_000, 0, &settlements, &edges));
     }
@@ -307,7 +310,10 @@ mod tests {
         );
         let local = values[0].fame;
         let spill: i32 = values.iter().skip(1).map(|value| value.fame).sum();
-        assert!(spill <= (i64::from(local) * SPILL_BUDGET_BPS / 10_000) as i32);
+        assert!(
+            spill
+                <= (i64::from(local) * SPILL_BUDGET_BPS / i64::from(BASIS_POINTS_PER_WHOLE)) as i32
+        );
     }
 
     #[test]

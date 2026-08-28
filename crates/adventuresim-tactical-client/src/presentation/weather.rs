@@ -197,8 +197,8 @@ fn weather_material(
     TacticalWeatherMaterial {
         weather: Vec4::new(
             kind,
-            f32::from(environment.weather.intensity_bps) / 10_000.0,
-            f32::from(environment.weather.wind_speed_bps) / 10_000.0,
+            bps(environment.weather.intensity_bps),
+            bps(environment.weather.wind_speed_bps),
             seed,
         ),
         motion: Vec4::new(bearing.sin(), -bearing.cos(), radius, 24.0),

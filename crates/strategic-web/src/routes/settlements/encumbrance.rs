@@ -162,7 +162,11 @@ pub(super) fn personal_encumbrance(
         .conditions
         .iter()
         .find(|row| row.character_id == character_id)
-        .map_or(0.0, |row| row.body_weight_kg.max(0.0));
+        .map_or(0.0, |row| {
+            adventuresim_core::physiology::BodyMassKg::try_new(row.body_weight_kg)
+                .expect("persisted character body mass must be valid")
+                .kilograms()
+        });
     let water_weight = adventuresim_core::physical_object::OperationalCustody::character(
         character_id,
     )

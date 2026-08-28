@@ -47,13 +47,17 @@ fn authoritative_straight_line_case_route(
             longitude_e7: destination.longitude_e7,
         },
     ];
-    let e7_to_microdegrees =
-        |value| value / (LatitudeE7::UNITS_PER_DEGREE / LatitudeMicrodegrees::UNITS_PER_DEGREE);
+    let origin_microdegrees = adventuresim_world_schema::coordinates::Wgs84CoordinateE7::new(
+        points[0].latitude_e7,
+        points[0].longitude_e7,
+    )
+    .map(adventuresim_world_schema::coordinates::Wgs84CoordinateMicrodegrees::from_e7)
+    .ok_or("Journey origin is not a valid WGS84 coordinate")?;
     let weather = adventuresim_core::weather::weather_at(
         adventuresim_core::weather::WORLD_WEATHER_SEED,
         departure_minute,
-        e7_to_microdegrees(points[0].latitude_e7),
-        e7_to_microdegrees(points[0].longitude_e7),
+        origin_microdegrees.latitude().get(),
+        origin_microdegrees.longitude().get(),
         0,
     );
     let precipitation = match weather.precipitation {

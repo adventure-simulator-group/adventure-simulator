@@ -13,6 +13,7 @@ use adventuresim_core::{
     },
     strategic_place::StrategicPlaceId,
 };
+use adventuresim_world_schema::coordinates::Wgs84CoordinateE7;
 use sha2::{Digest, Sha256};
 use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view};
 
@@ -326,13 +327,16 @@ fn expected_location(
             .id()
             .find(settlement_id.to_owned())
             .ok_or("Character settlement not found")?;
+        let coordinate =
+            Wgs84CoordinateE7::from_longitude_latitude_degrees(location.coord_x, location.coord_y)
+                .ok_or("Character settlement has invalid WGS84 coordinates")?;
         return Ok(ForageVicinityAuthority {
             place: StrategicPlaceId::settlement(settlement_id)
                 .map_err(|_| "Settlement has an invalid canonical identity")?,
             context_kind: "settlement".into(),
             context_id: settlement_id.into(),
-            latitude_e7: (location.coord_y * 10_000_000.0).round() as i32,
-            longitude_e7: (location.coord_x * 10_000_000.0).round() as i32,
+            latitude_e7: coordinate.latitude().get(),
+            longitude_e7: coordinate.longitude().get(),
             settlement: true,
         });
     }
@@ -391,12 +395,14 @@ fn expected_location(
     let (longitude, latitude) =
         route_position_at_minute(&route, journey.completed_movement_minutes)
             .ok_or("Camp location is unavailable")?;
+    let coordinate = Wgs84CoordinateE7::from_longitude_latitude_degrees(longitude, latitude)
+        .ok_or("Camp location has invalid WGS84 coordinates")?;
     Ok(ForageVicinityAuthority {
         place: crate::strategic::current_journey_camp_place(ctx, party_id)?,
         context_kind: "camp".into(),
         context_id: party_id.into(),
-        latitude_e7: (latitude * 10_000_000.0).round() as i32,
-        longitude_e7: (longitude * 10_000_000.0).round() as i32,
+        latitude_e7: coordinate.latitude().get(),
+        longitude_e7: coordinate.longitude().get(),
         settlement: false,
     })
 }

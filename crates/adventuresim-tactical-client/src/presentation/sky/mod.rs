@@ -748,7 +748,7 @@ pub(super) fn to_bevy_direction(east_up_north: [f32; 3]) -> Vec3 {
 }
 
 fn sky_weather_transmission(environment: &SceneEnvironment) -> f32 {
-    let intensity = f32::from(environment.weather.intensity_bps) / 10_000.0;
+    let intensity = crate::presentation::procedural::bps(environment.weather.intensity_bps);
     let precipitation = match environment.weather.precipitation {
         Precipitation::Clear => 1.0,
         Precipitation::Rain => 0.12 * (1.0 - intensity * 0.7),

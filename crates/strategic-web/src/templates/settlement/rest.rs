@@ -418,7 +418,7 @@ mod tests {
     fn rest_recommendation_includes_blood_recovery() {
         let condition = CharacterCondition {
             character_id: 1,
-            body_weight_kg: 70.0,
+            body_weight_kg: adventuresim_core::physiology::BodyMassKg::DEFAULT.kilograms(),
             current_blood_ml: 4_900.0,
             maximum_blood_ml: 5_000.0,
             religion_id: None,
