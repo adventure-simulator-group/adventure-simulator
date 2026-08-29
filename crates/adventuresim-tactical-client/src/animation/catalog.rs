@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use adventuresim_tactical_core::prelude::*;
 use bevy::prelude::*;
 
-use super::HUMANOID_UNARMED_PACK;
+use super::{HUMANOID_2H_CLOSE_PACK, HUMANOID_UNARMED_PACK};
 
 /// Explicit code-owned file/frame catalog. Semantic ownership never depends on
 /// glTF animation names or scene contents.
@@ -147,6 +147,32 @@ impl PackBuilder {
     }
 }
 
+fn add_attack_motions(builder: &mut PackBuilder) -> Result<(), CatalogError> {
+    builder.variable_motion("swing", 4, 12);
+    for (frame, pose) in [
+        (0, SemanticPose::GuardSwing),
+        (4, SemanticPose::AttackSwing),
+        (8, SemanticPose::RecoverSwing),
+        (12, SemanticPose::ContinueSwing),
+    ] {
+        builder.pose("swing", frame, pose)?;
+    }
+    builder.variable_motion("thrust", 4, 12);
+    for (frame, pose) in [
+        (0, SemanticPose::GuardThrust),
+        (4, SemanticPose::AttackThrust),
+        (8, SemanticPose::RecoverThrust),
+        (12, SemanticPose::ContinueThrust),
+    ] {
+        builder.pose("thrust", frame, pose)?;
+    }
+    builder.variable_motion("offhand", 0, 4);
+    builder.pose("offhand", 0, SemanticPose::GuardOffhand)?;
+    builder.pose("offhand", 0, SemanticPose::AttackOffhand)?;
+    builder.pose("offhand", 4, SemanticPose::AttackOffhandPrepared)?;
+    Ok(())
+}
+
 impl AnimationPackCatalog {
     pub(super) fn biped_root() -> Result<Self, CatalogError> {
         let mut builder = PackBuilder::new(
@@ -247,28 +273,7 @@ impl AnimationPackCatalog {
             builder.motion(motion, 0);
             builder.pose(motion, 0, pose)?;
         }
-        builder.variable_motion("swing", 4, 12);
-        for (frame, pose) in [
-            (0, SemanticPose::GuardSwing),
-            (4, SemanticPose::AttackSwing),
-            (8, SemanticPose::RecoverSwing),
-            (12, SemanticPose::ContinueSwing),
-        ] {
-            builder.pose("swing", frame, pose)?;
-        }
-        builder.variable_motion("thrust", 4, 12);
-        for (frame, pose) in [
-            (0, SemanticPose::GuardThrust),
-            (4, SemanticPose::AttackThrust),
-            (8, SemanticPose::RecoverThrust),
-            (12, SemanticPose::ContinueThrust),
-        ] {
-            builder.pose("thrust", frame, pose)?;
-        }
-        builder.variable_motion("offhand", 0, 4);
-        builder.pose("offhand", 0, SemanticPose::GuardOffhand)?;
-        builder.pose("offhand", 0, SemanticPose::AttackOffhand)?;
-        builder.pose("offhand", 4, SemanticPose::AttackOffhandPrepared)?;
+        add_attack_motions(&mut builder)?;
         for (motion, pose) in [
             ("prone_transition", "prone_transition"),
             ("prone_supine_roll_left", "prone_supine_roll_left"),
@@ -283,6 +288,14 @@ impl AnimationPackCatalog {
             )?;
         }
         let (id, pack) = builder.finish();
+        let mut two_handed = PackBuilder::new(
+            HUMANOID_2H_CLOSE_PACK,
+            "humanoid",
+            Some(HUMANOID_UNARMED_PACK),
+            "animations/biped/2h_close",
+        );
+        add_attack_motions(&mut two_handed)?;
+        let (two_handed_id, two_handed_pack) = two_handed.finish();
         let mut library = AnimationPackLibrary::default();
         library
             .insert(AnimationPack {
@@ -293,10 +306,18 @@ impl AnimationPackCatalog {
             })
             .map_err(CatalogError::InvalidPack)?;
         library
+            .insert(AnimationPack {
+                id: two_handed_id.clone(),
+                skeleton_family: two_handed_pack.skeleton_family.clone(),
+                fallback: two_handed_pack.fallback.clone(),
+                clips: two_handed_pack.poses.keys().copied().collect(),
+            })
+            .map_err(CatalogError::InvalidPack)?;
+        library
             .validate_complete(&id)
             .map_err(CatalogError::InvalidPack)?;
         Ok(Self {
-            packs: BTreeMap::from([(id, pack)]),
+            packs: BTreeMap::from([(id, pack), (two_handed_id, two_handed_pack)]),
         })
     }
 }

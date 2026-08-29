@@ -254,6 +254,8 @@ fn validate_item(
             "kind",
             "slot",
             "carry",
+            "handling",
+            "animation_pack",
             "block",
             "coverage",
             "resistance",
@@ -391,6 +393,13 @@ fn validate_item(
             errors.push(format!(
                 "{file}: {path}.carry: field is only valid for weapon"
             ));
+        }
+        for field in ["handling", "animation_pack"] {
+            if item.contains_key(field) {
+                errors.push(format!(
+                    "{file}: {path}.{field}: field is only valid for weapon"
+                ));
+            }
         }
         for field in [
             "accuracy",
@@ -1183,6 +1192,21 @@ fn contiguous_regions(proximal: &str, distal: &str) -> bool {
 }
 
 fn validate_weapon(item: &Map<String, Value>, file: &str, path: &str, errors: &mut Vec<String>) {
+    if !matches!(
+        item.get("handling").and_then(Value::as_str),
+        Some("one_handed" | "two_handed")
+    ) {
+        errors.push(format!(
+            "{file}: {path}.handling: expected one_handed or two_handed"
+        ));
+    }
+    if let Some(pack) = item.get("animation_pack")
+        && pack.as_str().is_none_or(|pack| !valid_id(pack))
+    {
+        errors.push(format!(
+            "{file}: {path}.animation_pack: must be a safe lowercase animation pack ID"
+        ));
+    }
     for field in [
         "accuracy",
         "reach_m",

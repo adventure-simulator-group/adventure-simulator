@@ -302,6 +302,7 @@
         "icon": "broadsword"
       },
       "kind": "weapon",
+      "handling": "one_handed",
       "slot": "any_holding",
       "carry": "sheathable",
       "equipment": {"physical": {"dimensions_m": [0.09, 1.00, 0.04], "grip_to_tip_m": 0.90, "anchor_offset_m": [0.0, -0.10, 0.0]}, "attachment_tags": ["weapon", "sheathable_weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
@@ -425,6 +426,7 @@
         "icon": "broad-dagger"
       },
       "kind": "weapon",
+      "handling": "one_handed",
       "slot": "any_holding",
       "carry": "sheathable",
       "equipment": {"physical": {"dimensions_m": [0.07, 0.55, 0.035], "grip_to_tip_m": 0.45, "anchor_offset_m": [0.0, -0.10, 0.0]}, "attachment_tags": ["weapon", "sheathable_weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
@@ -472,6 +474,7 @@
         "icon": "bowie-knife"
       },
       "kind": "weapon",
+      "handling": "one_handed",
       "slot": "any_holding",
       "carry": "sheathable",
       "equipment": {"physical": {"dimensions_m": [0.08, 0.65, 0.04], "grip_to_tip_m": 0.55, "anchor_offset_m": [0.0, -0.10, 0.0]}, "attachment_tags": ["weapon", "sheathable_weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
@@ -783,6 +786,7 @@
         "icon": "wood-club"
       },
       "kind": "weapon",
+      "handling": "one_handed",
       "slot": "any_holding",
       "carry": "sheathable",
       "equipment": {"physical": {"dimensions_m": [0.10, 0.75, 0.10], "grip_to_tip_m": 0.62, "anchor_offset_m": [0.0, -0.13, 0.0]}, "attachment_tags": ["weapon", "sheathable_weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
@@ -1044,6 +1048,7 @@
         "icon": "flanged-mace"
       },
       "kind": "weapon",
+      "handling": "one_handed",
       "slot": "any_holding",
       "carry": "sheathable",
       "equipment": {"physical": {"dimensions_m": [0.12, 0.72, 0.10], "grip_to_tip_m": 0.58, "anchor_offset_m": [0.0, -0.14, 0.0]}, "attachment_tags": ["weapon", "sheathable_weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
@@ -1173,6 +1178,7 @@
         "icon": "halberd"
       },
       "kind": "weapon",
+      "handling": "two_handed",
       "slot": "any_holding",
       "carry": "hand_only",
       "equipment": {"physical": {"dimensions_m": [0.16, 2.10, 0.08], "grip_to_tip_m": 1.90, "anchor_offset_m": [0.0, -0.20, 0.0]}, "attachment_tags": ["weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}]},
@@ -1237,6 +1243,7 @@
         "icon": "wood-axe"
       },
       "kind": "weapon",
+      "handling": "one_handed",
       "slot": "any_holding",
       "carry": "sheathable",
       "equipment": {"physical": {"dimensions_m": [0.22, 0.60, 0.07], "grip_to_tip_m": 0.48, "anchor_offset_m": [0.0, -0.12, 0.0]}, "attachment_tags": ["weapon", "sheathable_weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
@@ -1342,6 +1349,7 @@
         "icon": "crossbow"
       },
       "kind": "weapon",
+      "handling": "two_handed",
       "slot": "any_holding",
       "carry": "hand_only",
       "equipment": {"physical": {"dimensions_m": [0.80, 0.95, 0.14], "grip_to_tip_m": 0.65, "anchor_offset_m": [0.0, -0.25, 0.0]}, "attachment_tags": ["weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}]},
@@ -1434,6 +1442,7 @@
         "icon": "rifle"
       },
       "kind": "weapon",
+      "handling": "two_handed",
       "slot": "any_holding",
       "carry": "hand_only",
       "equipment": {"physical": {"dimensions_m": [0.12, 1.35, 0.12], "grip_to_tip_m": 1.05, "anchor_offset_m": [0.0, -0.30, 0.0]}, "attachment_tags": ["weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}]},
@@ -1513,6 +1522,7 @@
         "icon": "spear-hook"
       },
       "kind": "weapon",
+      "handling": "two_handed",
       "slot": "any_holding",
       "carry": "hand_only",
       "equipment": {"physical": {"dimensions_m": [0.08, 1.90, 0.08], "grip_to_tip_m": 1.65, "anchor_offset_m": [0.0, -0.25, 0.0]}, "attachment_tags": ["weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}]},
@@ -1599,6 +1609,7 @@
         "icon": "sword-hilt"
       },
       "kind": "weapon",
+      "handling": "one_handed",
       "slot": "any_holding",
       "carry": "sheathable",
       "equipment": {"physical": {"dimensions_m": [0.10, 0.78, 0.05], "grip_to_tip_m": 0.64, "anchor_offset_m": [0.0, -0.14, 0.0]}, "attachment_tags": ["weapon", "sheathable_weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
@@ -1687,6 +1698,7 @@
         "icon": "relic-blade"
       },
       "kind": "weapon",
+      "handling": "two_handed",
       "slot": "any_holding",
       "carry": "sheathable",
       "equipment": {"physical": {"dimensions_m": [0.11, 1.15, 0.05], "grip_to_tip_m": 0.95, "anchor_offset_m": [0.0, -0.20, 0.0]}, "attachment_tags": ["weapon", "sheathable_weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
@@ -1764,6 +1776,7 @@
         "icon": "crossbow"
       },
       "kind": "weapon",
+      "handling": "two_handed",
       "slot": "any_holding",
       "carry": "hand_only",
       "equipment": {"physical": {"dimensions_m": [0.70, 0.80, 0.12], "grip_to_tip_m": 0.58, "anchor_offset_m": [0.0, -0.22, 0.0]}, "attachment_tags": ["weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}]},
@@ -1896,6 +1909,7 @@
         "icon": "bow-arrow"
       },
       "kind": "weapon",
+      "handling": "two_handed",
       "slot": "any_holding",
       "carry": "hand_only",
       "equipment": {"physical": {"dimensions_m": [0.06, 1.75, 0.10], "grip_to_tip_m": 0.85, "anchor_offset_m": [0.0, 0.0, 0.0]}, "attachment_tags": ["weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}]},
@@ -1941,6 +1955,8 @@
         "icon": "ancient-sword"
       },
       "kind": "weapon",
+      "handling": "two_handed",
+      "animation_pack": "humanoid_2h_close",
       "slot": "any_holding",
       "carry": "sheathable",
       "equipment": {"physical": {"dimensions_m": [0.10, 1.20, 0.05], "grip_to_tip_m": 1.00, "anchor_offset_m": [0.0, -0.20, 0.0]}, "attachment_tags": ["weapon", "sheathable_weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
@@ -2223,6 +2239,7 @@
         "icon": "musket"
       },
       "kind": "weapon",
+      "handling": "two_handed",
       "slot": "any_holding",
       "carry": "hand_only",
       "equipment": {"physical": {"dimensions_m": [0.12, 1.40, 0.12], "grip_to_tip_m": 1.10, "anchor_offset_m": [0.0, -0.30, 0.0]}, "attachment_tags": ["weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}]},
@@ -2308,6 +2325,7 @@
         "icon": "saber-slash"
       },
       "kind": "weapon",
+      "handling": "one_handed",
       "slot": "any_holding",
       "carry": "sheathable",
       "equipment": {"physical": {"dimensions_m": [0.09, 0.72, 0.04], "grip_to_tip_m": 0.58, "anchor_offset_m": [0.0, -0.14, 0.0]}, "attachment_tags": ["weapon", "sheathable_weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
@@ -2354,6 +2372,7 @@
         "icon": "spears"
       },
       "kind": "weapon",
+      "handling": "two_handed",
       "slot": "any_holding",
       "carry": "hand_only",
       "equipment": {"physical": {"dimensions_m": [0.08, 3.20, 0.08], "grip_to_tip_m": 2.80, "anchor_offset_m": [0.0, -0.40, 0.0]}, "attachment_tags": ["weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}]},
@@ -2399,6 +2418,7 @@
         "icon": "stiletto"
       },
       "kind": "weapon",
+      "handling": "one_handed",
       "slot": "any_holding",
       "carry": "sheathable",
       "equipment": {"physical": {"dimensions_m": [0.06, 0.42, 0.03], "grip_to_tip_m": 0.34, "anchor_offset_m": [0.0, -0.08, 0.0]}, "attachment_tags": ["weapon", "sheathable_weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
@@ -2746,6 +2766,7 @@
         "icon": "piercing-sword"
       },
       "kind": "weapon",
+      "handling": "one_handed",
       "slot": "any_holding",
       "carry": "sheathable",
       "equipment": {"physical": {"dimensions_m": [0.08, 1.10, 0.04], "grip_to_tip_m": 0.92, "anchor_offset_m": [0.0, -0.18, 0.0]}, "attachment_tags": ["weapon", "sheathable_weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
@@ -2942,6 +2963,7 @@
         "icon": "daggers"
       },
       "kind": "weapon",
+      "handling": "one_handed",
       "slot": "any_holding",
       "carry": "sheathable",
       "equipment": {"physical": {"dimensions_m": [0.07, 0.45, 0.035], "grip_to_tip_m": 0.36, "anchor_offset_m": [0.0, -0.09, 0.0]}, "attachment_tags": ["weapon", "sheathable_weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
@@ -3258,6 +3280,7 @@
         "icon": "pocket-bow"
       },
       "kind": "weapon",
+      "handling": "two_handed",
       "slot": "any_holding",
       "carry": "hand_only",
       "equipment": {"physical": {"dimensions_m": [0.06, 1.55, 0.10], "grip_to_tip_m": 0.75, "anchor_offset_m": [0.0, 0.0, 0.0]}, "attachment_tags": ["weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}]},
@@ -3574,6 +3597,7 @@
         ]
       },
       "kind": "weapon",
+      "handling": "one_handed",
       "slot": "any_holding",
       "carry": "sheathable",
       "accuracy": 1.5,
@@ -3749,6 +3773,7 @@
         "icon": "bo"
       },
       "kind": "weapon",
+      "handling": "two_handed",
       "slot": "any_holding",
       "carry": "hand_only",
       "equipment": {"physical": {"dimensions_m": [0.08, 1.65, 0.08], "grip_to_tip_m": 1.45, "anchor_offset_m": [0.0, -0.20, 0.0]}, "attachment_tags": ["weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}]},
@@ -3794,6 +3819,7 @@
         "icon": "warhammer"
       },
       "kind": "weapon",
+      "handling": "one_handed",
       "slot": "any_holding",
       "carry": "sheathable",
       "equipment": {"physical": {"dimensions_m": [0.16, 0.70, 0.08], "grip_to_tip_m": 0.56, "anchor_offset_m": [0.0, -0.14, 0.0]}, "attachment_tags": ["weapon", "sheathable_weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
@@ -3973,6 +3999,7 @@
       "tags": ["weapon"],
       "presentation": {"icon": "broadsword"},
       "kind": "weapon",
+      "handling": "one_handed",
       "slot": "any_holding",
       "carry": "sheathable",
       "equipment": {"physical": {"dimensions_m": [0.11, 0.82, 0.05], "grip_to_tip_m": 0.68, "anchor_offset_m": [0.0, -0.14, 0.0]}, "attachment_tags": ["weapon", "sheathable_weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
@@ -4000,6 +4027,7 @@
       "tags": ["weapon"],
       "presentation": {"icon": "plain-dagger"},
       "kind": "weapon",
+      "handling": "one_handed",
       "slot": "any_holding",
       "carry": "sheathable",
       "equipment": {"physical": {"dimensions_m": [0.06, 0.30, 0.025], "grip_to_tip_m": 0.24, "anchor_offset_m": [0.0, -0.06, 0.0]}, "attachment_tags": ["weapon", "sheathable_weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
@@ -4027,6 +4055,7 @@
       "tags": ["weapon"],
       "presentation": {"icon": "spears"},
       "kind": "weapon",
+      "handling": "two_handed",
       "slot": "any_holding",
       "carry": "hand_only",
       "equipment": {"physical": {"dimensions_m": [0.08, 2.10, 0.08], "grip_to_tip_m": 1.85, "anchor_offset_m": [0.0, -0.25, 0.0]}, "attachment_tags": ["weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}]},
@@ -4058,6 +4087,8 @@
         "icon": "two-handed-sword"
       },
       "kind": "weapon",
+      "handling": "two_handed",
+      "animation_pack": "humanoid_2h_close",
       "slot": "any_holding",
       "carry": "sheathable",
       "equipment": {"physical": {"dimensions_m": [0.13, 1.80, 0.06], "grip_to_tip_m": 1.50, "anchor_offset_m": [0.0, -0.30, 0.0]}, "attachment_tags": ["weapon", "sheathable_weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},

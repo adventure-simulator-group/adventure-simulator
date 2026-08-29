@@ -33,6 +33,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE_DIR = ROOT / "assets_src" / "biped" / "unarmed"
 RUNTIME_DIR = ROOT / "assets" / "animations" / "biped" / "unarmed"
 RUNTIME_BASE = RUNTIME_DIR / "base.glb"
+TWO_HANDED_CLOSE_SOURCE_DIR = ROOT / "assets_src" / "biped" / "2h_close"
+TWO_HANDED_CLOSE_RUNTIME_DIR = ROOT / "assets" / "animations" / "biped" / "2h_close"
 GRIP_SOURCE_DIR = ROOT / "assets_src" / "biped"
 GRIP_RUNTIME_DIR = ROOT / "assets" / "animations" / "biped"
 GRIP_POSES = ("grip_hilt", "grip_polearm")
@@ -97,6 +99,48 @@ def available_authored_frames(
 class PublicationReport:
     published: tuple[str, ...]
     skipped: tuple[str, ...]
+
+
+def publish_attack_pack(
+    source_dir: Path,
+    runtime_dir: Path,
+    runtime_base: Path,
+    *,
+    check: bool = False,
+) -> PublicationReport:
+    """Publish one specialized pack containing only authored attack motions."""
+    unknown = sorted(
+        path.stem
+        for path in source_dir.glob("*.glb")
+        if path.stem not in VARIABLE_ATTACK_FRAMES
+    )
+    if unknown:
+        raise GlbError(
+            "specialized attack motions are absent from the publication contract: "
+            + ", ".join(unknown)
+        )
+
+    published: list[str] = []
+    skipped: list[str] = []
+    for motion in sorted(VARIABLE_ATTACK_FRAMES):
+        source = source_dir / f"{motion}.glb"
+        if not source.is_file():
+            skipped.append(motion)
+            continue
+        kept_frames = available_authored_frames(source, DIRECT_MOTIONS[motion])
+        required_frames = 1 if motion == "offhand" else 2
+        if len(kept_frames) < required_frames:
+            raise GlbError(f"{motion} does not expose its required attack anchors")
+        prepare_motion(
+            source,
+            runtime_base,
+            runtime_dir / f"{motion}.glb",
+            last_frame=max(kept_frames),
+            kept_frames=kept_frames,
+            check=check,
+        )
+        published.append(motion)
+    return PublicationReport(tuple(published), tuple(skipped))
 
 
 def close_combat_cycle(source: Path) -> bytes:
@@ -338,12 +382,20 @@ def main() -> int:
     args = parser.parse_args()
     try:
         report = publish_animation_assets(check=args.check)
+        two_handed_report = publish_attack_pack(
+            TWO_HANDED_CLOSE_SOURCE_DIR,
+            TWO_HANDED_CLOSE_RUNTIME_DIR,
+            RUNTIME_BASE,
+            check=args.check,
+        )
     except (GlbError, OSError, ValueError) as error:
         parser.error(str(error))
     action = "verified" if args.check else "published"
-    print(f"{action} {len(report.published)} animation GLBs")
-    if report.skipped:
-        print("skipped missing sources: " + ", ".join(report.skipped))
+    count = len(report.published) + len(two_handed_report.published)
+    print(f"{action} {count} animation GLBs")
+    skipped = [*report.skipped, *(f"2h_close/{name}" for name in two_handed_report.skipped)]
+    if skipped:
+        print("skipped missing sources: " + ", ".join(skipped))
     return 0
 
 

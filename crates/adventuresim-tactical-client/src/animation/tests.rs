@@ -385,6 +385,20 @@ mod legacy_tests {
     }
 
     #[test]
+    fn two_handed_close_pack_overrides_attacks_and_inherits_other_poses() {
+        let catalog = AnimationPackCatalog::default();
+        let pack = &catalog.packs[HUMANOID_2H_CLOSE_PACK];
+        assert_eq!(pack.fallback.as_deref(), Some(HUMANOID_UNARMED_PACK));
+        assert_eq!(
+            pack.motions["swing"].path,
+            "animations/biped/2h_close/swing.glb"
+        );
+        assert!(pack.poses.contains_key(&SemanticPose::AttackSwing));
+        assert!(pack.poses.contains_key(&SemanticPose::AttackThrust));
+        assert!(!pack.poses.contains_key(&SemanticPose::WalkContact));
+    }
+
+    #[test]
     fn duplicate_authoritative_pose_is_rejected() {
         let mut builder = PackBuilder::new("test", "humanoid", None, "animations/test");
         builder.motion("one", 0);
@@ -657,6 +671,23 @@ mod legacy_tests {
         hybrid_polearm[1] = 1.0 / 3.0;
         hybrid_polearm[2] = 1.0 / 3.0;
         assert_eq!(weapon_grip(&hybrid_polearm), WeaponGrip::Polearm);
+    }
+
+    #[test]
+    fn weapon_catalog_selects_specific_and_two_handed_fallback_packs() {
+        assert_eq!(
+            animation_pack_for_weapon("longsword"),
+            HUMANOID_2H_CLOSE_PACK
+        );
+        assert_eq!(
+            animation_pack_for_weapon("zweihander"),
+            HUMANOID_2H_CLOSE_PACK
+        );
+        assert_eq!(animation_pack_for_weapon("halberd"), HUMANOID_2H_CLOSE_PACK);
+        assert_eq!(
+            animation_pack_for_weapon("arming_sword"),
+            HUMANOID_UNARMED_PACK
+        );
     }
 
     #[test]

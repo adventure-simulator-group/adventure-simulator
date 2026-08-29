@@ -353,6 +353,12 @@ pub enum ItemKind {
     },
     Weapon {
         slot: Slot,
+        /// Number of hands required by the weapon's ordinary authored carriage.
+        handling: WeaponHandling,
+        /// Optional specialized animation pack. Two-handed weapons without one
+        /// use the shared close-grip two-handed pack.
+        #[serde(default)]
+        animation_pack: Option<String>,
         /// Whether the weapon fits an authored sheath/holster or must remain
         /// in a hand (or be dropped) when not otherwise carried.
         carry: WeaponCarry,
@@ -381,6 +387,13 @@ pub enum ItemKind {
 pub enum WeaponCarry {
     Sheathable,
     HandOnly,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WeaponHandling {
+    OneHanded,
+    TwoHanded,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
