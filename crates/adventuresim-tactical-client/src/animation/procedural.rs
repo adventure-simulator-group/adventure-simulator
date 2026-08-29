@@ -5,7 +5,14 @@ use bevy::{math::Affine3A, prelude::*};
 
 use super::{AnimationPlayback, AuthoredBindTransform, PresentedSkeleton};
 
+mod body_response;
+mod clock;
 mod rig;
+pub(in crate::animation) use body_response::apply_locomotion_body_response;
+#[cfg(test)]
+use body_response::body_response_target;
+use body_response::presentation_tick_delta;
+pub(crate) use clock::ProceduralAnimationClock;
 pub(crate) use rig::*;
 
 pub(super) fn authored_locomotion_ik_owns(skeleton: &SkeletonState) -> bool {
@@ -1023,27 +1030,27 @@ struct BoneSnapshot {
 mod ik;
 pub(crate) use ik::{
     ArmIkState, HandIkTarget, HandSide, HeldWeaponConstraint, HumanoidIkTargets, LegIkDiagnostics,
-    LegIkState, MEASURED_ANKLE_SOLE_OFFSET_METRES, ProceduralAnimationClock, RaisedFootworkState,
+    LegIkState, MEASURED_ANKLE_SOLE_OFFSET_METRES, RaisedFootworkState,
     SOLE_CONTACT_TOLERANCE_METRES, locomotion_support_weights,
 };
 #[cfg(test)]
 use ik::{
     FOOT_TRACK_INNER, MAX_PELVIS_CORRECTION_STEP, MIN_INTER_FOOT_SEPARATION, TwoBoneSolution,
     advance_foot_target_at_speed, advance_pelvis_shift, authored_knee_pole_world,
-    balance_recovery_direction, body_response_target, constrain_foot_to_track,
-    constrain_target_to_reach, landing_maximum_reach, maximum_reach, plan_settle_landing,
-    plant_is_continuous, projected_capture_point, raised_footwork_posture_is_valid,
-    retained_plant_requires_release, secondary_grip_world, settle_swing_side, settle_swing_target,
-    slope_aligned_world_rotation, sole_is_at_contact, solve_two_bone,
-    terrain_conformed_guard_target, terrain_ik_posture_is_valid, terrain_leg_has_support,
+    balance_recovery_direction, constrain_foot_to_track, constrain_target_to_reach,
+    landing_maximum_reach, maximum_reach, plan_settle_landing, plant_is_continuous,
+    projected_capture_point, raised_footwork_posture_is_valid, retained_plant_requires_release,
+    secondary_grip_world, settle_swing_side, settle_swing_target, slope_aligned_world_rotation,
+    sole_is_at_contact, solve_two_bone, terrain_conformed_guard_target,
+    terrain_ik_posture_is_valid, terrain_leg_has_support,
 };
 use ik::{
     TwoBoneChain, apply_two_bone_solution, canonical_knee_pole, constrain_rendered_leg_pole,
-    presentation_tick_delta, smoothstep, snapshot_chain, solve_landing_two_bone,
+    smoothstep, snapshot_chain, solve_landing_two_bone,
 };
 pub(super) use ik::{
-    apply_arm_and_weapon_constraints, apply_locomotion_body_response, apply_terrain_leg_ik,
-    enforce_anatomical_knee_yaw, refresh_raised_support_after_propagation,
+    apply_arm_and_weapon_constraints, apply_terrain_leg_ik, enforce_anatomical_knee_yaw,
+    refresh_raised_support_after_propagation,
 };
 
 #[cfg(test)]
@@ -1221,115 +1228,6 @@ mod contract_tests {
 #[cfg(test)]
 mod ik_tests {
     use super::*;
-
-    fn apply_test_two_bone(
-        In((upper, lower, end, solution)): In<(Entity, Entity, Entity, TwoBoneSolution)>,
-        parents: Query<&ChildOf>,
-        mut transforms: ParamSet<(TransformHelper, Query<&mut Transform>)>,
-    ) {
-        apply_two_bone_solution(upper, lower, end, solution, &parents, &mut transforms);
-    }
-
-    fn test_joint_pose(
-        In((lower, end)): In<(Entity, Entity)>,
-        helper: TransformHelper,
-    ) -> (Vec3, Vec3, Quat) {
-        (
-            helper
-                .compute_global_transform(lower)
-                .unwrap()
-                .translation(),
-            helper.compute_global_transform(end).unwrap().translation(),
-            helper.compute_global_transform(end).unwrap().rotation(),
-        )
-    }
-
-    #[test]
-    fn two_bone_solver_preserves_segment_lengths_and_reaches_target() {
-        let root = Vec3::ZERO;
-        let knee = Vec3::new(0.0, -1.0, 0.15);
-        let end = Vec3::new(0.0, -2.0, 0.0);
-        let target = Vec3::new(0.3, -1.85, 0.0);
-        let solved = solve_two_bone(
-            TwoBoneChain::new(root, knee, end, 1.0, 1.0, Vec3::NEG_Z),
-            target,
-        )
-        .unwrap();
-        assert!((root.distance(solved.knee) - 1.0).abs() < 0.0001);
-        assert!((solved.knee.distance(solved.end) - 1.0).abs() < 0.0001);
-        assert!(solved.end.abs_diff_eq(target, 0.0001));
-    }
-
-    #[test]
-    fn two_bone_solver_clamps_unreachable_target_without_nan() {
-        let solved = solve_two_bone(
-            TwoBoneChain::new(
-                Vec3::ZERO,
-                Vec3::new(0.0, -1.0, 0.1),
-                Vec3::new(0.0, -2.0, 0.0),
-                1.0,
-                1.0,
-                Vec3::NEG_Z,
-            ),
-            Vec3::new(0.0, -20.0, 0.0),
-        )
-        .unwrap();
-        assert!(solved.knee.is_finite() && solved.end.is_finite());
-        assert!(solved.end.length() < 2.0);
-    }
-
-    #[test]
-    fn straight_chain_uses_rig_bind_space_knee_pole() {
-        let solved = solve_two_bone(
-            TwoBoneChain::new(
-                Vec3::ZERO,
-                Vec3::NEG_Y,
-                Vec3::NEG_Y * 2.0,
-                1.0,
-                1.0,
-                Vec3::Z,
-            ),
-            Vec3::new(0.0, -1.8, 0.0),
-        )
-        .unwrap();
-        assert!(solved.knee.z > 0.0);
-        assert!(solved.knee.is_finite());
-    }
-
-    #[test]
-    fn stable_pole_overrides_an_authored_knee_in_the_opposite_hemisphere() {
-        let solved = solve_two_bone(
-            TwoBoneChain::new(
-                Vec3::ZERO,
-                Vec3::new(0.0, -1.0, 0.1),
-                Vec3::NEG_Y * 2.0,
-                1.0,
-                1.0,
-                Vec3::NEG_Z,
-            ),
-            Vec3::new(0.0, -1.8, 0.0),
-        )
-        .unwrap();
-        assert!(solved.knee.z < 0.0);
-    }
-
-    #[test]
-    fn authored_knee_bend_is_preserved_within_the_stable_pole_hemisphere() {
-        let solved = solve_two_bone(
-            TwoBoneChain::new(
-                Vec3::ZERO,
-                Vec3::new(0.1, -1.0, 0.1),
-                Vec3::NEG_Y * 2.0,
-                1.0,
-                1.0,
-                Vec3::Z,
-            ),
-            Vec3::new(0.0, -1.8, 0.0),
-        )
-        .unwrap();
-        assert!(solved.knee.x > 0.0);
-        assert!(solved.knee.z > 0.0);
-    }
 
     #[test]
     fn canonical_mhr_role_names_are_recognized() {
@@ -1918,76 +1816,6 @@ mod ik_tests {
     }
 
     #[test]
-    fn secondary_grip_uses_final_weapon_transform() {
-        let before = GlobalTransform::from(Transform::from_xyz(1.0, 0.0, 0.0));
-        let after = GlobalTransform::from(
-            Transform::from_xyz(2.0, 0.0, 0.0).with_rotation(Quat::from_rotation_y(0.5)),
-        );
-        let grip = Vec3::new(0.0, 0.0, 0.5);
-        assert_ne!(
-            secondary_grip_world(before, grip),
-            secondary_grip_world(after, grip)
-        );
-        assert!(secondary_grip_world(after, grip).abs_diff_eq(after.transform_point(grip), 0.0001));
-    }
-
-    #[test]
-    fn lower_joint_solves_through_twist_intermediate_parent() {
-        let mut world = World::new();
-        let upper = world.spawn(Transform::default()).id();
-        let upper_twist = world.spawn(Transform::from_xyz(0.0, -0.5, 0.0)).id();
-        let lower = world.spawn(Transform::from_xyz(0.0, -0.5, 0.0)).id();
-        let lower_twist = world.spawn(Transform::from_xyz(0.0, -0.5, 0.0)).id();
-        let authored_foot_rotation = Quat::from_euler(EulerRot::YXZ, 0.35, -0.45, 0.2).normalize();
-        let end = world
-            .spawn(Transform::from_xyz(0.0, -0.5, 0.0).with_rotation(authored_foot_rotation))
-            .id();
-        world.entity_mut(upper).add_child(upper_twist);
-        world.entity_mut(upper_twist).add_child(lower);
-        world.entity_mut(lower).add_child(lower_twist);
-        world.entity_mut(lower_twist).add_child(end);
-        let upper_twist_bind = *world.get::<Transform>(upper_twist).unwrap();
-        let lower_twist_bind = *world.get::<Transform>(lower_twist).unwrap();
-        let (_, _, authored_foot_world_rotation) = world
-            .run_system_cached_with(test_joint_pose, (lower, end))
-            .unwrap();
-        let solution = solve_two_bone(
-            TwoBoneChain::new(
-                Vec3::ZERO,
-                Vec3::NEG_Y,
-                Vec3::NEG_Y * 2.0,
-                1.0,
-                1.0,
-                Vec3::NEG_Z,
-            ),
-            Vec3::new(0.45, -1.75, 0.0),
-        )
-        .unwrap();
-        world
-            .run_system_cached_with(apply_test_two_bone, (upper, lower, end, solution))
-            .unwrap();
-        let (knee, ankle, solved_foot_world_rotation) = world
-            .run_system_cached_with(test_joint_pose, (lower, end))
-            .unwrap();
-        assert!(knee.abs_diff_eq(solution.knee, 0.0002));
-        assert!(ankle.abs_diff_eq(solution.end, 0.0002));
-        assert!(
-            authored_foot_world_rotation
-                .angle_between(solved_foot_world_rotation)
-                .to_degrees()
-                < 0.0001
-        );
-        assert_eq!(
-            *world.get::<Transform>(upper_twist).unwrap(),
-            upper_twist_bind
-        );
-        assert_eq!(
-            *world.get::<Transform>(lower_twist).unwrap(),
-            lower_twist_bind
-        );
-    }
-
-    #[test]
     fn pose_mirror_is_an_involution() {
         let original = Transform::from_xyz(0.3, -0.8, 0.2).with_rotation(Quat::from_euler(
             EulerRot::XYZ,
@@ -2041,28 +1869,6 @@ mod ik_tests {
 
         let after_hitch = advance_pelvis_shift(0.0, -1.0, 1.0);
         assert!((after_hitch + MAX_PELVIS_CORRECTION_STEP).abs() < 0.0001);
-    }
-
-    #[test]
-    fn leg_solver_keeps_minimum_flexion_and_anatomical_hemisphere() {
-        let pole = canonical_knee_pole(-1.0);
-        let solved = solve_two_bone(
-            TwoBoneChain::new(
-                Vec3::ZERO,
-                Vec3::new(0.0, -1.0, -0.1),
-                Vec3::NEG_Y * 2.0,
-                1.0,
-                1.0,
-                pole,
-            ),
-            Vec3::NEG_Y * 20.0,
-        )
-        .unwrap();
-        assert!(solved.end.length() <= maximum_reach(1.0, 1.0) + 0.0001);
-        let bend = (solved.knee)
-            .reject_from_normalized(solved.end_direction)
-            .normalize();
-        assert!(bend.dot(pole) > 0.0);
     }
 
     #[test]

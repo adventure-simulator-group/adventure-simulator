@@ -1,5 +1,36 @@
 use super::*;
 
+/// Client-only world-space target for a hand. It is presentation data and is
+/// deliberately absent from replicated `SkeletonState`.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct HandIkTarget {
+    pub translation: Vec3,
+    pub rotation: Option<Quat>,
+    pub weight: f32,
+}
+
+/// Optional client-only direct hand targets.
+#[derive(Component, Debug, Clone, Copy, Default)]
+pub(crate) struct HumanoidIkTargets {
+    pub left: Option<HandIkTarget>,
+    pub right: Option<HandIkTarget>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HandSide {
+    Left,
+    Right,
+}
+
+/// Constrains a client-side held item to an authored weapon socket. The
+/// optional point is in weapon-local space and becomes an off-hand IK target.
+#[derive(Component, Debug, Clone, Copy)]
+pub(crate) struct HeldWeaponConstraint {
+    pub owner: Entity,
+    pub primary_hand: HandSide,
+    pub secondary_grip_local: Option<Vec3>,
+}
+
 #[derive(Debug, Clone, Copy)]
 struct HandChain {
     upper_role: BoneRole,
@@ -327,5 +358,24 @@ mod memory_tests {
         leg = LegIkState::default();
         assert_eq!(leg.0.left_leg, None);
         assert_eq!(arm.0.left_arm, Some(Vec3::Y));
+    }
+}
+
+#[cfg(test)]
+mod target_tests {
+    use super::*;
+
+    #[test]
+    fn secondary_grip_uses_final_weapon_transform() {
+        let before = GlobalTransform::from(Transform::from_xyz(1.0, 0.0, 0.0));
+        let after = GlobalTransform::from(
+            Transform::from_xyz(2.0, 0.0, 0.0).with_rotation(Quat::from_rotation_y(0.5)),
+        );
+        let grip = Vec3::new(0.0, 0.0, 0.5);
+        assert_ne!(
+            secondary_grip_world(before, grip),
+            secondary_grip_world(after, grip)
+        );
+        assert!(secondary_grip_world(after, grip).abs_diff_eq(after.transform_point(grip), 0.0001));
     }
 }
