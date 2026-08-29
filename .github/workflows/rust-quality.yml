@@ -11,6 +11,8 @@ on:
       - "crates/**"
       - "rustfmt.toml"
       - "rust-toolchain.toml"
+      - "rust-quality.toml"
+      - "rust-quality-baseline.toml"
       - "justfile"
       - "scripts/dev_stack.py"
       - "scripts/tests/test_dev_stack.py"
@@ -24,6 +26,8 @@ on:
       - "crates/**"
       - "rustfmt.toml"
       - "rust-toolchain.toml"
+      - "rust-quality.toml"
+      - "rust-quality-baseline.toml"
       - "justfile"
       - "scripts/dev_stack.py"
       - "scripts/tests/test_dev_stack.py"
@@ -74,6 +78,10 @@ jobs:
           scripts.tests.test_dev_stack.WorkflowTests.test_binding_diff_detects_changed_and_extra_files
       - name: Verify generated SpacetimeDB bindings
         run: python3 scripts/dev_stack.py verify-bindings
+      - name: Check semantic values and Rust growth
+        run: |
+          cargo test --package fabelgeist-rust-quality
+          cargo run --package fabelgeist-rust-quality -- check .
       - name: Lint tactical client WASM target
         run: cargo clippy --package adventuresim-tactical-client --lib --target wasm32-unknown-unknown -- -D warnings
       - name: Run Clippy with warnings denied

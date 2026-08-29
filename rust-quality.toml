@@ -1,0 +1,124 @@
+file_limit = 500
+function_limit = 100
+census_minimum = 3
+census_summary_limit = 20
+
+excluded_paths = [
+  "crates/adventuresim-stdb-client/src/**",
+]
+
+[[scopes]]
+kind = "fixture"
+path = "crates/adventuresim-core/src/tactical_fixture.rs"
+reason = "This module supplies explicit deterministic tactical fixture data."
+
+[[scopes]]
+kind = "authored_catalog"
+path = "crates/adventuresim-core/src/quest_catalog.rs"
+reason = "Authored quest definitions are cohesive catalog data."
+
+[[scopes]]
+kind = "authored_catalog"
+path = "crates/adventuresim-core/src/road_encounter_catalog.rs"
+reason = "Authored encounter definitions are cohesive catalog data."
+
+[[scopes]]
+kind = "authored_catalog"
+path = "crates/adventuresim-weapon-model/src/catalog.rs"
+reason = "Authored weapon recipes are cohesive catalog data."
+
+[[scopes]]
+kind = "boundary_adapter"
+path = "crates/fabelgeist-gpu/src/data/gpu/**"
+reason = "This subsystem parses and emits an external shader language."
+
+[[scopes]]
+kind = "boundary_adapter"
+path = "crates/adventuresim-world-import/src/**"
+reason = "World import explicitly adapts external formats and vocabularies."
+
+[[scopes]]
+kind = "boundary_adapter"
+path = "crates/fabelgeist-fs/src/lib.rs"
+reason = "Filesystem and browser URI parsing is an external-system boundary."
+
+[[scopes]]
+kind = "boundary_adapter"
+path = "crates/fabelgeist-numpy-storage/src/npy.rs"
+reason = "NumPy header parsing is an external serialization boundary."
+
+[[scopes]]
+kind = "boundary_adapter"
+path = "crates/adventuresim-tactical-brp-generator/src/resolve.rs"
+reason = "Binding generation adapts reflected external Rust type names."
+
+[[semantic_families]]
+name = "calendar-year"
+literals = ["365", "365.0"]
+identifier_pattern = '(?i)(days?_per_year|year_days|duration_days|simulation_days|matched_days)'
+owners = ["crates/adventuresim-core/src/strategic_time.rs"]
+
+[[semantic_families]]
+name = "basis-points"
+literals = ["10000", "10000.0"]
+identifier_pattern = '(?i)(basis_points|_bps|bps_|bp:|bp\)|per_whole)'
+owners = [
+  "crates/adventuresim-world-schema/src/lib.rs",
+  "crates/adventuresim-core/src/investigation.rs",
+]
+
+[[semantic_families]]
+name = "e7-coordinates"
+literals = ["10000000", "10000000.0"]
+identifier_pattern = '(?i)(e7|longitude|latitude|coordinate)'
+owners = ["crates/adventuresim-world-schema/src/coordinates.rs"]
+
+[[semantic_families]]
+name = "microdegree-coordinates"
+literals = ["1000000", "1000000.0"]
+identifier_pattern = '(?i)(microdegree|longitude|latitude|coordinate)'
+owners = ["crates/adventuresim-world-schema/src/coordinates.rs"]
+
+[[semantic_families]]
+name = "microliters"
+literals = ["1000000", "1000000.0"]
+identifier_pattern = '(?i)(microliter|liter|volume)'
+owners = ["crates/adventuresim-core/src/material.rs"]
+
+[[semantic_families]]
+name = "investigation-target-kind"
+literals = ["site", "area", "contact", "cohort", "route", "tracks"]
+identifier_pattern = '(?i)(target_kind|investigation_target)'
+owners = ["crates/adventuresim-core/src/investigation_action.rs"]
+
+[[semantic_families]]
+name = "surgery-procedure"
+literals = ["bandage", "stitch", "splint", "remove-splint", "extract", "open-body"]
+identifier_pattern = '(?i)(procedure|surgery)'
+owners = ["crates/adventuresim-core/src/surgery.rs"]
+
+[[semantic_families]]
+name = "organization-membership-status"
+literals = ["active", "suspended"]
+identifier_pattern = '(?i)(membership_status|organization.*status)'
+owners = ["crates/adventuresim-core/src/organization.rs"]
+
+[[semantic_families]]
+name = "destination-knowledge-stage"
+literals = [
+  "unknown",
+  "textual",
+  "landmark",
+  "approximate_area",
+  "route_segment",
+  "exact_believed",
+  "visited",
+]
+identifier_pattern = '(?i)(knowledge_stage|destination.*stage)'
+owners = ["crates/adventuresim-core/src/investigation.rs"]
+
+[[semantic_families]]
+name = "incapacitation-status"
+literals = ["ready", "staggered", "incapacitated"]
+identifier_pattern = '(?i)(incapacitation_status|strategic_incapacitation|status)'
+owners = ["crates/adventuresim-core/src/morale.rs"]

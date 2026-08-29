@@ -25,6 +25,7 @@ members = [
   "crates/fabelgeist-fs",
   "crates/fabelgeist-gpu",
   "crates/fabelgeist-fbx",
+  "crates/fabelgeist-rust-quality",
 ]
 exclude = [
   "wiki",
