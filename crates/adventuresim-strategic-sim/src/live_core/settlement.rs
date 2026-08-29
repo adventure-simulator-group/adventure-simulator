@@ -1,5 +1,26 @@
 use adventuresim_core::surgery::SurgeryProcedure;
 
+pub(super) fn repair_service_for_kind(
+    services: &[SettlementService],
+    kind: PersistedItemKind,
+) -> Option<&'static str> {
+    let required_specialist = match kind {
+        PersistedItemKind::Weapon | PersistedItemKind::Shield => {
+            (SettlementService::Weaponsmith, "weapons")
+        }
+        PersistedItemKind::Armor => (SettlementService::Armorer, "armor"),
+        PersistedItemKind::Clothing => (SettlementService::Tailor, "clothing"),
+        _ => return None,
+    };
+    services
+        .iter()
+        .any(|service| {
+            matches!(service, SettlementService::GeneralBlacksmith)
+                || service == &required_specialist.0
+        })
+        .then_some(required_specialist.1)
+}
+
 impl LiveRunner {
     fn acquire_first_aid_material(
         &mut self,
@@ -26,7 +47,7 @@ impl LiveRunner {
             return Ok(false);
         }
         let quantity_before = self.personal_item_quantity(actor_id, item_id);
-        let result = reducer_call!(self, "purchase_first_aid_material", |cb| self
+        let result = reducer_call!(self, ReducerOperation::PurchaseFirstAidMaterial, |cb| self
             .connection
             .reducers
             .finalize_merchant_trade_then(
@@ -151,7 +172,7 @@ impl LiveRunner {
                 continue;
             };
             let limb_slug = domain_body_region(injury.limb).slug();
-            let result = reducer_call!(self, "visible_first_aid", |cb| self
+            let result = reducer_call!(self, ReducerOperation::VisibleFirstAid, |cb| self
                 .connection
                 .reducers
                 .treat_limb_then(
@@ -431,7 +452,7 @@ impl LiveRunner {
         // present in visible settlement stock.
         if !observable_herbalist_stocks_medication(
             true,
-            preparation.kind == ItemKind::Medication,
+            preparation.kind == PersistedItemKind::Medication,
             settlement
                 .economy
                 .stock
@@ -636,7 +657,7 @@ impl LiveRunner {
             return Ok(());
         }
         let schedule = medical_rest_schedule();
-        let result = reducer_call!(self, "pause_schedule_for_treatment", |cb| self
+        let result = reducer_call!(self, ReducerOperation::PauseScheduleForTreatment, |cb| self
             .connection
             .reducers
             .update_training_schedule_then(character_id, schedule.clone(), cb));
@@ -661,10 +682,15 @@ impl LiveRunner {
             return Ok(());
         }
         let schedule = live_schedule(&self.profiles[agent as usize]);
-        let result = reducer_call!(self, "restore_schedule_after_treatment", |cb| self
-            .connection
-            .reducers
-            .update_training_schedule_then(character_id, schedule.clone(), cb));
+        let result = reducer_call!(
+            self,
+            ReducerOperation::RestoreScheduleAfterTreatment,
+            |cb| self.connection.reducers.update_training_schedule_then(
+                character_id,
+                schedule.clone(),
+                cb
+            )
+        );
         self.call(result)?;
         let restored = self
             .connection
@@ -693,7 +719,7 @@ impl LiveRunner {
             .find(|row| row.character_id == character_id)
             .is_some_and(|row| row.downtime == *schedule);
         if !already_installed {
-            let result = reducer_call!(self, "install_activity_schedule", |cb| self
+            let result = reducer_call!(self, ReducerOperation::InstallActivitySchedule, |cb| self
                 .connection
                 .reducers
                 .update_training_schedule_then(character_id, schedule.clone(), cb));
@@ -763,8 +789,7 @@ impl LiveRunner {
                 .iter()
                 .find(|row| row.character_id == character_id)
                 .is_some_and(|row| row.symptomatic);
-            if (domain_incapacitation_status(condition.status)
-                != DomainIncapacitationStatus::Ready
+            if (domain_incapacitation_status(condition.status) != DomainIncapacitationStatus::Ready
                 || symptomatic)
                 && character.current_settlement_id.is_some()
             {
@@ -809,6 +834,31 @@ impl LiveRunner {
                     .is_some_and(|row| row.economy.services.contains(&SettlementService::Herbalist))
             });
             let purse = self.personal_gold(character_id);
+            let (patient_party_id, patient_party_stake, party_treasury) = character
+                .party_id
+                .as_deref()
+                .map_or((None, 0, 0), |party_id| {
+                    let stake = self
+                        .connection
+                        .db
+                        .party_stake()
+                        .iter()
+                        .find(|row| {
+                            row.party_id == party_id && row.character_id == character_id
+                        })
+                        .map_or(0, |row| row.value);
+                    let treasury = self
+                        .connection
+                        .db
+                        .party_inventory_item()
+                        .iter()
+                        .filter(|row| row.party_id == party_id && is_currency_id(&row.item_id))
+                        .map(|row| u64::from(row.quantity))
+                        .sum();
+                    (Some(party_id.to_owned()), stake, treasury)
+                });
+            let self_funded_budget =
+                purse.saturating_add(patient_party_stake.min(party_treasury));
             let chart = self.public_physician_chart(character_id);
             let intervention_offers = settlement.as_deref().zip(chart.as_ref()).map_or_else(
                 Vec::new,
@@ -838,10 +888,10 @@ impl LiveRunner {
                 inn_available,
                 temple_available,
                 temple_food_covers_day,
-                purse,
+                self_funded_budget,
                 0,
             );
-            let rest_sponsor = if !symptomatic && inn_available {
+            let rest_sponsor = if self_funded_natural_rest_venue.is_none() && inn_available {
                 settlement.as_deref().and_then(|settlement_id| {
                     inn_cost.and_then(|quote| {
                         self.settlement_rest_sponsor(character_id, settlement_id, quote)
@@ -1041,12 +1091,12 @@ impl LiveRunner {
                     .find(|row| row.character_id == character_id)
                     .ok_or("missing patient clock before natural recovery rest")?
                     .minutes;
-                let actual_rest_minutes = if matches!(
+                let sponsored_inn_rest = matches!(
                     rest_service,
                     DomainSettlementActionService::Inn
-                ) && purse
-                    < inn_cost.expect("inn venue requires a public quote")
-                {
+                ) && purse < inn_cost.expect("inn venue requires a public quote")
+                    && rest_sponsor.is_some();
+                let actual_rest_minutes = if sponsored_inn_rest {
                     let sponsor = rest_sponsor
                         .as_ref()
                         .expect("unaffordable inn venue requires a selected sponsor");
@@ -1070,16 +1120,17 @@ impl LiveRunner {
                     let patient_purse_before = purse;
                     let condition_before = domain_incapacitation_status(condition.status);
                     let public_quote = inn_cost.expect("sponsored inn rest requires a quote");
-                    let result = reducer_call!(self, "sponsor_party_member_inn_rest", |cb| self
-                        .connection
-                        .reducers
-                        .sponsor_party_member_inn_rest_then(
-                            sponsor.payer_id,
-                            character_id,
-                            settlement.clone(),
-                            public_quote,
-                            cb
-                        ));
+                    let result =
+                        reducer_call!(self, ReducerOperation::SponsorPartyMemberInnRest, |cb| self
+                            .connection
+                            .reducers
+                            .sponsor_party_member_inn_rest_then(
+                                sponsor.payer_id,
+                                character_id,
+                                settlement.clone(),
+                                public_quote,
+                                cb
+                            ));
                     self.call(result)?;
                     let rest_ended_at = self
                         .connection
@@ -1142,15 +1193,36 @@ impl LiveRunner {
                     );
                     actual_rest_minutes
                 } else {
-                    let result = reducer_call!(self, "natural_illness_recovery_rest", |cb| self
-                        .connection
-                        .reducers
-                        .rest_at_settlement_hours_then(
-                            character_id,
-                            MINUTES_PER_DAY,
-                            stdb_settlement_action_service(rest_service),
-                            cb,
-                        ));
+                    if matches!(rest_service, DomainSettlementActionService::Inn) {
+                        let public_quote =
+                            inn_cost.expect("self-funded inn rest requires a public quote");
+                        let shortfall = public_quote.saturating_sub(purse);
+                        if shortfall > 0 {
+                            let party_id = patient_party_id.as_deref().ok_or(
+                                "self-funded party-stake rest requires a public party",
+                            )?;
+                            if !self.withdraw_stake_for_personal_purchase(
+                                character_id,
+                                party_id,
+                                shortfall,
+                            )? || self.personal_gold(character_id) < public_quote
+                            {
+                                return Err(
+                                    "selected patient could not withdraw their own public stake"
+                                        .into(),
+                                );
+                            }
+                        }
+                    }
+                    let result =
+                        reducer_call!(self, ReducerOperation::NaturalIllnessRecoveryRest, |cb| {
+                            self.connection.reducers.rest_at_settlement_hours_then(
+                                character_id,
+                                MINUTES_PER_DAY,
+                                stdb_settlement_action_service(rest_service),
+                                cb,
+                            )
+                        });
                     self.call(result)?;
                     let rest_ended_at = self
                         .connection
@@ -1254,16 +1326,17 @@ impl LiveRunner {
             {
                 inventory_item_id
             } else {
-                let result = reducer_call!(self, "purchase_from_herbalist", |cb| self
-                    .connection
-                    .reducers
-                    .purchase_from_herbalist_then(
-                        character_id,
-                        settlement.clone(),
-                        vec![preparation_id.into()],
-                        vec![1],
-                        cb
-                    ));
+                let result =
+                    reducer_call!(self, ReducerOperation::PurchaseFromHerbalist, |cb| self
+                        .connection
+                        .reducers
+                        .purchase_from_herbalist_then(
+                            character_id,
+                            settlement.clone(),
+                            vec![preparation_id.into()],
+                            vec![1],
+                            cb
+                        ));
                 self.call(result)?;
                 self.metrics.preparations_purchased += 1;
                 self.event(
@@ -1285,7 +1358,7 @@ impl LiveRunner {
                     .min()
                     .ok_or("preparation purchase produced no concrete patient item")?
             };
-            let result = reducer_call!(self, "administer_preparation", |cb| self
+            let result = reducer_call!(self, ReducerOperation::AdministerPreparation, |cb| self
                 .connection
                 .reducers
                 .administer_preparation_then(
@@ -1353,7 +1426,7 @@ impl LiveRunner {
                 .find(|row| row.character_id == character_id)
                 .ok_or("missing patient clock before medical recovery rest")?
                 .minutes;
-            let result = reducer_call!(self, "medical_recovery_rest", |cb| self
+            let result = reducer_call!(self, ReducerOperation::MedicalRecoveryRest, |cb| self
                 .connection
                 .reducers
                 .rest_at_settlement_hours_then(
@@ -1500,9 +1573,9 @@ impl LiveRunner {
                 inn_cost,
             );
             self.install_activity_schedule(character_id, &schedule)?;
-            let preferred_activity = format!("{:?}", profile.preferred_activity);
+            let preferred_activity = activity_preference_key(profile.preferred_activity);
             let activity_plan_diagnostic = ActivityPlanDiagnostic {
-                preferred_activity: &preferred_activity,
+                preferred_activity,
                 effective_activity,
                 schedule: &schedule,
                 fallback_reason,
@@ -1521,7 +1594,7 @@ impl LiveRunner {
                 plan: activity_plan_diagnostic,
                 venue,
             };
-            let result = reducer_call!(self, "settlement_activity_rest", |cb| self
+            let result = reducer_call!(self, ReducerOperation::SettlementActivityRest, |cb| self
                 .connection
                 .reducers
                 .rest_at_settlement_hours_then(
@@ -1531,7 +1604,7 @@ impl LiveRunner {
                     cb,
                 ));
             if let Err(error) = result {
-                let error_category = safe_core_loop_failure(&error).0;
+                let error_category = project_core_loop_failure(&error).category.as_str();
                 self.event(
                     agent,
                     CoreLoopEventKind::Activity,
@@ -1597,14 +1670,7 @@ impl LiveRunner {
         if starting_party.current_settlement_id.is_none() {
             return Ok(false);
         }
-        let current_minute = self
-            .connection
-            .db
-            .backend_character_times()
-            .iter()
-            .find(|row| row.character_id == character_id)
-            .ok_or("safe-departure leader has no public clock")?
-            .minutes;
+        let current_minute = self.public_party_elapsed_max(&starting_party.id);
         let journey_start_minute_of_day =
             u16::try_from(current_minute.saturating_add(wait_minutes) % MINUTES_PER_DAY)
                 .map_err(|_| "journey start time is outside one day")?;
@@ -1620,7 +1686,7 @@ impl LiveRunner {
             format!(
                 "case={};reason={};requested_wait_minutes={wait_minutes};walking_minutes_per_day={walking_minutes_per_day};mode=journey_local_clock",
                 bounded_event_field(case_id),
-                bounded_event_field(reason),
+                bounded_event_field(reason.as_str()),
             ),
         );
         Ok(true)
@@ -1633,21 +1699,19 @@ impl LiveRunner {
         travel_at_night: bool,
         journey_start_minute_of_day: Option<u16>,
     ) -> Result<(), String> {
-        let result = reducer_call!(self, "configure_safe_departure_window", |cb| self
-            .connection
-            .reducers
-            .set_party_travel_itinerary_then(
+        let result = reducer_call!(self, ReducerOperation::ConfigureSafeDepartureWindow, |cb| {
+            self.connection.reducers.set_party_travel_itinerary_then(
                 character_id,
                 walking_minutes_per_day,
                 travel_at_night,
-                journey_start_minute_of_day
-                    .unwrap_or(if travel_at_night {
-                        DEFAULT_NIGHT_JOURNEY_START_MINUTE_OF_DAY
-                    } else {
-                        DEFAULT_JOURNEY_START_MINUTE_OF_DAY
-                    }),
+                journey_start_minute_of_day.unwrap_or(if travel_at_night {
+                    DEFAULT_NIGHT_JOURNEY_START_MINUTE_OF_DAY
+                } else {
+                    DEFAULT_JOURNEY_START_MINUTE_OF_DAY
+                }),
                 cb,
-            ));
+            )
+        });
         self.call(result)?;
         Ok(())
     }
@@ -1669,24 +1733,23 @@ impl LiveRunner {
         if !character.alive {
             return Ok(());
         }
-        let repair_service_available = self
+        let repair_services = self
             .connection
             .db
             .settlement()
             .iter()
             .find(|row| row.id == settlement)
-            .is_some_and(|row| {
-                row.economy.services.iter().any(|service| {
-                    matches!(
-                        service,
-                        SettlementService::GeneralBlacksmith
-                            | SettlementService::Weaponsmith
-                            | SettlementService::Armorer
-                            | SettlementService::Tailor
-                    )
-                })
-            });
-        if !repair_service_available {
+            .map(|row| row.economy.services)
+            .unwrap_or_default();
+        if !repair_services.iter().any(|service| {
+            matches!(
+                service,
+                SettlementService::GeneralBlacksmith
+                    | SettlementService::Weaponsmith
+                    | SettlementService::Armorer
+                    | SettlementService::Tailor
+            )
+        }) {
             return Ok(());
         }
         let now = self
@@ -1752,10 +1815,16 @@ impl LiveRunner {
                 else {
                     continue;
                 };
-                let (skill, service) = match definition.kind {
-                    ItemKind::Weapon | ItemKind::Shield => (smith.weaponsmith_skill, "weapons"),
-                    ItemKind::Armor => (smith.armourer_skill, "armor"),
-                    ItemKind::Clothing => (smith.tailor_skill, "clothing"),
+                let Some(service) = repair_service_for_kind(&repair_services, definition.kind)
+                else {
+                    continue;
+                };
+                let skill = match definition.kind {
+                    PersistedItemKind::Weapon | PersistedItemKind::Shield => {
+                        smith.weaponsmith_skill
+                    }
+                    PersistedItemKind::Armor => smith.armourer_skill,
+                    PersistedItemKind::Clothing => smith.tailor_skill,
                     _ => continue,
                 };
                 let Some(condition) = self
@@ -1787,16 +1856,17 @@ impl LiveRunner {
                     && (red >= 20 || total >= 350)
                     && u64::from(quote) <= repair_budget
                 {
-                    let result = reducer_call!(self, "submit_item_for_repair", |cb| self
-                        .connection
-                        .reducers
-                        .submit_item_for_repair_then(
-                            character_id,
-                            settlement.clone(),
-                            service.to_string(),
-                            owned.id,
-                            cb
-                        ));
+                    let result =
+                        reducer_call!(self, ReducerOperation::SubmitItemForRepair, |cb| self
+                            .connection
+                            .reducers
+                            .submit_item_for_repair_then(
+                                character_id,
+                                settlement.clone(),
+                                service.to_string(),
+                                owned.id,
+                                cb
+                            ));
                     self.call(result)?;
                     self.metrics.repair_submissions += 1;
                     repair_budget -= u64::from(quote);
@@ -1854,7 +1924,7 @@ impl LiveRunner {
             while remaining > 0 {
                 let wait = remaining.min(MINUTES_PER_DAY);
                 let rest_service = self.settlement_rest_service(character_id)?;
-                let result = reducer_call!(self, "wait_for_repairs", |cb| self
+                let result = reducer_call!(self, ReducerOperation::WaitForRepairs, |cb| self
                     .connection
                     .reducers
                     .rest_at_settlement_hours_then(
@@ -1923,7 +1993,7 @@ impl LiveRunner {
                 // Leave the completed order in custody for a later attempt.
                 continue;
             }
-            let result = reducer_call!(self, "retrieve_repaired_item", |cb| self
+            let result = reducer_call!(self, ReducerOperation::RetrieveRepairedItem, |cb| self
                 .connection
                 .reducers
                 .retrieve_repaired_item_then(character_id, order.id, cb));

@@ -72,6 +72,15 @@ pub enum LeadFoot {
     Right,
 }
 
+impl LeadFoot {
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Left => "left",
+            Self::Right => "right",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Reflect)]
 pub enum WeaponGuardState {
     #[default]

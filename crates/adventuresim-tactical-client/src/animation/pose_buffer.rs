@@ -167,7 +167,7 @@ impl PosePlanKey {
                 (span.end.handle.id(), span.end.layer),
             ]
         }));
-        clips.sort_by_key(|(id, layer)| (format!("{id:?}"), *layer as u8));
+        clips.sort_by_key(|(id, layer)| (*id, *layer as u8));
         clips.dedup();
         Self {
             bind_pose: playback.use_authored_bind_pose,

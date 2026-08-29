@@ -45,11 +45,25 @@ pub(crate) struct ValidatedQuestGenerationAuthority {
     pub manifest: adventuresim_core::quest_generation::GeneratedCase,
 }
 
-pub(crate) fn quest_generation_context_commitment(context_json: &str) -> String {
+const QUEST_GENERATION_CONTEXT_COMMITMENT_VERSION: u16 = 1;
+
+pub(crate) fn quest_generation_context_commitment(context_json: &str) -> Result<String, String> {
+    let value: serde_json::Value = serde_json::from_str(context_json)
+        .map_err(|_| "Quest generation context is invalid")?;
+    let canonical_json = serde_json::to_vec(&value)
+        .map_err(|_| "Could not encode canonical quest generation context")?;
     let mut hasher = Sha256::new();
-    hasher.update(b"adventuresim.quest-generation-context.v1\0");
-    hasher.update(context_json.as_bytes());
-    format!("{:x}", hasher.finalize())
+    for value in [
+        b"adventuresim.quest-generation-context".as_slice(),
+        QUEST_GENERATION_CONTEXT_COMMITMENT_VERSION
+            .to_le_bytes()
+            .as_slice(),
+        canonical_json.as_slice(),
+    ] {
+        hasher.update((value.len() as u64).to_le_bytes());
+        hasher.update(value);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
 }
 
 pub(crate) fn validate_quest_generation_authority(
@@ -57,7 +71,7 @@ pub(crate) fn validate_quest_generation_authority(
 ) -> Result<ValidatedQuestGenerationAuthority, String> {
     use adventuresim_core::quest_generation as qg;
     if authority.context_commitment
-        != quest_generation_context_commitment(&authority.context_snapshot_json)
+        != quest_generation_context_commitment(&authority.context_snapshot_json)?
     {
         return Err("Quest generation context commitment mismatch".into());
     }
@@ -125,7 +139,7 @@ pub(crate) fn validate_quest_generation_authority(
 /// clients to undiscovered postings or acceptance state.
 #[derive(Clone, Debug)]
 #[table(accessor = contract_authority)]
-pub struct Contract {
+pub struct ContractAuthority {
     #[primary_key]
     pub id: String,
     #[index(btree)]
@@ -150,7 +164,7 @@ pub struct Contract {
     pub paid_at_minute: Option<u64>,
 }
 
-impl Contract {
+impl ContractAuthority {
     /// Parse the flattened row before lifecycle-sensitive reducer logic uses it.
     pub fn parsed_state(
         &self,
@@ -191,6 +205,9 @@ pub struct BackendContract {
     pub accepted_by: Option<String>,
     pub opposition_wording: String,
     pub opposition_count_wording: String,
+    /// Observer-safe exact total from the hostile groups that also feed the
+    /// aggregate combat assessment. Wording is presentation only.
+    pub opposition_count: u32,
     /// Observer-safe aggregate built from the exact enemy Combatants that
     /// autoresolve will construct: authored profile, base difficulty, incident
     /// scale, equipment, training, and current enemy count.
@@ -220,20 +237,23 @@ pub fn backend_contracts(ctx: &ViewContext) -> Vec<BackendContract> {
                 .filter(&row.case_id)
                 .collect::<Vec<_>>();
             let distance_m = sites.iter().map(|site| site.distance_m).max()?;
-            let opposition_combat_power = sites
+            let hostile_groups = sites
                 .iter()
                 .filter_map(|site| {
                     ctx.db
                         .hostile_group_authority()
                         .case_site_id_key()
-                        .find(&site.id.value)
+                        .find(site.id.to_string())
                         .filter(|group| {
                             crate::investigation::canonical_case_site_place(&group.case_site_id_key)
-                                .zip(group.case_site_id.to_place())
+                                .map(|key_place| (key_place, group.case_site_id.to_place()))
                                 .is_some_and(|(key_place, typed_place)| key_place == typed_place)
                                 && group.case_site_id == site.id
                         })
                 })
+                .collect::<Vec<_>>();
+            let (opposition_count, opposition_combat_power) = hostile_groups
+                .into_iter()
                 .map(|group| {
                     autoresolve_enemy(
                         u64::MAX,
@@ -246,8 +266,15 @@ pub fn backend_contracts(ctx: &ViewContext) -> Vec<BackendContract> {
                         adventuresim_core::autoresolve::autoresolve_combat_power(&enemy)
                             .checked_mul(u64::from(group.enemy_count))
                     })
+                    .map(|power| (group.enemy_count, power))
                 })
-                .try_fold(0u64, |total, power| total.checked_add(power?))?;
+                .try_fold((0u32, 0u64), |(count, total), group| {
+                    let (group_count, power) = group?;
+                    Some((
+                        count.checked_add(group_count)?,
+                        total.checked_add(power)?,
+                    ))
+                })?;
             Some(BackendContract {
                 id: row.id,
                 case_id: row.case_id,
@@ -263,6 +290,7 @@ pub fn backend_contracts(ctx: &ViewContext) -> Vec<BackendContract> {
                 accepted_by: row.accepted_by,
                 opposition_wording: row.opposition_wording,
                 opposition_count_wording: row.opposition_count_wording,
+                opposition_count,
                 opposition_combat_power,
                 accepted_at_minute: row.accepted_at_minute,
                 paid_at_minute: row.paid_at_minute,
@@ -349,7 +377,7 @@ pub struct CaseFinaleAuthority {
     pub id: String,
     #[index(btree)]
     pub case_id: String,
-    pub kind: FinaleKind,
+    pub kind: FinaleExecutionKind,
     pub resolution_status: CaseStatus,
     pub eligible_path_index: Option<u16>,
     pub priority: u16,
@@ -372,6 +400,15 @@ pub struct CaseFinaleExecution {
 pub enum ContractInteractionStage {
     Accept,
     Report,
+}
+
+impl ContractInteractionStage {
+    pub(crate) const fn stable_id(self) -> &'static str {
+        match self {
+            Self::Accept => "accept",
+            Self::Report => "report",
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -597,7 +634,7 @@ impl JourneyEndpoint {
 
     fn case_site_id(&self) -> Option<&str> {
         match self {
-            Self::CaseSite(endpoint) => Some(&endpoint.id.value),
+            Self::CaseSite(endpoint) => Some(endpoint.id.as_str()),
             _ => None,
         }
     }
@@ -715,6 +752,29 @@ pub enum JourneyTerrainKind {
     SparseWoods,
     DeepWoods,
     Wetland,
+}
+
+impl JourneyTerrainKind {
+    pub(crate) const fn stable_id(self) -> &'static str {
+        match self {
+            Self::Road => "road",
+            Self::Open => "open",
+            Self::SparseWoods => "sparsewoods",
+            Self::DeepWoods => "deepwoods",
+            Self::Wetland => "wetland",
+        }
+    }
+
+    pub(crate) fn from_stable_id(value: &str) -> Option<Self> {
+        match value {
+            "road" => Some(Self::Road),
+            "open" => Some(Self::Open),
+            "sparsewoods" => Some(Self::SparseWoods),
+            "deepwoods" => Some(Self::DeepWoods),
+            "wetland" => Some(Self::Wetland),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, SpacetimeType)]
@@ -1193,7 +1253,7 @@ impl MissionAuthority {
                 MissionAttemptStatus::Failed => Status::Failed,
                 MissionAttemptStatus::Cancelled => Status::Cancelled,
             },
-            case_site_id: self.case_site_id.as_ref().map(|id| id.value.clone()),
+            case_site_id: self.case_site_id.clone(),
             hostile_group_id: self.hostile_group_id.clone(),
             resolution: self
                 .committed_resolution
@@ -1350,7 +1410,7 @@ fn materialize_hostile_group(
         return if existing.case_site_id == group.case_site_id
             && existing.case_site_id_key == group.case_site_id_key
             && crate::investigation::canonical_case_site_place(&existing.case_site_id_key)
-                .zip(existing.case_site_id.to_place())
+                .map(|key_place| (key_place, existing.case_site_id.to_place()))
                 .is_some_and(|(key_place, typed_place)| key_place == typed_place)
             && existing.enemy_type == group.enemy_type
             && existing.base_enemy_count == group.base_enemy_count
@@ -1362,7 +1422,7 @@ fn materialize_hostile_group(
                 ctx,
                 crate::world_actor::CharacterContextKind::HostileGroup,
                 &existing.id,
-                &existing.case_site_id.value,
+                existing.case_site_id.as_str(),
                 &existing.enemy_type,
                 existing.enemy_count,
             )?;
@@ -1376,7 +1436,7 @@ fn materialize_hostile_group(
         ctx,
         crate::world_actor::CharacterContextKind::HostileGroup,
         &group.id,
-        &group.case_site_id.value,
+        group.case_site_id.as_str(),
         &group.enemy_type,
         group.enemy_count,
     )?;
@@ -1406,7 +1466,7 @@ fn hostile_group_authority_row(
     );
     Ok(HostileGroupAuthority {
         id: hostile_group_id.to_string(),
-        case_site_id_key: site.id.value.clone(),
+        case_site_id_key: site.id.as_str().to_owned(),
         case_site_id: site.id.clone(),
         drop_item_id: autoresolve_drop(&enemy_type)?.map(str::to_string),
         drop_quantity: base_enemy_count,
@@ -1457,43 +1517,10 @@ pub struct HostileResolutionReceipt {
     pub capture_subject_id: Option<String>,
 }
 
-#[derive(SpacetimeType, serde::Deserialize, Clone, Copy, Debug, Default, PartialEq)]
-pub struct RecruitmentRequirements {
-    pub melee: bool,
-    pub ranged: bool,
-    pub weapon_precision: f32,
-    pub heavy: bool,
-    pub quarter_armor: bool,
-    pub half_armor: bool,
-    pub three_quarter_armor: bool,
-    pub full_armor: bool,
-    pub athletics: u8,
-    pub endurance: u8,
-    pub physiology: u8,
-    pub surgery: u8,
-    pub command: u8,
-    pub religion: u8,
-}
-
-impl From<RecruitmentRequirements> for adventuresim_core::capability::RoleRequirements {
-    fn from(value: RecruitmentRequirements) -> Self {
-        Self {
-            melee: value.melee,
-            ranged: value.ranged,
-            weapon_precision: value.weapon_precision,
-            heavy: value.heavy,
-            quarter_armor: value.quarter_armor,
-            half_armor: value.half_armor,
-            three_quarter_armor: value.three_quarter_armor,
-            full_armor: value.full_armor,
-            athletics: value.athletics,
-            endurance: value.endurance,
-            physiology: value.physiology,
-            surgery: value.surgery,
-            command: value.command,
-            religion: value.religion,
-        }
-    }
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum RecruitmentRolePurpose {
+    GeneralJoin,
+    Specialized,
 }
 
 #[derive(Clone, Debug)]
@@ -1504,8 +1531,9 @@ pub struct PartyRecruitmentRole {
     pub id: u64,
     #[index(btree)]
     pub party_id: String,
+    pub purpose: RecruitmentRolePurpose,
     pub name: String,
-    pub requirements: RecruitmentRequirements,
+    pub requirements: RoleRequirements,
     pub quantity: u32,
 }
 
@@ -1518,7 +1546,7 @@ pub struct SavedRecruitmentRole {
     #[index(btree)]
     pub owner_character_id: u64,
     pub name: String,
-    pub requirements: RecruitmentRequirements,
+    pub requirements: RoleRequirements,
 }
 
 #[derive(Clone, Debug)]
@@ -1593,14 +1621,14 @@ enum ApprovedPartyAction {
     CreateRecruitmentRole {
         name: String,
         quantity: u32,
-        requirements: RecruitmentRequirements,
+        requirements: RoleRequirements,
         save_role: bool,
     },
     UpdateRecruitmentRole {
         role_id: u64,
         name: String,
         quantity: u32,
-        requirements: RecruitmentRequirements,
+        requirements: RoleRequirements,
     },
     DeleteRecruitmentRole {
         role_id: u64,

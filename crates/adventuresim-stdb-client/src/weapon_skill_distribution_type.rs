@@ -15,7 +15,7 @@ pub struct WeaponSkillDistribution {
     pub bow: f32,
     pub crossbow: f32,
     pub firearm: f32,
-    pub throw_skill: f32,
+    pub throw: f32,
 }
 
 impl __sdk::InModule for WeaponSkillDistribution {

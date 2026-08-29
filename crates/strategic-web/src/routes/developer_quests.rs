@@ -3,12 +3,13 @@
 //! The module reducer enforces both gateway identity and the compiled
 //! development capability. Browser-local developer mode only controls display.
 
-use super::{AppState, BackendSettlementResidentRow as NpcRow};
+use super::AppState;
 use crate::{
     session::Session,
     spacetimedb::{
-        BackendDevelopmentQuest, BackendDevelopmentScenario, Character, CharacterTime, Settlement,
-        sql_string_literal,
+        BackendDevelopmentQuest, BackendDevelopmentScenario, BackendSettlementResident,
+        CharacterTime, CharacterView, SettlementResidentPresence, SettlementView, npc_age_band_id,
+        npc_presentation_id, sql_string_literal,
     },
 };
 use adventuresim_core::{
@@ -28,16 +29,6 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
-
-#[derive(Clone, Deserialize)]
-struct PresenceRow {
-    character_id: u64,
-    settlement_id: String,
-    location_id: String,
-    start_minute: u16,
-    end_minute: u16,
-    is_default: bool,
-}
 
 #[derive(Deserialize)]
 struct SpawnRequest {
@@ -64,7 +55,7 @@ struct TriggerIncidentForm {
 async fn inspector(State(state): State<AppState>) -> Response {
     let quests = match state
         .db
-        .query::<BackendDevelopmentQuest>("SELECT * FROM backend_development_quests")
+        .query_sats::<BackendDevelopmentQuest>("SELECT * FROM backend_development_quests")
         .await
     {
         Ok(quests) => quests,
@@ -136,13 +127,13 @@ async fn active_context(
     state: &AppState,
     session: &Session,
     seed: u64,
-) -> Result<(u64, Settlement, GenerationContext), StatusCode> {
+) -> Result<(u64, SettlementView, GenerationContext), StatusCode> {
     let character_id = session.character_id_u64().ok_or(StatusCode::UNAUTHORIZED)?;
     let character = state
         .db
-        .query_one::<Character>(&format!(
-            "SELECT * FROM backend_characters WHERE id = {character_id}"
-        ))
+        .query_one_sats_into::<adventuresim_stdb_client::Character, CharacterView>(
+            &crate::spacetimedb::character_by_id(character_id),
+        )
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
         .ok_or(StatusCode::UNAUTHORIZED)?;
@@ -151,14 +142,16 @@ async fn active_context(
         .ok_or(StatusCode::CONFLICT)?;
     let settlement = state
         .db
-        .query_one::<Settlement>(&crate::spacetimedb::settlement_by_id(&settlement_id))
+        .query_one_sats_into::<adventuresim_stdb_client::Settlement, SettlementView>(
+            &crate::spacetimedb::settlement_by_id(&settlement_id),
+        )
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
         .ok_or(StatusCode::NOT_FOUND)?;
     let now_minute = state
         .db
-        .query_one::<CharacterTime>(&format!(
-            "SELECT * FROM backend_character_times WHERE character_id = {character_id}"
+        .query_one_sats::<CharacterTime>(&crate::spacetimedb::character_time_by_character_id(
+            character_id,
         ))
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
@@ -169,8 +162,10 @@ async fn active_context(
     let presence_sql =
         format!("SELECT * FROM settlement_resident_presence WHERE settlement_id = {literal}");
     let (npcs, presences) = tokio::join!(
-        state.db.query::<NpcRow>(&npc_sql),
-        state.db.query::<PresenceRow>(&presence_sql)
+        state.db.query_sats::<BackendSettlementResident>(&npc_sql),
+        state
+            .db
+            .query_sats::<SettlementResidentPresence>(&presence_sql)
     );
     let visible_tabs = player_visible_npc_tabs(
         &settlement.economy,
@@ -193,8 +188,8 @@ async fn active_context(
             visible_witness_candidate(VisibleWitnessCandidateInput {
                 resident_character_id: npc.character_id,
                 display_name: &npc.name,
-                age_band: &npc.age_band,
-                presentation: &npc.presentation,
+                age_band: npc_age_band_id(npc.age_band),
+                presentation: npc_presentation_id(npc.presentation),
                 height: &npc.height,
                 build: &npc.build,
                 hair: &npc.hair,
@@ -230,7 +225,7 @@ async fn active_context(
 async fn development_enabled(state: &AppState) -> bool {
     state
         .db
-        .query::<BackendDevelopmentScenario>("SELECT * FROM backend_development_scenarios")
+        .query_sats::<BackendDevelopmentScenario>("SELECT * FROM backend_development_scenarios")
         .await
         .is_ok_and(|rows| !rows.is_empty())
 }

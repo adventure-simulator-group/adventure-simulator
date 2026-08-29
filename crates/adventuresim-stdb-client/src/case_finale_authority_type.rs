@@ -5,7 +5,7 @@
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::case_status_type::CaseStatus;
-use super::finale_kind_type::FinaleKind;
+use super::finale_execution_kind_type::FinaleExecutionKind;
 use super::finale_status_type::FinaleStatus;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
@@ -13,7 +13,7 @@ use super::finale_status_type::FinaleStatus;
 pub struct CaseFinaleAuthority {
     pub id: String,
     pub case_id: String,
-    pub kind: FinaleKind,
+    pub kind: FinaleExecutionKind,
     pub resolution_status: CaseStatus,
     pub eligible_path_index: Option<u16>,
     pub priority: u16,
@@ -30,7 +30,7 @@ impl __sdk::InModule for CaseFinaleAuthority {
 pub struct CaseFinaleAuthorityCols {
     pub id: __sdk::__query_builder::Col<CaseFinaleAuthority, String>,
     pub case_id: __sdk::__query_builder::Col<CaseFinaleAuthority, String>,
-    pub kind: __sdk::__query_builder::Col<CaseFinaleAuthority, FinaleKind>,
+    pub kind: __sdk::__query_builder::Col<CaseFinaleAuthority, FinaleExecutionKind>,
     pub resolution_status: __sdk::__query_builder::Col<CaseFinaleAuthority, CaseStatus>,
     pub eligible_path_index: __sdk::__query_builder::Col<CaseFinaleAuthority, Option<u16>>,
     pub priority: __sdk::__query_builder::Col<CaseFinaleAuthority, u16>,

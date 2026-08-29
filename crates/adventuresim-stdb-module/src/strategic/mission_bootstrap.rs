@@ -119,7 +119,7 @@ pub fn autoresolve_mission(
     let case_site = party
         .current_case_site_id
         .as_ref()
-        .and_then(|id| ctx.db.case_site_authority().id_key().find(&id.value))
+        .and_then(|id| ctx.db.case_site_authority().id_key().find(id.to_string()))
         .ok_or("Party is not at a case site")?;
     if crate::investigation::character_case_site_id(ctx, character_id).as_deref()
         != Some(case_site.id.as_str())
@@ -251,7 +251,7 @@ pub fn autoresolve_mission(
         &battle_id,
         &party_id,
         &case_site.origin_settlement_id,
-        &case_site.id.value,
+        Some(&case_site.id),
         &hostile_group.enemy_type,
         &outcome,
     )?;
@@ -570,6 +570,7 @@ pub fn seed_standalone_tactical_mission(
         return Ok(());
     }
     adventuresim_core::mission::MissionId::new(mission_id.clone()).map_err(str::to_string)?;
+    let standalone_mission_family = standalone_mission_family(&mission_id)?;
 
     if !ctx
         .db
@@ -601,7 +602,7 @@ pub fn seed_standalone_tactical_mission(
         .db
         .case_site_authority()
         .id_key()
-        .find(&case_site_id.value)
+        .find(case_site_id.to_string())
     {
         existing
     } else {
@@ -613,9 +614,9 @@ pub fn seed_standalone_tactical_mission(
         )
         .ok_or("Standalone tactical site is not a valid WGS84 coordinate")?;
         ctx.db.case_site_authority().insert(CaseSiteAuthority {
-            id_key: case_site_id.value.clone(),
+            id_key: case_site_id.as_str().to_owned(),
             id: case_site_id.clone(),
-            case_id: format!("case:standalone:{mission_id}"),
+            case_id: standalone_case_id(&mission_id),
             origin_settlement_id: settlement.id.clone(),
             name: "Standalone Tactical Test".into(),
             description: "Seeded for isolated tactical testing".into(),
@@ -638,7 +639,7 @@ pub fn seed_standalone_tactical_mission(
             .hostile_group_authority()
             .insert(HostileGroupAuthority {
                 id: hostile_group_id.clone(),
-                case_site_id_key: case_site.id.value.clone(),
+                case_site_id_key: case_site.id.as_str().to_owned(),
                 case_site_id: case_site.id.clone(),
                 enemy_type: "bandit".into(),
                 base_enemy_count: required_enemy_kills
@@ -659,7 +660,7 @@ pub fn seed_standalone_tactical_mission(
                 disposition: HostileGroupDisposition::Active,
             });
     }
-    let case_id = format!("case:standalone:{mission_id}");
+    let case_id = standalone_case_id(&mission_id);
     let group = ctx
         .db
         .hostile_group_authority()
@@ -670,11 +671,11 @@ pub fn seed_standalone_tactical_mission(
         ctx,
         crate::world_actor::CharacterContextKind::HostileGroup,
         &group.id,
-        &group.case_site_id.value,
+        group.case_site_id.as_str(),
         &group.enemy_type,
         group.enemy_count,
     )?;
-    if mission_id.starts_with("mission:animation-") {
+    if standalone_mission_family == StandaloneMissionFamily::Animation {
         configure_animation_lab_enemies(ctx, &hostile_group_id)?;
     }
     let objective_id = format!("objective:standalone:{mission_id}");
@@ -723,7 +724,7 @@ pub fn seed_standalone_tactical_mission(
     crate::investigation::set_character_case_site(
         ctx,
         character_id,
-        Some(case_site.id.value.clone()),
+        Some(case_site.id.as_str().to_owned()),
     )?;
     let capability_id = format!("mission-approach:standalone:{mission_id}");
     if ctx
@@ -857,6 +858,33 @@ pub fn seed_standalone_tactical_mission(
     Ok(())
 }
 
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum StandaloneMissionFamily {
+    Animation,
+    General,
+}
+
+fn standalone_mission_family(mission_id: &str) -> Result<StandaloneMissionFamily, String> {
+    let (domain, coordinate) = mission_id
+        .split_once(':')
+        .ok_or("Standalone mission ID has no domain")?;
+    if domain != "mission" || coordinate.is_empty() {
+        return Err("Standalone mission ID has an invalid domain coordinate".into());
+    }
+    if let Some(animation_coordinate) = coordinate.strip_prefix("animation-") {
+        if animation_coordinate.is_empty() {
+            return Err("Animation mission ID has no coordinate".into());
+        }
+        Ok(StandaloneMissionFamily::Animation)
+    } else {
+        Ok(StandaloneMissionFamily::General)
+    }
+}
+
+fn standalone_case_id(mission_id: &str) -> String {
+    format!("case:standalone:{mission_id}")
+}
+
 fn retire_interrupted_standalone_requests(
     ctx: &ReducerContext,
     character_id: u64,
@@ -880,7 +908,7 @@ fn retire_interrupted_standalone_requests(
             .id()
             .find(&request.mission_id)
             .ok_or("Interrupted tactical request has no mission authority")?;
-        if !mission.case_id.starts_with("case:standalone:") {
+        if mission.case_id != standalone_case_id(&mission.id) {
             return Err("Refusing to retire a non-standalone tactical request".into());
         }
         ctx.db
@@ -1377,7 +1405,7 @@ fn ensure_npc_recruiting_parties(ctx: &ReducerContext, settlement_id: &str) -> R
         party.religion_target = 3.0 + (ctx.random::<u64>() % 3) as f32;
         ctx.db.party_authority().id().update(party);
 
-        let mut requirements = RecruitmentRequirements::default();
+        let mut requirements = RoleRequirements::default();
         if ctx.random::<u64>().is_multiple_of(2) {
             requirements.melee = true;
         } else {
@@ -1394,6 +1422,7 @@ fn ensure_npc_recruiting_parties(ctx: &ReducerContext, settlement_id: &str) -> R
             .insert(PartyRecruitmentRole {
                 id: 0,
                 party_id: party_id.clone(),
+                purpose: RecruitmentRolePurpose::Specialized,
                 name: if requirements.ranged {
                     "Ranged support".into()
                 } else {
@@ -1485,8 +1514,8 @@ fn generated_witness_candidates(
             if !matches!(demographic, WitnessDemographic::Child) {
                 circumstances.insert(Circumstance::SecretRiversideMeeting);
             }
-            let age_band = format!("{:?}", npc.age_band).to_ascii_lowercase();
-            let sex = format!("{:?}", npc.sex).to_ascii_lowercase();
+            let age_band = npc.age_band.stable_id().to_owned();
+            let sex = npc.sex.stable_id().to_owned();
             let presence_version = generated_npc_presence_version(&npc, &presence);
             Some(WitnessCandidate {
                 resident_character_id: npc.character_id,
@@ -1561,13 +1590,13 @@ pub(crate) fn developer_npc_witness_candidate(
     use adventuresim_core::quest_generation::{
         VisibleWitnessCandidateInput, visible_witness_candidate,
     };
-    let age_band = format!("{:?}", npc.age_band);
-    let presentation = format!("{:?}", npc.presentation);
+    let age_band = npc.age_band.stable_variant_id();
+    let presentation = npc.presentation.stable_variant_id();
     visible_witness_candidate(VisibleWitnessCandidateInput {
         resident_character_id: npc.character_id,
         display_name: &npc.name,
-        age_band: &age_band,
-        presentation: &presentation,
+        age_band,
+        presentation,
         height: &npc.height,
         build: &npc.build,
         hair: &npc.hair,
@@ -1585,10 +1614,10 @@ pub(crate) fn developer_npc_witness_candidate(
 pub(crate) fn generated_npc_demographic(
     npc: &crate::settlement_population::ResolvedSettlementResident,
 ) -> adventuresim_core::quest_generation::WitnessDemographic {
-    let age_band = format!("{:?}", npc.age_band).to_ascii_lowercase();
-    let sex = format!("{:?}", npc.sex).to_ascii_lowercase();
+    let age_band = npc.age_band.stable_id();
+    let sex = npc.sex.stable_id();
     let authored = adventuresim_core::quest_catalog::catalog()
-        .witness_demographic_for(&age_band, &sex, &npc.profession, &npc.local_role)
+        .witness_demographic_for(age_band, sex, &npc.profession, &npc.local_role)
         .expect("validated demographic catalog has one fallback");
     adventuresim_core::quest_generation::WitnessDemographic::try_new(&authored.id)
         .expect("validated open demographic ID")
@@ -1598,18 +1627,32 @@ pub(crate) fn generated_npc_presence_version(
     npc: &crate::settlement_population::ResolvedSettlementResident,
     presence: &crate::settlement_population::SettlementResidentPresence,
 ) -> u64 {
-    adventuresim_core::settlement_population::stable_hash(&format!(
-        "victim-presence-v1:{}:{:?}:{:?}:{}:{}:{}:{}:{}:{}",
-        npc.character_id,
-        npc.age_band,
-        npc.sex,
-        npc.profession,
-        presence.settlement_id,
-        presence.location_id,
-        presence.start_minute,
-        presence.end_minute,
-        presence.is_default
-    ))
+    let mut hash = 1_469_598_103_934_665_603_u64;
+    let character_id = npc.character_id.to_le_bytes();
+    let start_minute = presence.start_minute.to_le_bytes();
+    let end_minute = presence.end_minute.to_le_bytes();
+    let is_default = [u8::from(presence.is_default)];
+    for value in [
+        b"adventuresim.generated-witness-presence.v1".as_slice(),
+        character_id.as_slice(),
+        npc.age_band.stable_variant_id().as_bytes(),
+        npc.sex.stable_variant_id().as_bytes(),
+        npc.profession.as_bytes(),
+        presence.settlement_id.as_bytes(),
+        presence.location_id.as_bytes(),
+        start_minute.as_slice(),
+        end_minute.as_slice(),
+        is_default.as_slice(),
+    ] {
+        for byte in (value.len() as u64)
+            .to_le_bytes()
+            .into_iter()
+            .chain(value.iter().copied())
+        {
+            hash = (hash ^ u64::from(byte)).wrapping_mul(1_099_511_628_211);
+        }
+    }
+    hash
 }
 
 fn generated_scene_key(kind: adventuresim_core::quest_generation::SiteKind) -> &'static str {
@@ -1974,8 +2017,11 @@ fn simulation_quest_provisioning_economy(
 
     if !economy.services.contains(&SettlementService::GeneralStore) {
         economy.services.push(SettlementService::GeneralStore);
-        economy.services.sort();
     }
+    if !economy.services.contains(&SettlementService::Temple) {
+        economy.services.push(SettlementService::Temple);
+    }
+    economy.services.sort();
     if !economy
         .stock
         .iter()
@@ -2185,7 +2231,7 @@ pub(crate) fn seed_simulation_quest_fixture_inner(
         1,
         SIMULATION_QUEST_ENEMY_DIFFICULTY,
     )?;
-    ctx.db.contract_authority().insert(Contract {
+    ctx.db.contract_authority().insert(ContractAuthority {
         id: contract_id.clone(),
         gateway_bucket: 0,
         case_id,
@@ -2432,7 +2478,7 @@ fn materialize_generated_quest(
         ctx.db.case_finale_authority().insert(CaseFinaleAuthority {
             id: format!("finale:{}:{path_index}", generated.canonical_case_id),
             case_id: generated.canonical_case_id.clone(),
-            kind: FinaleKind::RecordResolution,
+            kind: FinaleExecutionKind::RecordResolution,
             resolution_status: CaseStatus::Resolved,
             eligible_path_index: Some(path_index as u16),
             priority: 100u16.saturating_sub(path_index as u16),
@@ -2442,7 +2488,7 @@ fn materialize_generated_quest(
     ctx.db.case_finale_authority().insert(CaseFinaleAuthority {
         id: format!("finale:{}:problem", generated.canonical_case_id),
         case_id: generated.canonical_case_id.clone(),
-        kind: FinaleKind::ResolveLocalProblem,
+        kind: FinaleExecutionKind::ResolveLocalProblem,
         resolution_status: CaseStatus::Resolved,
         eligible_path_index: None,
         priority: 1,
@@ -2468,7 +2514,7 @@ fn materialize_generated_quest(
             settlement_name: context.settlement_name.clone(),
             seed,
             catalog_revision: generated.catalog_revision.clone(),
-            context_commitment: quest_generation_context_commitment(&context_snapshot_json),
+            context_commitment: quest_generation_context_commitment(&context_snapshot_json)?,
             context_snapshot_json,
             manifest_json: serde_json::to_string(&generated)
                 .map_err(|_| "Could not encode quest generation manifest")?,
@@ -2582,6 +2628,21 @@ fn preferred_fixture_site_distance_m(
 #[cfg(test)]
 mod developer_quest_source_tests {
     use super::*;
+
+    #[test]
+    fn standalone_mission_family_uses_an_exact_mission_tag() {
+        assert!(
+            standalone_mission_family("mission:animation-demo").unwrap()
+                == StandaloneMissionFamily::Animation
+        );
+        assert!(
+            standalone_mission_family("mission:ordinary").unwrap()
+                == StandaloneMissionFamily::General
+        );
+        for invalid in ["mission:", "case:animation-demo", "animation-demo"] {
+            assert!(standalone_mission_family(invalid).is_err());
+        }
+    }
 
     #[test]
     fn outbreak_demo_seed_selects_the_waterborne_fixture() {
@@ -2847,13 +2908,13 @@ mod developer_quest_source_tests {
                 sex: Sex::Female,
                 presentation,
             };
-            let age_band = format!("{:?}", npc.age_band);
-            let presentation = format!("{:?}", npc.presentation);
+            let age_band = npc.age_band.stable_variant_id();
+            let presentation = npc.presentation.stable_variant_id();
             let direct = visible_witness_candidate(VisibleWitnessCandidateInput {
                 resident_character_id: npc.character_id,
                 display_name: &npc.name,
-                age_band: &age_band,
-                presentation: &presentation,
+                age_band,
+                presentation,
                 height: &npc.height,
                 build: &npc.build,
                 hair: &npc.hair,

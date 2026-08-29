@@ -4,12 +4,12 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::settlement_description_batch_row_type::SettlementDescriptionBatchRow;
+use super::settlement_description_type::SettlementDescription;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct ImportSettlementDescriptionsArgs {
-    pub descriptions: Vec<SettlementDescriptionBatchRow>,
+    pub descriptions: Vec<SettlementDescription>,
 }
 
 impl From<ImportSettlementDescriptionsArgs> for super::Reducer {
@@ -37,7 +37,7 @@ pub trait import_settlement_descriptions {
     /// /// Use [`import_settlement_descriptions:import_settlement_descriptions_then`] to run a callback after the reducer completes.
     fn import_settlement_descriptions(
         &self,
-        descriptions: Vec<SettlementDescriptionBatchRow>,
+        descriptions: Vec<SettlementDescription>,
     ) -> __sdk::Result<()> {
         self.import_settlement_descriptions_then(descriptions, |_, _| {})
     }
@@ -50,7 +50,7 @@ pub trait import_settlement_descriptions {
     ///  and its status can be observed with the `callback`.
     fn import_settlement_descriptions_then(
         &self,
-        descriptions: Vec<SettlementDescriptionBatchRow>,
+        descriptions: Vec<SettlementDescription>,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -63,7 +63,7 @@ pub trait import_settlement_descriptions {
 impl import_settlement_descriptions for super::RemoteReducers {
     fn import_settlement_descriptions_then(
         &self,
-        descriptions: Vec<SettlementDescriptionBatchRow>,
+        descriptions: Vec<SettlementDescription>,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,

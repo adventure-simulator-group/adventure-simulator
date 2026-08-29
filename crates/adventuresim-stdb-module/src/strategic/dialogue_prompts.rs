@@ -3,10 +3,18 @@ fn resolved_prompt_choices(
     session: &DialogueSession,
     character_id: u64,
     prompt: &adventuresim_dialogue::Prompt,
-) -> Result<(String, Vec<adventuresim_dialogue::Choice>, u32, u32), String> {
+) -> Result<
+    (
+        DialoguePromptMode,
+        Vec<adventuresim_dialogue::Choice>,
+        u32,
+        u32,
+    ),
+    String,
+> {
     if prompt.id != "request-organization-promotion" {
         return Ok((
-            format!("{:?}", prompt.mode),
+            DialoguePromptMode::from_authored(&prompt.mode),
             prompt.choices.clone(),
             prompt.min_choices as u32,
             prompt.max_choices as u32,
@@ -67,7 +75,41 @@ fn resolved_prompt_choices(
     if choices.len() < 2 {
         return Err("Promotion prompt has no selectable authored transition".into());
     }
-    Ok(("Single".into(), choices, 1, 1))
+    Ok((DialoguePromptMode::Single, choices, 1, 1))
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct CorpsePermissionTopicId<'a> {
+    scope: crate::corpse::CorpsePermissionScope,
+    approach: &'a str,
+    corpse_id: &'a str,
+}
+
+impl<'a> CorpsePermissionTopicId<'a> {
+    fn parse(value: &'a str) -> Result<Option<Self>, String> {
+        let Some(coordinate) = value.strip_prefix("corpse-permission:") else {
+            return Ok(None);
+        };
+        let (scope, remainder) = coordinate
+            .split_once(':')
+            .ok_or("Malformed corpse permission topic")?;
+        let (approach, corpse_id) = remainder
+            .split_once(':')
+            .ok_or("Malformed corpse permission approach")?;
+        if approach.is_empty() || corpse_id.is_empty() {
+            return Err("Corpse permission topic has an empty coordinate".into());
+        }
+        let scope = match scope {
+            "examination" => crate::corpse::CorpsePermissionScope::Examination,
+            "exhumation" => crate::corpse::CorpsePermissionScope::Exhumation,
+            _ => return Err("Unknown corpse permission scope".into()),
+        };
+        Ok(Some(Self {
+            scope,
+            approach,
+            corpse_id,
+        }))
+    }
 }
 
 #[reducer]
@@ -94,18 +136,7 @@ pub fn choose_dialogue_topic(
     if session.revision != expected_revision {
         return Err("Dialogue action used a stale session revision".into());
     }
-    if let Some(permission_coordinate) = topic_id.strip_prefix("corpse-permission:") {
-        let (scope, remainder) = permission_coordinate
-            .split_once(':')
-            .ok_or("Malformed corpse permission topic")?;
-        let (approach, corpse_id) = remainder
-            .split_once(':')
-            .ok_or("Malformed corpse permission approach")?;
-        let scope = match scope {
-            "examination" => crate::corpse::CorpsePermissionScope::Examination,
-            "exhumation" => crate::corpse::CorpsePermissionScope::Exhumation,
-            _ => return Err("Unknown corpse permission scope".into()),
-        };
+    if let Some(permission) = CorpsePermissionTopicId::parse(&topic_id)? {
         let option_id = format!("{session_id}:{topic_id}");
         if ctx
             .db
@@ -130,12 +161,12 @@ pub fn choose_dialogue_topic(
         let granted = crate::corpse::grant_permission_from_dialogue(
             ctx,
             character_id,
-            corpse_id,
+            permission.corpse_id,
             npc_id,
-            scope,
-            approach,
+            permission.scope,
+            permission.approach,
         )?;
-        let scope_label = if scope == crate::corpse::CorpsePermissionScope::Exhumation {
+        let scope_label = if permission.scope == crate::corpse::CorpsePermissionScope::Exhumation {
             "exhume the body"
         } else {
             "examine the body"
@@ -182,7 +213,7 @@ pub fn choose_dialogue_topic(
             id: action_row_id,
             session_id,
             action_id,
-            action_kind: format!("corpse-permission:{permission_coordinate}"),
+            action_kind: topic_id,
             resulting_revision: session.revision,
         });
         refresh_dialogue_topic_options(ctx, &session, character_id)?;
@@ -295,14 +326,16 @@ pub fn choose_dialogue_topic(
                 gateway_bucket: 0,
                 session_id: session_id.clone(),
                 prompt_id: prompt.id.clone(),
-                mode,
+                mode: mode.stable_id().into(),
                 respondent_role: prompt.respondent.clone(),
-                resolution_policy: format!("{:?}", prompt.resolution),
+                resolution_policy: DialogueResolutionPolicy::from_authored(&prompt.resolution)
+                    .stable_id()
+                    .into(),
                 choices_json: serde_json::to_string(&choices)
                     .map_err(|_| "Could not encode dialogue choices")?,
                 min_choices,
                 max_choices,
-                state: "open".into(),
+                state: DialoguePromptState::Open.stable_id().into(),
                 resolved_choice_ids_json: "[]".into(),
                 source_refs_json: serde_json::to_string(
                     &choices
@@ -339,6 +372,7 @@ fn dialogue_answer_is_committed_retry(
     prompt_state: &str,
     prompt_row_id: &str,
 ) -> Result<bool, String> {
+    let prompt_state = DialoguePromptState::parse(prompt_state)?;
     if let Some(receipt) = receipt {
         return if receipt.action_kind == format!("answer:{prompt_row_id}") {
             Ok(true)
@@ -346,7 +380,7 @@ fn dialogue_answer_is_committed_retry(
             Err("Dialogue action ID conflicts with another action".into())
         };
     }
-    if prompt_state != "open" {
+    if prompt_state != DialoguePromptState::Open {
         return Err("Dialogue prompt is closed".into());
     }
     Ok(false)
@@ -397,6 +431,8 @@ pub fn answer_dialogue_prompt(
         serde_json::from_str(&choice_ids_json).map_err(|_| "Invalid dialogue choices")?;
     let allowed: Vec<adventuresim_dialogue::Choice> =
         serde_json::from_str(&prompt.choices_json).map_err(|_| "Invalid authoritative choices")?;
+    let prompt_mode = DialoguePromptMode::parse(&prompt.mode)?;
+    let resolution_policy = DialogueResolutionPolicy::parse(&prompt.resolution_policy)?;
     let unique: std::collections::BTreeSet<_> = chosen.iter().collect();
     if chosen.len() != unique.len()
         || chosen.len() < prompt.min_choices as usize
@@ -404,7 +440,7 @@ pub fn answer_dialogue_prompt(
         || chosen
             .iter()
             .any(|id| !allowed.iter().any(|choice| &choice.id == id))
-        || (!prompt.mode.contains("Multi") && chosen.len() != 1)
+        || (prompt_mode != DialoguePromptMode::Multi && chosen.len() != 1)
     {
         return Err("Invalid dialogue answer".into());
     }
@@ -449,28 +485,24 @@ pub fn answer_dialogue_prompt(
             *vote_counts.entry(choice.clone()).or_default() += 1;
         }
     }
-    let winning = if prompt.resolution_policy.contains("FirstResponse") {
-        ballots.first().cloned()
-    } else if prompt.resolution_policy.contains("Majority") {
-        vote_counts
+    let winning = match resolution_policy {
+        DialogueResolutionPolicy::FirstResponse => ballots.first().cloned(),
+        DialogueResolutionPolicy::Majority => vote_counts
             .iter()
             .filter(|(_, count)| **count > respondent_count / 2)
             .map(|(choice, _)| vec![choice.clone()])
-            .next()
-    } else if prompt.resolution_policy.contains("Unanimous")
-        && answer_count >= respondent_count
-        && ballots.windows(2).all(|pair| pair[0] == pair[1])
-    {
-        ballots.first().cloned()
-    } else if prompt.resolution_policy.contains("AllRespondents")
-        && answer_count >= respondent_count
-    {
-        vote_counts
+            .next(),
+        DialogueResolutionPolicy::Unanimous
+            if answer_count >= respondent_count
+                && ballots.windows(2).all(|pair| pair[0] == pair[1]) =>
+        {
+            ballots.first().cloned()
+        }
+        DialogueResolutionPolicy::AllRespondents if answer_count >= respondent_count => vote_counts
             .iter()
             .max_by_key(|(choice, count)| (**count, std::cmp::Reverse((*choice).clone())))
-            .map(|(choice, _)| vec![choice.clone()])
-    } else {
-        None
+            .map(|(choice, _)| vec![choice.clone()]),
+        DialogueResolutionPolicy::Unanimous | DialogueResolutionPolicy::AllRespondents => None,
     };
     if let Some(winning) = winning {
         let topic = adventuresim_dialogue::find_conversation(&session.conversation_id)
@@ -566,7 +598,7 @@ pub fn answer_dialogue_prompt(
             }
         }
         let mut prompt = prompt;
-        prompt.state = "resolved".into();
+        prompt.state = DialoguePromptState::Resolved.stable_id().into();
         prompt.resolved_choice_ids_json = serde_json::to_string(&winning)
             .map_err(|_| "Could not encode resolved dialogue answer")?;
         ctx.db.dialogue_prompt().id().update(prompt);

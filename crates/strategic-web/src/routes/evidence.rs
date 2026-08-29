@@ -3,7 +3,7 @@ use crate::{
     session::Session,
     spacetimedb::{
         BackendBestiaryDeduction, BackendPhysicalEvidence, BackendPhysicalEvidenceInspection,
-        sql_string_literal,
+        BestiaryDeductionExt, sql_string_literal,
     },
 };
 use axum::{
@@ -71,7 +71,7 @@ async fn evidence_at_site(
     }
     let mut evidence = state
         .db
-        .query::<BackendPhysicalEvidence>(&format!(
+        .query_sats::<BackendPhysicalEvidence>(&format!(
             "SELECT * FROM backend_physical_evidence WHERE owner_character_id = {character_id} AND case_site_id = {}",
             sql_string_literal(case_site_id)
         ))
@@ -79,14 +79,14 @@ async fn evidence_at_site(
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
     let inspections = state
         .db
-        .query::<BackendPhysicalEvidenceInspection>(&format!(
+        .query_sats::<BackendPhysicalEvidenceInspection>(&format!(
             "SELECT * FROM backend_physical_evidence_inspections WHERE owner_character_id = {character_id}"
         ))
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
     let deductions = state
         .db
-        .query::<BackendBestiaryDeduction>(&format!(
+        .query_sats::<BackendBestiaryDeduction>(&format!(
             "SELECT * FROM backend_bestiary_deductions WHERE owner_character_id = {character_id}"
         ))
         .await

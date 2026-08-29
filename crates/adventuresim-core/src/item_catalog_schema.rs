@@ -190,6 +190,10 @@ impl EquipmentChannel {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(
+    all(feature = "spacetimedb", runtime_catalog),
+    derive(spacetimedb::SpacetimeType)
+)]
 #[serde(deny_unknown_fields)]
 pub struct OccupancyRequirement {
     pub location: EquipmentLocation,
@@ -200,7 +204,11 @@ pub struct OccupancyRequirement {
     pub order: u16,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(
+    all(feature = "spacetimedb", runtime_catalog),
+    derive(spacetimedb::SpacetimeType)
+)]
 #[serde(deny_unknown_fields)]
 pub struct ParentRequirement {
     pub channel: EquipmentChannel,
@@ -317,6 +325,38 @@ pub enum EquipmentLocation {
     RightPocket,
     BackLeftPocket,
     BackRightPocket,
+}
+
+impl EquipmentLocation {
+    /// Purpose-independent stable code for persisted topology identities.
+    pub const fn stable_id(self) -> &'static str {
+        match self {
+            Self::Head => "head",
+            Self::Face => "face",
+            Self::Neck => "neck",
+            Self::Chest => "chest",
+            Self::Stomach => "stomach",
+            Self::Back => "back",
+            Self::LeftShoulder => "left_shoulder",
+            Self::RightShoulder => "right_shoulder",
+            Self::LeftArm => "left_arm",
+            Self::RightArm => "right_arm",
+            Self::LeftHand => "left_hand",
+            Self::RightHand => "right_hand",
+            Self::LeftLeg => "left_leg",
+            Self::RightLeg => "right_leg",
+            Self::LeftFoot => "left_foot",
+            Self::RightFoot => "right_foot",
+            Self::LeftBelt => "left_belt",
+            Self::RightBelt => "right_belt",
+            Self::FrontBelt => "front_belt",
+            Self::BackBelt => "back_belt",
+            Self::LeftPocket => "left_pocket",
+            Self::RightPocket => "right_pocket",
+            Self::BackLeftPocket => "back_left_pocket",
+            Self::BackRightPocket => "back_right_pocket",
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -544,4 +584,34 @@ pub struct Alcohol {
 #[serde(deny_unknown_fields)]
 pub struct Container {
     pub capacity_ml: u32,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn equipment_requirements_round_trip_as_shared_boundary_values() {
+        let occupancy = OccupancyRequirement {
+            location: EquipmentLocation::LeftHand,
+            channel: EquipmentChannel::Held,
+            order: 2,
+        };
+        let parent = ParentRequirement {
+            channel: EquipmentChannel::Containment,
+            order: 1,
+        };
+        assert_eq!(
+            serde_json::from_value::<OccupancyRequirement>(
+                serde_json::to_value(occupancy).unwrap()
+            )
+            .unwrap(),
+            occupancy
+        );
+        assert_eq!(
+            serde_json::from_value::<ParentRequirement>(serde_json::to_value(parent).unwrap())
+                .unwrap(),
+            parent
+        );
+    }
 }

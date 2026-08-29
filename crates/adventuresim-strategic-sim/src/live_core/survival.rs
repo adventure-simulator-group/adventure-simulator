@@ -548,17 +548,17 @@ impl LiveRunner {
         item: &Item,
     ) -> Option<(String, u64, u64)> {
         let (storefront, service_id, location_id) = match item.kind {
-            ItemKind::Weapon | ItemKind::Shield => (
+            PersistedItemKind::Weapon | PersistedItemKind::Shield => (
                 adventuresim_core::settlement_economy::Storefront::Weapons,
                 "weapons",
                 "forge",
             ),
-            ItemKind::Armor => (
+            PersistedItemKind::Armor => (
                 adventuresim_core::settlement_economy::Storefront::Armor,
                 "armor",
                 "armoury",
             ),
-            ItemKind::Clothing => (
+            PersistedItemKind::Clothing => (
                 adventuresim_core::settlement_economy::Storefront::Clothing,
                 "clothing",
                 "tailor",
@@ -635,7 +635,7 @@ impl LiveRunner {
         let mut remaining = needed;
         for stack in treasury {
             let quantity = remaining.min(u64::from(stack.quantity)) as u32;
-            let result = reducer_call!(self, "withdraw_purchase_coin", |cb| self
+            let result = reducer_call!(self, ReducerOperation::WithdrawPurchaseCoin, |cb| self
                 .connection
                 .reducers
                 .withdraw_party_inventory_item_then(character_id, stack.id, quantity, cb));
@@ -681,7 +681,9 @@ impl LiveRunner {
         {
             self.metrics.load_readiness_suppressions =
                 self.metrics.load_readiness_suppressions.saturating_add(1);
-            return Ok(DepartureReadiness::Deferred("party_tent_would_overload"));
+            return Ok(DepartureReadiness::Deferred(
+                DepartureDeferralReason::PartyTentWouldOverload,
+            ));
         }
         let party_coin = self
             .connection
@@ -722,12 +724,16 @@ impl LiveRunner {
             if !public_provider_exists {
                 return Ok(self.tent_provider_unavailable_bivouac(event_agent));
             }
-            return Ok(DepartureReadiness::Deferred("party_tent_quote_unavailable"));
+            return Ok(DepartureReadiness::Deferred(
+                DepartureDeferralReason::PartyTentQuoteUnavailable,
+            ));
         };
         if !affordable {
-            return Ok(DepartureReadiness::Deferred("party_tent_unaffordable"));
+            return Ok(DepartureReadiness::Deferred(
+                DepartureDeferralReason::PartyTentUnaffordable,
+            ));
         }
-        let result = reducer_call!(self, "purchase_party_tent", |cb| self
+        let result = reducer_call!(self, ReducerOperation::PurchasePartyTent, |cb| self
             .connection
             .reducers
             .finalize_merchant_trade_then(
@@ -812,7 +818,9 @@ impl LiveRunner {
                     .metrics
                     .ammunition_shortage_suppressions
                     .saturating_add(1);
-                return Ok(DepartureReadiness::Deferred("ammunition_would_overload"));
+                return Ok(DepartureReadiness::Deferred(
+                    DepartureDeferralReason::AmmunitionWouldOverload,
+                ));
             }
             let Some(unit_quote) =
                 self.public_general_store_quote(character_id, settlement_id, &arrow)
@@ -822,7 +830,7 @@ impl LiveRunner {
                     .ammunition_shortage_suppressions
                     .saturating_add(1);
                 return Ok(DepartureReadiness::Deferred(
-                    "ammunition_provider_projection_unavailable",
+                    DepartureDeferralReason::AmmunitionProviderProjectionUnavailable,
                 ));
             };
             let quote = unit_quote.saturating_mul(u64::from(missing));
@@ -837,7 +845,9 @@ impl LiveRunner {
                     .metrics
                     .ammunition_shortage_suppressions
                     .saturating_add(1);
-                return Ok(DepartureReadiness::Deferred("ammunition_unaffordable"));
+                return Ok(DepartureReadiness::Deferred(
+                    DepartureDeferralReason::AmmunitionUnaffordable,
+                ));
             }
             let purse_after_withdrawal = self.personal_gold(character_id);
             if purse_after_withdrawal.saturating_sub(reserve) < quote {
@@ -845,9 +855,11 @@ impl LiveRunner {
                     .metrics
                     .ammunition_shortage_suppressions
                     .saturating_add(1);
-                return Ok(DepartureReadiness::Deferred("ammunition_unaffordable"));
+                return Ok(DepartureReadiness::Deferred(
+                    DepartureDeferralReason::AmmunitionUnaffordable,
+                ));
             }
-            let result = reducer_call!(self, "purchase_ammunition", |cb| self
+            let result = reducer_call!(self, ReducerOperation::PurchaseAmmunition, |cb| self
                 .connection
                 .reducers
                 .finalize_merchant_trade_then(
@@ -867,7 +879,7 @@ impl LiveRunner {
                         .ammunition_shortage_suppressions
                         .saturating_add(1);
                     return Ok(DepartureReadiness::Deferred(
-                        "ammunition_provider_projection_unavailable",
+                        DepartureDeferralReason::AmmunitionProviderProjectionUnavailable,
                     ));
                 }
                 return self.call(Err(error)).map(|_| DepartureReadiness::Ready);
@@ -904,20 +916,24 @@ impl LiveRunner {
     pub(super) fn validate_party_departure_readiness(&self, party_id: &str) -> DepartureReadiness {
         let (_, _, remaining_bps) = self.public_party_load_and_capacity(party_id);
         if remaining_bps < MIN_DEPARTURE_ENCUMBRANCE_REMAINING_BPS {
-            return DepartureReadiness::Deferred("party_load_unsafe");
+            return DepartureReadiness::Deferred(DepartureDeferralReason::PartyLoadUnsafe);
         }
         let member_ids = self.living_party_member_ids(party_id);
         for character_id in member_ids {
             let Some(observation) = self.public_survival_observation(character_id) else {
-                return DepartureReadiness::Deferred("survival_projection_unavailable");
+                return DepartureReadiness::Deferred(
+                    DepartureDeferralReason::SurvivalProjectionUnavailable,
+                );
             };
             if observation.wetness_bps > MAX_DEPARTURE_WETNESS_BPS
                 || observation.thermal_strain.unsigned_abs() > MAX_DEPARTURE_ABS_THERMAL_STRAIN
             {
-                return DepartureReadiness::Deferred("thermal_recovery_required");
+                return DepartureReadiness::Deferred(
+                    DepartureDeferralReason::ThermalRecoveryRequired,
+                );
             }
             if !observation.equipment_ready {
-                return DepartureReadiness::Deferred("equipment_not_ready");
+                return DepartureReadiness::Deferred(DepartureDeferralReason::EquipmentNotReady);
             }
         }
         DepartureReadiness::Ready
@@ -971,8 +987,20 @@ impl LiveRunner {
         leader_agent: u32,
         pin: &BackendCaseSitePin,
     ) -> DepartureReadiness {
+        self.validate_case_site_thermal_readiness_at(party_id, leader_agent, pin, None)
+    }
+
+    pub(super) fn validate_case_site_thermal_readiness_at(
+        &mut self,
+        party_id: &str,
+        leader_agent: u32,
+        pin: &BackendCaseSitePin,
+        configured_starting_minute: Option<u64>,
+    ) -> DepartureReadiness {
         let Ok(party) = self.party_by_id(party_id) else {
-            return DepartureReadiness::Deferred("route_weather_projection_unavailable");
+            return DepartureReadiness::Deferred(
+                DepartureDeferralReason::RouteWeatherProjectionUnavailable,
+            );
         };
         let origin = match (
             party.current_settlement_id.as_deref(),
@@ -997,7 +1025,7 @@ impl LiveRunner {
                 .iter()
                 .find(|row| {
                     row.owner_character_id == pin.owner_character_id
-                        && row.case_site_id == origin_id.value
+                        && &row.case_site_id == origin_id
                 })
                 .and_then(|row| {
                     PublicRoutePoint::from_e7(row.latitude_e_7, row.longitude_e_7, 0)
@@ -1006,21 +1034,29 @@ impl LiveRunner {
             _ => None,
         };
         let Some((origin, origin_geographic)) = origin else {
-            return DepartureReadiness::Deferred("route_weather_projection_unavailable");
+            return DepartureReadiness::Deferred(
+                DepartureDeferralReason::RouteWeatherProjectionUnavailable,
+            );
         };
         let Some(destination) = PublicRoutePoint::from_e7(pin.latitude_e_7, pin.longitude_e_7, 0)
         else {
-            return DepartureReadiness::Deferred("route_weather_projection_unavailable");
+            return DepartureReadiness::Deferred(
+                DepartureDeferralReason::RouteWeatherProjectionUnavailable,
+            );
         };
         if origin_geographic != pin.coordinates_are_geographic {
-            return DepartureReadiness::Deferred("route_weather_projection_unavailable");
+            return DepartureReadiness::Deferred(
+                DepartureDeferralReason::RouteWeatherProjectionUnavailable,
+            );
         }
         let distance_m = public_straight_line_distance_m(origin, destination, origin_geographic);
         let Some(movement_minutes) = case_site_movement_minutes(distance_m) else {
-            return DepartureReadiness::Deferred("route_weather_projection_unavailable");
+            return DepartureReadiness::Deferred(
+                DepartureDeferralReason::RouteWeatherProjectionUnavailable,
+            );
         };
         let member_ids = self.living_party_member_ids(party_id);
-        let starting_minute = member_ids
+        let observed_starting_minute = member_ids
             .iter()
             .filter_map(|character_id| {
                 self.connection
@@ -1031,9 +1067,19 @@ impl LiveRunner {
                     .map(|row| row.minutes)
             })
             .max();
-        let Some(starting_minute) = starting_minute else {
-            return DepartureReadiness::Deferred("route_weather_projection_unavailable");
+        let Some(observed_starting_minute) = observed_starting_minute else {
+            return DepartureReadiness::Deferred(
+                DepartureDeferralReason::RouteWeatherProjectionUnavailable,
+            );
         };
+        let starting_minute = configured_starting_minute.unwrap_or(observed_starting_minute);
+        if starting_minute < observed_starting_minute
+            || starting_minute.saturating_sub(observed_starting_minute) > MINUTES_PER_DAY
+        {
+            return DepartureReadiness::Deferred(
+                DepartureDeferralReason::RouteWeatherProjectionUnavailable,
+            );
+        }
         let mut itinerary_members = Vec::new();
         for character_id in &member_ids {
             let attributes = self
@@ -1063,7 +1109,9 @@ impl LiveRunner {
             let (Some(attributes), Some(limbs), Some(stats), Some(schedule)) =
                 (attributes, limbs, stats, schedule)
             else {
-                return DepartureReadiness::Deferred("route_weather_projection_unavailable");
+                return DepartureReadiness::Deferred(
+                    DepartureDeferralReason::RouteWeatherProjectionUnavailable,
+                );
             };
             let fatigue_capacity = (attributes.endurance * limbs.chest_health).max(0.01) * 1_000.0;
             let downtime = &schedule.downtime;
@@ -1094,7 +1142,9 @@ impl LiveRunner {
             0
         } else {
             let Some(profile) = self.profiles.get(leader_agent as usize) else {
-                return DepartureReadiness::Deferred("route_weather_projection_unavailable");
+                return DepartureReadiness::Deferred(
+                    DepartureDeferralReason::RouteWeatherProjectionUnavailable,
+                );
             };
             let mut candidate_projection_unavailable = false;
             let mut candidate_complete_projection = false;
@@ -1124,10 +1174,9 @@ impl LiveRunner {
                             let plan_safe = (|| {
                                 let candidate_start =
                                     starting_minute.saturating_add(candidate_wait);
-                                // A delayed candidate is only authority to wait in a real
-                                // settlement, never authority to depart. Evaluate its weather
-                                // window from a recovered public baseline; the actual bounded
-                                // rest and same-turn revalidation must still succeed first.
+                                // A delayed candidate is authority to configure a
+                                // journey-local future start only from a real settlement.
+                                // The travel reducer remains authoritative for departure.
                                 let candidate_itinerary_members = itinerary_members
                                     .iter()
                                     .map(|member| adventuresim_core::strategic_time::ItineraryMember {
@@ -1204,7 +1253,7 @@ impl LiveRunner {
                                     candidate_projection_unavailable = true;
                                     return false;
                                 }
-                                if action.required_case_site_id != pin.case_site_id {
+                                if action.required_case_site_id.as_ref() != Some(&pin.case_site_id) {
                                     candidate_site_mismatch = true;
                                     return false;
                                 }
@@ -1544,7 +1593,7 @@ impl LiveRunner {
                         adventuresim_core::survival::MAX_CLOTHING_INSULATION_BPS,
                     ),
                 );
-                if reason == "route_fatigue_recovery_required"
+                if reason == DepartureDeferralReason::RouteFatigueRecoveryRequired
                     && (60..=MINUTES_PER_DAY).contains(&recovery_minutes)
                 {
                     return DepartureReadiness::WaitForSafeDeparture {
@@ -1557,11 +1606,15 @@ impl LiveRunner {
                 }
                 return DepartureReadiness::Deferred(reason);
             };
-            if selected_action.required_case_site_id != pin.case_site_id {
-                return DepartureReadiness::Deferred("route_weather_projection_unavailable");
+            if selected_action.required_case_site_id.as_ref() != Some(&pin.case_site_id) {
+                return DepartureReadiness::Deferred(
+                    DepartureDeferralReason::RouteWeatherProjectionUnavailable,
+                );
             }
             let Some(selected_plan) = selected_case_site_plan else {
-                return DepartureReadiness::Deferred("route_weather_projection_unavailable");
+                return DepartureReadiness::Deferred(
+                    DepartureDeferralReason::RouteWeatherProjectionUnavailable,
+                );
             };
             self.event(
                 leader_agent,
@@ -1587,9 +1640,9 @@ impl LiveRunner {
                 let wait_minutes = selected_plan.departure_wait_minutes.min(MINUTES_PER_DAY);
                 DepartureReadiness::WaitForSafeDeparture {
                     reason: if selected_plan.departure_wait_minutes > MINUTES_PER_DAY {
-                        "wait_toward_safe_public_route_window"
+                        DepartureDeferralReason::WaitTowardSafePublicRouteWindow
                     } else {
-                        "safe_public_route_window"
+                        DepartureDeferralReason::SafePublicRouteWindow
                     },
                     wait_minutes,
                     walking_minutes_per_day: selected_plan.walking_minutes_per_day,
@@ -1603,7 +1656,7 @@ impl LiveRunner {
             movement_minutes,
             action_minutes,
         ) else {
-            return DepartureReadiness::Deferred("route_thermal_risk");
+            return DepartureReadiness::Deferred(DepartureDeferralReason::RouteThermalRisk);
         };
         let planned_travel_at_night = party.travel_at_night;
         let Some(itinerary) = adventuresim_core::strategic_time::forecast_itinerary(
@@ -1613,10 +1666,14 @@ impl LiveRunner {
             planned_travel_at_night,
             &itinerary_members,
         ) else {
-            return DepartureReadiness::Deferred("route_weather_projection_unavailable");
+            return DepartureReadiness::Deferred(
+                DepartureDeferralReason::RouteWeatherProjectionUnavailable,
+            );
         };
         if itinerary.truncated || itinerary.member_final_fatigue.len() != itinerary_members.len() {
-            return DepartureReadiness::Deferred("route_weather_projection_unavailable");
+            return DepartureReadiness::Deferred(
+                DepartureDeferralReason::RouteWeatherProjectionUnavailable,
+            );
         }
         let return_start_minute = starting_minute
             .saturating_add(itinerary.total_elapsed_minutes)
@@ -1642,10 +1699,14 @@ impl LiveRunner {
             planned_travel_at_night,
             &return_members,
         ) else {
-            return DepartureReadiness::Deferred("route_weather_projection_unavailable");
+            return DepartureReadiness::Deferred(
+                DepartureDeferralReason::RouteWeatherProjectionUnavailable,
+            );
         };
         if return_itinerary.truncated {
-            return DepartureReadiness::Deferred("route_weather_projection_unavailable");
+            return DepartureReadiness::Deferred(
+                DepartureDeferralReason::RouteWeatherProjectionUnavailable,
+            );
         }
         let delayed_forecast = adventuresim_core::strategic_time::minutes_until_next_walking_start(
             starting_minute,
@@ -1713,10 +1774,14 @@ impl LiveRunner {
                 .iter()
                 .find(|row| row.character_id == character_id)
             else {
-                return DepartureReadiness::Deferred("route_weather_projection_unavailable");
+                return DepartureReadiness::Deferred(
+                    DepartureDeferralReason::RouteWeatherProjectionUnavailable,
+                );
             };
             let Some(insulation_bps) = self.public_equipped_insulation_bps(character_id) else {
-                return DepartureReadiness::Deferred("route_weather_projection_unavailable");
+                return DepartureReadiness::Deferred(
+                    DepartureDeferralReason::RouteWeatherProjectionUnavailable,
+                );
             };
             let attributes = self
                 .connection
@@ -1731,7 +1796,9 @@ impl LiveRunner {
                 .iter()
                 .find(|row| row.character_id == character_id);
             let (Some(attributes), Some(limbs)) = (attributes, limbs) else {
-                return DepartureReadiness::Deferred("route_weather_projection_unavailable");
+                return DepartureReadiness::Deferred(
+                    DepartureDeferralReason::RouteWeatherProjectionUnavailable,
+                );
             };
             let fatigue_capacity = (attributes.endurance * limbs.chest_health).max(0.01) * 1_000.0;
             minimum_insulation_bps = minimum_insulation_bps.min(insulation_bps);
@@ -1757,7 +1824,9 @@ impl LiveRunner {
                     },
                 })
             else {
-                return DepartureReadiness::Deferred("route_weather_projection_unavailable");
+                return DepartureReadiness::Deferred(
+                    DepartureDeferralReason::RouteWeatherProjectionUnavailable,
+                );
             };
             let nonfatigue_incapacitation = (condition.incapacitation - condition.fatigue).max(0.0);
             let immediate_outbound_fatigue = itinerary.member_final_fatigue[member_index];
@@ -1811,7 +1880,9 @@ impl LiveRunner {
                 let Some(&delayed_outbound_fatigue) =
                     delayed_outbound.member_final_fatigue.get(member_index)
                 else {
-                    return DepartureReadiness::Deferred("route_weather_projection_unavailable");
+                    return DepartureReadiness::Deferred(
+                        DepartureDeferralReason::RouteWeatherProjectionUnavailable,
+                    );
                 };
                 let delayed_actor_ready = character_id != pin.owner_character_id
                     || projected_action_ready(
@@ -1871,14 +1942,14 @@ impl LiveRunner {
             );
             if let Some(wait_minutes) = wait_minutes {
                 return DepartureReadiness::WaitForSafeDeparture {
-                    reason: "safe_public_route_window",
+                    reason: DepartureDeferralReason::SafePublicRouteWindow,
                     wait_minutes,
                     walking_minutes_per_day: planned_walking_minutes,
                     travel_at_night: planned_travel_at_night,
                     case_site_recovery_minutes: 0,
                 };
             }
-            return DepartureReadiness::Deferred("route_thermal_risk");
+            return DepartureReadiness::Deferred(DepartureDeferralReason::RouteThermalRisk);
         }
         self.event(
             leader_agent,
@@ -1928,7 +1999,7 @@ impl LiveRunner {
             .db
             .backend_case_site_pins()
             .iter()
-            .find(|pin| pin.case_site_id == site_id)
+            .find(|pin| pin.case_site_id.value == site_id)
         else {
             return false;
         };
@@ -2052,12 +2123,7 @@ impl LiveRunner {
         let Ok(party) = self.party_by_id(party_id) else {
             return OnSiteActionDecision::Hold;
         };
-        if party
-            .current_case_site_id
-            .as_ref()
-            .map(|site| site.value.as_str())
-            != Some(pin.case_site_id.as_str())
-        {
+        if party.current_case_site_id.as_ref() != Some(&pin.case_site_id) {
             return OnSiteActionDecision::Hold;
         }
         let Some(origin_row) = self
@@ -2391,7 +2457,7 @@ impl LiveRunner {
         let party = self.party_by_id(party_id)?;
         let Some(settlement_id) = party.current_settlement_id.clone() else {
             return Ok(DepartureReadiness::Deferred(
-                "survival_readiness_requires_settlement",
+                DepartureDeferralReason::SurvivalReadinessRequiresSettlement,
             ));
         };
         if let DepartureReadiness::Deferred(reason) =
@@ -2413,11 +2479,11 @@ impl LiveRunner {
         if let DepartureReadiness::Deferred(reason) =
             self.validate_party_departure_readiness(party_id)
         {
-            if reason == "party_load_unsafe" {
+            if reason == DepartureDeferralReason::PartyLoadUnsafe {
                 self.metrics.load_readiness_suppressions =
                     self.metrics.load_readiness_suppressions.saturating_add(1);
             }
-            if reason == "thermal_recovery_required" {
+            if reason == DepartureDeferralReason::ThermalRecoveryRequired {
                 self.metrics.current_condition_readiness_suppressions = self
                     .metrics
                     .current_condition_readiness_suppressions
@@ -2441,7 +2507,7 @@ impl LiveRunner {
         &mut self,
         character_id: u64,
         minutes: u64,
-        operation: &str,
+        operation: ReducerOperation,
     ) -> Result<FieldShelter, String> {
         let party_id = self
             .connection

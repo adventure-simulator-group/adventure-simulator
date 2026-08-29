@@ -77,6 +77,25 @@ pub enum CaseStatus {
     Failed,
 }
 
+impl CaseStatus {
+    pub const fn stable_id(self) -> &'static str {
+        match self {
+            Self::Open => "open",
+            Self::Resolved => "completed",
+            Self::Failed => "failed",
+        }
+    }
+
+    pub fn from_stable_id(value: &str) -> Option<Self> {
+        match value {
+            "open" => Some(Self::Open),
+            "completed" => Some(Self::Resolved),
+            "failed" => Some(Self::Failed),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
 pub enum ContractStatus {
@@ -85,6 +104,18 @@ pub enum ContractStatus {
     ReadyToReport,
     Paid,
     Withdrawn,
+}
+
+impl ContractStatus {
+    pub const fn stable_id(self) -> &'static str {
+        match self {
+            Self::Offered => "offered",
+            Self::Accepted => "accepted",
+            Self::ReadyToReport => "readytoreport",
+            Self::Paid => "paid",
+            Self::Withdrawn => "withdrawn",
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -594,6 +625,16 @@ pub fn apply_custody(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn case_status_stable_ids_are_exact_and_reject_spoofs() {
+        for status in [CaseStatus::Open, CaseStatus::Resolved, CaseStatus::Failed] {
+            assert_eq!(CaseStatus::from_stable_id(status.stable_id()), Some(status));
+        }
+        for spoof in ["Open", "open ", "open:spoof", "completed-case", "failed."] {
+            assert_eq!(CaseStatus::from_stable_id(spoof), None, "{spoof}");
+        }
+    }
 
     fn oid(value: &str) -> ObjectiveId {
         ObjectiveId::new(value).unwrap()

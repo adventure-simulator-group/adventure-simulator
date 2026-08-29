@@ -35,7 +35,7 @@ pub(super) struct FireplaceContainerForm {
 }
 
 fn settlement_fireplace_context(
-    settlement: &Settlement,
+    settlement: &SettlementView,
     building: &str,
 ) -> Result<String, &'static str> {
     if building.is_empty()
@@ -137,7 +137,7 @@ fn settlement_fireplace_context(
         .map_err(|_| "This settlement page has no fireplace")
 }
 
-fn party_journey_is_current_camp(party: &Party, journey: &PartyJourney) -> bool {
+fn party_journey_is_current_camp(party: &PartyView, journey: &PartyJourney) -> bool {
     party.current_settlement_id.is_none()
         && party.current_case_site_id.is_none()
         && party.camp_destination.as_ref() == Some(&journey.destination)
@@ -149,7 +149,7 @@ fn party_journey_is_current_camp(party: &Party, journey: &PartyJourney) -> bool 
 
 async fn camp_fireplace_context(
     state: &AppState,
-    actor: &Character,
+    actor: &CharacterView,
 ) -> Result<String, &'static str> {
     let party_id = actor
         .party_id
@@ -157,16 +157,13 @@ async fn camp_fireplace_context(
         .ok_or("Character has no active camp")?;
     let party = state
         .db
-        .query_one::<Party>(&crate::spacetimedb::party_by_id(party_id))
+        .query_one_sats_into::<adventuresim_stdb_client::Party, PartyView>(&crate::spacetimedb::party_by_id(party_id))
         .await
         .map_err(|_| "Party state unavailable")?
         .ok_or("Party state unavailable")?;
     let journey = state
         .db
-        .query_one::<PartyJourney>(&format!(
-            "SELECT * FROM party_journey WHERE party_id = {}",
-            sql_string_literal(party_id)
-        ))
+        .query_one_sats::<PartyJourney>(&crate::spacetimedb::party_journey_by_party_id(party_id))
         .await
         .map_err(|_| "Journey state unavailable")?
         .ok_or("Journey state unavailable")?;
@@ -186,7 +183,7 @@ async fn camp_fireplace_context(
 
 async fn fireplace_rows(
     state: &AppState,
-    actor: &Character,
+    actor: &CharacterView,
     fireplace_fixture_id: &str,
 ) -> (
     Vec<InventoryItem>,
@@ -194,7 +191,7 @@ async fn fireplace_rows(
     Vec<InventoryItemAmount>,
     Vec<PartyItemAmount>,
     Vec<FoodLot>,
-    Vec<ItemDefinition>,
+    Vec<CatalogItemView>,
     Option<BackendFireplaceStation>,
     Option<BackendFireplaceDish>,
     Vec<BackendFireplaceStation>,
@@ -203,7 +200,7 @@ async fn fireplace_rows(
 ) {
     let personal = state
         .db
-        .query::<InventoryItem>(&format!(
+        .query_sats::<InventoryItem>(&format!(
             "SELECT * FROM inventory_item WHERE character_id = {}",
             actor.id
         ))
@@ -212,7 +209,7 @@ async fn fireplace_rows(
     let party = if let Some(party_id) = actor.party_id.as_deref() {
         state
             .db
-            .query::<PartyInventoryItem>(&format!(
+            .query_sats::<PartyInventoryItem>(&format!(
                 "SELECT * FROM party_inventory_item WHERE party_id = {}",
                 sql_string_literal(party_id)
             ))
@@ -223,46 +220,40 @@ async fn fireplace_rows(
     };
     let personal_amounts = state
         .db
-        .query::<InventoryItemAmount>("SELECT * FROM inventory_item_amount")
+        .query_sats::<InventoryItemAmount>("SELECT * FROM inventory_item_amount")
         .await
         .unwrap_or_default();
     let party_amounts = state
         .db
-        .query::<PartyItemAmount>("SELECT * FROM party_item_amount")
+        .query_sats::<PartyItemAmount>("SELECT * FROM party_item_amount")
         .await
         .unwrap_or_default();
     let lots = state
         .db
-        .query::<FoodLot>("SELECT * FROM food_lot")
+        .query_sats::<FoodLot>("SELECT * FROM food_lot")
         .await
         .unwrap_or_default();
     let definitions = state
         .db
-        .query::<ItemDefinition>("SELECT * FROM item")
+        .query_sats_into::<adventuresim_stdb_client::Item, CatalogItemView>("SELECT * FROM item")
         .await
         .unwrap_or_default();
     let key = format!("{}|{}", actor.id, fireplace_fixture_id);
     let station = state
         .db
-        .query_one::<BackendFireplaceStation>(&format!(
-            "SELECT * FROM backend_fireplace_stations WHERE key = {}",
-            sql_string_literal(&key)
-        ))
+        .query_one_sats::<BackendFireplaceStation>(&crate::spacetimedb::fireplace_station_by_key(&key))
         .await
         .ok()
         .flatten();
     let dish = state
         .db
-        .query_one::<BackendFireplaceDish>(&format!(
-            "SELECT * FROM backend_fireplace_dishes WHERE station_key = {}",
-            sql_string_literal(&key)
-        ))
+        .query_one_sats::<BackendFireplaceDish>(&crate::spacetimedb::fireplace_dish_by_station_key(&key))
         .await
         .ok()
         .flatten();
     let vessel_stations = state
         .db
-        .query::<BackendFireplaceStation>(&format!(
+        .query_sats::<BackendFireplaceStation>(&format!(
             "SELECT * FROM backend_fireplace_stations WHERE character_id = {}",
             actor.id
         ))
@@ -279,15 +270,18 @@ async fn fireplace_rows(
         .collect::<HashSet<_>>();
     let vessel_dishes = state
         .db
-        .query::<BackendFireplaceDish>("SELECT * FROM backend_fireplace_dishes")
+        .query_sats::<BackendFireplaceDish>("SELECT * FROM backend_fireplace_dishes")
         .await
         .unwrap_or_default()
         .into_iter()
         .filter(|row| vessel_keys.contains(row.station_key.as_str()))
         .collect::<Vec<_>>();
-    let minute = query_single::<CharacterTime>(state, "backend_character_times", actor.id)
-        .await
-        .map_or(0, |row| row.minutes);
+    let minute = query_single::<CharacterTime>(
+        state,
+        crate::spacetimedb::character_time_by_character_id(actor.id),
+    )
+    .await
+    .map_or(0, |row| row.minutes);
     (
         personal,
         party,
@@ -321,7 +315,7 @@ pub(super) async fn settlement_fireplace(
     }
     let Some(settlement) = state
         .db
-        .query_one::<Settlement>(&crate::spacetimedb::settlement_by_id(&id))
+        .query_one_sats_into::<adventuresim_stdb_client::Settlement, SettlementView>(&crate::spacetimedb::settlement_by_id(&id))
         .await
         .ok()
         .flatten()
@@ -460,7 +454,7 @@ pub(super) async fn camp_fireplace_page(
 
 async fn fireplace_post_context(
     state: &AppState,
-    actor: &Character,
+    actor: &CharacterView,
     settlement: Option<(&str, &str)>,
 ) -> Result<String, &'static str> {
     match settlement {
@@ -470,7 +464,7 @@ async fn fireplace_post_context(
             }
             let settlement = state
                 .db
-                .query_one::<Settlement>(&crate::spacetimedb::settlement_by_id(id))
+                .query_one_sats_into::<adventuresim_stdb_client::Settlement, SettlementView>(&crate::spacetimedb::settlement_by_id(id))
                 .await
                 .map_err(|_| "Settlement state unavailable")?
                 .ok_or("Settlement not found")?;
@@ -482,7 +476,7 @@ async fn fireplace_post_context(
 
 async fn post_fireplace_ingredients(
     state: AppState,
-    actor: Character,
+    actor: CharacterView,
     context: String,
     form: CookFoodForm,
     redirect: String,
@@ -565,7 +559,7 @@ pub(super) async fn camp_fireplace_ingredients(
 
 async fn post_fireplace_retrieve(
     state: AppState,
-    actor: Character,
+    actor: CharacterView,
     context: String,
     form: FireplaceRetrieveForm,
     redirect: String,
@@ -627,17 +621,34 @@ pub(super) async fn camp_fireplace_retrieve(
     post_fireplace_retrieve(state, actor, context, form, "/camp/fireplace".into()).await
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum FireplaceContainerOperation {
+    Place,
+    StartCooking,
+    Retrieve,
+}
+
+impl FireplaceContainerOperation {
+    const fn reducer(self) -> &'static str {
+        match self {
+            Self::Place => "place_fireplace_container",
+            Self::StartCooking => "start_fireplace_container_cooking",
+            Self::Retrieve => "retrieve_fireplace_container",
+        }
+    }
+}
+
 async fn post_fireplace_container(
     state: AppState,
-    actor: Character,
+    actor: CharacterView,
     context: String,
-    reducer: &str,
+    operation: FireplaceContainerOperation,
     args: Vec<serde_json::Value>,
     redirect: String,
 ) -> Response {
     let mut reducer_args = vec![json!(actor.id), json!(context)];
     reducer_args.extend(args);
-    match state.db.call(reducer, &reducer_args).await {
+    match state.db.call(operation.reducer(), &reducer_args).await {
         Ok(()) => Redirect::to(&redirect).into_response(),
         Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
     }
@@ -661,7 +672,7 @@ pub(super) async fn settlement_fireplace_container_place(
         state,
         actor,
         context,
-        "place_fireplace_container",
+        FireplaceContainerOperation::Place,
         vec![json!(form.inventory_scope), json!(form.inventory_item_id)],
         format!(
             "/locations/settlement/{id}/fireplace?building={}",
@@ -686,7 +697,7 @@ pub(super) async fn camp_fireplace_container_place(
         state,
         actor,
         context,
-        "place_fireplace_container",
+        FireplaceContainerOperation::Place,
         vec![json!(form.inventory_scope), json!(form.inventory_item_id)],
         "/camp/fireplace".into(),
     )
@@ -710,7 +721,7 @@ pub(super) async fn settlement_fireplace_container_start(
         state,
         actor,
         context,
-        "start_fireplace_container_cooking",
+        FireplaceContainerOperation::StartCooking,
         vec![json!(form.container_object_id)],
         format!(
             "/locations/settlement/{id}/fireplace?building={}",
@@ -735,7 +746,7 @@ pub(super) async fn camp_fireplace_container_start(
         state,
         actor,
         context,
-        "start_fireplace_container_cooking",
+        FireplaceContainerOperation::StartCooking,
         vec![json!(form.container_object_id)],
         "/camp/fireplace".into(),
     )
@@ -759,7 +770,7 @@ pub(super) async fn settlement_fireplace_container_remove(
         state,
         actor,
         context,
-        "retrieve_fireplace_container",
+        FireplaceContainerOperation::Retrieve,
         vec![json!(form.container_object_id)],
         format!(
             "/locations/settlement/{id}/fireplace?building={}",
@@ -784,7 +795,7 @@ pub(super) async fn camp_fireplace_container_remove(
         state,
         actor,
         context,
-        "retrieve_fireplace_container",
+        FireplaceContainerOperation::Retrieve,
         vec![json!(form.container_object_id)],
         "/camp/fireplace".into(),
     )
@@ -793,7 +804,7 @@ pub(super) async fn camp_fireplace_container_remove(
 
 pub(super) async fn party_religion_knowledge_check(
     state: &AppState,
-    party_members: &[Character],
+    party_members: &[CharacterView],
     religion_id: &str,
 ) -> f32 {
     let Some(religion) = OfficialReligion::from_id(religion_id) else {
@@ -801,15 +812,26 @@ pub(super) async fn party_religion_knowledge_check(
     };
     let mut checks = Vec::with_capacity(party_members.len());
     for member in living_party_member_refs(party_members) {
-        let skills =
-            query_single::<CharacterSkills>(state, "backend_character_skills", member.id).await;
-        let attributes =
-            query_single::<CharacterAttributes>(state, "backend_character_attributes", member.id)
-                .await;
-        let limbs =
-            query_single::<CharacterLimbs>(state, "backend_character_limbs", member.id).await;
-        let stats =
-            query_single::<CharacterStats>(state, "backend_character_stats", member.id).await;
+        let skills = query_single::<CharacterSkills>(
+            state,
+            crate::spacetimedb::character_skills_by_character_id(member.id),
+        )
+        .await;
+        let attributes = query_single::<CharacterAttributes>(
+            state,
+            crate::spacetimedb::character_attributes_by_character_id(member.id),
+        )
+        .await;
+        let limbs = query_single::<CharacterLimbs>(
+            state,
+            crate::spacetimedb::character_limbs_by_character_id(member.id),
+        )
+        .await;
+        let stats = query_single::<CharacterStats>(
+            state,
+            crate::spacetimedb::character_stats_by_character_id(member.id),
+        )
+        .await;
         if let (Some(skills), Some(attributes), Some(limbs), Some(stats)) =
             (skills, attributes, limbs, stats)
         {
@@ -826,18 +848,18 @@ pub(super) async fn party_religion_knowledge_check(
 }
 
 pub(super) fn living_party_member_refs(
-    party_members: &[Character],
-) -> impl Iterator<Item = &Character> {
+    party_members: &[CharacterView],
+) -> impl Iterator<Item = &CharacterView> {
     party_members.iter().filter(|member| member.alive)
 }
 
 #[cfg(test)]
 mod party_religion_knowledge_tests {
-    use super::living_party_member_refs;
-    use crate::spacetimedb::Character;
+    use super::{FireplaceContainerOperation, living_party_member_refs};
+    use crate::spacetimedb::CharacterView;
 
-    fn party_member(id: u64, alive: bool) -> Character {
-        Character {
+    fn party_member(id: u64, alive: bool) -> CharacterView {
+        CharacterView {
             id,
             name: format!("Member {id}"),
             xp: 0,
@@ -860,5 +882,22 @@ mod party_religion_knowledge_tests {
             .map(|member| member.id)
             .collect::<Vec<_>>();
         assert_eq!(ids, vec![1]);
+    }
+
+    #[test]
+    fn fireplace_container_operations_have_fixed_reducer_names() {
+        assert_eq!(
+            [
+                FireplaceContainerOperation::Place,
+                FireplaceContainerOperation::StartCooking,
+                FireplaceContainerOperation::Retrieve,
+            ]
+            .map(FireplaceContainerOperation::reducer),
+            [
+                "place_fireplace_container",
+                "start_fireplace_container_cooking",
+                "retrieve_fireplace_container",
+            ]
+        );
     }
 }

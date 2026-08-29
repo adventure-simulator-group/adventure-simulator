@@ -16,9 +16,10 @@ use crate::{
     },
     physical_object::CustodyCharacterId,
     rights::{
-        DecisionProvenance, DomainJurisdiction, DomainRightsOperation, DomainRightsResource,
-        DomainRightsSubject, PrivateRightsDecision, RightsDecisionKind, RightsJurisdiction,
-        RightsOperation, RightsQuestion, RightsResource, RightsRevision, RightsSubject,
+        CanonicalRightsQuestionDigest, DecisionProvenance, DomainJurisdiction,
+        DomainRightsOperation, DomainRightsResource, DomainRightsSubject, PrivateRightsDecision,
+        RightsDecisionKind, RightsJurisdiction, RightsOperation, RightsQuestion, RightsResource,
+        RightsRevision, RightsSubject,
     },
     strategic_action::{
         ActionCoordinates, ActionEffect, ActionRequirement, AuthoritativeSnapshot,
@@ -163,29 +164,27 @@ pub fn decide_preparation_rights(
     custody_matches: bool,
     revision: u64,
 ) -> PrivateRightsDecision<()> {
-    use sha2::Digest as _;
-    let mut hash = sha2::Sha256::new();
-    hash.update(b"ingredient-preparation-rights-v1");
-    if let RightsSubject::Character(actor) = question.subject() {
-        hash.update(actor.get().to_le_bytes());
-    }
-    if let RightsResource::Object(object) = question.resource() {
-        hash.update(object.get().to_le_bytes());
-    }
-    match question.jurisdiction() {
-        RightsJurisdiction::Global => hash.update(b"global"),
-        RightsJurisdiction::Place(place) => hash.update(place.to_string().as_bytes()),
-        RightsJurisdiction::Domain(_) => hash.update(b"domain"),
-    }
     let provenance = DecisionProvenance {
         evidence_revision: RightsRevision(revision),
-        question_digest: hash.finalize().into(),
+        question_digest: preparation_rights_question_digest(question),
     };
     if custody_matches {
         PrivateRightsDecision::allowed(Vec::new(), None, provenance)
     } else {
         PrivateRightsDecision::denied(Vec::new(), provenance)
     }
+}
+
+fn preparation_rights_question_digest(question: &PreparationRightsQuestion) -> [u8; 32] {
+    let mut digest = CanonicalRightsQuestionDigest::new(b"ingredient-preparation");
+    digest.frame_subject(question.subject(), |_, subject| match *subject {});
+    digest.frame_resource(question.resource(), |_, resource| match *resource {});
+    digest.frame_operation(question.operation(), |_, operation| match *operation {});
+    digest.frame_jurisdiction(
+        question.jurisdiction(),
+        |_, jurisdiction| match *jurisdiction {},
+    );
+    digest.finish()
 }
 
 pub struct PreparationPlanAuthority {
@@ -364,6 +363,13 @@ mod tests {
         )
         .unwrap();
         let question = preparation_rights_question(actor, object, place).unwrap();
+        assert_eq!(
+            preparation_rights_question_digest(&question)
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>(),
+            "1220f57a7a34db9665407f6ebb16a1f04f07db5f0869defa47536fe492183613"
+        );
         let digest = [3; 32];
         let PlanningOutcome::Ready(plan) = build_preparation_plan(PreparationPlanAuthority {
             coordinates,

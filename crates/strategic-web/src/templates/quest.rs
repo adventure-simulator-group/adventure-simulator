@@ -7,10 +7,10 @@ use super::{empty_state, item_display_name, item_type_icon, sidebar_section};
 use crate::routes::travel::TravelDestination;
 use crate::spacetimedb::{
     AutoresolveReport, BackendCaseSitePin, BackendCorpse, BackendInvestigationAction,
-    BattleLootItem, FoodLot, InventoryQuantityTarget, ItemDefinition, PartyInventoryItem,
+    BattleLootItem, CatalogItemView, FoodLot, InventoryQuantityTarget, PartyInventoryItem,
 };
 use crate::{
-    spacetimedb::Character,
+    spacetimedb::CharacterView,
     templates::settlement::{
         map_destination_detail, map_destination_list_with_rest, party_portrait_overlay,
         party_rest_menu, settlement_chat_area_with_info, travel_preferences_form,
@@ -34,7 +34,7 @@ pub struct CaseSiteRecoveryNotice {
 
 #[derive(Clone, Debug)]
 pub struct HostileNegotiationPresentation {
-    pub spokesman: Character,
+    pub spokesman: CharacterView,
     pub context_ref: String,
     pub expected_revision: u32,
     pub latest_response: Option<String>,
@@ -42,7 +42,7 @@ pub struct HostileNegotiationPresentation {
 
 #[derive(Clone, Debug)]
 pub struct HostileSurrenderPresentation {
-    pub spokesman: Character,
+    pub spokesman: CharacterView,
     pub context_ref: String,
     pub expected_revision: u32,
     pub mode: crate::spacetimedb::HostileSurrenderMode,
@@ -59,13 +59,13 @@ pub fn quest_location_map_page(
     onsite_actions: &[BackendInvestigationAction],
     nearby: &[TravelDestination],
     selected_id: Option<&str>,
-    active_character: Option<&Character>,
-    party_members: &[Character],
+    active_character: Option<&CharacterView>,
+    party_members: &[CharacterView],
     can_travel: bool,
     can_fight: bool,
     resolved: bool,
     autoresolve_report: Option<&AutoresolveReport>,
-    party: Option<&crate::spacetimedb::Party>,
+    party: Option<&crate::spacetimedb::PartyView>,
     can_configure_travel: bool,
     default_rest_minutes: u64,
     soap_preview: super::settlement::SoapRestPreview,
@@ -74,17 +74,18 @@ pub fn quest_location_map_page(
     corpses: &[BackendCorpse],
     selected_corpse: Option<(&BackendCorpse, &str)>,
 ) -> Markup {
+    let case_site_id = site.case_site_id.value.as_str();
     let selected = selected_id.and_then(|id| nearby.iter().find(|entry| entry.id == id));
     let content = html! {
         (map_destination_list_with_rest(
             nearby,
             selected_id,
-            &format!("/locations/case-site/{}/map", site.case_site_id),
+            &format!("/locations/case-site/{case_site_id}/map"),
             html! {
                 @if !resolved {
                 section class="rest-service-menu quest-rest-menu" aria-label="Destination rest" {
                     (party_rest_menu(
-                        &format!("/locations/case-site/{}/map/rest", site.case_site_id),
+                        &format!("/locations/case-site/{case_site_id}/map/rest"),
                         "quest-map-rest",
                         "Rest before battle",
                         "Rest party",
@@ -124,13 +125,13 @@ pub fn quest_location_map_page(
             party,
             can_configure_travel,
             None,
-            &format!("/locations/case-site/{}/map", site.case_site_id),
+            &format!("/locations/case-site/{case_site_id}/map"),
         ))
     };
     super::quest_location_layout_with_session(
         &format!("{} map", presentation.title),
         &presentation.title,
-        &site.case_site_id,
+        case_site_id,
         "map",
         content,
         logged_in_as,
@@ -145,8 +146,8 @@ fn quest_location_center(
     presentation: &CaseSitePagePresentation,
     site: &BackendCaseSitePin,
     onsite_actions: &[BackendInvestigationAction],
-    active_character: Option<&Character>,
-    party_members: &[Character],
+    active_character: Option<&CharacterView>,
+    party_members: &[CharacterView],
     can_fight: bool,
     resolved: bool,
     autoresolve_report: Option<&AutoresolveReport>,
@@ -159,6 +160,7 @@ fn quest_location_center(
     corpses: &[BackendCorpse],
     selected_corpse: Option<(&BackendCorpse, &str)>,
 ) -> Markup {
+    let case_site_id = site.case_site_id.value.as_str();
     let autoresolve_messages = autoresolve_info_messages(autoresolve_report);
     html! {
         main class="center-content settlement-main quest-location-main" {
@@ -205,14 +207,13 @@ fn quest_location_center(
             (party_portrait_overlay(
                 party_members,
                 active_character,
-                &format!("/locations/case-site/{}", site.case_site_id),
+                &format!("/locations/case-site/{case_site_id}"),
                 None,
-                false,
             ))
             nav class="scene-interactable-strip physical-evidence-strip"
                 aria-label="Physical evidence here"
                 data-evidence-strip
-                data-evidence-case-site=(&site.case_site_id) {
+                data-evidence-case-site=(case_site_id) {
                 span class="text-muted" data-evidence-loading { "Looking over the scene…" }
             }
             @if !corpses.is_empty() {
@@ -220,7 +221,7 @@ fn quest_location_center(
                     @for corpse in corpses {
                         @let corpse_label = if corpse.location == "interred" { "Buried body" } else { &corpse.display_name };
                         a class="scene-interactable scene-interactable--remains corpse-portrait"
-                            href=(format!("/locations/case-site/{}/enemy?corpse={}&medical=physiology", site.case_site_id, corpse.corpse_id))
+                            href=(format!("/locations/case-site/{case_site_id}/enemy?corpse={}&medical=physiology", corpse.corpse_id))
                             aria-label=(format!("Examine {corpse_label} with Physiology")) {
                             span class="scene-interactable-visual" aria-hidden="true" { "☠" }
                             span class="scene-interactable-label" { (corpse_label) }
@@ -229,8 +230,8 @@ fn quest_location_center(
                 }
                 @if let Some((corpse, _)) = selected_corpse {
                     div class="quest-combat-actions corpse-medical-actions" aria-label="Corpse medical windows" {
-                        a class="btn btn-secondary" href=(format!("/locations/case-site/{}/enemy?corpse={}&medical=physiology", site.case_site_id, corpse.corpse_id)) { "Physiology" }
-                        a class="btn btn-secondary" href=(format!("/locations/case-site/{}/enemy?corpse={}&medical=surgery", site.case_site_id, corpse.corpse_id)) { "Surgery" }
+                        a class="btn btn-secondary" href=(format!("/locations/case-site/{case_site_id}/enemy?corpse={}&medical=physiology", corpse.corpse_id)) { "Physiology" }
+                        a class="btn btn-secondary" href=(format!("/locations/case-site/{case_site_id}/enemy?corpse={}&medical=surgery", corpse.corpse_id)) { "Surgery" }
                     }
                 }
             }
@@ -252,7 +253,7 @@ fn quest_location_center(
                                 button type="submit" class="btn btn-danger" { "Initiate Combat" }
                             }
                         }
-                        form action=(format!("/quests/{}/autoresolve", site.case_site_id)) method="post" {
+                        form action=(format!("/quests/{case_site_id}/autoresolve")) method="post" {
                             button type="submit" class="btn btn-primary" { "Autoresolve" }
                         }
                     } @else if autoresolve_report.is_some_and(|report| report.victor == "enemies") {
@@ -288,7 +289,7 @@ fn quest_location_center(
                         }
                     }
                     form method="post"
-                        action=(format!("/locations/case-site/{}/hostile/withdrawal", site.case_site_id)) {
+                        action=(format!("/locations/case-site/{case_site_id}/hostile/withdrawal")) {
                         input type="hidden" name="spokesman_id" value=(negotiation.spokesman.id);
                         input type="hidden" name="context_ref" value=(&negotiation.context_ref);
                         input type="hidden" name="expected_revision" value=(negotiation.expected_revision);
@@ -307,7 +308,7 @@ fn quest_location_center(
                     @if surrender.mode == crate::spacetimedb::HostileSurrenderMode::Offer {
                         p { "The hostile group offers to surrender as a whole." }
                         @for (accept, label) in [(true, "Accept surrender"), (false, "Refuse surrender")] {
-                            form method="post" action=(format!("/locations/case-site/{}/hostile/surrender/offer", site.case_site_id)) {
+                            form method="post" action=(format!("/locations/case-site/{case_site_id}/hostile/surrender/offer")) {
                                 input type="hidden" name="spokesman_id" value=(surrender.spokesman.id);
                                 input type="hidden" name="context_ref" value=(&surrender.context_ref);
                                 input type="hidden" name="expected_revision" value=(surrender.expected_revision);
@@ -318,7 +319,7 @@ fn quest_location_center(
                         }
                     } @else {
                         p class="text-muted" { "Demand that the whole hostile group yield before combat." }
-                        form method="post" action=(format!("/locations/case-site/{}/hostile/surrender/demand", site.case_site_id)) {
+                        form method="post" action=(format!("/locations/case-site/{case_site_id}/hostile/surrender/demand")) {
                             input type="hidden" name="spokesman_id" value=(surrender.spokesman.id);
                             input type="hidden" name="context_ref" value=(&surrender.context_ref);
                             input type="hidden" name="expected_revision" value=(surrender.expected_revision);
@@ -334,7 +335,7 @@ fn quest_location_center(
         @if let Some((corpse, window)) = selected_corpse {
             (super::settlement::corpse_medical_dialog(
                 corpse,
-                &format!("/locations/case-site/{}/enemy", site.case_site_id),
+                &format!("/locations/case-site/{case_site_id}/enemy"),
                 window,
             ))
         }
@@ -356,7 +357,7 @@ fn autoresolve_info_messages(report: Option<&AutoresolveReport>) -> Vec<String> 
 
 #[derive(Clone, Debug)]
 pub struct QuestCounterparty {
-    pub character: Character,
+    pub character: CharacterView,
     pub contact_ref: String,
     pub revision: u32,
     pub membership_revision: u32,
@@ -418,15 +419,15 @@ pub fn quest_location_enemy_page(
     presentation: &CaseSitePagePresentation,
     site: &BackendCaseSitePin,
     onsite_actions: &[BackendInvestigationAction],
-    active_character: Option<&Character>,
-    party_members: &[Character],
+    active_character: Option<&CharacterView>,
+    party_members: &[CharacterView],
     counterparties: &[QuestCounterparty],
     hostile_negotiation: Option<&HostileNegotiationPresentation>,
     hostile_surrender: Option<&HostileSurrenderPresentation>,
     can_fight: bool,
     resolved: bool,
     autoresolve_report: Option<&AutoresolveReport>,
-    party: Option<&crate::spacetimedb::Party>,
+    party: Option<&crate::spacetimedb::PartyView>,
     can_configure_travel: bool,
     default_rest_minutes: u64,
     soap_preview: super::settlement::SoapRestPreview,
@@ -434,25 +435,26 @@ pub fn quest_location_enemy_page(
     loot: &[BattleLootItem],
     pooled: &[PartyInventoryItem],
     stake: u64,
-    items: &[ItemDefinition],
+    items: &[CatalogItemView],
     food_lots: &[FoodLot],
     targets: &[InventoryQuantityTarget],
     logged_in_as: Option<&str>,
     corpses: &[BackendCorpse],
     selected_corpse: Option<(&BackendCorpse, &str)>,
 ) -> Markup {
+    let case_site_id = site.case_site_id.value.as_str();
     let content = html! {
         aside class="left-sidebar" {
             @if !resolved && !counterparties.is_empty() {
                 (sidebar_section("Counterparty", html! {
-                    (quest_counterparty_strip(&site.case_site_id, counterparties))
+                    (quest_counterparty_strip(case_site_id, counterparties))
                 }))
             }
             @if !resolved {
                 (sidebar_section("Location", html! { p { (&site.description) } }))
                 section class="rest-service-menu quest-rest-menu" aria-label="Destination rest" {
                     (party_rest_menu(
-                        &format!("/locations/case-site/{}/rest", site.case_site_id),
+                        &format!("/locations/case-site/{case_site_id}/rest"),
                         "quest-rest",
                         "Rest before battle",
                         "Rest party",
@@ -522,7 +524,7 @@ pub fn quest_location_enemy_page(
                         "Travel preferences",
                         travel_preferences_form(
                             party,
-                            &format!("/locations/case-site/{}/map/travel-configuration", site.case_site_id),
+                            &format!("/locations/case-site/{case_site_id}/map/travel-configuration"),
                         ),
                     ))
                 }
@@ -559,7 +561,7 @@ pub fn quest_location_enemy_page(
     super::quest_location_layout_with_session(
         &presentation.title,
         &presentation.title,
-        &site.case_site_id,
+        case_site_id,
         "enemy",
         content,
         logged_in_as,
@@ -613,13 +615,16 @@ mod tests {
 
     #[test]
     fn each_counterparty_renders_only_its_own_contextual_claims() {
-        let character = |id, name: &str| Character {
+        let character = |id, name: &str| CharacterView {
             id,
             name: name.into(),
             xp: 0,
             level: 1,
             current_settlement_id: None,
-            current_case_site_id: Some("case-site:known".into()),
+            current_case_site_id: Some(
+                crate::spacetimedb::CaseSiteId::try_new("case-site:known")
+                    .expect("valid fixture case-site id"),
+            ),
             party_id: None,
             age_years: 30,
             alive: true,
@@ -747,13 +752,15 @@ mod tests {
         let site = BackendCaseSitePin {
             owner_character_id: 7,
             case_id: "journal:case".into(),
-            case_site_id: "site:known".into(),
+            case_site_id: adventuresim_stdb_client::CaseSiteId {
+                value: "site:known".into(),
+            },
             origin_settlement_id: "settlement".into(),
             name: "a camp in the woods".into(),
             description: "A known place.".into(),
             scene_key: "forest".into(),
-            longitude_e7: 0,
-            latitude_e7: 0,
+            longitude_e_7: 0,
+            latitude_e_7: 0,
             coordinates_are_geographic: false,
             distance_m: 4_000,
             knowledge_stage: DestinationKnowledgeStage::Visited,
@@ -767,6 +774,7 @@ mod tests {
         };
         let action = BackendInvestigationAction {
             owner_character_id: 7,
+            case_id: "journal:case".into(),
             action_id: "action:inspect".into(),
             method: "inspect_site".into(),
             expected_version: 2,
@@ -777,19 +785,22 @@ mod tests {
             uncertainty_bps: 2000,
             skill_contributions: "awareness".into(),
             weather_available: false,
-            required_case_site_id: site.case_site_id.clone(),
-            available: true,
-            can_travel_to_required_site: false,
+            contact_character_id: None,
+            required_case_site_id: Some(site.case_site_id.clone()),
+            availability: adventuresim_stdb_client::InvestigationActionAvailability::Available,
             unavailable_reason: String::new(),
         };
         let negotiation = HostileNegotiationPresentation {
-            spokesman: Character {
+            spokesman: CharacterView {
                 id: 81,
                 name: "Bandit spokesman".into(),
                 xp: 0,
                 level: 1,
                 current_settlement_id: None,
-                current_case_site_id: Some(site.case_site_id.clone()),
+                current_case_site_id: Some(
+                    crate::spacetimedb::CaseSiteId::try_new(site.case_site_id.value.clone())
+                        .expect("valid fixture case-site id"),
+                ),
                 party_id: None,
                 age_years: 30,
                 alive: true,
@@ -853,13 +864,15 @@ mod tests {
         let site = BackendCaseSitePin {
             owner_character_id: 7,
             case_id: "journal:case".into(),
-            case_site_id: "site:evidence".into(),
+            case_site_id: adventuresim_stdb_client::CaseSiteId {
+                value: "site:evidence".into(),
+            },
             origin_settlement_id: "settlement".into(),
             name: "the old well".into(),
             description: "A place to inspect.".into(),
             scene_key: "village".into(),
-            longitude_e7: 0,
-            latitude_e7: 0,
+            longitude_e_7: 0,
+            latitude_e_7: 0,
             coordinates_are_geographic: false,
             distance_m: 100,
             knowledge_stage: DestinationKnowledgeStage::Visited,
@@ -906,13 +919,15 @@ mod tests {
         let site = BackendCaseSitePin {
             owner_character_id: 7,
             case_id: "journal:case".into(),
-            case_site_id: "site:rescue".into(),
+            case_site_id: adventuresim_stdb_client::CaseSiteId {
+                value: "site:rescue".into(),
+            },
             origin_settlement_id: "settlement".into(),
             name: "a camp in the woods".into(),
             description: "The captive was found here.".into(),
             scene_key: "forest".into(),
-            longitude_e7: 0,
-            latitude_e7: 0,
+            longitude_e_7: 0,
+            latitude_e_7: 0,
             coordinates_are_geographic: false,
             distance_m: 100,
             knowledge_stage: DestinationKnowledgeStage::Visited,
@@ -960,13 +975,15 @@ mod tests {
         let site = BackendCaseSitePin {
             owner_character_id: 7,
             case_id: "journal:case".into(),
-            case_site_id: "site:old-graveyard".into(),
+            case_site_id: adventuresim_stdb_client::CaseSiteId {
+                value: "site:old-graveyard".into(),
+            },
             origin_settlement_id: "settlement".into(),
             name: "the old graveyard".into(),
             description: "A place to inspect.".into(),
             scene_key: "graveyard".into(),
-            longitude_e7: 0,
-            latitude_e7: 0,
+            longitude_e_7: 0,
+            latitude_e_7: 0,
             coordinates_are_geographic: false,
             distance_m: 100,
             knowledge_stage: DestinationKnowledgeStage::Visited,

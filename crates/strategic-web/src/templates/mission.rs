@@ -2,11 +2,11 @@
 
 use maud::{Markup, html};
 
-use super::{mission_layout, panel, sidebar_section, status_badge};
-use crate::spacetimedb::{MissionStatus, TacticalServer};
+use super::{StatusBadgeTone, mission_layout, panel, sidebar_section, status_badge};
+use crate::spacetimedb::{MissionServerView, MissionStatus};
 
 /// Mission status page updated by the shared strategic SSE stream.
-pub fn mission_status_page(server: &TacticalServer, logged_in_as: Option<&str>) -> Markup {
+pub fn mission_status_page(server: &MissionServerView, logged_in_as: Option<&str>) -> Markup {
     let status = server.status;
 
     let content = html! {
@@ -15,7 +15,7 @@ pub fn mission_status_page(server: &TacticalServer, logged_in_as: Option<&str>) 
                 div class="flex flex-col gap-sm" {
                     div {
                         span class="detail-label" { "Status" }
-                        div { (status_badge(status.label())) }
+                        div { (status_badge(status.label(), mission_status_badge_tone(status))) }
                     }
                 }
             }))
@@ -70,6 +70,15 @@ pub fn mission_status_page(server: &TacticalServer, logged_in_as: Option<&str>) 
     mission_layout("Mission Status", content, logged_in_as)
 }
 
+const fn mission_status_badge_tone(status: MissionStatus) -> StatusBadgeTone {
+    match status {
+        MissionStatus::Ready => StatusBadgeTone::Success,
+        MissionStatus::Pending => StatusBadgeTone::Warning,
+        MissionStatus::Failed => StatusBadgeTone::Danger,
+        MissionStatus::Ended => StatusBadgeTone::Info,
+    }
+}
+
 fn pending_state(mission_id: &str) -> Markup {
     html! {
         (panel("Waiting", html! {
@@ -99,7 +108,7 @@ fn failed_state() -> Markup {
     }
 }
 
-fn ready_state(server: &TacticalServer) -> Markup {
+fn ready_state(server: &MissionServerView) -> Markup {
     html! {
         (panel("Server Ready", html! {
             div class="status-message success" {
@@ -161,7 +170,7 @@ fn cancel_button(mission_id: &str) -> Markup {
 }
 
 /// Fragment for Datastar polling updates
-pub fn mission_status_fragment(server: &TacticalServer) -> Markup {
+pub fn mission_status_fragment(server: &MissionServerView) -> Markup {
     let status = server.status;
 
     html! {
@@ -180,7 +189,9 @@ pub fn mission_status_fragment(server: &TacticalServer) -> Markup {
 
 #[cfg(test)]
 mod tests {
-    use super::pending_state;
+    use super::{mission_status_badge_tone, pending_state};
+    use crate::spacetimedb::MissionStatus;
+    use crate::templates::StatusBadgeTone;
 
     #[test]
     fn pending_status_is_concise_and_diagnostics_are_collapsed() {
@@ -190,5 +201,24 @@ mod tests {
         let source = include_str!("mission.rs");
         assert!(source.contains("details class=\"mission-diagnostics\""));
         assert!(source.contains("Technical details"));
+    }
+
+    #[test]
+    fn mission_status_controls_badge_tone_without_label_matching() {
+        assert_eq!(
+            [
+                MissionStatus::Ready,
+                MissionStatus::Pending,
+                MissionStatus::Failed,
+                MissionStatus::Ended,
+            ]
+            .map(mission_status_badge_tone),
+            [
+                StatusBadgeTone::Success,
+                StatusBadgeTone::Warning,
+                StatusBadgeTone::Danger,
+                StatusBadgeTone::Info,
+            ]
+        );
     }
 }

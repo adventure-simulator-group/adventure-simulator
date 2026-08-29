@@ -124,6 +124,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "spacetimedb",
+ "spacetimedb-sats",
 ]
 
 [[package]]
@@ -10120,6 +10121,7 @@ dependencies = [
  "serde_json",
  "serde_urlencoded",
  "sha2",
+ "spacetimedb-sats",
  "thiserror 2.0.20",
  "tokio",
  "tower",

@@ -12,7 +12,7 @@ use serde_json::json;
 use super::AppState;
 use crate::{
     session::Session,
-    spacetimedb::{BackendChallenge, Character, sql_string_literal},
+    spacetimedb::{BackendChallenge, CharacterView, sql_string_literal},
     templates::challenge::{parse_form_sigils, parse_sigil, parse_witness_path, puzzle_page},
 };
 
@@ -36,7 +36,7 @@ async fn projection(
     );
     state
         .db
-        .query_one::<BackendChallenge>(&sql)
+        .query_one_sats::<BackendChallenge>(&sql)
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
         .ok_or(StatusCode::NOT_FOUND)
@@ -50,10 +50,14 @@ async fn show(
     let Some(character_id) = session.character_id_u64() else {
         return StatusCode::UNAUTHORIZED.into_response();
     };
-    let character_sql = format!("SELECT * FROM character WHERE id = {character_id}");
+    let character_sql = crate::spacetimedb::character_by_id(character_id);
     let (challenge, character) = tokio::join!(
         projection(&state, character_id, &case_id, &challenge_id),
-        state.db.query_one::<Character>(&character_sql)
+        state
+            .db
+            .query_one_sats_into::<adventuresim_stdb_client::Character, CharacterView>(
+                &character_sql
+            )
     );
     let challenge = match challenge {
         Ok(value) => value,
@@ -263,10 +267,13 @@ mod tests {
     #[test]
     fn route_is_server_rendered_post_redirect_get() {
         let source = include_str!("challenges.rs");
+        let production = source.split("#[cfg(test)]").next().unwrap();
         assert!(source.contains("get(show).post(submit)"));
         assert!(source.contains("Redirect::to"));
         assert!(source.contains("owner_character_id = {character_id}"));
         assert!(source.contains("AND active = true"));
+        assert!(source.contains("character_by_id(character_id)"));
+        assert!(!production.contains("FROM character WHERE"));
         assert!(
             source
                 .matches("projection(&state, character_id, &case_id, &challenge_id)")

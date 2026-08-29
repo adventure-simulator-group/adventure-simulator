@@ -4,15 +4,17 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::recruitment_requirements_type::RecruitmentRequirements;
+use super::recruitment_role_purpose_type::RecruitmentRolePurpose;
+use super::role_requirements_type::RoleRequirements;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct PartyRecruitmentRole {
     pub id: u64,
     pub party_id: String,
+    pub purpose: RecruitmentRolePurpose,
     pub name: String,
-    pub requirements: RecruitmentRequirements,
+    pub requirements: RoleRequirements,
     pub quantity: u32,
 }
 
@@ -26,8 +28,9 @@ impl __sdk::InModule for PartyRecruitmentRole {
 pub struct PartyRecruitmentRoleCols {
     pub id: __sdk::__query_builder::Col<PartyRecruitmentRole, u64>,
     pub party_id: __sdk::__query_builder::Col<PartyRecruitmentRole, String>,
+    pub purpose: __sdk::__query_builder::Col<PartyRecruitmentRole, RecruitmentRolePurpose>,
     pub name: __sdk::__query_builder::Col<PartyRecruitmentRole, String>,
-    pub requirements: __sdk::__query_builder::Col<PartyRecruitmentRole, RecruitmentRequirements>,
+    pub requirements: __sdk::__query_builder::Col<PartyRecruitmentRole, RoleRequirements>,
     pub quantity: __sdk::__query_builder::Col<PartyRecruitmentRole, u32>,
 }
 
@@ -37,6 +40,7 @@ impl __sdk::__query_builder::HasCols for PartyRecruitmentRole {
         PartyRecruitmentRoleCols {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
             party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
+            purpose: __sdk::__query_builder::Col::new(table_name, "purpose"),
             name: __sdk::__query_builder::Col::new(table_name, "name"),
             requirements: __sdk::__query_builder::Col::new(table_name, "requirements"),
             quantity: __sdk::__query_builder::Col::new(table_name, "quantity"),

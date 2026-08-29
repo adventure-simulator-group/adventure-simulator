@@ -5,31 +5,124 @@ impl LiveRunner {
         kind: CoreLoopEventKind,
         detail: impl Into<String>,
     ) {
+        self.emit_event(agent_id, CoreLoopEventPayload::agent(kind, detail));
+    }
+
+    pub(super) fn direct_contract_event(
+        &mut self,
+        agent_id: u32,
+        kind: CoreLoopEventKind,
+        party_id: &str,
+        contract_id: &str,
+        detail: impl Into<String>,
+    ) {
+        self.emit_event(
+            agent_id,
+            CoreLoopEventPayload::direct_contract(kind, party_id, contract_id, detail),
+        );
+    }
+
+    pub(super) fn character_event(
+        &mut self,
+        agent_id: u32,
+        kind: CoreLoopEventKind,
+        character_id: u64,
+        detail: impl Into<String>,
+    ) {
+        self.emit_event(
+            agent_id,
+            CoreLoopEventPayload::character(kind, character_id, detail),
+        );
+    }
+
+    pub(super) fn generated_case_event(
+        &mut self,
+        agent_id: u32,
+        kind: CoreLoopEventKind,
+        party_id: &str,
+        case_id: &str,
+        detail: impl Into<String>,
+    ) {
+        self.emit_event(
+            agent_id,
+            CoreLoopEventPayload::generated_case(kind, party_id, case_id, detail),
+        );
+    }
+
+    pub(super) fn investigation_action_event(
+        &mut self,
+        agent_id: u32,
+        kind: CoreLoopEventKind,
+        case_id: &str,
+        action_id: &str,
+        detail: impl Into<String>,
+    ) {
+        self.emit_event(
+            agent_id,
+            CoreLoopEventPayload::investigation_action(kind, case_id, action_id, detail),
+        );
+    }
+
+    pub(super) fn item_event(
+        &mut self,
+        agent_id: u32,
+        kind: CoreLoopEventKind,
+        inventory_item_id: u64,
+        detail: impl Into<String>,
+    ) {
+        self.emit_event(
+            agent_id,
+            CoreLoopEventPayload::item(kind, inventory_item_id, detail),
+        );
+    }
+
+    pub(super) fn encounter_event(
+        &mut self,
+        agent_id: u32,
+        kind: CoreLoopEventKind,
+        party_id: &str,
+        encounter_id: &str,
+        detail: impl Into<String>,
+    ) {
+        self.emit_event(
+            agent_id,
+            CoreLoopEventPayload::encounter(kind, party_id, encounter_id, detail),
+        );
+    }
+
+    fn emit_event(&mut self, agent_id: u32, payload: CoreLoopEventPayload) {
         self.sequence += 1;
-        let detail = detail.into();
-        let semantic = format!("{agent_id}:{kind:?}:{detail}");
-        let repeatable = event_is_repeatable(&kind);
-        if !repeatable && self.last_semantic_event.as_ref() == Some(&semantic) {
+        let semantic = payload.semantic_key(agent_id);
+        if is_duplicate_semantic_event(self.last_semantic_event.as_ref(), &semantic) {
             self.metrics.duplicate_semantic_events += 1;
         }
-        self.last_semantic_event = Some(semantic);
+        self.last_semantic_event = Some(semantic.clone());
         if self.trace.len() < MAX_CORE_TRACE_EVENTS {
-            self.trace.push(CoreLoopEvent {
-                sequence: self.sequence,
-                agent_id,
-                kind,
-                detail,
-            });
+            self.trace
+                .push(payload.into_public(self.sequence, agent_id));
+            self.semantic_event_keys.push(semantic);
         }
         self.capture_failure_diagnostics();
     }
 
-    pub(super) fn call(&mut self, result: Result<(), String>) -> Result<(), String> {
-        if result.is_err() {
-            self.metrics.reducer_failures += 1;
-            self.capture_failure_diagnostics();
+    pub(super) fn observe_call_result(
+        &mut self,
+        result: Result<(), CoreLoopError>,
+    ) -> Result<(), CoreLoopError> {
+        match result {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                self.metrics.reducer_failures += 1;
+                self.failure_recorder.record(error.clone());
+                self.capture_failure_diagnostics();
+                Err(error)
+            }
         }
-        result
+    }
+
+    pub(super) fn call(&mut self, result: Result<(), CoreLoopError>) -> Result<(), String> {
+        self.observe_call_result(result)
+            .map_err(|error| error.to_string())
     }
 
     pub(super) fn capture_failure_diagnostics(&self) {
@@ -108,7 +201,7 @@ impl LiveRunner {
             row.economy
                 .services
                 .iter()
-                .map(|service| format!("{service:?}"))
+                .map(|service| settlement_service_key(*service).to_owned())
                 .collect()
         });
         settlement_services.sort();
@@ -321,7 +414,7 @@ impl LiveRunner {
                 }
                 let cause = death.as_ref().map_or_else(
                     || "unavailable".to_owned(),
-                    |row| format!("{:?}", row.cause),
+                    |row| death_cause_key(row.cause).to_owned(),
                 );
                 let source_id = death
                     .as_ref()
@@ -338,9 +431,10 @@ impl LiveRunner {
                     .backend_character_strategic_conditions()
                     .iter()
                     .find(|row| row.character_id == character_id);
-                self.event(
+                self.character_event(
                     agent as u32,
                     CoreLoopEventKind::Death,
+                    character_id,
                     format!(
                         "terminal=authoritative;cause={cause};source={source:?};source_id={source_id};strategic_minute={strategic_minute};condition={};thermal={:.3};wetness_bps={};thermal_strain={};ammo={};carried_load_kg={:.3};carry_capacity_kg={:.3};encumbrance_remaining_bps={};equipment_ready={};party_tent_quantity={}",
                         condition.as_ref().map_or("unavailable", |row| {

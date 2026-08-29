@@ -1,18 +1,3 @@
-#[derive(serde::Deserialize)]
-struct MerchantProviderRow {
-    character_id: u64,
-    home_settlement_id: String,
-    service_id: String,
-}
-
-#[derive(serde::Deserialize)]
-struct MerchantProviderPresenceRow {
-    character_id: u64,
-    settlement_id: String,
-    location_id: String,
-    is_default: bool,
-}
-
 pub(super) fn merchant_service_location(service_id: &str) -> Option<&'static str> {
     match service_id {
         "merchants" => Some("market"),
@@ -39,10 +24,12 @@ pub(super) async fn merchant_provider_id(
         "SELECT * FROM settlement_resident_presence WHERE settlement_id = {settlement_literal}"
     );
     let (providers, presences) = tokio::join!(
-        state.db.query::<MerchantProviderRow>(&providers_sql),
         state
             .db
-            .query::<MerchantProviderPresenceRow>(&presences_sql),
+            .query_sats::<crate::spacetimedb::BackendSettlementResident>(&providers_sql),
+        state
+            .db
+            .query_sats::<crate::spacetimedb::SettlementResidentPresence>(&presences_sql),
     );
     let providers = providers.ok()?;
     let presences = presences.ok()?;
@@ -67,7 +54,7 @@ pub(super) async fn merchant_provider_id(
 
 pub(super) async fn provisioning_storefront_path(
     state: &AppState,
-    settlement: &Settlement,
+    settlement: &SettlementView,
 ) -> Option<String> {
     use adventuresim_core::settlement_economy::{Storefront, storefront_available};
 

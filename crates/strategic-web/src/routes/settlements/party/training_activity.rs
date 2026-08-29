@@ -253,7 +253,7 @@ pub(super) async fn party_member(
     } else {
         state
             .db
-            .query(&format!(
+            .query_sats(&format!(
                 "SELECT * FROM inventory_item WHERE character_id = {character_id}"
             ))
             .await
@@ -266,19 +266,19 @@ pub(super) async fn party_member(
     } else {
         character_equipment_graph(&state, active_character.id).await
     };
-    let items: Vec<ItemDefinition> = state
+    let items: Vec<CatalogItemView> = state
         .db
-        .query("SELECT * FROM item")
+        .query_sats_into::<adventuresim_stdb_client::Item, CatalogItemView>("SELECT * FROM item")
         .await
         .unwrap_or_default();
     let food_lots: Vec<FoodLot> = state
         .db
-        .query("SELECT * FROM food_lot")
+        .query_sats("SELECT * FROM food_lot")
         .await
         .unwrap_or_default();
     let preparation_plans: Vec<BackendIngredientPreparationPlan> = state
         .db
-        .query(&format!(
+        .query_sats(&format!(
             "SELECT * FROM backend_ingredient_preparation_plans WHERE actor_character_id = {}",
             active_character.id
         ))
@@ -368,7 +368,7 @@ pub(super) async fn party_pool_inventory(
     };
     let pooled: Vec<PartyInventoryItem> = state
         .db
-        .query(&format!(
+        .query_sats(&format!(
             "SELECT * FROM party_inventory_item WHERE party_id = {}",
             sql_string_literal(party_id)
         ))
@@ -376,7 +376,7 @@ pub(super) async fn party_pool_inventory(
         .unwrap_or_default();
     let stakes: Vec<PartyStake> = state
         .db
-        .query(&format!(
+        .query_sats(&format!(
             "SELECT * FROM party_stake WHERE party_id = {}",
             sql_string_literal(party_id)
         ))
@@ -384,20 +384,20 @@ pub(super) async fn party_pool_inventory(
         .unwrap_or_default();
     let food_lots: Vec<FoodLot> = state
         .db
-        .query("SELECT * FROM food_lot")
+        .query_sats("SELECT * FROM food_lot")
         .await
         .unwrap_or_default();
     let preparation_plans: Vec<BackendIngredientPreparationPlan> = state
         .db
-        .query(&format!(
+        .query_sats(&format!(
             "SELECT * FROM backend_ingredient_preparation_plans WHERE actor_character_id = {}",
             character.id
         ))
         .await
         .unwrap_or_default();
-    let items: Vec<ItemDefinition> = state
+    let items: Vec<CatalogItemView> = state
         .db
-        .query("SELECT * FROM item")
+        .query_sats_into::<adventuresim_stdb_client::Item, CatalogItemView>("SELECT * FROM item")
         .await
         .unwrap_or_default();
     let equip = character_equipment_graph(&state, character.id).await;

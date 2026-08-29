@@ -123,6 +123,40 @@ pub(crate) fn character_assignment_id(character_id: u64, instance_id: &str) -> S
     format!("character:{character_id}:{instance_id}")
 }
 
+enum SocialOrganizationInstanceId<'a> {
+    ProvisionalFamily(&'a str),
+    Family(&'a str),
+    Other,
+}
+
+impl<'a> SocialOrganizationInstanceId<'a> {
+    fn parse(value: &'a str) -> Self {
+        let Some(family_coordinate) = value
+            .strip_prefix("family:")
+            .filter(|coordinate| !coordinate.is_empty())
+        else {
+            return Self::Other;
+        };
+        family_coordinate
+            .strip_prefix("origin:")
+            .filter(|coordinate| !coordinate.is_empty())
+            .map_or(Self::Family(family_coordinate), Self::ProvisionalFamily)
+    }
+
+    const fn is_provisional_family(&self) -> bool {
+        matches!(self, Self::ProvisionalFamily(_coordinate))
+    }
+
+    const fn is_family(&self) -> bool {
+        match self {
+            Self::ProvisionalFamily(coordinate) | Self::Family(coordinate) => {
+                !coordinate.is_empty()
+            }
+            Self::Other => false,
+        }
+    }
+}
+
 /// Materialize one durable birth-family identity. The family key is stable and
 /// deliberately independent of the household in which its members presently
 /// live. Noble and common families use different authored role catalogs; no
@@ -143,9 +177,8 @@ pub fn ensure_character_family_role(
         .character_id()
         .filter(character_id)
         .filter(|assignment| {
-            assignment
-                .organization_instance_id
-                .starts_with("family:origin:")
+            SocialOrganizationInstanceId::parse(&assignment.organization_instance_id)
+                .is_provisional_family()
                 && assignment.organization_instance_id != instance_id
         })
         .collect::<Vec<_>>();
@@ -203,9 +236,8 @@ pub fn copy_birth_family_roles(
         .character_id()
         .filter(child_id)
         .filter(|assignment| {
-            assignment
-                .organization_instance_id
-                .starts_with("family:origin:")
+            SocialOrganizationInstanceId::parse(&assignment.organization_instance_id)
+                .is_provisional_family()
         })
         .collect::<Vec<_>>();
     for assignment in provisional {
@@ -221,7 +253,9 @@ pub fn copy_birth_family_roles(
         .character_organization_role()
         .character_id()
         .filter(parent_id)
-        .filter(|assignment| assignment.organization_instance_id.starts_with("family:"))
+        .filter(|assignment| {
+            SocialOrganizationInstanceId::parse(&assignment.organization_instance_id).is_family()
+        })
         .collect::<Vec<_>>();
     if families.is_empty() {
         return Err("Parent has no durable birth-family organization".into());
@@ -522,7 +556,9 @@ mod tests {
             .split("pub(crate) fn religious_organization_for")
             .next()
             .unwrap();
-        assert!(birth.contains("starts_with(\"family:\")"));
+        assert!(birth.contains("SocialOrganizationInstanceId::parse"));
+        assert!(birth.contains("is_family()"));
+        assert!(!birth.contains("starts_with(\"family:\")"));
         assert!(birth.contains("insert_character_role"));
     }
 

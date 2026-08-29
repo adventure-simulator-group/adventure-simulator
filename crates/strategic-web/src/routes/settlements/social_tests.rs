@@ -80,7 +80,7 @@ mod social_notification_query_tests {
             None,
             SocialActionKind::LightenMood
         ));
-        let mut personality = crate::spacetimedb::CharacterPersonality::neutral(1);
+        let mut personality = crate::spacetimedb::Personality::neutral();
         assert!(!social_action_blocked_by_actor(
             true,
             Some(&personality),

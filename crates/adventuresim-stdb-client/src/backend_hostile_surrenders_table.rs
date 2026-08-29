@@ -3,6 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::backend_hostile_surrender_type::BackendHostileSurrender;
+use super::case_site_id_type::CaseSiteId;
 use super::hostile_surrender_mode_type::HostileSurrenderMode;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 

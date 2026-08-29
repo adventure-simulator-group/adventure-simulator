@@ -95,7 +95,8 @@ use crate::{
     routes::AppState,
     session::Session,
     spacetimedb::{
-        BackendCharacterCaseSiteLocation as HttpBackendCharacterCaseSiteLocation, Character, Party,
+        BackendCharacterCaseSiteLocation as HttpBackendCharacterCaseSiteLocation, CharacterView,
+        PartyView,
     },
 };
 
@@ -499,7 +500,7 @@ impl LiveState {
 
     /// Public character rows are safe to read from the shared cache. Private
     /// owner projections intentionally do not have a cache facade.
-    pub fn cached_characters(&self) -> Option<Vec<crate::spacetimedb::Character>> {
+    pub fn cached_characters(&self) -> Option<Vec<crate::spacetimedb::CharacterView>> {
         self.cache_status().ready.then(|| {
             self.0
                 ._connection
@@ -511,7 +512,7 @@ impl LiveState {
         })
     }
 
-    pub fn cached_character(&self, id: u64) -> Option<Option<crate::spacetimedb::Character>> {
+    pub fn cached_character(&self, id: u64) -> Option<Option<crate::spacetimedb::CharacterView>> {
         self.cache_status().ready.then(|| {
             self.0
                 ._connection
@@ -535,8 +536,10 @@ impl LiveState {
     }
 }
 
-fn character_from_sdk(value: adventuresim_stdb_client::Character) -> crate::spacetimedb::Character {
-    crate::spacetimedb::Character {
+fn character_from_sdk(
+    value: adventuresim_stdb_client::Character,
+) -> crate::spacetimedb::CharacterView {
+    crate::spacetimedb::CharacterView {
         id: value.id,
         name: value.name,
         xp: value.xp,
@@ -617,9 +620,9 @@ async fn navigation(State(state): State<AppState>, session: Session) -> Json<Nav
     for attempt in 0..4 {
         let character = state
             .db
-            .query::<Character>(&format!(
-                "SELECT * FROM backend_characters WHERE id = {character_id}"
-            ))
+            .query_sats_into::<adventuresim_stdb_client::Character, CharacterView>(
+                &crate::spacetimedb::character_by_id(character_id),
+            )
             .await
             .ok()
             .and_then(|rows| rows.into_iter().next());
@@ -629,7 +632,9 @@ async fn navigation(State(state): State<AppState>, session: Session) -> Json<Nav
         if let Some(party_id) = character.party_id.as_deref()
             && state
                 .db
-                .query_one::<Party>(&crate::spacetimedb::party_by_id(party_id))
+                .query_one_sats_into::<adventuresim_stdb_client::Party, PartyView>(
+                    &crate::spacetimedb::party_by_id(party_id),
+                )
                 .await
                 .ok()
                 .flatten()
@@ -643,9 +648,9 @@ async fn navigation(State(state): State<AppState>, session: Session) -> Json<Nav
         }
         let current_case_site_id = state
             .db
-            .query_one::<HttpBackendCharacterCaseSiteLocation>(&format!(
-                "SELECT * FROM backend_character_case_site_locations WHERE character_id = {character_id}"
-            ))
+            .query_one_sats::<HttpBackendCharacterCaseSiteLocation>(
+                &crate::spacetimedb::character_case_site_location_by_character_id(character_id),
+            )
             .await
             .ok()
             .flatten()

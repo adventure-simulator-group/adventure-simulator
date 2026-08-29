@@ -95,7 +95,7 @@ pub fn transfer_party_item(
         .item()
         .id()
         .find(&source_item.item_id)
-        .is_some_and(|row| row.kind == crate::ItemKind::Food)
+        .is_some_and(|row| row.kind == crate::PersistedItemKind::Food)
         || adventuresim_core::food::definition(&source_item.item_id).is_some();
     if food {
         if source_item.quantity == quantity {
@@ -284,7 +284,7 @@ fn item_is_medication(ctx: &ReducerContext, item_id: &str) -> bool {
         .item()
         .id()
         .find(item_id.to_owned())
-        .is_some_and(|definition| definition.kind == crate::ItemKind::Medication)
+        .is_some_and(|definition| definition.kind == crate::PersistedItemKind::Medication)
 }
 
 #[cfg(test)]
@@ -293,7 +293,7 @@ mod durable_custody_tests {
     fn clothing_uses_repairable_capability_for_every_custody_path() {
         let clothing = crate::Item {
             id: "linen_tunic".into(),
-            kind: crate::ItemKind::Clothing,
+            kind: crate::PersistedItemKind::Clothing,
             repairable: true,
             ..crate::Item::default()
         };
@@ -443,7 +443,7 @@ mod medication_custody_tests {
             .nth(1)
             .and_then(|tail| tail.split("pub(crate) fn add_inventory_item_checked").next())
             .unwrap();
-        assert!(stable_object_policy.contains("definition.kind == ItemKind::Medication"));
+        assert!(stable_object_policy.contains("definition.kind == PersistedItemKind::Medication"));
 
         let withdrawal = source
             .rsplit("pub fn withdraw_party_inventory_item")
@@ -712,7 +712,7 @@ fn mission_candidate_is_current(
             custody.case_id == candidate.case_id
                 && custody.object_kind == CustodyObjectKind::Subject
                 && custody.holder_kind == CustodyHolderKind::Site
-                && custody.holder_id == candidate.case_site_id.value
+                && custody.holder_id == candidate.case_site_id.as_str()
                 && custody.version == version
         }))
 }
@@ -1016,7 +1016,7 @@ pub(crate) fn commit_hostile_resolution_authority(
         .db
         .case_site_authority()
         .id_key()
-        .find(&case_site_id.value)
+        .find(case_site_id.to_string())
         .filter(|site| site.id == *case_site_id && site.case_id == case_id)
         .ok_or("Hostile resolution case-site authority is stale")?;
     if group.case_site_id != *case_site_id {
@@ -1150,11 +1150,11 @@ pub(crate) fn commit_hostile_resolution_authority(
                 .db
                 .case_site_authority()
                 .id_key()
-                .find(&group.case_site_id.value)
+                .find(group.case_site_id.to_string())
                 .ok_or("Hostile group case site not found")?;
             if current.case_id != site.case_id
                 || current.holder_kind != CustodyHolderKind::Site
-                || current.holder_id != group.case_site_id.value
+                || current.holder_id != group.case_site_id.as_str()
             {
                 return Err("Capture subject is not bound to this mission site and case".into());
             }
@@ -1319,7 +1319,7 @@ fn commit_hostile_battle_resolution(
                 .db
                 .case_site_authority()
                 .id_key()
-                .find(&site_id.value)
+                .find(site_id.to_string())
                 .ok_or("Case site authority not found")?;
             let public_case_id = mission_public_case_id(ctx, &mission)?;
             ctx.db
@@ -1362,7 +1362,7 @@ fn commit_hostile_battle_resolution(
         crate::condition::record_morale_event(
             ctx,
             member_id,
-            "victory",
+            adventuresim_core::morale::MoraleEventKind::Victory,
             5.0 + difficulty.max(0) as f32,
             Some(outcome_source_id.to_string()),
         )?;
@@ -1386,7 +1386,7 @@ fn commit_hostile_battle_resolution(
                 .db
                 .case_site_authority()
                 .id_key()
-                .find(&group.case_site_id.value)
+                .find(group.case_site_id.to_string())
         {
             *combined
                 .entry(crate::item::currency_id_for_settlement(
@@ -1409,7 +1409,7 @@ fn commit_hostile_battle_resolution(
             .db
             .case_site_authority()
             .id_key()
-            .find(&group.case_site_id.value)
+            .find(group.case_site_id.to_string())
             .ok_or("Hostile group case site not found")?;
         let observer_character_id = if let Some(mission_id) = mission_id {
             ctx.db
@@ -2404,7 +2404,7 @@ fn validate_personal_storefront_purchase(
         .ok_or("Merchant item not found")?;
     if matches!(
         item.kind,
-        crate::ItemKind::Currency | crate::ItemKind::Medication
+        crate::PersistedItemKind::Currency | crate::PersistedItemKind::Medication
     ) || !adventuresim_core::settlement_economy::storefront_stocks(
         &settlement.economy,
         storefront,
@@ -2663,7 +2663,7 @@ fn finalize_storefront_trade_impl(
         };
         if matches!(
             item.kind,
-            crate::ItemKind::Currency | crate::ItemKind::Medication
+            crate::PersistedItemKind::Currency | crate::PersistedItemKind::Medication
         ) || *quantity == 0
         {
             return Err("Invalid merchant purchase".into());
@@ -2745,7 +2745,7 @@ fn finalize_storefront_trade_impl(
             || *quantity == 0
             || matches!(
                 item.kind,
-                crate::ItemKind::Currency | crate::ItemKind::Medication
+                crate::PersistedItemKind::Currency | crate::PersistedItemKind::Medication
             )
         {
             return Err("Invalid merchant sale".into());
@@ -2927,10 +2927,10 @@ fn finalize_storefront_trade_impl(
         let durable = ctx.db.item().id().find(item_id).is_some_and(|definition| {
             matches!(
                 definition.kind,
-                crate::ItemKind::Weapon
-                    | crate::ItemKind::Armor
-                    | crate::ItemKind::Shield
-                    | crate::ItemKind::Clothing
+                crate::PersistedItemKind::Weapon
+                    | crate::PersistedItemKind::Armor
+                    | crate::PersistedItemKind::Shield
+                    | crate::PersistedItemKind::Clothing
             )
         });
         let food = ctx
@@ -2938,7 +2938,7 @@ fn finalize_storefront_trade_impl(
             .item()
             .id()
             .find(item_id)
-            .is_some_and(|definition| definition.kind == crate::ItemKind::Food)
+            .is_some_and(|definition| definition.kind == crate::PersistedItemKind::Food)
             || adventuresim_core::food::definition(item_id).is_some();
         if !durable
             && !food

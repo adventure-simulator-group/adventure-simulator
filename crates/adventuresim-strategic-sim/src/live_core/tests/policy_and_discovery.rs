@@ -1,12 +1,14 @@
 #[test]
 fn startup_registers_and_resubscribes_gateway_before_seeding() {
-    let source = LIVE_CORE_SOURCE;
-    let claim = source.find("\"claim_simulation_run\"").unwrap();
-    let register = source.find("\"register_strategic_gateway\"").unwrap();
+    let source = include_str!("../bootstrap.rs");
+    let claim = source.find("ReducerOperation::ClaimSimulationRun").unwrap();
+    let register = source
+        .find("ReducerOperation::RegisterStrategicGateway")
+        .unwrap();
     let resubscribe = source
         .find("gateway_subscription_rx")
         .expect("post-registration gateway subscription");
-    let seed = source.find("\"seed_simulation_world\"").unwrap();
+    let seed = source.find("ReducerOperation::SeedSimulationWorld").unwrap();
     assert!(claim < register && register < resubscribe && resubscribe < seed);
     let gateway_surface = &source[resubscribe..seed];
     let contracts = gateway_surface
@@ -123,7 +125,7 @@ fn insufficient_settlement_resources_defer_to_installed_labor_without_free_servi
         .nth(1)
         .and_then(|tail| tail.split("/// NPCs use the same custody").next())
         .expect("settlement activity policy");
-    let install = activity.find("install_activity_schedule").unwrap();
+    let install = activity.find("self.install_activity_schedule(").unwrap();
     let venue = activity.find("settlement_activity_venue").unwrap();
     let deferred = activity.find("format_deferred_activity_detail").unwrap();
     let rest = activity.find("rest_at_settlement_hours_then").unwrap();
@@ -224,7 +226,7 @@ fn activity_schedule_is_installed_before_the_logged_rest_attempt() {
             .map(|offset| start + offset)
             .expect("activity policy end")];
     let install = block
-        .find("install_activity_schedule")
+        .find("self.install_activity_schedule(")
         .expect("authoritative schedule installation");
     let rest = block
         .find("rest_at_settlement_hours_then")
@@ -283,10 +285,10 @@ fn each_active_cycle_advances_world_time_before_refreshing_npc_activity() {
         .expect("core-loop cleanup");
     let active_block = &source[loop_start..loop_end];
     let advance = active_block
-        .find("\"advance_simulation_world_time\"")
+        .find("ReducerOperation::AdvanceSimulationWorldTime")
         .expect("simulation clock advance");
     assert!(
-        active_block[advance..].contains("\"ensure_settlement_activity\""),
+        active_block[advance..].contains("ReducerOperation::EnsureSettlementActivity"),
         "settlement activity must refresh after the simulation clock advances"
     );
 }
@@ -353,10 +355,16 @@ fn quest_selection_trace_precedes_discovery_reducers() {
 #[test]
 fn generated_case_views_filter_by_owner_and_sort_stably() {
     let rows = vec![
-        (9, "case-b".into(), "B".into(), "open".into(), 10),
-        (7, "case-z".into(), "Z".into(), "open".into(), 1),
-        (9, "case-a".into(), "A".into(), "open".into(), 20),
-        (9, "case-c".into(), "C".into(), "completed".into(), 0),
+        (9, "case-b".into(), "B".into(), DomainCaseStatus::Open, 10),
+        (7, "case-z".into(), "Z".into(), DomainCaseStatus::Open, 1),
+        (9, "case-a".into(), "A".into(), DomainCaseStatus::Open, 20),
+        (
+            9,
+            "case-c".into(),
+            "C".into(),
+            DomainCaseStatus::Resolved,
+            0,
+        ),
     ];
     assert_eq!(
         stable_owned_open_cases(9, rows),
@@ -608,7 +616,7 @@ fn dialogue_candidates_are_filtered_by_the_authoritative_public_navigation_rule(
     assert!(candidates.contains("public_settlement_economy_profile"));
     assert!(candidates.contains("retain_navigable_public_npc_candidates"));
     assert_eq!(
-        source.matches("self.start_public_dialogue(").count(),
+        source.matches(".start_public_dialogue(").count(),
         2,
         "discovery and case continuation must share the filtered candidate source"
     );
@@ -863,10 +871,10 @@ fn semantic_dialogue_action() -> PublicDialogueActionSemantic {
         uncertainty_bps: 2_000,
         skill_contributions: "observation".into(),
         weather_available: true,
-        required_case_site_id: "site:mill".into(),
-        available: true,
-        can_travel_to_required_site: true,
-        unavailable_reason_code: String::new(),
+        required_case_site_id: Some(CaseSiteId {
+            value: "site:mill".into(),
+        }),
+        availability: InvestigationActionAvailability::Available,
     }
 }
 
@@ -900,11 +908,18 @@ fn public_dialogue_presence_rejects_suppression_and_replans_authority_races() {
     assert!(npc_is_publicly_present(480, 1_020, false, false, 900));
     assert!(!npc_is_publicly_present(480, 1_020, true, false, 900));
     assert!(!npc_is_publicly_present(480, 1_020, false, true, 900));
+    let coded = adventuresim_core::reducer_error::coded_reducer_error(
+        ReducerErrorCode::DialogueContactUnavailable,
+        "wording is not part of control flow",
+    );
     assert!(dialogue_contact_presence_changed(
-        "start_dialogue failed: Dialogue actor is not present at this time"
+        &CoreLoopError::reducer_rejected(ReducerOperation::StartDialogue, coded)
     ));
     assert!(!dialogue_contact_presence_changed(
-        "start_dialogue failed: Dialogue conversation is not valid for this NPC"
+        &CoreLoopError::reducer_rejected(
+            ReducerOperation::StartDialogue,
+            "Dialogue actor is not present at this time"
+        )
     ));
 }
 
@@ -983,19 +998,6 @@ fn policy_relevant_lead_and_action_changes_count_as_dialogue_progress() {
 }
 
 #[test]
-fn generated_action_preflight_suppresses_public_party_clock_skew() {
-    assert!(public_party_clocks_aligned(
-        &[7, 8],
-        [(7, 340_929), (8, 340_929)]
-    ));
-    assert!(!public_party_clocks_aligned(
-        &[7, 8],
-        [(7, 339_489), (8, 340_929)]
-    ));
-    assert!(!public_party_clocks_aligned(&[7, 8], [(7, 340_929)]));
-}
-
-#[test]
 fn public_symptom_diagnostics_are_coarse() {
     assert_eq!(public_count_bucket(0), "0");
     assert_eq!(public_count_bucket(1), "1");
@@ -1020,7 +1022,7 @@ fn discovery_logging_uses_only_the_owner_visible_case_postcondition() {
     assert!(discovery.contains("owned_open_generated_cases(character_id)"));
     assert!(discovery.contains("backend_investigation_leads()"));
     assert!(discovery.contains("public_discovery_referral_to_follow"));
-    assert!(discovery.contains("&[\"referred-testimony\"]"));
+    assert!(discovery.contains("&[GeneratedDialogueTopic::ReferredTestimony]"));
     let referral = discovery
         .find("public_discovery_referral_to_follow")
         .expect("public referral postcondition");
@@ -1082,17 +1084,53 @@ fn dialogue_topic_policy_returns_progress_only_after_public_projection_change() 
 #[test]
 fn generated_completion_is_attributed_only_to_the_immediate_own_transition() {
     assert_eq!(
-        generated_closure_attribution("open", Some("completed"), true),
+        generated_closure_attribution(
+            DomainCaseStatus::Open,
+            Some(DomainCaseStatus::Resolved),
+            true,
+        ),
         GeneratedClosureAttribution::OwnImmediateTransition
     );
     assert_eq!(
-        generated_closure_attribution("open", Some("completed"), false),
+        generated_closure_attribution(
+            DomainCaseStatus::Open,
+            Some(DomainCaseStatus::Resolved),
+            false,
+        ),
         GeneratedClosureAttribution::ExternalTransition
     );
     assert_eq!(
-        generated_closure_attribution("open", Some("open"), true),
+        generated_closure_attribution(
+            DomainCaseStatus::Open,
+            Some(DomainCaseStatus::Open),
+            true,
+        ),
         GeneratedClosureAttribution::StillOpen
     );
+}
+
+#[test]
+fn generated_control_codes_reject_string_spoofs_before_policy() {
+    for spoof in ["Open", "open ", "open:completed", "completed-case"] {
+        assert_eq!(DomainCaseStatus::from_stable_id(spoof), None, "{spoof}");
+    }
+    assert_eq!(
+        GeneratedDialogueTopic::from_stable_id("referred-testimony"),
+        Some(GeneratedDialogueTopic::ReferredTestimony)
+    );
+    for spoof in [
+        "Referred-testimony",
+        "referred-testimony:spoof",
+        "referred-testimony ",
+    ] {
+        assert_eq!(
+            GeneratedDialogueTopic::from_stable_id(spoof),
+            None,
+            "{spoof}"
+        );
+    }
+    assert!(GeneratedCaseIntakeSource::OwnerProjectionContinuation.is_continuation());
+    assert!(!GeneratedCaseIntakeSource::DialogueRumor.is_continuation());
 }
 
 #[test]
@@ -1104,11 +1142,18 @@ fn generated_projection_rows_require_exact_owner_and_public_case() {
 
 #[test]
 fn generated_site_selection_requires_the_exact_occupied_pin() {
+    let occupied = CaseSiteId {
+        value: "site-2".into(),
+    };
+    let exact = occupied.clone();
+    let other = CaseSiteId {
+        value: "site-1".into(),
+    };
     assert!(occupied_case_pin_matches(
-        7, "public-a", "site-2", 7, "public-a", "site-2"
+        7, "public-a", &occupied, 7, "public-a", &exact
     ));
     assert!(!occupied_case_pin_matches(
-        7, "public-a", "site-2", 7, "public-a", "site-1"
+        7, "public-a", &occupied, 7, "public-a", &other
     ));
 }
 

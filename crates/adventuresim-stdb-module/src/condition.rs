@@ -80,7 +80,7 @@ pub struct MoraleEvent {
     pub id: u64,
     #[index(btree)]
     pub character_id: u64,
-    pub kind: String,
+    pub kind: MoraleEventKind,
     /// Positive values are successes; negative values are setbacks.
     pub magnitude: f32,
     pub occurred_at_minute: u64,
@@ -128,7 +128,7 @@ pub struct CharacterMoraleSource {
     pub id: String,
     #[index(btree)]
     pub character_id: u64,
-    pub kind: String,
+    pub kind: MoraleSourceKind,
     pub label: String,
     pub magnitude: f32,
 }
@@ -258,7 +258,11 @@ fn exposure_location(ctx: &ReducerContext, character_id: u64) -> ExposureLocatio
     if let Some(party_id) = character.party_id {
         if let Some(party) = ctx.db.party_authority().id().find(&party_id)
             && let Some(site_id) = party.current_case_site_id
-            && let Some(site) = ctx.db.case_site_authority().id_key().find(site_id.value)
+            && let Some(site) = ctx
+                .db
+                .case_site_authority()
+                .id_key()
+                .find(site_id.to_string())
         {
             let coordinate = if site.coordinates_are_geographic {
                 adventuresim_world_schema::coordinates::Wgs84CoordinateE7::new(
@@ -773,7 +777,7 @@ fn load_character_parts(
 #[derive(Clone, Debug)]
 struct ProjectedMoraleSource {
     key: String,
-    kind: String,
+    kind: MoraleSourceKind,
     label: String,
     magnitude: f32,
 }
@@ -956,7 +960,7 @@ fn base_morale(
     let personality = crate::personality::personality_or_neutral(ctx, character_id);
     let mut raw_sources = Vec::new();
     let mut add_source = |key: String,
-                          kind: String,
+                          kind: MoraleSourceKind,
                           label: String,
                           magnitude: f32,
                           stimulus: crate::personality::MoraleStimulus| {
@@ -976,7 +980,7 @@ fn base_morale(
     if injury > 0.0 {
         add_source(
             "injuries".into(),
-            "injury".into(),
+            MoraleSourceKind::Injury,
             "Injuries".into(),
             -injury,
             crate::personality::MoraleStimulus::Other,
@@ -1011,7 +1015,7 @@ fn base_morale(
     if hygiene_morale != 0.0 {
         add_source(
             "cleanliness".into(),
-            "cleanliness".into(),
+            MoraleSourceKind::Cleanliness,
             if hygiene_morale > 0.0 {
                 "Clean".into()
             } else {
@@ -1031,7 +1035,7 @@ fn base_morale(
         {
             add_source(
                 format!("religion-{religion_id}"),
-                "religion".into(),
+                MoraleSourceKind::Religion,
                 format!("Religious leadership for {}", religion_label(&religion_id)),
                 religion.knowledge,
                 crate::personality::MoraleStimulus::Religious,
@@ -1041,7 +1045,7 @@ fn base_morale(
         if discord > 0.0 {
             add_source(
                 "religious-discord".into(),
-                "religious_discord".into(),
+                MoraleSourceKind::ReligiousDiscord,
                 "Religious discord".into(),
                 -discord,
                 crate::personality::MoraleStimulus::Religious,
@@ -1056,7 +1060,7 @@ fn base_morale(
         if prayer_minutes > 0 {
             add_source(
                 "daily-prayer".into(),
-                "prayer".into(),
+                MoraleSourceKind::Prayer,
                 "Daily prayer".into(),
                 led_prayer_morale(prayer_minutes, religion.knowledge),
                 crate::personality::MoraleStimulus::Religious,
@@ -1073,7 +1077,7 @@ fn base_morale(
         if neglect > 0.0 {
             add_source(
                 "neglected-prayer".into(),
-                "prayer".into(),
+                MoraleSourceKind::Prayer,
                 "Insufficient daily prayer".into(),
                 -neglect,
                 crate::personality::MoraleStimulus::Religious,
@@ -1090,7 +1094,7 @@ fn base_morale(
             // Meditation is independent of religious knowledge and Conviction.
             add_source(
                 "daily-meditation".into(),
-                "meditation".into(),
+                MoraleSourceKind::Meditation,
                 "Daily meditation".into(),
                 meditation_morale(meditation_minutes),
                 crate::personality::MoraleStimulus::Other,
@@ -1132,7 +1136,7 @@ fn base_morale(
         if difference != 0.0 {
             add_source(
                 format!("power-{}", group.id),
-                "power".into(),
+                MoraleSourceKind::Power,
                 if difference > 0.0 {
                     "Superior allied strength".into()
                 } else {
@@ -1165,16 +1169,16 @@ fn base_morale(
             event.magnitude * morale_event_decay(age, duration)
         };
         if effect != 0.0 {
-            let stimulus = crate::personality::morale_event_stimulus(&event.kind);
+            let stimulus = crate::personality::morale_event_stimulus(event.kind);
             add_source(
                 format!("event-{}", event.id),
-                event.kind.clone(),
-                match event.kind.as_str() {
-                    "victory" => "Recent victory".into(),
-                    "defeat" => "Recent defeat".into(),
-                    "leisure" => "Restful leisure".into(),
-                    "mastery_enjoyment" => "Mastery enjoyment".into(),
-                    other => other.replace('_', " "),
+                event.kind.into(),
+                match event.kind {
+                    MoraleEventKind::Victory => "Recent victory".into(),
+                    MoraleEventKind::Defeat => "Recent defeat".into(),
+                    MoraleEventKind::Leisure => "Restful leisure".into(),
+                    MoraleEventKind::MasteryEnjoyment => "Mastery enjoyment".into(),
+                    other => other.as_str().replace('_', " "),
                 },
                 effect,
                 stimulus,
@@ -1228,7 +1232,7 @@ pub fn record_mastery_training_morale(
     let event = MoraleEvent {
         id: existing.as_ref().map_or(0, |event| event.id),
         character_id,
-        kind: "mastery_enjoyment".into(),
+        kind: MoraleEventKind::MasteryEnjoyment,
         magnitude,
         occurred_at_minute: interval_end,
         expires_at_minute: interval_end.saturating_add(RECENT_MORALE_DURATION_MINUTES),
@@ -1331,7 +1335,7 @@ fn evaluate_strategic_condition(
         for (member_id, name, lift, _social_trait) in ally_lifts {
             sources.push(ProjectedMoraleSource {
                 key: format!("ally-{member_id}"),
-                kind: "ally".into(),
+                kind: MoraleSourceKind::Ally,
                 label: format!("Encouraged by {name}"),
                 magnitude: lift * scale,
             });
@@ -1605,7 +1609,7 @@ fn refuse_expired_holy_day_demands(
             insert_morale_event_without_refresh(
                 ctx,
                 character_id,
-                "religious_observance_neglected",
+                MoraleEventKind::ReligiousObservanceNeglected,
                 -penalty,
                 source_id,
             );
@@ -1669,7 +1673,7 @@ pub fn resolve_religious_demand(
             record_morale_event(
                 ctx,
                 demand.character_id,
-                "holy_day_observed",
+                MoraleEventKind::HolyDayObserved,
                 2.0,
                 Some(format!("religious-demand:{}", demand.id)),
             )?;
@@ -1687,7 +1691,7 @@ pub fn resolve_religious_demand(
                 record_morale_event(
                     ctx,
                     demand.character_id,
-                    "religious_observance_neglected",
+                    MoraleEventKind::ReligiousObservanceNeglected,
                     -penalty,
                     Some(format!("religious-demand:{}", demand.id)),
                 )?;
@@ -1701,7 +1705,7 @@ pub fn resolve_religious_demand(
 pub fn record_morale_event(
     ctx: &ReducerContext,
     character_id: u64,
-    kind: &str,
+    kind: MoraleEventKind,
     magnitude: f32,
     source_id: Option<String>,
 ) -> Result<(), String> {
@@ -1718,7 +1722,7 @@ pub fn record_morale_event(
     ctx.db.morale_event().insert(MoraleEvent {
         id: 0,
         character_id,
-        kind: kind.into(),
+        kind,
         magnitude,
         occurred_at_minute,
         expires_at_minute: occurred_at_minute.saturating_add(duration),
@@ -1734,7 +1738,7 @@ pub fn record_morale_event(
 pub fn upsert_refreshable_morale_event_at_without_refresh(
     ctx: &ReducerContext,
     character_id: u64,
-    kind: &str,
+    kind: MoraleEventKind,
     magnitude: f32,
     occurred_at_minute: u64,
     source_id: &str,
@@ -1752,7 +1756,7 @@ pub fn upsert_refreshable_morale_event_at_without_refresh(
     let event = MoraleEvent {
         id: existing.as_ref().map_or(0, |event| event.id),
         character_id,
-        kind: kind.into(),
+        kind,
         magnitude,
         occurred_at_minute,
         expires_at_minute: occurred_at_minute.saturating_add(duration),
@@ -1772,7 +1776,7 @@ pub fn upsert_refreshable_morale_event_at_without_refresh(
 pub(crate) fn upsert_fixed_morale_event_without_refresh(
     ctx: &ReducerContext,
     character_id: u64,
-    kind: &str,
+    kind: MoraleEventKind,
     magnitude: f32,
     occurred_at_minute: u64,
     expires_at_minute: u64,
@@ -1787,7 +1791,7 @@ pub(crate) fn upsert_fixed_morale_event_without_refresh(
     let event = MoraleEvent {
         id: existing.as_ref().map_or(0, |event| event.id),
         character_id,
-        kind: kind.into(),
+        kind,
         magnitude,
         occurred_at_minute,
         expires_at_minute,
@@ -1803,7 +1807,7 @@ pub(crate) fn upsert_fixed_morale_event_without_refresh(
 fn insert_morale_event_without_refresh(
     ctx: &ReducerContext,
     character_id: u64,
-    kind: &str,
+    kind: MoraleEventKind,
     magnitude: f32,
     source_id: String,
 ) {
@@ -1815,7 +1819,7 @@ fn insert_morale_event_without_refresh(
     ctx.db.morale_event().insert(MoraleEvent {
         id: 0,
         character_id,
-        kind: kind.into(),
+        kind,
         magnitude,
         occurred_at_minute,
         expires_at_minute: occurred_at_minute.saturating_add(duration),
@@ -1848,12 +1852,12 @@ pub(crate) fn record_immediate_prayer_morale(
         party_religion_context(ctx, character_id, &party_members)?
     {
         (
-            "prayer",
+            MoraleEventKind::Prayer,
             adventuresim_core::activity::led_prayer_morale(minutes, religion.knowledge),
         )
     } else {
         (
-            "meditation",
+            MoraleEventKind::Meditation,
             adventuresim_core::activity::meditation_morale(minutes),
         )
     };
@@ -1862,7 +1866,7 @@ pub(crate) fn record_immediate_prayer_morale(
         character_id,
         kind,
         magnitude,
-        Some(format!("activity:{kind}")),
+        Some(format!("activity:{}", kind.as_str())),
     )
 }
 
@@ -1947,7 +1951,7 @@ pub fn apply_travel_condition(
             insert_morale_event_without_refresh(
                 ctx,
                 character_id,
-                "travel_prayer_neglected",
+                MoraleEventKind::TravelPrayerNeglected,
                 -prayer_penalty,
                 format!(
                     "travel-prayer:{starting_minute}:{}",
@@ -1988,7 +1992,7 @@ pub(crate) fn apply_canonical_wilderness_observance(
             insert_morale_event_without_refresh(
                 ctx,
                 character_id,
-                "religious_observance_neglected",
+                MoraleEventKind::ReligiousObservanceNeglected,
                 -penalty,
                 source_id,
             );
@@ -2058,7 +2062,7 @@ fn upsert_leisure_morale(
         interval_end_minute,
     );
     if let Some(mut event) = existing {
-        event.kind = "leisure".into();
+        event.kind = MoraleEventKind::Leisure;
         event.magnitude = magnitude;
         event.occurred_at_minute = interval_end_minute;
         event.expires_at_minute =
@@ -2068,7 +2072,7 @@ fn upsert_leisure_morale(
         ctx.db.morale_event().insert(MoraleEvent {
             id: 0,
             character_id,
-            kind: "leisure".into(),
+            kind: MoraleEventKind::Leisure,
             magnitude,
             occurred_at_minute: interval_end_minute,
             expires_at_minute: interval_end_minute.saturating_add(RECENT_MORALE_DURATION_MINUTES),
@@ -2309,7 +2313,7 @@ fn require_profession_service(
 #[cfg(test)]
 mod tests {
     use super::{
-        CharacterNeeds, ElapsedNeedsProvision, ProjectedMoraleSource,
+        CharacterNeeds, ElapsedNeedsProvision, MoraleSourceKind, ProjectedMoraleSource,
         STRATEGIC_TRAVEL_KCAL_PER_DAY, STRATEGIC_TRAVEL_WATER_ML_PER_DAY,
         accumulated_leisure_morale, condition_projection_member_ids, elapsed_needs_plan,
         food_reserve_days, holy_day_demand_has_expired, leisure_morale_effect, rank_morale_sources,
@@ -2478,13 +2482,13 @@ mod tests {
         let mut sources = vec![
             ProjectedMoraleSource {
                 key: "trait-adjusted".into(),
-                kind: "test".into(),
+                kind: MoraleSourceKind::Defeat,
                 label: "Defeat (Proud)".into(),
                 magnitude: -30.0,
             },
             ProjectedMoraleSource {
                 key: "other".into(),
-                kind: "test".into(),
+                kind: MoraleSourceKind::Defeat,
                 label: "Other".into(),
                 magnitude: -10.0,
             },

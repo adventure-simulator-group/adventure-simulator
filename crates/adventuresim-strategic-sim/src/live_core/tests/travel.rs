@@ -582,10 +582,12 @@ fn camp_coherence_diagnostic_distinguishes_missing_and_overlapping_intervals() {
     assert!(diagnostic.contains("bounded_public_journey_diagnostic"));
     assert!(diagnostic.contains("bounded_public_forecast_count"));
     assert_eq!(
-        safe_failure_operation(
-            "travel_camps failed: journey camp projection is incoherent: active_interval_count=0"
-        ),
-        Some(FailureOperation::TravelCamps)
+        project_core_loop_failure(&CoreLoopError::operation(
+            ReducerOperation::TravelCamps,
+            "journey camp projection is incoherent: active_interval_count=0"
+        ))
+        .operation,
+        Some(ReducerOperation::TravelCamps)
     );
 }
 
@@ -648,6 +650,7 @@ fn travel_driver_uses_public_journey_and_observer_safe_provisioning() {
     ));
     for outcome in [
         "JourneyTravelOutcome::Completed",
+        "JourneyTravelOutcome::DeferredForDaylightWindow",
         "JourneyTravelOutcome::HeldNoActionableActor",
         "JourneyTravelOutcome::HeldForRecovery",
     ] {
@@ -710,7 +713,7 @@ fn travel_driver_uses_public_journey_and_observer_safe_provisioning() {
     assert!(provisioning.contains("funded_party_coin < upper_bound_cost"));
     assert!(provisioning.contains("payer_minute"));
     assert!(provisioning.contains("merchant_count != 1"));
-    assert!(provisioning.contains("journey_finance_backoff"));
+    assert!(provisioning.contains("TravelProvisionDeferralReason::FinanceBackoff"));
     assert!(provisioning.contains("(party_id.to_owned(), leader, finance_key.to_owned())"));
     assert!(!provisioning.contains(".map_or(0, |row| row.buy_bps)"));
     assert!(!provisioning.contains("party_journey_route"));
@@ -787,13 +790,15 @@ fn direct_contract_provisions_before_acceptance_then_abandons_after_one_defeat()
             < quest.find("accept_contract_then").unwrap()
     );
     assert!(!quest.contains("defer_unprovisioned_contract"));
-    assert!(quest.contains(".min_by_key(|site| (site.distance_m, site.case_site_id.clone()))"));
+    assert!(
+        quest.contains(".min_by_key(|site| (site.distance_m, site.case_site_id.value.clone()))")
+    );
     assert!(quest.matches("provision_case_site_journey").count() >= 2);
     assert!(quest.contains("accepted contract provisioning projection changed after disclosure"));
     assert!(quest.contains("refreshed_safe_party_for_owner(party_id, quest_owner)"));
     assert_eq!(quest.matches("autoresolve_mission_then").count(), 1);
     assert!(!quest.contains("retry_travel_to_case_site"));
-    assert!(quest.contains("abandon_defeated_quest"));
+    assert!(quest.contains("ReducerOperation::AbandonDefeatedQuest"));
     assert!(quest.contains("reason=unchanged_defeated_threat"));
 }
 
@@ -848,20 +853,29 @@ fn authoritative_contract_issuer_rejection_defers_accept_and_report_without_fail
         ReducerErrorCode::ContractIssuerUnavailable,
         "wording is not part of the protocol",
     );
-    assert!(contract_issuer_unavailable_failure(&format!(
-        "interact_accept_contract failed: {coded}"
-    )));
-    assert!(contract_issuer_unavailable_failure(&format!(
-        "interact_report_contract failed: {coded}"
-    )));
-    assert!(!contract_issuer_unavailable_failure(
-        "interact_accept_contract failed: Contract is not offered"
+    assert!(contract_issuer_unavailable_failure(
+        &CoreLoopError::reducer_rejected(ReducerOperation::InteractAcceptContract, coded.clone())
+    ));
+    assert!(contract_issuer_unavailable_failure(
+        &CoreLoopError::reducer_rejected(ReducerOperation::InteractReportContract, coded)
     ));
     assert!(!contract_issuer_unavailable_failure(
-        "accept_quest failed: Contract issuer is not available for interaction"
+        &CoreLoopError::reducer_rejected(
+            ReducerOperation::InteractAcceptContract,
+            "Contract is not offered"
+        )
     ));
     assert!(!contract_issuer_unavailable_failure(
-        "interact_accept_contract failed: Contract issuer is not available for interaction now"
+        &CoreLoopError::reducer_rejected(
+            ReducerOperation::AcceptQuest,
+            "Contract issuer is not available for interaction"
+        )
+    ));
+    assert!(!contract_issuer_unavailable_failure(
+        &CoreLoopError::reducer_rejected(
+            ReducerOperation::InteractAcceptContract,
+            "Contract issuer is not available for interaction now"
+        )
     ));
 
     let source = LIVE_CORE_SOURCE;
@@ -914,4 +928,30 @@ fn recovery_audit_separates_public_before_and_after_observations() {
     assert!(recovery.contains("symptomatic_before={symptomatic}"));
     assert!(recovery.contains("symptomatic_after={symptomatic_after}"));
     assert!(!recovery.contains("cause=public_symptomatic_illness"));
+}
+
+#[test]
+fn daylight_continuation_deferral_depends_only_on_the_typed_code() {
+    for detail in [
+        "rest until daylight",
+        "the authored explanation can change freely",
+    ] {
+        let encoded = adventuresim_core::reducer_error::coded_reducer_error(
+            ReducerErrorCode::JourneyDaylightWindowRequired,
+            detail,
+        );
+        assert_eq!(
+            travel::classify_camp_continuation(Err(CoreLoopError::reducer_rejected(
+                ReducerOperation::ContinueCampTravel,
+                encoded,
+            ))),
+            Ok(travel::CampContinuationOutcome::DeferredForDaylightWindow)
+        );
+    }
+
+    assert!(travel::classify_camp_continuation(Err(CoreLoopError::reducer_rejected(
+        ReducerOperation::ContinueCampTravel,
+        "journey_daylight_window_required without the typed envelope",
+    )))
+    .is_err());
 }

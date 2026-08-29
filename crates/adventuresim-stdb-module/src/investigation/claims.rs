@@ -884,8 +884,8 @@ pub(crate) fn stage_investigation_claim(
         hidden_speaker_ref: claim.speaker_ref,
         statement: claim.statement.clone(),
         confidence_bps: claim.confidence.get(),
-        disclosure_stage: format!("{:?}", claim.disclosure),
-        transmission_stage: format!("{:?}", claim.transmission),
+        disclosure_stage: claim.disclosure.stable_variant_id().to_owned(),
+        transmission_stage: claim.transmission.stable_variant_id().to_owned(),
         received_at: claim.received_at,
         public_case_id: public_case_id.clone(),
         safe_source_label: safe_source_label.clone(),
@@ -940,7 +940,7 @@ fn validate_generated_testimony_site(
         .ok_or("Exact generated testimony site is absent from the manifest")?;
     let site = site.ok_or("Exact generated testimony site authority is missing")?;
     if site.case_id != generated.canonical_case_id
-        || site.id.value != site_id.0
+        || site.id.as_str() != site_id.0
         || site.id_key != site_id.0
         || site.name != generated_site.safe_label
         || site.distance_m == 0
@@ -1166,7 +1166,7 @@ pub(crate) fn persist_generated_testimony(
                 exact_location_id: site
                     .as_ref()
                     .filter(|_| exact)
-                    .map_or_else(String::new, |site| site.id.value.clone()),
+                    .map_or_else(String::new, |site| site.id.as_str().to_owned()),
                 latitude_e7: site
                     .as_ref()
                     .filter(|_| exact)

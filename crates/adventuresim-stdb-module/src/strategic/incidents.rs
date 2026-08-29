@@ -13,7 +13,7 @@ struct IncidentSpec<'a> {
 pub struct BackendAuthorityArrestAction {
     pub action_token: String,
     pub party_id: String,
-    pub case_site_id: String,
+    pub case_site_id: CaseSiteId,
     pub origin_settlement_id: String,
     pub instigator_id: u64,
     pub fine: u64,
@@ -90,7 +90,7 @@ pub fn backend_authority_arrest_actions(
                 .filter(incident.instigator_id)
                 .filter(|stack| {
                     ctx.db.item().id().find(&stack.item_id).is_some_and(|item| {
-                        item.kind == crate::item::ItemKind::Currency
+                        item.kind == crate::item::PersistedItemKind::Currency
                     })
                 })
                 .map(|stack| u64::from(stack.quantity))
@@ -98,7 +98,7 @@ pub fn backend_authority_arrest_actions(
             actions.push(BackendAuthorityArrestAction {
                 action_token: incident.action_token,
                 party_id: incident.party_id,
-                case_site_id: incident.case_site_id.value,
+                case_site_id: incident.case_site_id,
                 origin_settlement_id: incident.settlement_id,
                 instigator_id: incident.instigator_id,
                 fine,
@@ -135,7 +135,7 @@ fn create_strategic_incident(
             party
                 .current_case_site_id
                 .as_ref()
-                .is_some_and(|id| id.value == case_site_id)
+                .is_some_and(|id| id.as_str() == case_site_id)
         },
     );
     if !at_expected_location {

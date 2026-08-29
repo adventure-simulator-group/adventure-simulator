@@ -1,6 +1,6 @@
 use super::{
-    MAX_PROVIDER_RESPONSE_BYTES, PlayerFrame, PolicyDecision, PolicyRunMetadata, QuestPolicy,
-    parse_provider_decision, policy_prompt,
+    MAX_PROVIDER_RESPONSE_BYTES, PlayerFrame, PolicyDecision, PolicyError, PolicyRunMetadata,
+    ProviderDecisionError, QuestPolicy, parse_provider_decision, policy_prompt,
 };
 use reqwest::{
     StatusCode, Url,
@@ -54,7 +54,7 @@ impl Default for ProviderConfig {
 }
 
 impl ProviderConfig {
-    pub fn validate_and_key(&self) -> Result<(Url, String), String> {
+    pub fn validate_and_key(&self) -> Result<(Url, String), PolicyError> {
         if !self.allow_network {
             return Err("network provider requires explicit --allow-network".into());
         }
@@ -69,10 +69,10 @@ impl ProviderConfig {
         }
         // Read the key before creating a client or doing any network work.
         let key = env::var(&self.api_key_env).map_err(|_| {
-            format!(
+            PolicyError::Failure(format!(
                 "required API key environment variable {} is missing",
                 self.api_key_env
-            )
+            ))
         })?;
         if key.is_empty() {
             return Err("API key environment variable is empty".into());
@@ -115,13 +115,15 @@ pub struct OpenAiCompatiblePolicy {
 }
 
 impl OpenAiCompatiblePolicy {
-    pub fn new(config: ProviderConfig) -> Result<Self, String> {
+    pub fn new(config: ProviderConfig) -> Result<Self, PolicyError> {
         let (endpoint, key) = config.validate_and_key()?;
         let client = Client::builder()
             .redirect(Policy::none())
             .timeout(config.timeout)
             .build()
-            .map_err(|error| format!("provider client setup failed: {error}"))?;
+            .map_err(|error| {
+                PolicyError::Failure(format!("provider client setup failed: {error}"))
+            })?;
         Ok(Self {
             config,
             endpoint,
@@ -140,7 +142,7 @@ impl OpenAiCompatiblePolicy {
         frame: &PlayerFrame,
         repair: bool,
         deadline: Option<Instant>,
-    ) -> Result<PolicyDecision, String> {
+    ) -> Result<PolicyDecision, PolicyError> {
         if self.requests >= self.config.max_requests {
             return Err("provider request budget exhausted".into());
         }
@@ -206,7 +208,9 @@ impl OpenAiCompatiblePolicy {
                 .timeout(timeout)
                 .json(&body)
                 .send()
-                .map_err(|error| format!("provider request failed: {error}"))?;
+                .map_err(|error| {
+                    deadline_or_failure(deadline, format!("provider request failed: {error}"))
+                })?;
             if matches!(response.status(), StatusCode::TOO_MANY_REQUESTS)
                 || response.status().is_server_error()
             {
@@ -215,35 +219,39 @@ impl OpenAiCompatiblePolicy {
                     sleep_before_retry(Duration::from_millis(100_u64 << retry), deadline)?;
                     continue;
                 }
-                return Err(format!(
-                    "provider retry cutoff reached ({})",
-                    response.status()
-                ));
+                return Err(
+                    format!("provider retry cutoff reached ({})", response.status()).into(),
+                );
             }
             if !response.status().is_success() {
-                return Err(format!("provider rejected request ({})", response.status()));
+                return Err(format!("provider rejected request ({})", response.status()).into());
             }
             if response
                 .content_length()
                 .is_some_and(|length| length > MAX_PROVIDER_RESPONSE_BYTES as u64)
             {
-                return Err("provider response exceeds byte budget".into());
+                return Err(PolicyError::InvalidResponse(
+                    ProviderDecisionError::ResponseTooLarge,
+                ));
             }
-            let bytes = read_bounded_response(response)?;
-            let envelope: ChatResponse = serde_json::from_slice(&bytes)
-                .map_err(|_| "provider returned malformed response envelope")?;
+            let bytes = read_bounded_response(response, deadline)?;
+            let envelope: ChatResponse = serde_json::from_slice(&bytes).map_err(|_| {
+                PolicyError::InvalidResponse(ProviderDecisionError::MalformedEnvelope)
+            })?;
             let content = envelope
                 .choices
                 .first()
-                .ok_or("provider response contained no choice")?
+                .ok_or(PolicyError::InvalidResponse(
+                    ProviderDecisionError::MissingChoice,
+                ))?
                 .message
                 .content
                 .as_bytes();
-            return parse_provider_decision(content);
+            return parse_provider_decision(content).map_err(PolicyError::InvalidResponse);
         }
     }
 
-    fn throttle(&self, deadline: Option<Instant>) -> Result<(), String> {
+    fn throttle(&self, deadline: Option<Instant>) -> Result<(), PolicyError> {
         if let Some(previous) = self.last_request {
             let minimum =
                 Duration::from_secs_f64(60.0 / f64::from(self.config.requests_per_minute));
@@ -260,12 +268,16 @@ impl QuestPolicy for OpenAiCompatiblePolicy {
         "openai-compatible-v1"
     }
 
-    fn decide(&mut self, frame: &PlayerFrame) -> Result<PolicyDecision, String> {
+    fn decide(&mut self, frame: &PlayerFrame) -> Result<PolicyDecision, PolicyError> {
         match self.request(frame, false, None) {
             Ok(decision) => Ok(decision),
-            Err(first) if first.contains("provider JSON") || first.contains("schema") => self
-                .request(frame, true, None)
-                .map_err(|repair| format!("{first}; bounded repair failed: {repair}")),
+            Err(PolicyError::InvalidResponse(initial)) => {
+                self.request(frame, true, None)
+                    .map_err(|repair| PolicyError::RepairFailed {
+                        initial,
+                        repair: Box::new(repair),
+                    })
+            }
             Err(error) => Err(error),
         }
     }
@@ -273,13 +285,16 @@ impl QuestPolicy for OpenAiCompatiblePolicy {
         &mut self,
         frame: &PlayerFrame,
         deadline: Instant,
-    ) -> Result<PolicyDecision, String> {
+    ) -> Result<PolicyDecision, PolicyError> {
         check_deadline(Some(deadline))?;
         let decision = match self.request(frame, false, Some(deadline)) {
             Ok(decision) => Ok(decision),
-            Err(first) if first.contains("provider JSON") || first.contains("schema") => self
+            Err(PolicyError::InvalidResponse(initial)) => self
                 .request(frame, true, Some(deadline))
-                .map_err(|repair| format!("{first}; bounded repair failed: {repair}")),
+                .map_err(|repair| PolicyError::RepairFailed {
+                    initial,
+                    repair: Box::new(repair),
+                }),
             Err(error) => Err(error),
         }?;
         check_deadline(Some(deadline))?;
@@ -292,7 +307,7 @@ impl QuestPolicy for OpenAiCompatiblePolicy {
             policy_kind: "remote_provider".into(),
             provider: Some("openai_compatible".into()),
             model: Some(self.config.model.clone()),
-            prompt_revision: "investigation-policy-v3".into(),
+            prompt_revision: "investigation-policy-v4".into(),
             requests: self.requests,
             estimated_prompt_tokens: self.estimated_prompt_tokens,
             estimated_completion_tokens: self.estimated_completion_tokens,
@@ -301,34 +316,49 @@ impl QuestPolicy for OpenAiCompatiblePolicy {
     }
 }
 
-fn check_deadline(deadline: Option<Instant>) -> Result<(), String> {
+fn check_deadline(deadline: Option<Instant>) -> Result<(), PolicyError> {
     if deadline.is_some_and(|end| Instant::now() >= end) {
-        Err("quest evaluator wall-time budget exceeded".into())
+        Err(PolicyError::DeadlineExceeded)
     } else {
         Ok(())
     }
 }
 
-fn sleep_before_retry(wait: Duration, deadline: Option<Instant>) -> Result<(), String> {
+fn deadline_or_failure(deadline: Option<Instant>, message: String) -> PolicyError {
+    if deadline.is_some_and(|end| Instant::now() >= end) {
+        PolicyError::DeadlineExceeded
+    } else {
+        PolicyError::Failure(message)
+    }
+}
+
+fn sleep_before_retry(wait: Duration, deadline: Option<Instant>) -> Result<(), PolicyError> {
     let capped = deadline
         .and_then(|end| end.checked_duration_since(Instant::now()))
         .map(|remaining| wait.min(remaining))
         .unwrap_or(wait);
     if capped.is_zero() {
-        return Err("quest evaluator wall-time budget exceeded".into());
+        return Err(PolicyError::DeadlineExceeded);
     }
     thread::sleep(capped);
     check_deadline(deadline)
 }
 
-fn read_bounded_response(response: impl Read) -> Result<Vec<u8>, String> {
+fn read_bounded_response(
+    response: impl Read,
+    deadline: Option<Instant>,
+) -> Result<Vec<u8>, PolicyError> {
     let mut bytes = Vec::with_capacity(MAX_PROVIDER_RESPONSE_BYTES.saturating_add(1));
     response
         .take((MAX_PROVIDER_RESPONSE_BYTES + 1) as u64)
         .read_to_end(&mut bytes)
-        .map_err(|error| format!("provider response read failed: {error}"))?;
+        .map_err(|error| {
+            deadline_or_failure(deadline, format!("provider response read failed: {error}"))
+        })?;
     if bytes.len() > MAX_PROVIDER_RESPONSE_BYTES {
-        return Err("provider response exceeds byte budget".into());
+        return Err(PolicyError::InvalidResponse(
+            ProviderDecisionError::ResponseTooLarge,
+        ));
     }
     Ok(bytes)
 }
@@ -401,14 +431,20 @@ mod tests {
                 ..ProviderConfig::default()
             };
             // Missing key is deliberately checked before endpoint/network.
-            assert!(config.validate_and_key().unwrap_err().contains("missing"));
+            assert!(
+                config
+                    .validate_and_key()
+                    .unwrap_err()
+                    .to_string()
+                    .contains("missing")
+            );
         }
     }
 
     #[test]
     fn network_requires_explicit_opt_in() {
         let error = ProviderConfig::default().validate_and_key().unwrap_err();
-        assert!(error.contains("allow-network"));
+        assert!(error.to_string().contains("allow-network"));
     }
 
     #[test]
@@ -421,8 +457,23 @@ mod tests {
     #[test]
     fn chunked_or_unknown_length_response_is_bounded() {
         let oversized = std::io::Cursor::new(vec![b'x'; MAX_PROVIDER_RESPONSE_BYTES + 2]);
-        assert!(read_bounded_response(oversized).is_err());
+        assert!(read_bounded_response(oversized, None).is_err());
         let small = std::io::Cursor::new(b"{}".to_vec());
-        assert_eq!(read_bounded_response(small).unwrap(), b"{}");
+        assert_eq!(read_bounded_response(small, None).unwrap(), b"{}");
+    }
+
+    #[test]
+    fn elapsed_absolute_deadline_classifies_transport_failure() {
+        let elapsed = Instant::now() - Duration::from_millis(1);
+        assert_eq!(
+            deadline_or_failure(Some(elapsed), "transport timeout".into()),
+            PolicyError::DeadlineExceeded
+        );
+
+        let future = Instant::now() + Duration::from_secs(1);
+        assert_eq!(
+            deadline_or_failure(Some(future), "configured timeout".into()),
+            PolicyError::Failure("configured timeout".into())
+        );
     }
 }

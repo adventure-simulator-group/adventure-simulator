@@ -1,4 +1,6 @@
 use crate::{ActivityPreference, AgentProfile, BuildRole, EquipmentStyle, generate_profile};
+use adventuresim_core::case::CaseStatus as DomainCaseStatus;
+use adventuresim_core::dialogue_boundary::{PublicDialogueStartError, PublicDialogueStartOutcome};
 use adventuresim_core::investigation::DestinationKnowledgeStage as CoreDestinationKnowledgeStage;
 use adventuresim_core::morale::IncapacitationStatus as DomainIncapacitationStatus;
 use adventuresim_core::personality::{
@@ -11,6 +13,7 @@ use adventuresim_core::simulation_security::{
     SIM_BOOTSTRAP_TOKEN_ENV as BOOTSTRAP_TOKEN_ENV,
     SIM_BOOTSTRAP_TOKEN_HEX_LEN as BOOTSTRAP_TOKEN_HEX_LEN,
 };
+use adventuresim_core::strategic_presence::DailyPresenceWindow;
 use adventuresim_stdb_client::spacetimedb_sdk::{DbContext, Table};
 use adventuresim_stdb_client::*;
 use adventuresim_world_schema::{
@@ -27,8 +30,7 @@ use std::{
 
 use adventuresim_core::strategic_currency::is_currency_id;
 use adventuresim_core::strategic_time::{
-    DEFAULT_JOURNEY_START_MINUTE_OF_DAY, DEFAULT_NIGHT_JOURNEY_START_MINUTE_OF_DAY,
-    MINUTES_PER_DAY,
+    DEFAULT_JOURNEY_START_MINUTE_OF_DAY, DEFAULT_NIGHT_JOURNEY_START_MINUTE_OF_DAY, MINUTES_PER_DAY,
 };
 use url::Url;
 
@@ -102,8 +104,7 @@ use adventuresim_stdb_client::{
     request_general_party_join_reducer::request_general_party_join,
     resolve_errantry_road_challenge_reducer::resolve_errantry_road_challenge,
     resolve_strategic_encounter_reducer::resolve_strategic_encounter,
-    rest_at_camp_reducer::rest_at_camp,
-    retrieve_repaired_item_reducer::retrieve_repaired_item,
+    rest_at_camp_reducer::rest_at_camp, retrieve_repaired_item_reducer::retrieve_repaired_item,
     seed_simulation_disease_reducer::seed_simulation_disease,
     seed_simulation_equipment_damage_reducer::seed_simulation_equipment_damage,
     seed_simulation_quest_fixture_reducer::seed_simulation_quest_fixture,
@@ -428,7 +429,7 @@ pub struct CoreLoopMetrics {
     pub encounter_wipes: u32,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CoreLoopEventKind {
     FormParty,
@@ -473,6 +474,154 @@ pub enum CoreLoopEventKind {
     GeneratedQuestClosedExternally,
     Activity,
     Encounter,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum CoreLoopEventSubject {
+    Agent,
+    Character {
+        character_id: u64,
+    },
+    DirectContract {
+        party_id: String,
+        contract_id: String,
+    },
+    GeneratedCase {
+        party_id: String,
+        case_id: String,
+    },
+    InvestigationAction {
+        case_id: String,
+        action_id: String,
+    },
+    Item {
+        inventory_item_id: u64,
+    },
+    Encounter {
+        party_id: String,
+        encounter_id: String,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct CoreLoopEventSemanticKey {
+    agent_id: u32,
+    kind: CoreLoopEventKind,
+    subject: CoreLoopEventSubject,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct CoreLoopEventPayload {
+    kind: CoreLoopEventKind,
+    subject: CoreLoopEventSubject,
+    detail: String,
+}
+
+impl CoreLoopEventPayload {
+    fn agent(kind: CoreLoopEventKind, detail: impl Into<String>) -> Self {
+        Self {
+            kind,
+            subject: CoreLoopEventSubject::Agent,
+            detail: detail.into(),
+        }
+    }
+
+    fn direct_contract(
+        kind: CoreLoopEventKind,
+        party_id: impl Into<String>,
+        contract_id: impl Into<String>,
+        detail: impl Into<String>,
+    ) -> Self {
+        Self {
+            kind,
+            subject: CoreLoopEventSubject::DirectContract {
+                party_id: party_id.into(),
+                contract_id: contract_id.into(),
+            },
+            detail: detail.into(),
+        }
+    }
+
+    fn character(kind: CoreLoopEventKind, character_id: u64, detail: impl Into<String>) -> Self {
+        Self {
+            kind,
+            subject: CoreLoopEventSubject::Character { character_id },
+            detail: detail.into(),
+        }
+    }
+
+    fn generated_case(
+        kind: CoreLoopEventKind,
+        party_id: impl Into<String>,
+        case_id: impl Into<String>,
+        detail: impl Into<String>,
+    ) -> Self {
+        Self {
+            kind,
+            subject: CoreLoopEventSubject::GeneratedCase {
+                party_id: party_id.into(),
+                case_id: case_id.into(),
+            },
+            detail: detail.into(),
+        }
+    }
+
+    fn investigation_action(
+        kind: CoreLoopEventKind,
+        case_id: impl Into<String>,
+        action_id: impl Into<String>,
+        detail: impl Into<String>,
+    ) -> Self {
+        Self {
+            kind,
+            subject: CoreLoopEventSubject::InvestigationAction {
+                case_id: case_id.into(),
+                action_id: action_id.into(),
+            },
+            detail: detail.into(),
+        }
+    }
+
+    fn item(kind: CoreLoopEventKind, inventory_item_id: u64, detail: impl Into<String>) -> Self {
+        Self {
+            kind,
+            subject: CoreLoopEventSubject::Item { inventory_item_id },
+            detail: detail.into(),
+        }
+    }
+
+    fn encounter(
+        kind: CoreLoopEventKind,
+        party_id: impl Into<String>,
+        encounter_id: impl Into<String>,
+        detail: impl Into<String>,
+    ) -> Self {
+        Self {
+            kind,
+            subject: CoreLoopEventSubject::Encounter {
+                party_id: party_id.into(),
+                encounter_id: encounter_id.into(),
+            },
+            detail: detail.into(),
+        }
+    }
+
+    fn semantic_key(&self, agent_id: u32) -> CoreLoopEventSemanticKey {
+        CoreLoopEventSemanticKey {
+            agent_id,
+            kind: self.kind.clone(),
+            subject: self.subject.clone(),
+        }
+    }
+
+    fn into_public(self, sequence: u64, agent_id: u32) -> CoreLoopEvent {
+        CoreLoopEvent {
+            sequence,
+            agent_id,
+            kind: self.kind,
+            detail: self.detail,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -571,37 +720,141 @@ pub struct QuestCoverageEvidence {
 
 /// Strict acceptance contract for the deterministic two-party quest fixture.
 /// Each error names the first unmet metric so CI output is actionable.
-pub fn validate_quest_coverage(report: &CoreLoopReport) -> Result<(), String> {
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum QuestCoverageMetric {
+    DuplicateSemanticEvents,
+    EncounterWipes,
+    FinalAgentsAlive,
+    FinalAgentsNotCritical,
+    FinalAgentsNotStranded,
+    FixtureDirectAccepted,
+    FixtureDirectEncountered,
+    FixtureDirectReported,
+    FixtureDirectTraveled,
+    FixtureGeneratedCompleted,
+    FixtureGeneratedDiscovered,
+    FixtureGeneratedIntake,
+    FixtureProvenance,
+    FixtureSuccessfulCompletion,
+    QuestsAttempted,
+    QuestsAttemptedConsistency,
+    ReducerFailures,
+    StuckDetections,
+}
+
+impl QuestCoverageMetric {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::DuplicateSemanticEvents => "duplicate_semantic_events",
+            Self::EncounterWipes => "encounter_wipes",
+            Self::FinalAgentsAlive => "final_agents_alive",
+            Self::FinalAgentsNotCritical => "final_agents_not_critical",
+            Self::FinalAgentsNotStranded => "final_agents_not_stranded",
+            Self::FixtureDirectAccepted => "fixture_direct_accepted",
+            Self::FixtureDirectEncountered => "fixture_direct_encountered",
+            Self::FixtureDirectReported => "fixture_direct_reported",
+            Self::FixtureDirectTraveled => "fixture_direct_traveled",
+            Self::FixtureGeneratedCompleted => "fixture_generated_completed",
+            Self::FixtureGeneratedDiscovered => "fixture_generated_discovered",
+            Self::FixtureGeneratedIntake => "fixture_generated_intake",
+            Self::FixtureProvenance => "fixture_provenance",
+            Self::FixtureSuccessfulCompletion => "fixture_successful_completion",
+            Self::QuestsAttempted => "quests_attempted",
+            Self::QuestsAttemptedConsistency => "quests_attempted_consistency",
+            Self::ReducerFailures => "reducer_failures",
+            Self::StuckDetections => "stuck_detections",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct QuestCoverageFailure {
+    metric: QuestCoverageMetric,
+}
+
+impl QuestCoverageFailure {
+    const fn new(metric: QuestCoverageMetric) -> Self {
+        Self { metric }
+    }
+
+    pub const fn metric(self) -> QuestCoverageMetric {
+        self.metric
+    }
+}
+
+impl std::fmt::Display for QuestCoverageFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "quest coverage acceptance failed: metric={}",
+            self.metric.as_str()
+        )
+    }
+}
+
+impl std::error::Error for QuestCoverageFailure {}
+
+pub fn validate_quest_coverage(report: &CoreLoopReport) -> Result<(), QuestCoverageFailure> {
     let metrics = &report.metrics;
     let coverage = report
         .quest_coverage
         .as_ref()
-        .ok_or("quest coverage acceptance failed: metric=fixture_provenance")?;
+        .ok_or_else(|| QuestCoverageFailure::new(QuestCoverageMetric::FixtureProvenance))?;
     let checks = [
-        ("reducer_failures", metrics.reducer_failures == 0),
         (
-            "duplicate_semantic_events",
+            QuestCoverageMetric::ReducerFailures,
+            metrics.reducer_failures == 0,
+        ),
+        (
+            QuestCoverageMetric::DuplicateSemanticEvents,
             metrics.duplicate_semantic_events == 0,
         ),
-        ("stuck_detections", metrics.stuck_detections == 0),
-        ("encounter_wipes", metrics.encounter_wipes == 0),
-        ("fixture_direct_accepted", coverage.direct_accepted),
-        ("fixture_direct_traveled", coverage.direct_traveled),
-        ("fixture_direct_encountered", coverage.direct_encountered),
-        ("fixture_direct_reported", coverage.direct_reported),
-        ("fixture_generated_intake", coverage.generated_intake),
         (
-            "fixture_generated_discovered",
+            QuestCoverageMetric::StuckDetections,
+            metrics.stuck_detections == 0,
+        ),
+        (
+            QuestCoverageMetric::EncounterWipes,
+            metrics.encounter_wipes == 0,
+        ),
+        (
+            QuestCoverageMetric::FixtureDirectAccepted,
+            coverage.direct_accepted,
+        ),
+        (
+            QuestCoverageMetric::FixtureDirectTraveled,
+            coverage.direct_traveled,
+        ),
+        (
+            QuestCoverageMetric::FixtureDirectEncountered,
+            coverage.direct_encountered,
+        ),
+        (
+            QuestCoverageMetric::FixtureDirectReported,
+            coverage.direct_reported || coverage.direct_safely_abandoned,
+        ),
+        (
+            QuestCoverageMetric::FixtureGeneratedIntake,
+            coverage.generated_intake,
+        ),
+        (
+            QuestCoverageMetric::FixtureGeneratedDiscovered,
             coverage.generated_discovered,
         ),
-        ("fixture_generated_completed", coverage.generated_completed),
         (
-            "fixture_successful_completion",
+            QuestCoverageMetric::FixtureGeneratedCompleted,
+            coverage.generated_completed,
+        ),
+        (
+            QuestCoverageMetric::FixtureSuccessfulCompletion,
             coverage.direct_reported || coverage.generated_completed,
         ),
-        ("quests_attempted", metrics.quests_attempted >= 2),
         (
-            "quests_attempted_consistency",
+            QuestCoverageMetric::QuestsAttempted,
+            metrics.quests_attempted >= 2,
+        ),
+        (
+            QuestCoverageMetric::QuestsAttemptedConsistency,
             metrics.quests_attempted
                 == metrics
                     .direct_contracts_attempted
@@ -609,20 +862,26 @@ pub fn validate_quest_coverage(report: &CoreLoopReport) -> Result<(), String> {
         ),
     ];
     if let Some((metric, _)) = checks.into_iter().find(|(_, passed)| !passed) {
-        return Err(format!("quest coverage acceptance failed: metric={metric}"));
+        return Err(QuestCoverageFailure::new(metric));
     }
     if report.final_agents.iter().any(|agent| !agent.alive) {
-        return Err("quest coverage acceptance failed: metric=final_agents_alive".into());
+        return Err(QuestCoverageFailure::new(
+            QuestCoverageMetric::FinalAgentsAlive,
+        ));
     }
     if report.final_agents.iter().any(|agent| agent.critical) {
-        return Err("quest coverage acceptance failed: metric=final_agents_not_critical".into());
+        return Err(QuestCoverageFailure::new(
+            QuestCoverageMetric::FinalAgentsNotCritical,
+        ));
     }
     if report.final_agents.iter().any(|agent| {
         agent.settlement_id.is_none()
             || agent.current_case_site_id.is_some()
             || agent.journey_destination.is_some()
     }) {
-        return Err("quest coverage acceptance failed: metric=final_agents_not_stranded".into());
+        return Err(QuestCoverageFailure::new(
+            QuestCoverageMetric::FinalAgentsNotStranded,
+        ));
     }
     Ok(())
 }
@@ -632,11 +891,9 @@ pub fn validate_quest_coverage(report: &CoreLoopReport) -> Result<(), String> {
 pub fn write_quest_coverage_failure(
     report: &CoreLoopReport,
     path: &Path,
-    error: &str,
+    error: &QuestCoverageFailure,
 ) -> Result<(), String> {
-    let reason_code = error
-        .strip_prefix("quest coverage acceptance failed: metric=")
-        .unwrap_or("unknown_metric");
+    let reason_code = error.metric().as_str();
     let (trace, trace_truncated) = bounded_failure_trace(&report.trace, report.total_event_count);
     let final_agents = report
         .final_agents
@@ -675,7 +932,7 @@ pub fn write_quest_coverage_failure(
     let artifact = CoreLoopFailureArtifact {
         schema_version: CORE_LOOP_FAILURE_SCHEMA_VERSION,
         category: "quest_coverage_acceptance".into(),
-        message: error.into(),
+        message: error.to_string(),
         operation: None,
         reason_code: reason_code.into(),
         fixture_disease: report.fixture_disease.clone(),
@@ -776,6 +1033,63 @@ struct PublicSurvivalObservation {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DepartureDeferralReason {
+    AmmunitionProviderProjectionUnavailable,
+    AmmunitionUnaffordable,
+    AmmunitionWouldOverload,
+    EquipmentNotReady,
+    PartyLoadUnsafe,
+    PartyTentQuoteUnavailable,
+    PartyTentUnaffordable,
+    PartyTentWouldOverload,
+    RouteActionNotSurvivable,
+    RouteActionSiteMismatch,
+    RouteFatigueRecoveryRequired,
+    RouteThermalRisk,
+    RouteThermalUnsafeAllPublicWindows,
+    RouteWeatherProjectionUnavailable,
+    SafePublicRouteWindow,
+    WaitTowardSafePublicRouteWindow,
+    SurvivalProjectionUnavailable,
+    SurvivalReadinessRequiresSettlement,
+    ThermalRecoveryRequired,
+}
+
+impl DepartureDeferralReason {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::AmmunitionProviderProjectionUnavailable => {
+                "ammunition_provider_projection_unavailable"
+            }
+            Self::AmmunitionUnaffordable => "ammunition_unaffordable",
+            Self::AmmunitionWouldOverload => "ammunition_would_overload",
+            Self::EquipmentNotReady => "equipment_not_ready",
+            Self::PartyLoadUnsafe => "party_load_unsafe",
+            Self::PartyTentQuoteUnavailable => "party_tent_quote_unavailable",
+            Self::PartyTentUnaffordable => "party_tent_unaffordable",
+            Self::PartyTentWouldOverload => "party_tent_would_overload",
+            Self::RouteActionNotSurvivable => "route_action_not_survivable",
+            Self::RouteActionSiteMismatch => "route_action_site_mismatch",
+            Self::RouteFatigueRecoveryRequired => "route_fatigue_recovery_required",
+            Self::RouteThermalRisk => "route_thermal_risk",
+            Self::RouteThermalUnsafeAllPublicWindows => "route_thermal_unsafe_all_public_windows",
+            Self::RouteWeatherProjectionUnavailable => "route_weather_projection_unavailable",
+            Self::SafePublicRouteWindow => "safe_public_route_window",
+            Self::WaitTowardSafePublicRouteWindow => "wait_toward_safe_public_route_window",
+            Self::SurvivalProjectionUnavailable => "survival_projection_unavailable",
+            Self::SurvivalReadinessRequiresSettlement => "survival_readiness_requires_settlement",
+            Self::ThermalRecoveryRequired => "thermal_recovery_required",
+        }
+    }
+}
+
+impl std::fmt::Display for DepartureDeferralReason {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum DepartureReadiness {
     Ready,
     ReadyWithItinerary {
@@ -784,13 +1098,13 @@ enum DepartureReadiness {
         case_site_recovery_minutes: u64,
     },
     WaitForSafeDeparture {
-        reason: &'static str,
+        reason: DepartureDeferralReason,
         wait_minutes: u64,
         walking_minutes_per_day: u16,
         travel_at_night: bool,
         case_site_recovery_minutes: u64,
     },
-    Deferred(&'static str),
+    Deferred(DepartureDeferralReason),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -798,7 +1112,7 @@ struct SettlementDepartureWait<'a> {
     character_id: u64,
     agent: u32,
     case_id: &'a str,
-    reason: &'a str,
+    reason: DepartureDeferralReason,
     wait_minutes: u64,
     walking_minutes_per_day: u16,
     travel_at_night: bool,
@@ -1019,17 +1333,17 @@ fn joint_case_site_plan_failure_reason(
     candidate_projection_unavailable: bool,
     candidate_fatigue_unsafe: bool,
     candidate_site_mismatch: bool,
-) -> &'static str {
+) -> DepartureDeferralReason {
     if complete_candidate_count > 0 && thermally_safe_complete_candidate_count == 0 {
-        "route_thermal_unsafe_all_public_windows"
+        DepartureDeferralReason::RouteThermalUnsafeAllPublicWindows
     } else if thermally_safe_complete_candidate_count > 0 && candidate_fatigue_unsafe {
-        "route_fatigue_recovery_required"
+        DepartureDeferralReason::RouteFatigueRecoveryRequired
     } else if candidate_site_mismatch {
-        "route_action_site_mismatch"
+        DepartureDeferralReason::RouteActionSiteMismatch
     } else if complete_candidate_count > 0 || !candidate_projection_unavailable {
-        "route_action_not_survivable"
+        DepartureDeferralReason::RouteActionNotSurvivable
     } else {
-        "route_weather_projection_unavailable"
+        DepartureDeferralReason::RouteWeatherProjectionUnavailable
     }
 }
 
@@ -1183,6 +1497,7 @@ enum ExpeditionRecoveryOutcome {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum JourneyTravelOutcome {
     Completed,
+    DeferredForDaylightWindow,
     HeldNoActionableActor,
     HeldForRecovery,
 }
@@ -2052,43 +2367,13 @@ struct PublicContractAssessment {
     enemy_power_milli: u64,
 }
 
-fn public_opposition_count(wording: &str) -> Option<u32> {
-    let normalized = wording
-        .trim()
-        .trim_end_matches(['.', ','])
-        .to_ascii_lowercase();
-    let (estimate, value) = normalized
-        .strip_prefix("perhaps ")
-        .map_or((false, normalized.as_str()), |value| (true, value));
-    let count = match value {
-        "one" | "a lone" | "a single" => 1,
-        "two" | "a pair" => 2,
-        "three" => 3,
-        "four" => 4,
-        "five" => 5,
-        "six" => 6,
-        "seven" => 7,
-        "eight" => 8,
-        "nine" => 9,
-        "ten" => 10,
-        "eleven" => 11,
-        "twelve" => 12,
-        value => value.parse::<u32>().ok()?,
-    };
-    (count > 0).then_some(if estimate {
-        count.saturating_add(1)
-    } else {
-        count
-    })
-}
-
 fn public_contract_assessment(
     difficulty: i32,
-    opposition_count_wording: &str,
+    opposition_count: u32,
     opposition_combat_power: u64,
     members: &[PublicPartyCombatant],
 ) -> PublicContractAssessment {
-    let Some(enemy_count) = public_opposition_count(opposition_count_wording) else {
+    let Some(enemy_count) = (opposition_count > 0).then_some(opposition_count) else {
         return PublicContractAssessment {
             eligible: false,
             reason: "unknown_public_opposition_count",
@@ -2223,26 +2508,22 @@ fn generated_action_score(
     profile: &AgentProfile,
     action: &BackendInvestigationAction,
 ) -> (u8, u32, u16, u32, u32) {
-    let progress = if action.available {
-        3
-    } else if action.can_travel_to_required_site {
-        2
-    } else if projected_investigation_wait_minutes(
-        &action.unavailable_reason_code,
-        action.wait_minutes,
-    )
-    .is_some()
-    {
-        1
-    } else {
-        0
+    let progress = match projected_investigation_action_state(&action.availability) {
+        ProjectedInvestigationActionState::Available => 3,
+        ProjectedInvestigationActionState::Travel => 2,
+        ProjectedInvestigationActionState::Wait(_) => 1,
+        ProjectedInvestigationActionState::Blocked => 0,
+    };
+    let wait_minutes = match &action.availability {
+        InvestigationActionAvailability::Available => 0,
+        InvestigationActionAvailability::Unavailable(unavailable) => unavailable.wait_minutes,
     };
     (
         progress,
         generated_method_skill_fit(profile, &action.method),
         10_000_u16.saturating_sub(action.uncertainty_bps),
         u32::MAX.saturating_sub(action.duration_max_minutes),
-        u32::MAX.saturating_sub(action.wait_minutes),
+        u32::MAX.saturating_sub(wait_minutes),
     )
 }
 
@@ -2312,6 +2593,46 @@ fn settlement_action_service_label(service: DomainSettlementActionService) -> &'
     }
 }
 
+fn settlement_service_key(service: SettlementService) -> &'static str {
+    match service {
+        SettlementService::GeneralStore => "GeneralStore",
+        SettlementService::Inn => "Inn",
+        SettlementService::GeneralBlacksmith => "GeneralBlacksmith",
+        SettlementService::Market => "Market",
+        SettlementService::Weaponsmith => "Weaponsmith",
+        SettlementService::Armorer => "Armorer",
+        SettlementService::Tailor => "Tailor",
+        SettlementService::Herbalist => "Herbalist",
+        SettlementService::Temple => "Temple",
+        SettlementService::Bookstore => "Bookstore",
+    }
+}
+
+fn death_cause_key(cause: DeathCause) -> &'static str {
+    match cause {
+        DeathCause::Combat => "Combat",
+        DeathCause::Injury => "Injury",
+        DeathCause::Disease => "Disease",
+        DeathCause::RespiratoryFailure => "RespiratoryFailure",
+        DeathCause::CirculatoryFailure => "CirculatoryFailure",
+        DeathCause::HomeostaticFailure => "HomeostaticFailure",
+        DeathCause::NeurologicFailure => "NeurologicFailure",
+        DeathCause::Starvation => "Starvation",
+        DeathCause::Dehydration => "Dehydration",
+        DeathCause::Other => "Other",
+        DeathCause::DevTest => "DevTest",
+    }
+}
+
+fn activity_preference_key(preference: ActivityPreference) -> &'static str {
+    match preference {
+        ActivityPreference::Labor => "Labor",
+        ActivityPreference::Prayer => "Prayer",
+        ActivityPreference::Thievery => "Thievery",
+        ActivityPreference::Raiding => "Raiding",
+    }
+}
+
 fn stdb_settlement_action_service(
     service: DomainSettlementActionService,
 ) -> adventuresim_stdb_client::SettlementActionService {
@@ -2349,9 +2670,11 @@ fn select_generated_travel_action<'a>(
     mut action_safe: impl FnMut(&BackendInvestigationAction) -> bool,
 ) -> Option<&'a BackendInvestigationAction> {
     sort_generated_actions(profile, actions);
-    actions
-        .iter()
-        .find(|action| action.can_travel_to_required_site && action_safe(action))
+    actions.iter().find(|action| {
+        projected_investigation_action_state(&action.availability)
+            == ProjectedInvestigationActionState::Travel
+            && action_safe(action)
+    })
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -2566,19 +2889,19 @@ fn public_stock_category(category: StockCategory) -> adventuresim_world_schema::
 }
 
 fn public_economy_catalog_kind(
-    kind: ItemKind,
+    kind: PersistedItemKind,
 ) -> adventuresim_core::settlement_economy::CatalogKind {
     use adventuresim_core::settlement_economy::CatalogKind as Catalog;
     match kind {
-        ItemKind::Simple | ItemKind::Container => Catalog::Simple,
-        ItemKind::Weapon => Catalog::Weapon,
-        ItemKind::Armor => Catalog::Armor,
-        ItemKind::Shield => Catalog::Shield,
-        ItemKind::Clothing => Catalog::Clothing,
-        ItemKind::Currency => Catalog::Currency,
-        ItemKind::Ingredient => Catalog::Ingredient,
-        ItemKind::Medication => Catalog::Medication,
-        ItemKind::Food => Catalog::Food,
+        PersistedItemKind::Simple | PersistedItemKind::Container => Catalog::Simple,
+        PersistedItemKind::Weapon => Catalog::Weapon,
+        PersistedItemKind::Armor => Catalog::Armor,
+        PersistedItemKind::Shield => Catalog::Shield,
+        PersistedItemKind::Clothing => Catalog::Clothing,
+        PersistedItemKind::Currency => Catalog::Currency,
+        PersistedItemKind::Ingredient => Catalog::Ingredient,
+        PersistedItemKind::Medication => Catalog::Medication,
+        PersistedItemKind::Food => Catalog::Food,
     }
 }
 
@@ -2810,7 +3133,7 @@ fn public_discovery_referral_to_follow(
     newest_changed.or(newest_unresolved)
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 struct PublicDialogueProgressFingerprint {
     cases: Vec<(String, String)>,
     leads: Vec<PublicDialogueLeadSemantic>,
@@ -2838,7 +3161,7 @@ struct PublicDialogueLeadSemantic {
     corrected_by: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq)]
 struct PublicDialogueActionSemantic {
     action_id: String,
     method: String,
@@ -2849,10 +3172,8 @@ struct PublicDialogueActionSemantic {
     uncertainty_bps: u16,
     skill_contributions: String,
     weather_available: bool,
-    required_case_site_id: String,
-    available: bool,
-    can_travel_to_required_site: bool,
-    unavailable_reason_code: String,
+    required_case_site_id: Option<CaseSiteId>,
+    availability: InvestigationActionAvailability,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -2875,25 +3196,6 @@ fn public_dialogue_topic_made_progress(
     after: &PublicDialogueProgressFingerprint,
 ) -> bool {
     before != after
-}
-
-fn public_party_clocks_aligned(
-    member_ids: &[u64],
-    rows: impl IntoIterator<Item = (u64, u64)>,
-) -> bool {
-    let members = member_ids.iter().copied().collect::<HashSet<_>>();
-    if members.is_empty() || members.len() != member_ids.len() {
-        return false;
-    }
-    let observed = rows
-        .into_iter()
-        .filter(|(character_id, _)| members.contains(character_id))
-        .collect::<HashMap<_, _>>();
-    observed.len() == members.len()
-        && observed
-            .values()
-            .next()
-            .is_some_and(|first| observed.values().all(|minutes| minutes == first))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -2951,11 +3253,13 @@ fn stable_public_npc_candidates(
 
 fn stable_owned_open_cases(
     owner_character_id: u64,
-    rows: impl IntoIterator<Item = (u64, String, String, String, u64)>,
+    rows: impl IntoIterator<Item = (u64, String, String, DomainCaseStatus, u64)>,
 ) -> Vec<(String, String)> {
     let mut cases = rows
         .into_iter()
-        .filter(|(owner, _, _, status, _)| *owner == owner_character_id && status == "open")
+        .filter(|(owner, _, _, status, _)| {
+            *owner == owner_character_id && *status == DomainCaseStatus::Open
+        })
         .map(|(_, case_id, title, _, latest_update_at)| (latest_update_at, case_id, title))
         .collect::<Vec<_>>();
     cases.sort();
@@ -2990,11 +3294,11 @@ enum GeneratedClosureAttribution {
 }
 
 fn generated_closure_attribution(
-    before_status: &str,
-    after_status: Option<&str>,
+    before_status: DomainCaseStatus,
+    after_status: Option<DomainCaseStatus>,
     immediately_after_own_action: bool,
 ) -> GeneratedClosureAttribution {
-    if before_status == "open" && after_status == Some("completed") {
+    if before_status == DomainCaseStatus::Open && after_status == Some(DomainCaseStatus::Resolved) {
         if immediately_after_own_action {
             GeneratedClosureAttribution::OwnImmediateTransition
         } else {
@@ -3002,6 +3306,66 @@ fn generated_closure_attribution(
         }
     } else {
         GeneratedClosureAttribution::StillOpen
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GeneratedCaseIntakeSource {
+    OwnerProjectionContinuation,
+    DialogueRumor,
+}
+
+impl GeneratedCaseIntakeSource {
+    const fn stable_id(self) -> &'static str {
+        match self {
+            Self::OwnerProjectionContinuation => "owner_projection_continuation",
+            Self::DialogueRumor => "dialogue_rumor",
+        }
+    }
+
+    const fn is_continuation(self) -> bool {
+        matches!(self, Self::OwnerProjectionContinuation)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GeneratedDialoguePurpose {
+    Discovery,
+    Case,
+}
+
+impl GeneratedDialoguePurpose {
+    const fn stable_id(self) -> &'static str {
+        match self {
+            Self::Discovery => "discover",
+            Self::Case => "case",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GeneratedDialogueTopic {
+    ReferredTestimony,
+    ReturnRecoveredProperty,
+    ExposeFalseAccount,
+}
+
+impl GeneratedDialogueTopic {
+    const fn stable_id(self) -> &'static str {
+        match self {
+            Self::ReferredTestimony => "referred-testimony",
+            Self::ReturnRecoveredProperty => "return-recovered-property",
+            Self::ExposeFalseAccount => "expose-false-account",
+        }
+    }
+
+    fn from_stable_id(value: &str) -> Option<Self> {
+        match value {
+            "referred-testimony" => Some(Self::ReferredTestimony),
+            "return-recovered-property" => Some(Self::ReturnRecoveredProperty),
+            "expose-false-account" => Some(Self::ExposeFalseAccount),
+            _ => None,
+        }
     }
 }
 
@@ -3017,10 +3381,10 @@ fn projected_case_row_matches(
 fn occupied_case_pin_matches(
     owner_character_id: u64,
     selected_case_id: &str,
-    occupied_site_id: &str,
+    occupied_site_id: &CaseSiteId,
     pin_owner_character_id: u64,
     pin_public_case_id: &str,
-    pin_site_id: &str,
+    pin_site_id: &CaseSiteId,
 ) -> bool {
     projected_case_row_matches(
         owner_character_id,
@@ -3030,18 +3394,116 @@ fn occupied_case_pin_matches(
     ) && pin_site_id == occupied_site_id
 }
 
-fn projected_investigation_wait_minutes(reason_code: &str, wait_minutes: u32) -> Option<u32> {
-    (matches!(reason_code, "night_window" | "contact_schedule_window")
-        && (1..=MAX_PROJECTED_INVESTIGATION_WAIT_MINUTES).contains(&wait_minutes))
-    .then_some(wait_minutes)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ProjectedInvestigationActionState {
+    Available,
+    Travel,
+    Wait(u32),
+    Blocked,
 }
 
-fn dialogue_contact_presence_changed(error: &str) -> bool {
-    matches!(
-        error,
-        "start_dialogue failed: Dialogue actor has no authoritative presence"
-            | "start_dialogue failed: Dialogue actor is not present at this time"
-    )
+fn projected_investigation_action_state(
+    availability: &InvestigationActionAvailability,
+) -> ProjectedInvestigationActionState {
+    match availability {
+        InvestigationActionAvailability::Available => ProjectedInvestigationActionState::Available,
+        InvestigationActionAvailability::Unavailable(unavailable)
+            if unavailable.can_travel_to_required_site =>
+        {
+            ProjectedInvestigationActionState::Travel
+        }
+        InvestigationActionAvailability::Unavailable(unavailable) => {
+            projected_investigation_wait_minutes(unavailable.reason, unavailable.wait_minutes)
+                .map_or(ProjectedInvestigationActionState::Blocked, |minutes| {
+                    ProjectedInvestigationActionState::Wait(minutes)
+                })
+        }
+    }
+}
+
+fn projected_investigation_wait_minutes(
+    reason: InvestigationActionUnavailableReason,
+    wait_minutes: u32,
+) -> Option<u32> {
+    match reason {
+        InvestigationActionUnavailableReason::NightWindow
+        | InvestigationActionUnavailableReason::ContactScheduleWindow => (1
+            ..=MAX_PROJECTED_INVESTIGATION_WAIT_MINUTES)
+            .contains(&wait_minutes)
+            .then_some(wait_minutes),
+        InvestigationActionUnavailableReason::PartyNotReady
+        | InvestigationActionUnavailableReason::TravelRequired
+        | InvestigationActionUnavailableReason::TargetChanged
+        | InvestigationActionUnavailableReason::ContactNotPresent
+        | InvestigationActionUnavailableReason::CharacterUnavailable
+        | InvestigationActionUnavailableReason::PartyRequired => None,
+    }
+}
+
+fn current_contact_schedule_wait_minutes(
+    action: &BackendInvestigationAction,
+    presences: impl IntoIterator<Item = SettlementResidentPresence>,
+    actor_minute: u64,
+) -> Option<u32> {
+    let contact_character_id = action.contact_character_id?;
+    let presence = presences
+        .into_iter()
+        .find(|presence| presence.character_id == contact_character_id)?;
+    if presence.context_suppressed || presence.health_suppressed {
+        return None;
+    }
+    DailyPresenceWindow {
+        start_minute: presence.start_minute,
+        end_minute: presence.end_minute,
+    }
+    .minutes_until_start(actor_minute)
+    .ok()
+}
+
+fn investigation_unavailable_reason_key(
+    reason: InvestigationActionUnavailableReason,
+) -> &'static str {
+    match reason {
+        InvestigationActionUnavailableReason::PartyNotReady => "party_not_ready",
+        InvestigationActionUnavailableReason::TravelRequired => "travel_required",
+        InvestigationActionUnavailableReason::NightWindow => "night_window",
+        InvestigationActionUnavailableReason::TargetChanged => "target_changed",
+        InvestigationActionUnavailableReason::ContactScheduleWindow => "contact_schedule_window",
+        InvestigationActionUnavailableReason::ContactNotPresent => "contact_not_present",
+        InvestigationActionUnavailableReason::CharacterUnavailable => "character_unavailable",
+        InvestigationActionUnavailableReason::PartyRequired => "party_required",
+    }
+}
+
+fn dialogue_contact_presence_changed(error: &CoreLoopError) -> bool {
+    error.reducer_code() == Some(ReducerErrorCode::DialogueContactUnavailable)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum InvestigationActionReplanReason {
+    Unavailable,
+    Stale,
+}
+
+impl InvestigationActionReplanReason {
+    const fn stable_id(self) -> &'static str {
+        match self {
+            Self::Unavailable => "unavailable",
+            Self::Stale => "stale",
+        }
+    }
+}
+
+fn investigation_action_replan_reason(
+    error: &CoreLoopError,
+) -> Option<InvestigationActionReplanReason> {
+    match error.reducer_code()? {
+        ReducerErrorCode::InvestigationActionUnavailable => {
+            Some(InvestigationActionReplanReason::Unavailable)
+        }
+        ReducerErrorCode::InvestigationActionStale => Some(InvestigationActionReplanReason::Stale),
+        _ => None,
+    }
 }
 
 fn projected_case_site_journey_minutes(
@@ -3118,9 +3580,40 @@ fn bounded_public_forecast_count(value: usize) -> usize {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TravelProvisionDeferralReason {
+    ContributionRevalidationFailed,
+    EssentialsUnaffordable,
+    EssentialsUnavailable,
+    FinanceBackoff,
+    PayerProviderProjectionUnavailable,
+    RequiresSettlement,
+}
+
+impl TravelProvisionDeferralReason {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::ContributionRevalidationFailed => "journey_contribution_revalidation_failed",
+            Self::EssentialsUnaffordable => "journey_essentials_unaffordable",
+            Self::EssentialsUnavailable => "journey_essentials_unavailable",
+            Self::FinanceBackoff => "journey_finance_backoff",
+            Self::PayerProviderProjectionUnavailable => {
+                "journey_payer_provider_projection_unavailable"
+            }
+            Self::RequiresSettlement => "provisioning_requires_settlement",
+        }
+    }
+}
+
+impl std::fmt::Display for TravelProvisionDeferralReason {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum TravelProvisionDecision {
     Ready,
-    Deferred(&'static str),
+    Deferred(TravelProvisionDeferralReason),
 }
 
 fn signed_delta(after: u64, before: u64) -> String {

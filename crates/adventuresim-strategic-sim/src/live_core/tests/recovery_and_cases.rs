@@ -330,7 +330,7 @@ fn recovery_outcomes_resume_same_cycle_but_consume_evacuation_or_hold() {
     assert!(cycle.contains("recovery_outcome == ExpeditionRecoveryOutcome::Resumed"));
     assert!(cycle.contains("&& recovery_started_in_budget"));
     assert!(cycle.contains("ExpeditionRecoveryOutcome::Returned =>"));
-    assert!(cycle.contains("ensure_settlement_activity_after_idle_site_return"));
+    assert!(cycle.contains("ReducerOperation::EnsureSettlementActivityAfterIdleSiteReturn"));
     assert!(cycle.contains("ExpeditionRecoveryOutcome::Evacuated =>"));
     assert!(cycle.contains("ExpeditionRecoveryOutcome::Held =>"));
     let resumed = cycle.find("ExpeditionRecoveryOutcome::Resumed").unwrap();
@@ -441,7 +441,7 @@ fn recovery_reselects_each_rest_actor_and_held_only_cycles_do_not_advance_time()
     assert!(!held_branch.contains("active = true;\n                    continue"));
     assert!(held_branch.contains("public_party_elapsed_max(party_id) > party_time_before"));
     assert!(core_loop.contains("if active {"));
-    assert!(core_loop.contains("advance_simulation_world_time"));
+    assert!(core_loop.contains("ReducerOperation::AdvanceSimulationWorldTime"));
     assert!(core_loop.contains("if !active && held"));
 }
 
@@ -478,7 +478,8 @@ fn generated_case_tracking_is_owner_scoped_and_intake_drives_attempts() {
         production.contains("generated_finance_blocks: HashMap<(String, u64, String), (u64, u64)>")
     );
     assert!(production.contains("CoreLoopEventKind::GeneratedCaseIntake"));
-    assert!(production.contains("source == \"owner_projection_continuation\""));
+    assert!(production.contains("source.is_continuation()"));
+    assert!(production.contains("GeneratedCaseIntakeSource::OwnerProjectionContinuation"));
     assert!(production.contains(
         "self.metrics.quests_attempted = self.metrics.quests_attempted.saturating_add(1)"
     ));
@@ -537,10 +538,9 @@ fn generated_actions_sync_then_recover_then_revalidate_public_clocks() {
     let deaths = preflight.find("self.observe_deaths()").unwrap();
     let medical = preflight.find("self.ensure_medically_safe").unwrap();
     let resync = preflight
-        .find("resynchronize_party_after_generated_preflight")
+        .find("ReducerOperation::ResynchronizePartyAfterGeneratedPreflight")
         .unwrap();
     let safe = preflight.find("refreshed_safe_party_for_owner").unwrap();
-    let clocks = preflight.find("public_party_clocks_aligned").unwrap();
     assert!(sync < deaths);
     assert!(deaths < medical);
     assert!(medical < resync);
@@ -549,7 +549,8 @@ fn generated_actions_sync_then_recover_then_revalidate_public_clocks() {
     assert!(preflight.contains("party_medically_ready = false"));
     assert!(preflight.contains("if !party_medically_ready"));
     assert!(medical < safe);
-    assert!(safe < clocks);
+    assert!(!preflight.contains("public_party_clocks_aligned"));
+    assert!(!preflight.contains("public_party_clock_skew"));
 
     let driver = source
         .split("fn advance_generated_case_inner")
@@ -690,10 +691,11 @@ fn generated_case_state_machine_is_bounded_and_precedes_direct_contracts() {
                 .next()
         })
         .expect("generated case driver");
-    assert!(driver.contains("action.unavailable_reason_code"));
-    assert!(driver.contains("action.wait_minutes"));
+    assert!(driver.contains("projected_investigation_action_state(&action.availability)"));
+    assert!(driver.contains("InvestigationActionAvailability::Unavailable(unavailable)"));
+    assert!(driver.contains("Some((action, unavailable.reason, wait_minutes))"));
     assert!(driver.contains("wait_for_generated_investigation_window"));
-    assert!(!driver.contains("action.unavailable_reason.contains"));
+    assert!(!driver.contains("action.unavailable_reason"));
 }
 #[test]
 fn settlement_recovery_treats_visible_nonhealing_wounds_and_bounds_paid_rest() {
@@ -834,6 +836,34 @@ fn idle_ready_case_site_return_is_safe_public_travel_not_health_evacuation() {
 }
 
 #[test]
+fn thermally_unsafe_case_site_clock_sync_uses_the_safe_return_projection() {
+    let generated = include_str!("../generated_cases.rs");
+    let synchronization = generated
+        .split("pub(super) fn synchronize_generated_party_for_action")
+        .nth(1)
+        .and_then(|tail| tail.split("pub(super) fn refreshed_safe_party_for_owner").next())
+        .expect("generated party synchronization");
+    assert_eq!(
+        synchronization
+            .matches("if !self.generated_case_site_sync_safe")
+            .count(),
+        2
+    );
+    assert_eq!(
+        synchronization
+            .matches("self.generated_action_return_thermal_decision(party_id, &pin, 0)")
+            .count(),
+        3
+    );
+    assert_eq!(
+        synchronization
+            .matches("self.evacuate_generated_party_to_origin(")
+            .count(),
+        3
+    );
+}
+
+#[test]
 fn observed_activity_origin_is_exact_ephemeral_fallback_return_provenance() {
     let mut observations = HashMap::new();
     observations.insert(
@@ -870,7 +900,7 @@ fn observed_activity_origin_is_exact_ephemeral_fallback_return_provenance() {
         .unwrap();
     assert!(journey < pins && pins < observed);
     assert!(return_origin.contains("if !origins.is_empty()"));
-    assert!(return_origin.contains("Some(current_site)"));
+    assert!(return_origin.contains("Some(&current_site.value)"));
 
     let idle_return = expedition
         .split("fn return_idle_ready_party_from_case_site")
@@ -937,7 +967,9 @@ fn authority_surrender_selection_is_exact_affordable_controlled_and_unambiguous(
         BackendAuthorityArrestAction {
             action_token: action_token.into(),
             party_id: party_id.into(),
-            case_site_id: case_site_id.into(),
+            case_site_id: CaseSiteId {
+                value: case_site_id.into(),
+            },
             origin_settlement_id: "origin".into(),
             instigator_id,
             fine: 12,

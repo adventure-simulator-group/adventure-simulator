@@ -4,15 +4,15 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::equipment_channel_type::EquipmentChannel;
-
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct EquipmentParentRequirement {
-    pub channel: EquipmentChannel,
-    pub order: u16,
+#[derive(Copy, Eq, Hash)]
+pub enum FinaleExecutionKind {
+    RecordResolution,
+
+    ResolveLocalProblem,
 }
 
-impl __sdk::InModule for EquipmentParentRequirement {
+impl __sdk::InModule for FinaleExecutionKind {
     type Module = super::RemoteModule;
 }

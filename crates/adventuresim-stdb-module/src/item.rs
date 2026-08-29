@@ -3,7 +3,10 @@ use crate::{
 };
 use adventuresim_core::{
     combat_style::MeleeAttackStyle,
-    item_catalog::{EquipmentBodyPart, EquipmentChannel, EquipmentLocation, Slot},
+    equipment::WeaponSkillDistribution,
+    item_catalog::{
+        EquipmentBodyPart, EquipmentChannel, OccupancyRequirement, ParentRequirement, Slot,
+    },
 };
 use spacetimedb::{ReducerContext, SpacetimeType, Table, reducer, table};
 
@@ -48,7 +51,7 @@ pub struct InventoryItem {
 }
 
 #[derive(SpacetimeType, Default, Clone, Copy, Debug, PartialEq)]
-pub enum ItemKind {
+pub enum PersistedItemKind {
     #[default]
     Simple,
     Weapon,
@@ -63,75 +66,33 @@ pub enum ItemKind {
 }
 
 pub(crate) const fn economy_catalog_kind(
-    kind: ItemKind,
+    kind: PersistedItemKind,
 ) -> adventuresim_core::settlement_economy::CatalogKind {
     use adventuresim_core::settlement_economy::CatalogKind as C;
     match kind {
-        ItemKind::Simple => C::Simple,
-        ItemKind::Weapon => C::Weapon,
-        ItemKind::Armor => C::Armor,
-        ItemKind::Shield => C::Shield,
-        ItemKind::Clothing => C::Clothing,
-        ItemKind::Container => C::Simple,
-        ItemKind::Currency => C::Currency,
-        ItemKind::Ingredient => C::Ingredient,
-        ItemKind::Medication => C::Medication,
-        ItemKind::Food => C::Food,
+        PersistedItemKind::Simple => C::Simple,
+        PersistedItemKind::Weapon => C::Weapon,
+        PersistedItemKind::Armor => C::Armor,
+        PersistedItemKind::Shield => C::Shield,
+        PersistedItemKind::Clothing => C::Clothing,
+        PersistedItemKind::Container => C::Simple,
+        PersistedItemKind::Currency => C::Currency,
+        PersistedItemKind::Ingredient => C::Ingredient,
+        PersistedItemKind::Medication => C::Medication,
+        PersistedItemKind::Food => C::Food,
     }
-}
-
-#[derive(SpacetimeType, Default, Clone, Copy, Debug, PartialEq)]
-pub struct WeaponSkillDistribution {
-    pub polearm: f32,
-    pub axe: f32,
-    pub bludgeon: f32,
-    pub sword: f32,
-    pub knife: f32,
-    pub bow: f32,
-    pub crossbow: f32,
-    pub firearm: f32,
-    pub throw_skill: f32,
-}
-
-impl WeaponSkillDistribution {
-    pub fn core(self) -> adventuresim_core::equipment::WeaponSkillDistribution {
-        adventuresim_core::equipment::WeaponSkillDistribution {
-            polearm: self.polearm,
-            axe: self.axe,
-            bludgeon: self.bludgeon,
-            sword: self.sword,
-            knife: self.knife,
-            bow: self.bow,
-            crossbow: self.crossbow,
-            firearm: self.firearm,
-            throw: self.throw_skill,
-        }
-    }
-}
-
-#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
-pub struct EquipmentOccupancyRequirement {
-    pub location: EquipmentLocation,
-    pub channel: EquipmentChannel,
-    pub order: u16,
-}
-
-#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
-pub struct EquipmentParentRequirement {
-    pub channel: EquipmentChannel,
-    pub order: u16,
 }
 
 #[derive(SpacetimeType, Clone, Debug, PartialEq)]
-pub struct EquipmentPlacement {
+pub struct PersistedEquipmentPlacement {
     pub id: String,
-    pub occupancy: Vec<EquipmentOccupancyRequirement>,
-    pub parents: Vec<EquipmentParentRequirement>,
+    pub occupancy: Vec<OccupancyRequirement>,
+    pub parents: Vec<ParentRequirement>,
     pub protection: Vec<EquipmentBodyPart>,
 }
 
 #[derive(SpacetimeType, Clone, Debug, PartialEq)]
-pub struct EquipmentAttachmentPoint {
+pub struct PersistedEquipmentAttachmentPoint {
     pub id: String,
     pub channel: EquipmentChannel,
     pub capacity: u16,
@@ -149,10 +110,10 @@ pub struct Item {
     /// Exterior displacement for generic inventory containment.
     pub exterior_volume_ml: u32,
     pub slot: Slot,
-    pub kind: ItemKind,
-    pub equipment_placements: Vec<EquipmentPlacement>,
+    pub kind: PersistedItemKind,
+    pub equipment_placements: Vec<PersistedEquipmentPlacement>,
     pub attachment_tags: Vec<String>,
-    pub attachment_points: Vec<EquipmentAttachmentPoint>,
+    pub attachment_points: Vec<PersistedEquipmentAttachmentPoint>,
     /// Whether this definition has authored durability and receives condition rows.
     pub repairable: bool,
     pub accuracy: f32,
@@ -225,32 +186,17 @@ fn project_definition(definition: &adventuresim_core::item_catalog::ItemDefiniti
         item.equipment_placements = equipment
             .placements
             .iter()
-            .map(|placement| EquipmentPlacement {
+            .map(|placement| PersistedEquipmentPlacement {
                 id: placement.id.clone(),
-                occupancy: placement
-                    .occupancy
-                    .iter()
-                    .map(|requirement| EquipmentOccupancyRequirement {
-                        location: requirement.location,
-                        channel: requirement.channel,
-                        order: requirement.order,
-                    })
-                    .collect(),
-                parents: placement
-                    .parents
-                    .iter()
-                    .map(|parent| EquipmentParentRequirement {
-                        channel: parent.channel,
-                        order: parent.order,
-                    })
-                    .collect(),
+                occupancy: placement.occupancy.clone(),
+                parents: placement.parents.clone(),
                 protection: placement.protection.clone(),
             })
             .collect();
         item.attachment_points = equipment
             .attachment_points
             .iter()
-            .map(|point| EquipmentAttachmentPoint {
+            .map(|point| PersistedEquipmentAttachmentPoint {
                 id: point.id.clone(),
                 channel: point.channel,
                 capacity: point.capacity,
@@ -267,25 +213,25 @@ fn project_definition(definition: &adventuresim_core::item_catalog::ItemDefiniti
         }
     }
     match &definition.kind {
-        K::Simple => item.kind = ItemKind::Simple,
+        K::Simple => item.kind = PersistedItemKind::Simple,
         K::Container {
             slot: authored_slot,
         } => {
-            item.kind = ItemKind::Container;
+            item.kind = PersistedItemKind::Container;
             item.slot = *authored_slot;
         }
-        K::Currency => item.kind = ItemKind::Currency,
-        K::Ingredient => item.kind = ItemKind::Ingredient,
-        K::Medication => item.kind = ItemKind::Medication,
+        K::Currency => item.kind = PersistedItemKind::Currency,
+        K::Ingredient => item.kind = PersistedItemKind::Ingredient,
+        K::Medication => item.kind = PersistedItemKind::Medication,
         K::Clothing => {
-            item.kind = ItemKind::Clothing;
+            item.kind = PersistedItemKind::Clothing;
         }
-        K::Food => item.kind = ItemKind::Food,
+        K::Food => item.kind = PersistedItemKind::Food,
         K::Shield {
             slot: authored_slot,
             block,
         } => {
-            item.kind = ItemKind::Shield;
+            item.kind = PersistedItemKind::Shield;
             item.slot = *authored_slot;
             item.block = *block;
         }
@@ -297,7 +243,7 @@ fn project_definition(definition: &adventuresim_core::item_catalog::ItemDefiniti
             flexibility,
             range_of_motion,
         } => {
-            item.kind = ItemKind::Armor;
+            item.kind = PersistedItemKind::Armor;
             item.slot = *authored_slot;
             item.coverage = *coverage;
             item.resistance = *resistance;
@@ -323,7 +269,7 @@ fn project_definition(definition: &adventuresim_core::item_catalog::ItemDefiniti
             damage_types,
             skills,
         } => {
-            item.kind = ItemKind::Weapon;
+            item.kind = PersistedItemKind::Weapon;
             item.slot = *authored_slot;
             item.accuracy = *accuracy;
             item.swing_precision = *swing_precision;
@@ -347,17 +293,7 @@ fn project_definition(definition: &adventuresim_core::item_catalog::ItemDefiniti
             item.blunt = damage_types.contains(&DamageType::Blunt);
             item.slash = damage_types.contains(&DamageType::Slash);
             item.pierce = damage_types.contains(&DamageType::Pierce);
-            item.weapon_skills = WeaponSkillDistribution {
-                polearm: skills.polearm,
-                axe: skills.axe,
-                bludgeon: skills.bludgeon,
-                sword: skills.sword,
-                knife: skills.knife,
-                bow: skills.bow,
-                crossbow: skills.crossbow,
-                firearm: skills.firearm,
-                throw_skill: skills.throw,
-            };
+            item.weapon_skills = (*skills).into();
         }
     }
     if let Some(food) = &definition.capabilities.food {
@@ -429,11 +365,11 @@ pub(crate) fn upsert_surgery_items(ctx: &ReducerContext) {
 }
 
 pub(crate) fn inventory_food_definition(
-    kind: Option<ItemKind>,
+    kind: Option<PersistedItemKind>,
     item_id: &str,
 ) -> Result<Option<&'static adventuresim_core::food::FoodDefinition>, String> {
     let definition = adventuresim_core::food::definition(item_id);
-    if kind == Some(ItemKind::Food) || definition.is_some() {
+    if kind == Some(PersistedItemKind::Food) || definition.is_some() {
         definition
             .map(Some)
             .ok_or_else(|| format!("Food definition not found for {item_id}"))
@@ -450,8 +386,8 @@ pub(crate) fn requires_stable_object(
     food || measured
         || definition.is_some_and(|definition| {
             definition.repairable
-                || definition.kind == ItemKind::Medication
-                || (definition.kind == ItemKind::Weapon && definition.melee)
+                || definition.kind == PersistedItemKind::Medication
+                || (definition.kind == PersistedItemKind::Weapon && definition.melee)
                 || definition.container_capacity_ml > 0
                 || !definition.attachment_points.is_empty()
         })
@@ -551,7 +487,7 @@ pub fn is_currency(ctx: &ReducerContext, item_id: &str) -> bool {
         .item()
         .id()
         .find(item_id.to_owned())
-        .is_some_and(|item| item.kind == ItemKind::Currency)
+        .is_some_and(|item| item.kind == PersistedItemKind::Currency)
 }
 
 pub fn personal_currency_total(ctx: &ReducerContext, character_id: u64) -> u64 {
@@ -739,7 +675,7 @@ pub fn change_inventory_item(
         .item()
         .id()
         .find(item_id.to_owned())
-        .is_some_and(|definition| definition.kind == ItemKind::Food)
+        .is_some_and(|definition| definition.kind == PersistedItemKind::Food)
         || adventuresim_core::food::definition(item_id).is_some();
     let measured = crate::inventory_amount::is_measured_item(ctx, item_id);
     if measured {
@@ -835,13 +771,13 @@ mod tests {
 
     #[test]
     fn food_inventory_is_prevalidated_before_rows_can_be_inserted() {
-        let cooked = inventory_food_definition(Some(ItemKind::Food), "cooked_meal")
+        let cooked = inventory_food_definition(Some(PersistedItemKind::Food), "cooked_meal")
             .unwrap()
             .expect("cooked meal definition");
         assert!(cooked.kcal_per_unit > 0.0);
-        assert!(inventory_food_definition(Some(ItemKind::Food), "missing_food").is_err());
+        assert!(inventory_food_definition(Some(PersistedItemKind::Food), "missing_food").is_err());
         assert_eq!(
-            inventory_food_definition(Some(ItemKind::Simple), "torch").unwrap(),
+            inventory_food_definition(Some(PersistedItemKind::Simple), "torch").unwrap(),
             None
         );
         let source = crate::production_source(include_str!("item.rs"));
@@ -880,7 +816,7 @@ mod tests {
                     .next()
             })
             .expect("stable-object policy");
-        assert!(stable_object_policy.contains("definition.kind == ItemKind::Medication"));
+        assert!(stable_object_policy.contains("definition.kind == PersistedItemKind::Medication"));
         assert!(checked.contains("let count = if individual { quantity } else { 1 }"));
         assert!(checked.contains("quantity: if individual { 1 } else { quantity }"));
         assert_eq!(
@@ -907,8 +843,7 @@ mod tests {
     fn catalog_weapon_skill_distributions_cover_hybrids_and_ranged_families() {
         let halberd =
             project_definition(adventuresim_core::item_catalog::definition("halberd").unwrap())
-                .weapon_skills
-                .core();
+                .weapon_skills;
         assert_eq!(halberd.polearm, 1.0 / 3.0);
         assert_eq!(halberd.axe, 1.0 / 3.0);
         assert_eq!(halberd.bludgeon, 1.0 / 3.0);
@@ -916,16 +851,14 @@ mod tests {
 
         let hand_axe =
             project_definition(adventuresim_core::item_catalog::definition("hand_axe").unwrap())
-                .weapon_skills
-                .core();
+                .weapon_skills;
         assert_eq!(hand_axe.axe, 0.5);
         assert_eq!(hand_axe.knife, 0.5);
 
         let crossbow = project_definition(
             adventuresim_core::item_catalog::definition("heavy_crossbow").unwrap(),
         )
-        .weapon_skills
-        .core();
+        .weapon_skills;
         assert_eq!(crossbow.crossbow, 1.0);
         assert!(crossbow.validate(false, true));
     }
@@ -972,12 +905,14 @@ mod tests {
             .filter(|item| {
                 matches!(
                     item.kind,
-                    ItemKind::Weapon | ItemKind::Armor | ItemKind::Shield
+                    PersistedItemKind::Weapon
+                        | PersistedItemKind::Armor
+                        | PersistedItemKind::Shield
                 )
             })
             .collect();
         assert!(projected.iter().any(|definition| {
-            definition.kind == ItemKind::Armor && definition.slot == Slot::Head
+            definition.kind == PersistedItemKind::Armor && definition.slot == Slot::Head
         }));
         for definition in projected {
             assert!(definition.weight > 0.0, "{} has no weight", definition.id);
@@ -993,14 +928,14 @@ mod tests {
             );
 
             match definition.kind {
-                ItemKind::Weapon => {
+                PersistedItemKind::Weapon => {
                     assert_eq!(definition.slot, Slot::AnyHolding);
                     assert!(definition.accuracy > 0.0);
                     assert!(definition.reach > 0.0);
                     assert!(definition.blunt || definition.slash || definition.pierce);
                     assert_ne!(definition.melee, definition.ranged);
                 }
-                ItemKind::Armor => {
+                PersistedItemKind::Armor => {
                     assert!(matches!(
                         definition.slot,
                         Slot::AnyArm | Slot::AnyLeg | Slot::Chest | Slot::Stomach | Slot::Head
@@ -1011,7 +946,7 @@ mod tests {
                     assert!((0.0..=1.0).contains(&definition.flexibility));
                     assert!((0.0..=1.0).contains(&definition.range_of_motion));
                 }
-                ItemKind::Shield => {
+                PersistedItemKind::Shield => {
                     assert_eq!(definition.slot, Slot::AnyHolding);
                     assert!((1.0..=5.0).contains(&definition.block));
                 }
@@ -1024,7 +959,7 @@ mod tests {
     fn projection_preserves_container_and_authored_repairability() {
         let waterskin =
             project_definition(adventuresim_core::item_catalog::definition("waterskin").unwrap());
-        assert_eq!(waterskin.kind, ItemKind::Container);
+        assert_eq!(waterskin.kind, PersistedItemKind::Container);
         assert_eq!(waterskin.slot, Slot::None);
         assert!(!waterskin.repairable);
 
@@ -1039,7 +974,7 @@ mod tests {
         let book = project_definition(
             adventuresim_core::item_catalog::definition("human_anatomy").unwrap(),
         );
-        assert_eq!(book.kind, ItemKind::Simple);
+        assert_eq!(book.kind, PersistedItemKind::Simple);
         assert_eq!(book.quality, 4);
         assert!(!book.repairable);
     }

@@ -4,12 +4,14 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::morale_source_kind_type::MoraleSourceKind;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct CharacterMoraleSource {
     pub id: String,
     pub character_id: u64,
-    pub kind: String,
+    pub kind: MoraleSourceKind,
     pub label: String,
     pub magnitude: f32,
 }
@@ -24,7 +26,7 @@ impl __sdk::InModule for CharacterMoraleSource {
 pub struct CharacterMoraleSourceCols {
     pub id: __sdk::__query_builder::Col<CharacterMoraleSource, String>,
     pub character_id: __sdk::__query_builder::Col<CharacterMoraleSource, u64>,
-    pub kind: __sdk::__query_builder::Col<CharacterMoraleSource, String>,
+    pub kind: __sdk::__query_builder::Col<CharacterMoraleSource, MoraleSourceKind>,
     pub label: __sdk::__query_builder::Col<CharacterMoraleSource, String>,
     pub magnitude: __sdk::__query_builder::Col<CharacterMoraleSource, f32>,
 }

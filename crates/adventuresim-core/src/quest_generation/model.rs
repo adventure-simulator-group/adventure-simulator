@@ -64,6 +64,16 @@ pub enum TemplateFamily {
     Outbreak,
 }
 
+impl TemplateFamily {
+    pub const fn stable_variant_id(self) -> &'static str {
+        match self {
+            Self::RecurringDepredation => "RecurringDepredation",
+            Self::DisappearanceOrLoss => "DisappearanceOrLoss",
+            Self::Outbreak => "Outbreak",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CanonicalCause {
@@ -72,6 +82,18 @@ pub enum CanonicalCause {
     ConcealmentByWitness,
     IncidentalLoss,
     FabricatedClaim,
+}
+
+impl CanonicalCause {
+    pub fn stable_variant_id(self) -> String {
+        match self {
+            Self::Hostile(threat) => format!("Hostile({})", threat.as_str()),
+            Self::VoluntaryDisappearance => "VoluntaryDisappearance".into(),
+            Self::ConcealmentByWitness => "ConcealmentByWitness".into(),
+            Self::IncidentalLoss => "IncidentalLoss".into(),
+            Self::FabricatedClaim => "FabricatedClaim".into(),
+        }
+    }
 }
 
 macro_rules! open_catalog_id {
@@ -240,6 +262,20 @@ pub enum FinaleKind {
     RetrieveReturn,
     Expose,
     Negotiate,
+}
+
+impl FinaleKind {
+    pub const fn stable_variant_id(self) -> &'static str {
+        match self {
+            Self::Defeat => "Defeat",
+            Self::DriveOff => "DriveOff",
+            Self::Capture => "Capture",
+            Self::Rescue => "Rescue",
+            Self::RetrieveReturn => "RetrieveReturn",
+            Self::Expose => "Expose",
+            Self::Negotiate => "Negotiate",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -514,6 +550,17 @@ pub enum OutbreakCulpability {
     Deliberate,
 }
 
+impl OutbreakCulpability {
+    pub const fn stable_id(self) -> &'static str {
+        match self {
+            Self::Innocent => "innocent",
+            Self::Negligent => "negligent",
+            Self::Reckless => "reckless",
+            Self::Deliberate => "deliberate",
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResponsibleOutbreakNpc {
     pub resident_character_id: u64,
@@ -561,6 +608,17 @@ pub enum OutbreakEnvironmentalReservoir {
     RyeGalls,
     OreBiofilm,
     HouseDust,
+}
+
+impl OutbreakEnvironmentalReservoir {
+    pub const fn stable_compact_id(self) -> &'static str {
+        match self {
+            Self::GraveMould => "gravemould",
+            Self::RyeGalls => "ryegalls",
+            Self::OreBiofilm => "orebiofilm",
+            Self::HouseDust => "housedust",
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -611,12 +669,33 @@ pub enum OutbreakSanitationAction {
     LaunderBedding,
 }
 
+impl OutbreakSanitationAction {
+    pub const fn stable_compact_id(self) -> &'static str {
+        match self {
+            Self::CloseWell => "closewell",
+            Self::MoveWasteDownstream => "movewastedownstream",
+            Self::DestroyTaintedStores => "destroytaintedstores",
+            Self::LaunderBedding => "launderbedding",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum OutbreakBehaviorAction {
     SeparateSleepers,
     IsolatePatients,
     BoilLinen,
+}
+
+impl OutbreakBehaviorAction {
+    pub const fn stable_compact_id(self) -> &'static str {
+        match self {
+            Self::SeparateSleepers => "separatesleepers",
+            Self::IsolatePatients => "isolatepatients",
+            Self::BoilLinen => "boillinen",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

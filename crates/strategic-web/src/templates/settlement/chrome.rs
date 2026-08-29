@@ -4,15 +4,16 @@ use adventuresim_core::strategic_time::DAYS_PER_YEAR;
 use maud::{Markup, html};
 
 use super::social::{npc_description_stage, npc_portrait_strip, settlement_resident_chat_area};
-use super::{SoapRestPreview, corpse_medical_dialog, rest_service_menu};
+use super::{RestServiceKind, SoapRestPreview, corpse_medical_dialog, rest_service_menu};
 use crate::spacetimedb::{
-    BackendCharacterResidenceStatus, BackendCorpse, Character, ChildActivityFocus, ChildStage,
-    CourtshipKind, HousingTier, ResidenceTenure, Settlement, SettlementAlias, SettlementCategory,
-    SettlementDescription, SettlementDescriptionKind, SettlementResidenceOffer,
+    BackendCharacterResidenceStatus, BackendCorpse, CharacterView, ChildActivityFocus, ChildStage,
+    CourtshipKind, HousingTier, ResidenceTenure, SettlementAlias, SettlementCategory,
+    SettlementDescription, SettlementDescriptionKind, SettlementResidenceOffer, SettlementView,
 };
 use crate::templates::{
-    decorative_game_icon, game_icon, population_description, settlement_layout_with_session,
-    sidebar_section,
+    decorative_game_icon, game_icon, population_description, prosperity_tier_label,
+    settlement_layout_with_session, settlement_service_label, sidebar_section,
+    stock_category_label,
 };
 
 fn settlement_has_keep(category: &SettlementCategory) -> bool {
@@ -22,7 +23,7 @@ fn settlement_has_keep(category: &SettlementCategory) -> bool {
     )
 }
 
-fn public_square_place_link(settlement: &Settlement, current: bool) -> Markup {
+fn public_square_place_link(settlement: &SettlementView, current: bool) -> Markup {
     use adventuresim_core::settlement_economy::{player_visible_npc_tabs, visible_npc_tab};
 
     let tabs = player_visible_npc_tabs(
@@ -46,11 +47,11 @@ fn public_square_place_link(settlement: &Settlement, current: bool) -> Markup {
     reason = "the overview page boundary composes independent settlement and selected-detail projections"
 )]
 pub fn settlement_overview_page(
-    settlement: &Settlement,
+    settlement: &SettlementView,
     aliases: &[SettlementAlias],
     descriptions: &[SettlementDescription],
-    active_character: Option<&Character>,
-    party_members: &[Character],
+    active_character: Option<&CharacterView>,
+    party_members: &[CharacterView],
     logged_in_as: Option<&str>,
     corpses: &[BackendCorpse],
     selected_corpse: Option<(&BackendCorpse, &str)>,
@@ -90,12 +91,12 @@ pub fn settlement_overview_page(
                                 "Prosperity score: {}/1000",
                                 settlement.economy.prosperity_score,
                             )) {
-                            dt { "Prosperity" } dd { (format!("{:?}", settlement.economy.prosperity_tier)) }
+                            dt { "Prosperity" } dd { (prosperity_tier_label(settlement.economy.prosperity_tier)) }
                         }
                         div { dt { "Faiths" } dd { (&faiths) } }
-                        div data-developer-only { dt { "Services" } dd { (settlement.economy.services.iter().map(|v| format!("{:?}", v)).collect::<Vec<_>>().join(", ")) } }
-                        div data-developer-only { dt { "Specialties" } dd { (settlement.economy.specializations.iter().map(|v| format!("{:?}", v)).collect::<Vec<_>>().join(", ")) } }
-                        div data-developer-only { dt { "Coordinates" } dd { (format!("{:.6}, {:.6}", settlement.coord_x, settlement.coord_y)) } }
+                        div data-developer-only { dt { "Services" } dd { (settlement.economy.services.iter().copied().map(settlement_service_label).collect::<Vec<_>>().join(", ")) } }
+                        div data-developer-only { dt { "Specialties" } dd { (settlement.economy.specializations.iter().copied().map(stock_category_label).collect::<Vec<_>>().join(", ")) } }
+                        div data-developer-only { dt { "Coordinates" } dd { (format!("{:.6}, {:.6}", settlement.longitude, settlement.latitude)) } }
                         div data-developer-only { dt { "Languages" } dd { (format!(
                             "East-central {:.1}% · West-central {:.1}% · Low {:.1}%",
                             f32::from(settlement.languages.east_central_bp) / 100.0,
@@ -110,7 +111,7 @@ pub fn settlement_overview_page(
             }))
         }
         main class="center-content settlement-main settlement-overview" {
-            (party_portrait_overlay(party_members, active_character, &format!("/locations/settlement/{}", settlement.id), None, false))
+            (party_portrait_overlay(party_members, active_character, &format!("/locations/settlement/{}", settlement.id), None))
             (npc_portrait_strip(&settlement.id, "overview"))
             @if !corpses.is_empty() {
                 nav class="scene-interactable-strip corpse-strip" aria-label="Bodies held in the settlement" {
@@ -168,9 +169,9 @@ pub fn settlement_overview_page(
 
 /// Shared authoritative shell for non-service public, residential, and keep locations.
 pub fn settlement_resident_location_page(
-    settlement: &Settlement,
-    active_character: &Character,
-    party_members: &[Character],
+    settlement: &SettlementView,
+    active_character: &CharacterView,
+    party_members: &[CharacterView],
     location_id: &str,
     logged_in_as: Option<&str>,
 ) -> Markup {
@@ -190,9 +191,9 @@ pub fn settlement_resident_location_page(
     reason = "the residence page boundary composes independent character and residence projections"
 )]
 pub fn settlement_residence_page(
-    settlement: &Settlement,
-    active_character: &Character,
-    party_members: &[Character],
+    settlement: &SettlementView,
+    active_character: &CharacterView,
+    party_members: &[CharacterView],
     logged_in_as: Option<&str>,
     offers: &[SettlementResidenceOffer],
     holdings: &[BackendCharacterResidenceStatus],
@@ -220,9 +221,9 @@ pub fn settlement_residence_page(
 }
 
 fn settlement_resident_location_page_with_panel(
-    settlement: &Settlement,
-    active_character: &Character,
-    party_members: &[Character],
+    settlement: &SettlementView,
+    active_character: &CharacterView,
+    party_members: &[CharacterView],
     location_id: &str,
     logged_in_as: Option<&str>,
     residence_panel: Option<Markup>,
@@ -282,7 +283,7 @@ fn settlement_resident_location_page_with_panel(
             }))
         }
         main class="center-content settlement-main settlement-overview" {
-            (party_portrait_overlay(party_members, Some(active_character), &format!("/locations/settlement/{}", settlement.id), None, false))
+            (party_portrait_overlay(party_members, Some(active_character), &format!("/locations/settlement/{}", settlement.id), None))
             (npc_portrait_strip(&settlement.id, location_id))
             (npc_description_stage(title, description))
             (settlement_resident_chat_area(title, Some(active_character), &settlement.id, location_id, None))
@@ -297,7 +298,7 @@ fn settlement_resident_location_page_with_panel(
                         (rest_service_menu(
                             "Home",
                             &settlement.id,
-                            "residence",
+                            RestServiceKind::Residence,
                             None,
                             None,
                             SoapRestPreview::default(),
@@ -424,7 +425,7 @@ fn residence_tier_id(tier: HousingTier) -> &'static str {
 }
 
 fn residence_offer_panel(
-    settlement: &Settlement,
+    settlement: &SettlementView,
     active_character_id: u64,
     offers: &[SettlementResidenceOffer],
     holdings: &[BackendCharacterResidenceStatus],
@@ -623,7 +624,10 @@ fn format_residence_date(minute: u64) -> String {
     )
 }
 
-fn settlement_alias_labels(settlement: &Settlement, aliases: &[SettlementAlias]) -> Vec<String> {
+fn settlement_alias_labels(
+    settlement: &SettlementView,
+    aliases: &[SettlementAlias],
+) -> Vec<String> {
     let canonical = settlement.name.to_lowercase();
     let mut labels = BTreeSet::new();
     for alias in aliases {
@@ -690,7 +694,7 @@ pub(super) fn format_distance(distance_m: u64) -> String {
     format!("{:.1} km", distance_m as f64 / 1_000.0)
 }
 
-pub(super) fn format_population(settlement: &Settlement) -> String {
+pub(super) fn format_population(settlement: &SettlementView) -> String {
     match settlement.population_estimate {
         0 => population_description(settlement.population_level).to_string(),
         population => format!("approximately {}", format_number(population)),
@@ -723,19 +727,61 @@ pub(super) fn format_journey_time(minutes: u64) -> String {
     }
 }
 
-pub(crate) fn visual_stage(kind: &str, title: &str, description: &str) -> Markup {
-    let scene_label = match kind {
-        "settlement" => "At the settlement gates",
-        "map" | "route" => "Roads and destinations",
-        "camp" => "Camp beside the road",
-        "quest" => "Encounter ground",
-        "alchemy" => "The apothecary workbench",
-        "service" => "At the counter",
-        "chest" => "Shared party stores",
-        _ => "Adventurer profile",
-    };
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "the stable visual-stage vocabulary is exhaustive while routes adopt it incrementally"
+    )
+)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum VisualStageKind {
+    Settlement,
+    Map,
+    Route,
+    Camp,
+    Quest,
+    Alchemy,
+    Service,
+    Chest,
+    Campfire,
+    Character,
+}
+
+impl VisualStageKind {
+    const fn tag(self) -> &'static str {
+        match self {
+            Self::Settlement => "settlement",
+            Self::Map => "map",
+            Self::Route => "route",
+            Self::Camp => "camp",
+            Self::Quest => "quest",
+            Self::Alchemy => "alchemy",
+            Self::Service => "service",
+            Self::Chest => "chest",
+            Self::Campfire => "campfire",
+            Self::Character => "character",
+        }
+    }
+
+    const fn scene_label(self) -> &'static str {
+        match self {
+            Self::Settlement => "At the settlement gates",
+            Self::Map | Self::Route => "Roads and destinations",
+            Self::Camp => "Camp beside the road",
+            Self::Quest => "Encounter ground",
+            Self::Alchemy => "The apothecary workbench",
+            Self::Service => "At the counter",
+            Self::Chest => "Shared party stores",
+            Self::Campfire | Self::Character => "Adventurer profile",
+        }
+    }
+}
+
+pub(crate) fn visual_stage(kind: VisualStageKind, title: &str, description: &str) -> Markup {
+    let scene_label = kind.scene_label();
     html! {
-        figure class=(format!("service-visual service-visual-{}", kind)) {
+        figure class=(format!("service-visual service-visual-{}", kind.tag())) {
             div class="service-visual-scene" role="img" aria-label=(format!("{title}. {description}")) {
                 span class="visual-scene-sky" aria-hidden="true" {}
                 span class="visual-scene-horizon" aria-hidden="true" {}
@@ -809,13 +855,12 @@ pub(crate) fn character_portrait_overlay(
 }
 
 pub(crate) fn party_portrait_overlay(
-    party_members: &[Character],
-    active_character: Option<&Character>,
+    party_members: &[CharacterView],
+    active_character: Option<&CharacterView>,
     location_path: &str,
     selected_character_id: Option<u64>,
-    can_examine: bool,
 ) -> Markup {
-    let members: Vec<&Character> = if party_members.is_empty() {
+    let members: Vec<&CharacterView> = if party_members.is_empty() {
         active_character.into_iter().collect()
     } else {
         party_members.iter().collect()
@@ -859,16 +904,6 @@ pub(crate) fn party_portrait_overlay(
                                     span class="party-social-notification" aria-hidden="true" {
                                         (member.social_notification_count)
                                     }
-                                }
-                            }
-                            @if is_active && can_examine && location_path.starts_with("/locations/settlement/") {
-                                a href=(format!("{location_path}/alchemy"))
-                                    class="party-portrait-action party-alchemy-action"
-                                    title="Prepare medication"
-                                    aria-label="Prepare medication" {
-                                    span class="party-action-icon"
-                                        style="--party-action-icon: url('/static/icons/game/medical-pack.svg')"
-                                        role="img" aria-label="Alchemy" {}
                                 }
                             }
                             a href=(format!("{}/party/{}/inventory", location_path, member.id))
@@ -922,7 +957,7 @@ mod tests {
 
     #[test]
     fn notified_social_action_stays_visible_while_portrait_keeps_inspection() {
-        let member = Character {
+        let member = CharacterView {
             id: 12,
             name: "Greta".into(),
             xp: 0,
@@ -941,7 +976,6 @@ mod tests {
             Some(&member),
             "/locations/settlement/lubeck",
             None,
-            false,
         )
         .into_string();
         assert!(markup.contains(
@@ -966,7 +1000,6 @@ mod tests {
             Some(&quiet),
             "/locations/settlement/lubeck",
             None,
-            false,
         )
         .into_string();
         assert!(!quiet_markup.contains("party-social-notification"));
@@ -982,7 +1015,6 @@ mod tests {
             Some(&automatic),
             "/locations/settlement/lubeck",
             None,
-            false,
         )
         .into_string();
         assert!(automatic_markup.contains("class=\"party-social-notification\""));
@@ -1103,7 +1135,9 @@ mod tests {
             source_id: "quest:1".into(),
             location: "local_custody".into(),
             decomposition: "early".into(),
-            case_site_id: "site:1".into(),
+            case_site_id: Some(adventuresim_stdb_client::CaseSiteId {
+                value: "site:1".into(),
+            }),
             settlement_id: "viabundus-1".into(),
             opened: false,
             permission: "none".into(),
@@ -1137,17 +1171,20 @@ mod tests {
     #[test]
     fn intentional_stages_have_distinct_semantics_and_no_prototype_copy() {
         for (kind, label) in [
-            ("settlement", "At the settlement gates"),
-            ("route", "Roads and destinations"),
-            ("camp", "Camp beside the road"),
-            ("character", "Adventurer profile"),
-            ("service", "At the counter"),
-            ("quest", "Encounter ground"),
-            ("alchemy", "The apothecary workbench"),
-            ("chest", "Shared party stores"),
+            (VisualStageKind::Settlement, "At the settlement gates"),
+            (VisualStageKind::Map, "Roads and destinations"),
+            (VisualStageKind::Route, "Roads and destinations"),
+            (VisualStageKind::Camp, "Camp beside the road"),
+            (VisualStageKind::Character, "Adventurer profile"),
+            (VisualStageKind::Service, "At the counter"),
+            (VisualStageKind::Quest, "Encounter ground"),
+            (VisualStageKind::Alchemy, "The apothecary workbench"),
+            (VisualStageKind::Chest, "Shared party stores"),
+            (VisualStageKind::Campfire, "Adventurer profile"),
         ] {
             let markup = visual_stage(kind, "A Place", "An intentional scene").into_string();
             assert!(markup.contains(label));
+            assert!(markup.contains(&format!("service-visual-{}", kind.tag())));
             assert!(markup.contains("role=\"img\""));
             assert!(!markup.contains("placeholder"));
             assert!(!markup.contains("TODO"));
@@ -1155,7 +1192,8 @@ mod tests {
             assert!(!markup.contains("/static/icons/game/"));
         }
 
-        let character = visual_stage("character", "Ada", "Character sheet").into_string();
+        let character =
+            visual_stage(VisualStageKind::Character, "Ada", "Character sheet").into_string();
         assert!(character.contains("role=\"img\" aria-label=\"Ada. Character sheet\""));
         let css = include_str!("../../../static/css/strategic.css");
         let character_figure = css
@@ -1189,7 +1227,7 @@ mod tests {
         assert!(overview.contains("data-strategic-tooltip=\"Imported estimate:"));
         assert!(overview.contains("data-developer-only"));
 
-        let character = Character {
+        let character = CharacterView {
             id: 1,
             name: "Visitor".into(),
             xp: 0,

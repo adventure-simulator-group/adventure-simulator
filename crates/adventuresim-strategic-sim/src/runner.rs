@@ -1,10 +1,10 @@
 use crate::{
-    AgentProfile, FORMAT_VERSION, Objective, ParetoPoint, SimulationConfig, generate_profile,
-    nondominated,
+    AgentProfile, FORMAT_VERSION, OptimizationDirection, ParetoPoint, SimulationConfig,
+    generate_profile, nondominated,
 };
 use adventuresim_core::{
-    attribute::{LimbAttribute, PlayerAttributes, SimpleAttribute},
-    body::{BodyPart, LimbWeights},
+    attribute::{LimbAttribute, PlayerAttributeValues, PlayerAttributes},
+    body::LimbWeights,
     personality::{Drive, Nerve, Transparency},
     simulation_security::MAX_SIMULATION_SKILL_HOURS,
     skill::{PlayerSkills, Skill},
@@ -197,7 +197,7 @@ pub enum ReportMetric {
 #[serde(deny_unknown_fields)]
 pub struct ParetoObjective {
     pub metric: ReportMetric,
-    pub direction: Objective,
+    pub direction: OptimizationDirection,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -518,19 +518,19 @@ fn frontier_objectives() -> Vec<ParetoObjective> {
     vec![
         ParetoObjective {
             metric: ReportMetric::Wealth,
-            direction: Objective::Maximize,
+            direction: OptimizationDirection::Maximize,
         },
         ParetoObjective {
             metric: ReportMetric::SkillHoursGained,
-            direction: Objective::Maximize,
+            direction: OptimizationDirection::Maximize,
         },
         ParetoObjective {
             metric: ReportMetric::Infamy,
-            direction: Objective::Minimize,
+            direction: OptimizationDirection::Minimize,
         },
         ParetoObjective {
             metric: ReportMetric::RiskExposure,
-            direction: Objective::Minimize,
+            direction: OptimizationDirection::Minimize,
         },
     ]
 }
@@ -740,7 +740,7 @@ fn validate_profile(p: &AgentProfile) -> Result<(), String> {
 }
 
 struct Checks<'a> {
-    attrs: &'a crate::Attributes,
+    attrs: &'a PlayerAttributeValues,
     skills: SkillHours,
 }
 impl Checks<'_> {
@@ -804,33 +804,6 @@ impl PlayerSkills for SimSkills {
 
     fn bestiary_hours_for(&self, category: adventuresim_world_schema::BestiaryCategory) -> f32 {
         self.0.bestiary.effective(category)
-    }
-}
-
-impl PlayerAttributes for crate::Attributes {
-    fn raw_limb_attr(&self, attr: LimbAttribute, limb: BodyPart) -> f32 {
-        match (attr, limb) {
-            (LimbAttribute::Strength, BodyPart::LeftArm) => self.left_arm_strength,
-            (LimbAttribute::Strength, BodyPart::RightArm) => self.right_arm_strength,
-            (LimbAttribute::Strength, BodyPart::LeftLeg) => self.left_leg_strength,
-            (LimbAttribute::Strength, BodyPart::RightLeg) => self.right_leg_strength,
-            (LimbAttribute::Agility, BodyPart::LeftArm) => self.left_arm_agility,
-            (LimbAttribute::Agility, BodyPart::RightArm) => self.right_arm_agility,
-            (LimbAttribute::Agility, BodyPart::LeftLeg) => self.left_leg_agility,
-            (LimbAttribute::Agility, BodyPart::RightLeg) => self.right_leg_agility,
-            _ => 0.0,
-        }
-    }
-    fn raw_single_body_part_attr(&self, attr: SimpleAttribute) -> f32 {
-        match attr {
-            SimpleAttribute::Endurance => self.endurance,
-            SimpleAttribute::Immunity => self.immunity,
-            SimpleAttribute::Gut => self.gut,
-            SimpleAttribute::Intelligence => self.intelligence,
-            SimpleAttribute::Instinct => self.instinct,
-            SimpleAttribute::Eyesight => self.eyesight,
-            SimpleAttribute::Hearing => self.hearing,
-        }
     }
 }
 

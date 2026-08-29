@@ -1,5 +1,6 @@
 use adventuresim_core::{
-    item_catalog::EquipmentChannel,
+    attribute::PlayerAttributeValues,
+    item_catalog::{EquipmentChannel, OccupancyRequirement, ParentRequirement},
     organization::OrganizationMembershipStatus,
     starting_character::{
         StartingAgeTier, StartingCharacterSpec, StartingInclination, StartingPersonalityTrait,
@@ -7,10 +8,10 @@ use adventuresim_core::{
     },
 };
 use fabelgeist_determinism::splitmix64;
+use sha2::{Digest, Sha256};
 use spacetimedb::{
     Identity, ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view,
 };
-use std::hash::{DefaultHasher, Hash, Hasher};
 
 use crate::{
     Settlement, add_inventory_item,
@@ -439,6 +440,63 @@ pub struct CharacterAttributes {
     pub right_leg_agility: f32,
 }
 
+impl CharacterAttributes {
+    pub fn values(&self) -> PlayerAttributeValues {
+        self.into()
+    }
+}
+
+impl From<&CharacterAttributes> for PlayerAttributeValues {
+    fn from(attributes: &CharacterAttributes) -> Self {
+        Self {
+            endurance: attributes.endurance,
+            immunity: attributes.immunity,
+            gut: attributes.gut,
+            intelligence: attributes.intelligence,
+            instinct: attributes.instinct,
+            eyesight: attributes.eyesight,
+            hearing: attributes.hearing,
+            left_arm_strength: attributes.left_arm_strength,
+            right_arm_strength: attributes.right_arm_strength,
+            left_leg_strength: attributes.left_leg_strength,
+            right_leg_strength: attributes.right_leg_strength,
+            left_arm_agility: attributes.left_arm_agility,
+            right_arm_agility: attributes.right_arm_agility,
+            left_leg_agility: attributes.left_leg_agility,
+            right_leg_agility: attributes.right_leg_agility,
+        }
+    }
+}
+
+impl From<CharacterAttributes> for PlayerAttributeValues {
+    fn from(attributes: CharacterAttributes) -> Self {
+        Self::from(&attributes)
+    }
+}
+
+impl From<(u64, PlayerAttributeValues)> for CharacterAttributes {
+    fn from((character_id, values): (u64, PlayerAttributeValues)) -> Self {
+        Self {
+            character_id,
+            endurance: values.endurance,
+            immunity: values.immunity,
+            gut: values.gut,
+            intelligence: values.intelligence,
+            instinct: values.instinct,
+            eyesight: values.eyesight,
+            hearing: values.hearing,
+            left_arm_strength: values.left_arm_strength,
+            right_arm_strength: values.right_arm_strength,
+            left_leg_strength: values.left_leg_strength,
+            right_leg_strength: values.right_leg_strength,
+            left_arm_agility: values.left_arm_agility,
+            right_arm_agility: values.right_arm_agility,
+            left_leg_agility: values.left_leg_agility,
+            right_leg_agility: values.right_leg_agility,
+        }
+    }
+}
+
 /// [`Character`] stats
 #[derive(Clone, Debug)]
 #[table(accessor = character_stats)]
@@ -568,7 +626,8 @@ fn character_occupancy_id(
         order
     };
     format!(
-        "character:{character_id}:{location:?}:{}:{order}",
+        "equipment-occupancy:v1:character:{character_id}:{}:{}:{order}",
+        location.stable_id(),
         channel.order()
     )
 }
@@ -618,10 +677,10 @@ fn attachment_would_create_cycle(
 }
 
 fn conflicting_root_requirements(
-    requirements: &[crate::item::EquipmentOccupancyRequirement],
+    requirements: &[OccupancyRequirement],
     inventory_item_id: u64,
-    mut occupant_at: impl FnMut(crate::item::EquipmentOccupancyRequirement) -> Option<u64>,
-) -> Vec<crate::item::EquipmentOccupancyRequirement> {
+    mut occupant_at: impl FnMut(OccupancyRequirement) -> Option<u64>,
+) -> Vec<OccupancyRequirement> {
     requirements
         .iter()
         .copied()
@@ -641,8 +700,8 @@ fn first_free_attachment_capacity(
 }
 
 fn attachment_point_matches_requirement(
-    point: &crate::item::EquipmentAttachmentPoint,
-    requirement: crate::item::EquipmentParentRequirement,
+    point: &crate::item::PersistedEquipmentAttachmentPoint,
+    requirement: ParentRequirement,
 ) -> bool {
     point.channel == requirement.channel && point.order == requirement.order
 }
@@ -1276,12 +1335,25 @@ pub fn create_character(ctx: &ReducerContext, id: u64) -> Result<(), String> {
 }
 
 /// Create a new character with name and add initial items to it
+fn named_character_id(name: &str, created_micros: i64) -> u64 {
+    let mut hasher = Sha256::new();
+    for value in [
+        b"adventuresim.named-character-id.v1".as_slice(),
+        name.as_bytes(),
+        created_micros.to_le_bytes().as_slice(),
+    ] {
+        hasher.update((value.len() as u64).to_le_bytes());
+        hasher.update(value);
+    }
+    let digest = hasher.finalize();
+    let value = u64::from_le_bytes(digest[..8].try_into().expect("SHA-256 prefix"));
+    value.max(1)
+}
+
+/// Create a new character with name and add initial items to it
 #[reducer]
 pub fn create_named_character(ctx: &ReducerContext, name: String) -> Result<(), String> {
-    let mut hasher = DefaultHasher::new();
-    name.hash(&mut hasher);
-    ctx.timestamp.hash(&mut hasher);
-    let id = hasher.finish();
+    let id = named_character_id(&name, ctx.timestamp.to_micros_since_unix_epoch());
 
     insert_new_character(ctx, name, id, false)
 }
@@ -2282,24 +2354,26 @@ pub(crate) fn insert_character_with_origin(
         focus: 1.0,
     });
     let generated_attributes = starting.map(|spec| &spec.attributes);
-    let character_attributes = CharacterAttributes {
-        character_id: id,
-        endurance: generated_attributes.map_or(2.0, |a| a.endurance),
-        immunity: generated_attributes.map_or(2.0, |a| a.immunity),
-        gut: generated_attributes.map_or(2.0, |a| a.gut),
-        intelligence: generated_attributes.map_or(2.0, |a| a.intelligence),
-        instinct: generated_attributes.map_or(2.0, |a| a.instinct),
-        eyesight: generated_attributes.map_or(2.0, |a| a.eyesight),
-        hearing: generated_attributes.map_or(2.0, |a| a.hearing),
-        left_arm_strength: generated_attributes.map_or(3.0, |a| a.strength),
-        right_arm_strength: generated_attributes.map_or(3.0, |a| a.strength),
-        left_leg_strength: generated_attributes.map_or(3.0, |a| a.strength),
-        right_leg_strength: generated_attributes.map_or(3.0, |a| a.strength),
-        left_arm_agility: generated_attributes.map_or(3.0, |a| a.agility),
-        right_arm_agility: generated_attributes.map_or(3.0, |a| a.agility),
-        left_leg_agility: generated_attributes.map_or(3.0, |a| a.agility),
-        right_leg_agility: generated_attributes.map_or(3.0, |a| a.agility),
-    };
+    let character_attributes = CharacterAttributes::from((
+        id,
+        PlayerAttributeValues {
+            endurance: generated_attributes.map_or(2.0, |a| a.endurance),
+            immunity: generated_attributes.map_or(2.0, |a| a.immunity),
+            gut: generated_attributes.map_or(2.0, |a| a.gut),
+            intelligence: generated_attributes.map_or(2.0, |a| a.intelligence),
+            instinct: generated_attributes.map_or(2.0, |a| a.instinct),
+            eyesight: generated_attributes.map_or(2.0, |a| a.eyesight),
+            hearing: generated_attributes.map_or(2.0, |a| a.hearing),
+            left_arm_strength: generated_attributes.map_or(3.0, |a| a.strength),
+            right_arm_strength: generated_attributes.map_or(3.0, |a| a.strength),
+            left_leg_strength: generated_attributes.map_or(3.0, |a| a.strength),
+            right_leg_strength: generated_attributes.map_or(3.0, |a| a.strength),
+            left_arm_agility: generated_attributes.map_or(3.0, |a| a.agility),
+            right_arm_agility: generated_attributes.map_or(3.0, |a| a.agility),
+            left_leg_agility: generated_attributes.map_or(3.0, |a| a.agility),
+            right_leg_agility: generated_attributes.map_or(3.0, |a| a.agility),
+        },
+    ));
     let _character_attrs = ctx
         .db
         .character_attributes()
@@ -2971,7 +3045,7 @@ fn equip_equipment_internal(
                 definition.equipment_placements.len()
             )
         })?;
-    if definition.kind == crate::item::ItemKind::Weapon {
+    if definition.kind == crate::item::PersistedItemKind::Weapon {
         match adventuresim_core::item_catalog::weapon_carry(&inventory.item_id) {
             Some(adventuresim_core::item_catalog::WeaponCarry::HandOnly)
                 if !hand_only_placement_is_held_root(placement) =>
@@ -3260,7 +3334,7 @@ fn equip_equipment_internal(
     Ok(())
 }
 
-fn hand_only_placement_is_held_root(placement: &crate::item::EquipmentPlacement) -> bool {
+fn hand_only_placement_is_held_root(placement: &crate::item::PersistedEquipmentPlacement) -> bool {
     placement.parents.is_empty()
         && placement.occupancy.len() == 1
         && matches!(
@@ -3407,7 +3481,7 @@ fn sheath_compatible_parent_placement_index(
 }
 
 fn select_sheath_compatible_parent_placement(
-    placements: &[crate::item::EquipmentPlacement],
+    placements: &[crate::item::PersistedEquipmentPlacement],
 ) -> Option<u16> {
     placements
         .iter()
@@ -3539,16 +3613,63 @@ pub(crate) fn replace_development_loadout(
 #[cfg(test)]
 mod starting_character_boundary_tests {
     use super::{
-        CharacterCreationMode, NpcLifeFacts, attachment_point_matches_requirement,
-        attachment_would_create_cycle, conflicting_root_requirements,
-        first_free_attachment_capacity, hand_only_placement_is_held_root,
-        initial_membership_minutes, select_sheath_compatible_parent_placement,
+        CharacterAttributes, CharacterCreationMode, NpcLifeFacts,
+        attachment_point_matches_requirement, attachment_would_create_cycle,
+        character_occupancy_id, conflicting_root_requirements, first_free_attachment_capacity,
+        hand_only_placement_is_held_root, initial_membership_minutes, named_character_id,
+        select_sheath_compatible_parent_placement,
     };
-    use crate::item::{
-        EquipmentAttachmentPoint, EquipmentOccupancyRequirement, EquipmentParentRequirement,
-        EquipmentPlacement,
+
+    use crate::item::{PersistedEquipmentAttachmentPoint, PersistedEquipmentPlacement};
+    use adventuresim_core::attribute::PlayerAttributeValues;
+    use adventuresim_core::item_catalog::{
+        EquipmentChannel, EquipmentLocation, OccupancyRequirement, ParentRequirement,
     };
-    use adventuresim_core::item_catalog::{EquipmentChannel, EquipmentLocation};
+
+    #[test]
+    fn character_occupancy_id_has_an_explicit_versioned_location_code() {
+        assert_eq!(
+            character_occupancy_id(7, EquipmentChannel::Held, 3, EquipmentLocation::LeftHand),
+            "equipment-occupancy:v1:character:7:left_hand:0:0"
+        );
+    }
+
+    #[test]
+    fn persistence_row_stays_flat_and_converts_through_the_shared_attribute_value() {
+        let values = PlayerAttributeValues {
+            endurance: 1.0,
+            immunity: 2.0,
+            gut: 3.0,
+            intelligence: 4.0,
+            instinct: 5.0,
+            eyesight: 6.0,
+            hearing: 7.0,
+            left_arm_strength: 8.0,
+            right_arm_strength: 9.0,
+            left_leg_strength: 10.0,
+            right_leg_strength: 11.0,
+            left_arm_agility: 12.0,
+            right_arm_agility: 13.0,
+            left_leg_agility: 14.0,
+            right_leg_agility: 15.0,
+        };
+        let row = CharacterAttributes::from((41, values.clone()));
+        assert_eq!(row.character_id, 41);
+        assert_eq!(row.endurance, values.endurance);
+        assert_eq!(row.right_leg_agility, values.right_leg_agility);
+        assert_eq!(row.values(), values);
+
+        let source = crate::production_source(include_str!("character.rs"));
+        let row_definition = source
+            .split("pub struct CharacterAttributes")
+            .nth(1)
+            .and_then(|tail| tail.split("impl CharacterAttributes").next())
+            .expect("flattened persistence row");
+        assert!(row_definition.contains("pub endurance: f32"));
+        assert!(row_definition.contains("pub right_leg_agility: f32"));
+        assert!(!row_definition.contains("pub values:"));
+        assert!(!source.contains("impl std::ops::Deref for CharacterAttributes"));
+    }
 
     #[test]
     fn membership_period_is_anchored_to_current_character_time() {
@@ -3559,6 +3680,15 @@ mod starting_character_boundary_tests {
                 9_000,
                 9_000 + 30 * adventuresim_core::strategic_time::MINUTES_PER_DAY
             )
+        );
+    }
+
+    #[test]
+    fn named_character_id_has_a_fixed_versioned_vector() {
+        assert_eq!(named_character_id("Ada", 123), 7_143_673_045_777_378_113);
+        assert_ne!(
+            named_character_id("Ada", 123),
+            named_character_id("Ada", 124)
         );
     }
 
@@ -3910,12 +4040,12 @@ mod starting_character_boundary_tests {
 
     #[test]
     fn durable_hand_only_boundary_accepts_only_one_held_hand_root() {
-        let held = EquipmentOccupancyRequirement {
+        let held = OccupancyRequirement {
             location: EquipmentLocation::LeftHand,
             channel: EquipmentChannel::Held,
             order: 0,
         };
-        let mut placement = EquipmentPlacement {
+        let mut placement = PersistedEquipmentPlacement {
             id: "left_hand".into(),
             occupancy: vec![held],
             parents: Vec::new(),
@@ -3929,7 +4059,7 @@ mod starting_character_boundary_tests {
         placement.occupancy.push(held);
         assert!(!hand_only_placement_is_held_root(&placement));
         placement.occupancy.pop();
-        placement.parents.push(EquipmentParentRequirement {
+        placement.parents.push(ParentRequirement {
             channel: EquipmentChannel::Containment,
             order: 0,
         });
@@ -3938,7 +4068,7 @@ mod starting_character_boundary_tests {
 
     #[test]
     fn generated_sheath_selection_skips_arbitrary_parent_placements() {
-        let parent_placement = |id: &str, parents| EquipmentPlacement {
+        let parent_placement = |id: &str, parents| PersistedEquipmentPlacement {
             id: id.into(),
             occupancy: Vec::new(),
             parents,
@@ -3947,7 +4077,7 @@ mod starting_character_boundary_tests {
         let placements = vec![
             parent_placement(
                 "mounted",
-                vec![EquipmentParentRequirement {
+                vec![ParentRequirement {
                     channel: EquipmentChannel::Mount,
                     order: 0,
                 }],
@@ -3955,11 +4085,11 @@ mod starting_character_boundary_tests {
             parent_placement(
                 "two_parents",
                 vec![
-                    EquipmentParentRequirement {
+                    ParentRequirement {
                         channel: EquipmentChannel::Containment,
                         order: 0,
                     },
-                    EquipmentParentRequirement {
+                    ParentRequirement {
                         channel: EquipmentChannel::Containment,
                         order: 0,
                     },
@@ -3967,14 +4097,14 @@ mod starting_character_boundary_tests {
             ),
             parent_placement(
                 "wrong_order",
-                vec![EquipmentParentRequirement {
+                vec![ParentRequirement {
                     channel: EquipmentChannel::Containment,
                     order: 1,
                 }],
             ),
             parent_placement(
                 "sheathed",
-                vec![EquipmentParentRequirement {
+                vec![ParentRequirement {
                     channel: EquipmentChannel::Containment,
                     order: 0,
                 }],
@@ -4002,12 +4132,12 @@ mod starting_character_boundary_tests {
 
     #[test]
     fn multi_location_conflicts_are_collected_without_displacing_any_item() {
-        let left = EquipmentOccupancyRequirement {
+        let left = OccupancyRequirement {
             location: EquipmentLocation::LeftArm,
             channel: EquipmentChannel::Padding,
             order: 0,
         };
-        let right = EquipmentOccupancyRequirement {
+        let right = OccupancyRequirement {
             location: EquipmentLocation::RightArm,
             channel: EquipmentChannel::Padding,
             order: 0,
@@ -4043,7 +4173,7 @@ mod starting_character_boundary_tests {
 
     #[test]
     fn parent_requirements_match_both_channel_and_authored_order() {
-        let point = EquipmentAttachmentPoint {
+        let point = PersistedEquipmentAttachmentPoint {
             id: "right".into(),
             channel: EquipmentChannel::Mount,
             capacity: 1,
@@ -4052,14 +4182,14 @@ mod starting_character_boundary_tests {
         };
         assert!(attachment_point_matches_requirement(
             &point,
-            EquipmentParentRequirement {
+            ParentRequirement {
                 channel: EquipmentChannel::Mount,
                 order: 1,
             }
         ));
         assert!(!attachment_point_matches_requirement(
             &point,
-            EquipmentParentRequirement {
+            ParentRequirement {
                 channel: EquipmentChannel::Mount,
                 order: 0,
             }

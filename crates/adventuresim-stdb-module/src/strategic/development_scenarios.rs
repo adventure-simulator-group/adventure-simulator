@@ -632,7 +632,7 @@ pub fn backend_development_quests(ctx: &ViewContext) -> Vec<BackendDevelopmentQu
             subject_id: contract.id,
             canonical_case_id: contract.case_id,
             title: contract.title,
-            status: format!("{:?}", contract.status).to_ascii_lowercase(),
+            status: contract.status.stable_id().to_owned(),
             incident_count: 0,
             public_awareness_bps: 0,
             supports_incident_action: false,

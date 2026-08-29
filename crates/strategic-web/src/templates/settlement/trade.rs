@@ -1,20 +1,24 @@
 use adventuresim_core::{
     equipment::{EncumbranceSummary, INPUT_ADDRESS_MAPPINGS, InputAddressMapping},
-    food::CookingMethod,
     item_catalog_schema::{
         EquipmentChannel as CoreEquipmentChannel, EquipmentLocation as CoreEquipmentLocation,
     },
 };
-use adventuresim_stdb_client::EquipmentChannel;
+use adventuresim_stdb_client::{
+    CookingMethod, EquipmentChannel as SatsEquipmentChannel, FilthOrigin, FilthSubstance,
+    IngredientPreparationAction,
+};
 use maud::{Markup, html};
 
 use super::{
     character_details::religion_name,
     character_health::stat_icon,
     character_skills::{SkillRankBarOptions, skill_rank_bar},
-    chrome::{party_portrait_overlay, visual_stage},
+    chrome::{VisualStageKind, party_portrait_overlay, visual_stage},
     context::LocationView,
-    rest::{RestSummary, SoapRestPreview, rest_default_minutes, rest_service_menu},
+    rest::{
+        RestServiceKind, RestSummary, SoapRestPreview, rest_default_minutes, rest_service_menu,
+    },
     social::{
         forge_description_stage, inventory_rail, merchant_offers_rail, npc_description_stage,
         npc_location_id, npc_portrait_strip, player_chat_area, settlement_chat_area,
@@ -22,10 +26,11 @@ use super::{
     },
 };
 use crate::spacetimedb::{
-    BackendFireplaceDish, BackendFireplaceStation, BackendIngredientPreparationPlan, Character,
-    CharacterCondition, CharacterEquipmentGraph, CharacterLimbs, CharacterStats, EquipmentBodyPart,
-    EquipmentLocation, FoodLot, IngredientPreparationAction, InventoryItem, InventoryItemAmount,
-    InventoryQuantityTarget, ItemDefinition, PartyInventoryItem, PartyItemAmount, Settlement,
+    BackendFireplaceDish, BackendFireplaceStation, BackendIngredientPreparationPlan,
+    CatalogItemView, CharacterCondition, CharacterEquipmentGraph, CharacterLimbs, CharacterStats,
+    CharacterView, EquipmentBodyPart, EquipmentLocation, FoodLot, InventoryItem,
+    InventoryItemAmount, InventoryQuantityTarget, ItemConditionExt, PartyInventoryItem,
+    PartyItemAmount, SettlementView,
 };
 use crate::templates::inventory_browser::{InventoryBrowser, InventoryColumnSet};
 use crate::templates::{
@@ -60,7 +65,7 @@ impl MerchantShop {
         }
     }
 
-    pub fn available_at(self, settlement: &Settlement) -> bool {
+    pub fn available_at(self, settlement: &SettlementView) -> bool {
         adventuresim_core::settlement_economy::storefront_available(
             &settlement.economy,
             self.storefront(),
@@ -72,19 +77,23 @@ impl MerchantShop {
             .is_some())
     }
 
-    fn stocks_at(self, settlement: &Settlement, item: &crate::spacetimedb::ItemDefinition) -> bool {
+    fn stocks_at(
+        self,
+        settlement: &SettlementView,
+        item: &crate::spacetimedb::CatalogItemView,
+    ) -> bool {
         use adventuresim_core::settlement_economy::CatalogKind as C;
         let kind = match item.kind {
-            crate::spacetimedb::ItemKind::Simple => C::Simple,
-            crate::spacetimedb::ItemKind::Weapon => C::Weapon,
-            crate::spacetimedb::ItemKind::Armor => C::Armor,
-            crate::spacetimedb::ItemKind::Shield => C::Shield,
-            crate::spacetimedb::ItemKind::Clothing => C::Clothing,
-            crate::spacetimedb::ItemKind::Container => C::Simple,
-            crate::spacetimedb::ItemKind::Currency => C::Currency,
-            crate::spacetimedb::ItemKind::Ingredient => C::Ingredient,
-            crate::spacetimedb::ItemKind::Medication => C::Medication,
-            crate::spacetimedb::ItemKind::Food => C::Food,
+            crate::spacetimedb::CatalogItemKind::Simple => C::Simple,
+            crate::spacetimedb::CatalogItemKind::Weapon => C::Weapon,
+            crate::spacetimedb::CatalogItemKind::Armor => C::Armor,
+            crate::spacetimedb::CatalogItemKind::Shield => C::Shield,
+            crate::spacetimedb::CatalogItemKind::Clothing => C::Clothing,
+            crate::spacetimedb::CatalogItemKind::Container => C::Simple,
+            crate::spacetimedb::CatalogItemKind::Currency => C::Currency,
+            crate::spacetimedb::CatalogItemKind::Ingredient => C::Ingredient,
+            crate::spacetimedb::CatalogItemKind::Medication => C::Medication,
+            crate::spacetimedb::CatalogItemKind::Food => C::Food,
         };
         let stocked = adventuresim_core::settlement_economy::storefront_stocks(
             &settlement.economy,
@@ -127,24 +136,26 @@ impl MerchantShop {
         }
     }
 
-    fn stocks(self, item: &crate::spacetimedb::ItemDefinition) -> bool {
+    fn stocks(self, item: &crate::spacetimedb::CatalogItemView) -> bool {
         let kind = item.kind;
         match self {
             Self::General => !matches!(
                 kind,
-                crate::spacetimedb::ItemKind::Currency
-                    | crate::spacetimedb::ItemKind::Ingredient
-                    | crate::spacetimedb::ItemKind::Medication
+                crate::spacetimedb::CatalogItemKind::Currency
+                    | crate::spacetimedb::CatalogItemKind::Ingredient
+                    | crate::spacetimedb::CatalogItemKind::Medication
             ),
             Self::Weapons => matches!(
                 kind,
-                crate::spacetimedb::ItemKind::Weapon | crate::spacetimedb::ItemKind::Shield
+                crate::spacetimedb::CatalogItemKind::Weapon
+                    | crate::spacetimedb::CatalogItemKind::Shield
             ),
-            Self::Armor => kind == crate::spacetimedb::ItemKind::Armor,
-            Self::Clothing => kind == crate::spacetimedb::ItemKind::Clothing,
+            Self::Armor => kind == crate::spacetimedb::CatalogItemKind::Armor,
+            Self::Clothing => kind == crate::spacetimedb::CatalogItemKind::Clothing,
             Self::Herbalist => matches!(
                 kind,
-                crate::spacetimedb::ItemKind::Ingredient | crate::spacetimedb::ItemKind::Medication
+                crate::spacetimedb::CatalogItemKind::Ingredient
+                    | crate::spacetimedb::CatalogItemKind::Medication
             ),
             Self::Inn => {
                 adventuresim_core::food::definition(&item.id).is_some()
@@ -158,17 +169,17 @@ impl MerchantShop {
         }
     }
 
-    fn shows_inventory(self, item: &crate::spacetimedb::ItemDefinition) -> bool {
-        item.kind == crate::spacetimedb::ItemKind::Currency || self.stocks(item)
+    fn shows_inventory(self, item: &crate::spacetimedb::CatalogItemView) -> bool {
+        item.kind == crate::spacetimedb::CatalogItemKind::Currency || self.stocks(item)
     }
 }
 
 pub fn merchants_page(
-    settlement: &Settlement,
-    active_character: Option<&Character>,
+    settlement: &SettlementView,
+    active_character: Option<&CharacterView>,
     inventory: &[InventoryItem],
     food_lots: &[FoodLot],
-    party_members: &[Character],
+    party_members: &[CharacterView],
     logged_in_as: Option<&str>,
 ) -> Markup {
     service_page(
@@ -195,12 +206,12 @@ pub fn merchants_page(
     reason = "the religion page boundary composes independent settlement, party, and service projections"
 )]
 pub fn religion_page(
-    settlement: &Settlement,
-    active_character: Option<&Character>,
+    settlement: &SettlementView,
+    active_character: Option<&CharacterView>,
     inventory: &[InventoryItem],
-    items: &[crate::spacetimedb::ItemDefinition],
+    items: &[crate::spacetimedb::CatalogItemView],
     food_lots: &[FoodLot],
-    party_members: &[Character],
+    party_members: &[CharacterView],
     limbs: Option<&CharacterLimbs>,
     stats: Option<&CharacterStats>,
     condition: Option<&CharacterCondition>,
@@ -240,13 +251,13 @@ pub fn religion_page(
 )]
 pub fn party_inventory_page(
     location: &LocationView,
-    selected: &Character,
+    selected: &CharacterView,
     selected_inventory: &[InventoryItem],
-    active_character: &Character,
+    active_character: &CharacterView,
     active_inventory: &[InventoryItem],
-    items: &[crate::spacetimedb::ItemDefinition],
+    items: &[crate::spacetimedb::CatalogItemView],
     food_lots: &[FoodLot],
-    party_members: &[Character],
+    party_members: &[CharacterView],
     selected_equip: Option<&CharacterEquipmentGraph>,
     active_equip: Option<&CharacterEquipmentGraph>,
     selected_targets: &[InventoryQuantityTarget],
@@ -259,8 +270,8 @@ pub fn party_inventory_page(
             (party_trade_inventory_rail(selected, selected_inventory, items, food_lots, active_character.id, "right", selected_equip, active_targets, selected_encumbrance, false))
         }
         main class="center-content settlement-main party-member-stage" {
-            (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(selected.id), false))
-            (visual_stage("character", &selected.name, "Party member and trading companion"))
+            (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(selected.id)))
+            (visual_stage(VisualStageKind::Character, &selected.name, "Party member and trading companion"))
             (player_chat_area(location, selected, active_character))
             form id="party-offer" class="party-offer" action=(format!("{}/party/{}/inventory/offer", location.base_path(), selected.id)) method="post" hidden
                 role="dialog" aria-modal="true" aria-label="Confirm party item offer" tabindex="-1" {
@@ -283,12 +294,12 @@ pub fn party_inventory_page(
 )]
 pub fn party_discard_page(
     location: &LocationView,
-    active_character: &Character,
+    active_character: &CharacterView,
     inventory: &[InventoryItem],
-    items: &[crate::spacetimedb::ItemDefinition],
+    items: &[crate::spacetimedb::CatalogItemView],
     food_lots: &[FoodLot],
     preparation_plans: &[BackendIngredientPreparationPlan],
-    party_members: &[Character],
+    party_members: &[CharacterView],
     equip: Option<&CharacterEquipmentGraph>,
     encumbrance: EncumbranceSummary,
 ) -> Markup {
@@ -302,8 +313,8 @@ pub fn party_discard_page(
             }))
         }
         main class="center-content settlement-main party-member-stage" {
-            (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(active_character.id), false))
-            (visual_stage("character", &active_character.name, "Your carried equipment and supplies"))
+            (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(active_character.id)))
+            (visual_stage(VisualStageKind::Character, &active_character.name, "Your carried equipment and supplies"))
             (settlement_chat_area(&active_character.name, Some(active_character)))
             form id="inventory-discard" class="party-offer"
                 action=(format!("{}/party/{}/inventory/discard", location.base_path(), active_character.id))
@@ -329,14 +340,14 @@ pub fn fireplace_page(
     back_href: &str,
     action_base: &str,
     rest_action: &str,
-    _active_character: &Character,
+    _active_character: &CharacterView,
     inventory_scope: &str,
     personal_inventory: &[InventoryItem],
     party_inventory: &[PartyInventoryItem],
     personal_amounts: &[InventoryItemAmount],
     party_amounts: &[PartyItemAmount],
     food_lots: &[FoodLot],
-    definitions: &[ItemDefinition],
+    definitions: &[CatalogItemView],
     station: Option<&BackendFireplaceStation>,
     dish: Option<&BackendFireplaceDish>,
     vessel_stations: &[BackendFireplaceStation],
@@ -484,7 +495,7 @@ pub fn fireplace_page(
         }
         main class="center-content settlement-main fireplace-stage" {
             a class="btn btn-secondary btn-small" href=(back_href) { "Back" }
-            (visual_stage("campfire", title, "A working fireplace and its cooking station"))
+            (visual_stage(VisualStageKind::Campfire, title, "A working fireplace and its cooking station"))
             @if dish.is_none() {
                 section class="cooking-activity" {
                     input type="radio" name="method-preview" value=(method) checked hidden data-cooking-method;
@@ -541,7 +552,7 @@ fn fireplace_inventory_row(
     quantity: u32,
     measured_fraction_micros: Option<u32>,
     lot: Option<&FoodLot>,
-    definitions: &[ItemDefinition],
+    definitions: &[CatalogItemView],
     _installed: Option<&str>,
 ) -> Markup {
     let definition = definitions.iter().find(|d| d.id == item_id);
@@ -593,7 +604,6 @@ pub(super) fn filth_status_bar(
     deposits: &[crate::spacetimedb::CharacterFilth],
     wetness_bps: u16,
 ) -> Markup {
-    use crate::spacetimedb::{FilthOrigin, FilthSubstance};
     let dirt: u16 = deposits
         .iter()
         .filter(|d| d.substance == FilthSubstance::Dirt)
@@ -690,16 +700,16 @@ pub(super) fn religious_demand_rail(
     reason = "the service page boundary composes independent settlement, inventory, and recovery projections"
 )]
 pub(super) fn service_page(
-    settlement: &Settlement,
+    settlement: &SettlementView,
     service_id: &str,
     title: &str,
     npc_name: &str,
     service_summary: &str,
-    active_character: Option<&Character>,
+    active_character: Option<&CharacterView>,
     inventory: &[InventoryItem],
-    items: &[crate::spacetimedb::ItemDefinition],
+    items: &[crate::spacetimedb::CatalogItemView],
     food_lots: &[FoodLot],
-    party_members: &[Character],
+    party_members: &[CharacterView],
     logged_in_as: Option<&str>,
     rest_default_minutes: Option<u64>,
     rest_summary: Option<&RestSummary>,
@@ -733,7 +743,7 @@ pub(super) fn service_page(
             @if service_id == "inn" {
                 div class="service-left-stack" {
                     div class="service-inventory-area" { (merchant_offers_rail("Inn supplies", &["Rations", "Water", "Supplies", "Bed for the night"])) }
-                    (rest_service_menu("Inn", &settlement.id, "inn", rest_default_minutes, rest_summary, soap_preview))
+                    (rest_service_menu("Inn", &settlement.id, RestServiceKind::Inn, rest_default_minutes, rest_summary, soap_preview))
                 }
             } @else if service_id == "religion" {
                 div class="service-left-stack" {
@@ -744,7 +754,7 @@ pub(super) fn service_page(
                             }
                         }))
                     }
-                    (rest_service_menu("Temple", &settlement.id, "temple", rest_default_minutes, rest_summary, soap_preview))
+                    (rest_service_menu("Temple", &settlement.id, RestServiceKind::Temple, rest_default_minutes, rest_summary, soap_preview))
                 }
             } @else if let Some((stock_title, offers)) = trade_offers {
                 (merchant_offers_rail(stock_title, offers))
@@ -755,7 +765,7 @@ pub(super) fn service_page(
             }
         }
         main class="center-content settlement-main" {
-            (party_portrait_overlay(party_members, active_character, &format!("/locations/settlement/{}", settlement.id), None, false))
+            (party_portrait_overlay(party_members, active_character, &format!("/locations/settlement/{}", settlement.id), None))
             (npc_portrait_strip(&settlement.id, npc_location_id(service_id)))
             (npc_description_stage(npc_name, &format!("{title} host and service counter")))
             (settlement_resident_chat_area(title, active_character, &settlement.id, npc_location_id(service_id), Some(service_id)))
@@ -806,9 +816,9 @@ pub(super) fn service_page(
     reason = "the trade rail combines independent custody, selection, and encumbrance projections"
 )]
 fn party_trade_inventory_rail(
-    character: &Character,
+    character: &CharacterView,
     inventory: &[InventoryItem],
-    items: &[crate::spacetimedb::ItemDefinition],
+    items: &[crate::spacetimedb::CatalogItemView],
     food_lots: &[FoodLot],
     recipient_id: u64,
     direction: &str,
@@ -862,9 +872,9 @@ fn party_trade_inventory_rail(
     reason = "the discard rail combines independent custody, selection, and encumbrance projections"
 )]
 fn discard_inventory_rail(
-    character: &Character,
+    character: &CharacterView,
     inventory: &[InventoryItem],
-    items: &[crate::spacetimedb::ItemDefinition],
+    items: &[crate::spacetimedb::CatalogItemView],
     food_lots: &[FoodLot],
     preparation_plans: &[BackendIngredientPreparationPlan],
     return_to: &str,
@@ -968,13 +978,13 @@ fn ingredient_preparation_submission_form(
     reason = "the merchant page boundary composes independently loaded stock, custody, and service projections"
 )]
 pub fn live_merchant_shop_page(
-    settlement: &Settlement,
-    character: &Character,
+    settlement: &SettlementView,
+    character: &CharacterView,
     inventory: &[InventoryItem],
     personal_amounts: &[InventoryItemAmount],
-    items: &[crate::spacetimedb::ItemDefinition],
+    items: &[crate::spacetimedb::CatalogItemView],
     food_lots: &[FoodLot],
-    party_members: &[Character],
+    party_members: &[CharacterView],
     equip: Option<&CharacterEquipmentGraph>,
     personal_targets: &[InventoryQuantityTarget],
     party_targets: &[InventoryQuantityTarget],
@@ -1056,7 +1066,7 @@ pub fn live_merchant_shop_page(
             } @else {
             (trade_inventory_table("merchant-left", if matches!(shop, MerchantShop::Weapons) { InventoryColumnSet::Weapons } else if matches!(shop, MerchantShop::Armor) { InventoryColumnSet::Armor } else { InventoryColumnSet::Basic }, false, false, false, html! {
                 @for item in stocked_items.iter().copied() {
-                    @let is_currency = item.kind == crate::spacetimedb::ItemKind::Currency;
+                    @let is_currency = item.kind == crate::spacetimedb::CatalogItemKind::Currency;
                     @let intervention = adventuresim_core::physiology::intervention_profile(&item.id, 1);
                     @let buy_price = adventuresim_core::local_problem::adjust_price(adventuresim_core::strategic_economy::language_adjusted_buy_price(
                         adventuresim_core::strategic_economy::merchant_buy_price(item.base_value.unwrap_or(1)),
@@ -1079,7 +1089,7 @@ pub fn live_merchant_shop_page(
         }
         @if matches!(shop, MerchantShop::Inn) {
             section class="inn-rest-panel" aria-label="Inn lodging and rest" {
-                (rest_service_menu("Inn", &settlement.id, "inn", rest_default_minutes, None, soap_preview))
+                (rest_service_menu("Inn", &settlement.id, RestServiceKind::Inn, rest_default_minutes, None, soap_preview))
             }
         }
         }
@@ -1087,7 +1097,7 @@ pub fn live_merchant_shop_page(
             (repair_custody_panel(settlement, shop, repair_orders, conditions, items, now_minutes, smith_skill))
         }
         }
-        main class="center-content settlement-main" { (party_portrait_overlay(party_members, Some(character), &format!("/locations/settlement/{}", settlement.id), None, false)) (npc_portrait_strip(&settlement.id, npc_location_id(service_id))) @if matches!(shop, MerchantShop::Weapons) { (forge_description_stage(title, "Forge preview loading")) } @else { (npc_description_stage(title, "Merchant counter and attending craftsperson")) } (settlement_resident_chat_area(title, Some(character), &settlement.id, npc_location_id(service_id), Some(service_id))) form # "merchant-offer" class="party-offer" action=(if matches!(shop, MerchantShop::Herbalist) { format!("/settlements/{}/herbalist/purchase", settlement.id) } else { format!("/settlements/{}/storefront/{service_id}/offer", settlement.id) }) method="post" hidden role="dialog" aria-modal="true" aria-label="Confirm merchant offer" tabindex="-1" { span class="party-offer-summary" { "Review and submit the staged trade." } input type="hidden" name="return_to" value=(format!("/settlements/{}/{}", settlement.id, service_id)); input type="hidden" name="inventory_scope" value="player"; button type="button" class="party-offer-cancel" data-cancel-trade="merchant" { "Cancel" } button type="submit" disabled { "Offer" } } }
+        main class="center-content settlement-main" { (party_portrait_overlay(party_members, Some(character), &format!("/locations/settlement/{}", settlement.id), None)) (npc_portrait_strip(&settlement.id, npc_location_id(service_id))) @if matches!(shop, MerchantShop::Weapons) { (forge_description_stage(title, "Forge preview loading")) } @else { (npc_description_stage(title, "Merchant counter and attending craftsperson")) } (settlement_resident_chat_area(title, Some(character), &settlement.id, npc_location_id(service_id), Some(service_id))) form # "merchant-offer" class="party-offer" action=(if matches!(shop, MerchantShop::Herbalist) { format!("/settlements/{}/herbalist/purchase", settlement.id) } else { format!("/settlements/{}/storefront/{service_id}/offer", settlement.id) }) method="post" hidden role="dialog" aria-modal="true" aria-label="Confirm merchant offer" tabindex="-1" { span class="party-offer-summary" { "Review and submit the staged trade." } input type="hidden" name="return_to" value=(format!("/settlements/{}/{}", settlement.id, service_id)); input type="hidden" name="inventory_scope" value="player"; button type="button" class="party-offer-cancel" data-cancel-trade="merchant" { "Cancel" } button type="submit" disabled { "Offer" } } }
         aside class="right-sidebar inventory-owner-panel" data-inventory-tabs {
             nav class="inventory-owner-tabs" aria-label="Trading inventory" {
                 button type="button" class="inventory-owner-tab active" data-inventory-tab="player" { "Player" }
@@ -1103,7 +1113,7 @@ pub fn live_merchant_shop_page(
                         @let definition = items.iter().find(|definition| definition.id == item.item_id);
                         @let food_lot = food_lots.iter().find(|lot| lot.inventory_item_id == Some(item.id));
                         @let food_display_name = food_lot.map_or_else(|| item_display_name(&item.item_id), |lot| lot.display_name.clone());
-                        @let is_currency = definition.is_some_and(|definition| definition.kind == crate::spacetimedb::ItemKind::Currency);
+                        @let is_currency = definition.is_some_and(|definition| definition.kind == crate::spacetimedb::CatalogItemKind::Currency);
                         @let is_equipped = equip.is_some_and(|equip| equip.contains(item.id));
                         @let sell_price = adventuresim_core::local_problem::adjust_price(adventuresim_core::strategic_economy::language_adjusted_sell_price(merchant_inventory_sell_price(definition, food_lot), trade_language), -problem_sell_penalty_bps);
                         @let target = target_quantity(personal_targets, &item.item_id);
@@ -1112,7 +1122,7 @@ pub fn live_merchant_shop_page(
                         @let condition = conditions.iter().find(|condition| condition.inventory_item_id == item.id);
                         @let repair_skill = smith_skill;
                         @let durable_item = definition.is_some_and(|definition| definition.repairable);
-                        @let service_matches = definition.is_some_and(|definition| if matches!(shop, MerchantShop::Armor) { definition.kind == crate::spacetimedb::ItemKind::Armor } else if matches!(shop, MerchantShop::Clothing) { definition.kind == crate::spacetimedb::ItemKind::Clothing } else { matches!(definition.kind, crate::spacetimedb::ItemKind::Weapon | crate::spacetimedb::ItemKind::Shield) });
+                        @let service_matches = definition.is_some_and(|definition| if matches!(shop, MerchantShop::Armor) { definition.kind == crate::spacetimedb::CatalogItemKind::Armor } else if matches!(shop, MerchantShop::Clothing) { definition.kind == crate::spacetimedb::CatalogItemKind::Clothing } else { matches!(definition.kind, crate::spacetimedb::CatalogItemKind::Weapon | crate::spacetimedb::CatalogItemKind::Shield) });
                         @let can_sell = !is_currency && !is_equipped;
                         td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
                         td class="inventory-item-name" { (item_name_with_food_lot(&item.item_id, &food_display_name, definition, food_lot)) @if !matches!(shop, MerchantShop::Herbalist | MerchantShop::Weapons) && (can_sell || service_matches) { (merchant_sell_repair_controls(item.id, &item.item_id, sell_price, item.quantity, target, can_sell, service_matches.then(|| repair_submit_control(settlement, service_id, item.id, condition, repair_skill)))) } }
@@ -1146,7 +1156,7 @@ pub fn live_merchant_shop_page(
                         @let definition = items.iter().find(|definition| definition.id == item.item_id);
                         @let food_lot = food_lots.iter().find(|lot| lot.party_inventory_item_id == Some(item.id));
                         @let food_display_name = food_lot.map_or_else(|| item_display_name(&item.item_id), |lot| lot.display_name.clone());
-                        @let is_currency = definition.is_some_and(|definition| definition.kind == crate::spacetimedb::ItemKind::Currency);
+                        @let is_currency = definition.is_some_and(|definition| definition.kind == crate::spacetimedb::CatalogItemKind::Currency);
                         @let sell_price = adventuresim_core::local_problem::adjust_price(adventuresim_core::strategic_economy::language_adjusted_sell_price(merchant_inventory_sell_price(definition, food_lot), trade_language), -problem_sell_penalty_bps);
                         @let target = target_quantity(party_targets, &item.item_id);
                         tr class="trade-inventory-row trade-row-player" data-merchant-item=(&item.item_id) data-party-inventory-id=(item.id) data-inventory-quantity=(item.quantity) data-target=(target) {
@@ -1160,7 +1170,7 @@ pub fn live_merchant_shop_page(
                     // Party purchases may spend pooled coin first and the active
                     // character's coin second. Show both funding sources as the
                     // same collapsed Coin row in this scope.
-                    @for item in inventory.iter().filter(|item| items.iter().find(|definition| definition.id == item.item_id).is_some_and(|definition| definition.kind == crate::spacetimedb::ItemKind::Currency)) {
+                    @for item in inventory.iter().filter(|item| items.iter().find(|definition| definition.id == item.item_id).is_some_and(|definition| definition.kind == crate::spacetimedb::CatalogItemKind::Currency)) {
                         @let definition = items.iter().find(|definition| definition.id == item.item_id);
                         tr class="trade-inventory-row trade-row-player party-personal-currency" data-merchant-item=(&item.item_id) data-inventory-quantity=(item.quantity) data-target="0" title="Personal coin available for party purchases" {
                             td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
@@ -1207,14 +1217,14 @@ pub fn live_merchant_shop_page(
 )]
 pub fn party_pool_page(
     location: &LocationView,
-    character: &Character,
+    character: &CharacterView,
     inventory: &[InventoryItem],
     pooled: &[PartyInventoryItem],
     stake: u64,
-    items: &[crate::spacetimedb::ItemDefinition],
+    items: &[crate::spacetimedb::CatalogItemView],
     food_lots: &[FoodLot],
     preparation_plans: &[BackendIngredientPreparationPlan],
-    party_members: &[Character],
+    party_members: &[CharacterView],
     equip: Option<&CharacterEquipmentGraph>,
     personal_targets: &[InventoryQuantityTarget],
     party_targets: &[InventoryQuantityTarget],
@@ -1268,8 +1278,8 @@ pub fn party_pool_page(
             }))
         }
         main class="center-content settlement-main" {
-            (party_portrait_overlay(party_members, Some(character), &location.base_path(), None, false))
-            (visual_stage("chest", "Party chest", "Shared supplies and each member's stake"))
+            (party_portrait_overlay(party_members, Some(character), &location.base_path(), None))
+            (visual_stage(VisualStageKind::Chest, "Party chest", "Shared supplies and each member's stake"))
             (settlement_chat_area("Party inventory", Some(character)))
         }
         aside class="right-sidebar" {
@@ -1311,12 +1321,12 @@ pub fn party_pool_page(
     location.render_layout("Party inventory", content, Some(&character.name))
 }
 
-fn item_weight(item: Option<&crate::spacetimedb::ItemDefinition>) -> String {
+fn item_weight(item: Option<&crate::spacetimedb::CatalogItemView>) -> String {
     item.map_or_else(|| "—".to_owned(), |item| weight_display(item.weight))
 }
 
 fn merchant_inventory_weight(
-    definition: Option<&crate::spacetimedb::ItemDefinition>,
+    definition: Option<&crate::spacetimedb::CatalogItemView>,
     food_lot: Option<&FoodLot>,
 ) -> String {
     food_lot.map_or_else(
@@ -1326,7 +1336,7 @@ fn merchant_inventory_weight(
 }
 
 fn merchant_inventory_sell_price(
-    definition: Option<&crate::spacetimedb::ItemDefinition>,
+    definition: Option<&crate::spacetimedb::CatalogItemView>,
     food_lot: Option<&FoodLot>,
 ) -> u32 {
     food_lot.map_or_else(
@@ -1475,6 +1485,72 @@ fn equipment_location_display(location: CoreEquipmentLocation) -> &'static str {
     }
 }
 
+fn equipment_location_wire_label(location: CoreEquipmentLocation) -> &'static str {
+    match location {
+        CoreEquipmentLocation::Head => "Head",
+        CoreEquipmentLocation::Face => "Face",
+        CoreEquipmentLocation::Neck => "Neck",
+        CoreEquipmentLocation::Chest => "Chest",
+        CoreEquipmentLocation::Stomach => "Stomach",
+        CoreEquipmentLocation::Back => "Back",
+        CoreEquipmentLocation::LeftShoulder => "LeftShoulder",
+        CoreEquipmentLocation::RightShoulder => "RightShoulder",
+        CoreEquipmentLocation::LeftArm => "LeftArm",
+        CoreEquipmentLocation::RightArm => "RightArm",
+        CoreEquipmentLocation::LeftHand => "LeftHand",
+        CoreEquipmentLocation::RightHand => "RightHand",
+        CoreEquipmentLocation::LeftLeg => "LeftLeg",
+        CoreEquipmentLocation::RightLeg => "RightLeg",
+        CoreEquipmentLocation::LeftFoot => "LeftFoot",
+        CoreEquipmentLocation::RightFoot => "RightFoot",
+        CoreEquipmentLocation::LeftBelt => "LeftBelt",
+        CoreEquipmentLocation::RightBelt => "RightBelt",
+        CoreEquipmentLocation::FrontBelt => "FrontBelt",
+        CoreEquipmentLocation::BackBelt => "BackBelt",
+        CoreEquipmentLocation::LeftPocket => "LeftPocket",
+        CoreEquipmentLocation::RightPocket => "RightPocket",
+        CoreEquipmentLocation::BackLeftPocket => "BackLeftPocket",
+        CoreEquipmentLocation::BackRightPocket => "BackRightPocket",
+    }
+}
+
+fn item_kind_tag(kind: crate::spacetimedb::CatalogItemKind) -> &'static str {
+    use crate::spacetimedb::CatalogItemKind;
+
+    match kind {
+        CatalogItemKind::Simple => "simple",
+        CatalogItemKind::Weapon => "weapon",
+        CatalogItemKind::Armor => "armor",
+        CatalogItemKind::Shield => "shield",
+        CatalogItemKind::Clothing => "clothing",
+        CatalogItemKind::Container => "container",
+        CatalogItemKind::Currency => "currency",
+        CatalogItemKind::Ingredient => "ingredient",
+        CatalogItemKind::Medication => "medication",
+        CatalogItemKind::Food => "food",
+    }
+}
+
+fn slot_wire_label(slot: crate::spacetimedb::Slot) -> &'static str {
+    use crate::spacetimedb::Slot;
+
+    match slot {
+        Slot::None => "None",
+        Slot::LeftHolding => "LeftHolding",
+        Slot::RightHolding => "RightHolding",
+        Slot::LeftArm => "LeftArm",
+        Slot::RightArm => "RightArm",
+        Slot::LeftLeg => "LeftLeg",
+        Slot::RightLeg => "RightLeg",
+        Slot::Chest => "Chest",
+        Slot::Stomach => "Stomach",
+        Slot::Head => "Head",
+        Slot::AnyHolding => "AnyHolding",
+        Slot::AnyArm => "AnyArm",
+        Slot::AnyLeg => "AnyLeg",
+    }
+}
+
 fn equipped_location_display(location: EquipmentLocation) -> &'static str {
     match location {
         EquipmentLocation::Head => "Head",
@@ -1516,26 +1592,26 @@ fn equipment_body_part_display(part: EquipmentBodyPart) -> &'static str {
     }
 }
 
-fn core_equipment_channel(channel: EquipmentChannel) -> CoreEquipmentChannel {
+fn core_equipment_channel(channel: SatsEquipmentChannel) -> CoreEquipmentChannel {
     match channel {
-        EquipmentChannel::Held => CoreEquipmentChannel::Held,
-        EquipmentChannel::BaseClothing => CoreEquipmentChannel::BaseClothing,
-        EquipmentChannel::Padding => CoreEquipmentChannel::Padding,
-        EquipmentChannel::FlexibleArmor => CoreEquipmentChannel::FlexibleArmor,
-        EquipmentChannel::RigidArmor => CoreEquipmentChannel::RigidArmor,
-        EquipmentChannel::Outerwear => CoreEquipmentChannel::Outerwear,
-        EquipmentChannel::Accessory => CoreEquipmentChannel::Accessory,
-        EquipmentChannel::Mount => CoreEquipmentChannel::Mount,
-        EquipmentChannel::Containment => CoreEquipmentChannel::Containment,
+        SatsEquipmentChannel::Held => CoreEquipmentChannel::Held,
+        SatsEquipmentChannel::BaseClothing => CoreEquipmentChannel::BaseClothing,
+        SatsEquipmentChannel::Padding => CoreEquipmentChannel::Padding,
+        SatsEquipmentChannel::FlexibleArmor => CoreEquipmentChannel::FlexibleArmor,
+        SatsEquipmentChannel::RigidArmor => CoreEquipmentChannel::RigidArmor,
+        SatsEquipmentChannel::Outerwear => CoreEquipmentChannel::Outerwear,
+        SatsEquipmentChannel::Accessory => CoreEquipmentChannel::Accessory,
+        SatsEquipmentChannel::Mount => CoreEquipmentChannel::Mount,
+        SatsEquipmentChannel::Containment => CoreEquipmentChannel::Containment,
     }
 }
 
-fn equipment_channel_rank(channel: EquipmentChannel) -> u64 {
-    u64::from(core_equipment_channel(channel).order())
+fn equipment_channel_rank(channel: CoreEquipmentChannel) -> u64 {
+    u64::from(channel.order())
 }
 
-fn equipment_channel_label(channel: EquipmentChannel) -> &'static str {
-    match core_equipment_channel(channel) {
+fn equipment_channel_label(channel: CoreEquipmentChannel) -> &'static str {
+    match channel {
         CoreEquipmentChannel::Held => "Held",
         CoreEquipmentChannel::BaseClothing => "Base clothing",
         CoreEquipmentChannel::Padding => "Padding",
@@ -1560,13 +1636,13 @@ fn equipment_binding_contains(binding: &InputAddressMapping, location: Equipment
 fn equipment_item_roots(
     equip: &CharacterEquipmentGraph,
     inventory_item_id: u64,
-) -> Vec<(EquipmentLocation, EquipmentChannel, u16, usize)> {
+) -> Vec<(EquipmentLocation, CoreEquipmentChannel, u16, usize)> {
     fn visit(
         equip: &CharacterEquipmentGraph,
         inventory_item_id: u64,
         attachment_depth: usize,
         path: &mut std::collections::BTreeSet<u64>,
-        roots: &mut Vec<(EquipmentLocation, EquipmentChannel, u16, usize)>,
+        roots: &mut Vec<(EquipmentLocation, CoreEquipmentChannel, u16, usize)>,
     ) {
         if !path.insert(inventory_item_id) {
             return;
@@ -1577,7 +1653,12 @@ fn equipment_item_roots(
             .filter(|row| row.inventory_item_id == inventory_item_id)
         {
             if let Some(location) = row.location {
-                roots.push((location, row.channel, row.order, attachment_depth));
+                roots.push((
+                    crate::spacetimedb::core_equipment_location(location),
+                    core_equipment_channel(row.channel),
+                    row.order,
+                    attachment_depth,
+                ));
             } else if let Some(parent_id) = row.parent_inventory_item_id {
                 visit(equip, parent_id, attachment_depth + 1, path, roots);
             }
@@ -1598,7 +1679,7 @@ fn equipment_item_roots(
 
 fn equipment_binding_rank(
     binding: &InputAddressMapping,
-    roots: &[(EquipmentLocation, EquipmentChannel, u16, usize)],
+    roots: &[(EquipmentLocation, CoreEquipmentChannel, u16, usize)],
 ) -> Option<u64> {
     roots
         .iter()
@@ -1704,13 +1785,14 @@ fn equipped_input_badges(
 
 fn equipment_control(
     inventory: &InventoryItem,
-    definition: Option<&crate::spacetimedb::ItemDefinition>,
+    definition: Option<&crate::spacetimedb::CatalogItemView>,
     equipped: bool,
     medication_is_self: bool,
     equip: Option<&CharacterEquipmentGraph>,
 ) -> Markup {
-    let medication = definition
-        .is_some_and(|definition| definition.kind == crate::spacetimedb::ItemKind::Medication);
+    let medication = definition.is_some_and(|definition| {
+        definition.kind == crate::spacetimedb::CatalogItemKind::Medication
+    });
     let equippable = definition.is_some_and(|definition| {
         !definition.equipment_placements.is_empty() || (medication && medication_is_self)
     });
@@ -1725,8 +1807,8 @@ fn equipment_control(
                         .iter()
                         .map(|requirement| {
                             format!(
-                                "{:?} · {} · depth {}",
-                                requirement.location,
+                                "{} · {} · depth {}",
+                                equipment_location_wire_label(requirement.location),
                                 equipment_channel_label(requirement.channel),
                                 requirement.order
                             )
@@ -1758,8 +1840,12 @@ fn equipment_control(
                         .filter(|occupied| occupied.inventory_item_id != inventory.id)
                         .filter(|occupied| {
                             placement.occupancy.iter().any(|requirement| {
-                                occupied.location == Some(requirement.location)
-                                    && occupied.channel == requirement.channel
+                                occupied
+                                    .location
+                                    .map(crate::spacetimedb::core_equipment_location)
+                                    == Some(requirement.location)
+                                    && core_equipment_channel(occupied.channel)
+                                        == requirement.channel
                                     && occupied.order == requirement.order
                             })
                         })
@@ -1914,14 +2000,16 @@ fn equipment_control(
                                                 })
                                             })
                                             .find(|(_, occupied)| {
-                                                occupied.location == Some(requirement.location)
-                                                    && occupied.channel == requirement.channel
+                                        occupied.location.map(crate::spacetimedb::core_equipment_location)
+                                            == Some(requirement.location)
+                                                    && core_equipment_channel(occupied.channel)
+                                                        == requirement.channel
                                                     && occupied.order == requirement.order
                                             })
                                     })
                                     .max_by_key(|(_, occupied)| {
                                         (
-                                            equipment_channel_rank(occupied.channel),
+                                                        equipment_channel_rank(core_equipment_channel(occupied.channel)),
                                             occupied.order,
                                             occupied.inventory_item_id,
                                         )
@@ -2131,14 +2219,14 @@ fn equipment_control(
     }
 }
 
-fn item_value(item: Option<&crate::spacetimedb::ItemDefinition>) -> String {
+fn item_value(item: Option<&crate::spacetimedb::CatalogItemView>) -> String {
     item.and_then(|item| item.base_value)
         .map_or_else(|| "—".to_owned(), |value| value.to_string())
 }
 
 pub(in crate::templates) fn item_name_with_quality(
     item_id: &str,
-    definition: Option<&crate::spacetimedb::ItemDefinition>,
+    definition: Option<&crate::spacetimedb::CatalogItemView>,
 ) -> Markup {
     let currency_name = adventuresim_core::strategic_currency::currency_name(item_id);
     let edit_url = item_source_edit_url(item_id);
@@ -2157,7 +2245,7 @@ pub(in crate::templates) fn item_name_with_quality(
 fn item_name_with_display(
     item_id: &str,
     display_name: &str,
-    definition: Option<&crate::spacetimedb::ItemDefinition>,
+    definition: Option<&crate::spacetimedb::CatalogItemView>,
 ) -> Markup {
     item_name_with_display_quality(item_id, display_name, definition, None)
 }
@@ -2165,7 +2253,7 @@ fn item_name_with_display(
 pub(in crate::templates) fn item_name_with_food_lot(
     item_id: &str,
     display_name: &str,
-    definition: Option<&crate::spacetimedb::ItemDefinition>,
+    definition: Option<&crate::spacetimedb::CatalogItemView>,
     food_lot: Option<&FoodLot>,
 ) -> Markup {
     item_name_with_display_quality(
@@ -2179,7 +2267,7 @@ pub(in crate::templates) fn item_name_with_food_lot(
 fn item_name_with_display_quality(
     item_id: &str,
     display_name: &str,
-    definition: Option<&crate::spacetimedb::ItemDefinition>,
+    definition: Option<&crate::spacetimedb::CatalogItemView>,
     quality_override: Option<u8>,
 ) -> Markup {
     let edit_url = item_source_edit_url(item_id);
@@ -2195,10 +2283,10 @@ fn item_name_with_display_quality(
             .filter(|item| {
                 matches!(
                     item.kind,
-                    crate::spacetimedb::ItemKind::Weapon
-                        | crate::spacetimedb::ItemKind::Armor
-                        | crate::spacetimedb::ItemKind::Shield
-                        | crate::spacetimedb::ItemKind::Food
+                    crate::spacetimedb::CatalogItemKind::Weapon
+                        | crate::spacetimedb::CatalogItemKind::Armor
+                        | crate::spacetimedb::CatalogItemKind::Shield
+                        | crate::spacetimedb::CatalogItemKind::Food
                 ) || adventuresim_core::food::definition(item_id).is_some()
                     || book_quality
             })
@@ -2232,7 +2320,7 @@ fn item_name_with_display_quality(
     html! {
         span class=(quality.map_or_else(|| "inventory-item-label".to_string(), |quality| format!("inventory-item-label item-quality-{quality}"))) title=[label]
             data-item-name=(item_id)
-            data-item-kind=[definition.map(|item| format!("{:?}", item.kind).to_ascii_lowercase())]
+            data-item-kind=[definition.map(|item| item_kind_tag(item.kind))]
             data-item-melee=[definition.map(|item| item.melee)]
             data-item-weapon-holder=[matches!(item_id, "scabbard" | "weapon_loop").then_some("true")]
             data-item-ranged=[definition.map(|item| item.ranged)]
@@ -2253,7 +2341,7 @@ fn item_name_with_display_quality(
             data-stat-padding=[definition.map(|item| weight_display(item.padding))]
             data-stat-flexibility=[definition.map(|item| weight_display(item.flexibility))]
             data-stat-range-of-motion=[definition.map(|item| weight_display(item.range_of_motion))]
-            data-detail-slot=[definition.map(|item| format!("{:?}", item.slot))]
+            data-detail-slot=[definition.map(|item| slot_wire_label(item.slot))]
             data-detail-balance=[definition.map(|item| weight_display(item.balance))]
             data-item-edit-url=[edit_url]
             data-detail-mode=[definition.map(|item| match (item.melee, item.ranged, item.precise) { (true, true, true) => "Melee, ranged, precise", (true, true, false) => "Melee and ranged", (true, false, true) => "Melee, precise", (false, true, true) => "Ranged, precise", (true, false, false) => "Melee", (false, true, false) => "Ranged", (false, false, true) => "Precise", _ => "—" }.to_string())] {
@@ -2406,7 +2494,7 @@ fn completed_repair_condition_bar(
     condition_bar(Some(&repaired), None)
 }
 
-fn repair_all_control(settlement: &Settlement, service_id: &str) -> Markup {
+fn repair_all_control(settlement: &SettlementView, service_id: &str) -> Markup {
     html! {
         form class="repair-all-form inventory-footer-repair" action=(format!("/settlements/{}/{}/repair-all", settlement.id, service_id)) method="post" {
             button type="submit" class="repair-all-button" title="Entrust all eligible items for repair" aria-label="Repair all eligible items" {
@@ -2417,7 +2505,7 @@ fn repair_all_control(settlement: &Settlement, service_id: &str) -> Markup {
 }
 
 fn repair_submit_control(
-    settlement: &Settlement,
+    settlement: &SettlementView,
     service_id: &str,
     inventory_item_id: u64,
     condition: Option<&crate::spacetimedb::ItemCondition>,
@@ -2451,11 +2539,11 @@ fn repair_submit_control(
 }
 
 fn repair_custody_panel(
-    settlement: &Settlement,
+    settlement: &SettlementView,
     shop: MerchantShop,
     orders: &[crate::spacetimedb::RepairOrder],
     conditions: &[crate::spacetimedb::ItemCondition],
-    items: &[crate::spacetimedb::ItemDefinition],
+    items: &[crate::spacetimedb::CatalogItemView],
     now: u64,
     smith_skill: u8,
 ) -> Markup {
@@ -2592,6 +2680,76 @@ mod tests {
     use crate::spacetimedb::{EquipmentAnchorKind, EquipmentLocation};
     use crate::templates::settlement::test_support::*;
     use adventuresim_core::equipment::EncumbranceSummary;
+
+    #[test]
+    fn inventory_html_discriminants_are_fixed_vectors() {
+        use crate::spacetimedb::{CatalogItemKind, Slot};
+
+        assert_eq!(
+            [
+                CatalogItemKind::Simple,
+                CatalogItemKind::Weapon,
+                CatalogItemKind::Armor,
+                CatalogItemKind::Shield,
+                CatalogItemKind::Clothing,
+                CatalogItemKind::Container,
+                CatalogItemKind::Currency,
+                CatalogItemKind::Ingredient,
+                CatalogItemKind::Medication,
+                CatalogItemKind::Food,
+            ]
+            .map(item_kind_tag),
+            [
+                "simple",
+                "weapon",
+                "armor",
+                "shield",
+                "clothing",
+                "container",
+                "currency",
+                "ingredient",
+                "medication",
+                "food",
+            ]
+        );
+        assert_eq!(
+            [
+                Slot::None,
+                Slot::LeftHolding,
+                Slot::RightHolding,
+                Slot::LeftArm,
+                Slot::RightArm,
+                Slot::LeftLeg,
+                Slot::RightLeg,
+                Slot::Chest,
+                Slot::Stomach,
+                Slot::Head,
+                Slot::AnyHolding,
+                Slot::AnyArm,
+                Slot::AnyLeg,
+            ]
+            .map(slot_wire_label),
+            [
+                "None",
+                "LeftHolding",
+                "RightHolding",
+                "LeftArm",
+                "RightArm",
+                "LeftLeg",
+                "RightLeg",
+                "Chest",
+                "Stomach",
+                "Head",
+                "AnyHolding",
+                "AnyArm",
+                "AnyLeg",
+            ]
+        );
+        assert_eq!(
+            equipment_location_wire_label(CoreEquipmentLocation::BackLeftPocket),
+            "BackLeftPocket"
+        );
+    }
 
     #[test]
     fn holder_inventory_rows_request_per_instance_icons() {
@@ -2735,28 +2893,28 @@ mod tests {
 
     #[test]
     fn herbalist_stock_template_includes_every_prepared_course_and_ingredients() {
-        let ingredient = crate::spacetimedb::ItemDefinition {
-            kind: ItemKind::Ingredient,
+        let ingredient = crate::spacetimedb::CatalogItemView {
+            kind: CatalogItemKind::Ingredient,
             ..Default::default()
         };
-        let medication = crate::spacetimedb::ItemDefinition {
-            kind: ItemKind::Medication,
+        let medication = crate::spacetimedb::CatalogItemView {
+            kind: CatalogItemKind::Medication,
             ..Default::default()
         };
         assert!(MerchantShop::Herbalist.stocks(&ingredient));
         assert!(MerchantShop::Herbalist.stocks(&medication));
-        let apple = crate::spacetimedb::ItemDefinition {
+        let apple = crate::spacetimedb::CatalogItemView {
             id: "apple".into(),
-            kind: ItemKind::Food,
+            kind: CatalogItemKind::Food,
             ..Default::default()
         };
-        let pan = crate::spacetimedb::ItemDefinition {
+        let pan = crate::spacetimedb::CatalogItemView {
             id: "cooking_pan".into(),
             ..Default::default()
         };
-        let honey = crate::spacetimedb::ItemDefinition {
+        let honey = crate::spacetimedb::CatalogItemView {
             id: "honey".into(),
-            kind: ItemKind::Ingredient,
+            kind: CatalogItemKind::Ingredient,
             ..Default::default()
         };
         assert!(MerchantShop::Inn.stocks(&apple));
@@ -2764,9 +2922,9 @@ mod tests {
         assert!(MerchantShop::Inn.stocks(&pan));
         assert!(!MerchantShop::Inn.stocks(&medication));
         assert!(!adventuresim_core::physiology::INTERVENTION_PROFILES.is_empty());
-        let definition = crate::spacetimedb::ItemDefinition {
+        let definition = crate::spacetimedb::CatalogItemView {
             id: "black_death_tonic".into(),
-            kind: ItemKind::Medication,
+            kind: CatalogItemKind::Medication,
             ..Default::default()
         };
         let rendered =
@@ -2858,7 +3016,7 @@ mod tests {
 
     #[test]
     fn merchant_tabs_render_personal_and_party_encumbrance_as_applicable() {
-        let character = Character {
+        let character = CharacterView {
             id: 1,
             name: "Trader".into(),
             xp: 0,
@@ -2947,7 +3105,7 @@ mod tests {
     fn inn_catalog_renders_an_authoritatively_quoted_travel_ration_purchase() {
         let mut town = settlement();
         town.economy.services = vec![adventuresim_world_schema::SettlementService::Inn];
-        let character = Character {
+        let character = CharacterView {
             id: 1,
             name: "Traveller".into(),
             xp: 0,
@@ -2961,12 +3119,12 @@ mod tests {
             social_notification_count: 0,
             automatic_social_chat_enabled: false,
         };
-        let ration = ItemDefinition {
+        let ration = CatalogItemView {
             id: "travel_ration".into(),
             weight: 0.65,
             base_value: Some(3),
             nutrition_kcal: 2_500.0,
-            kind: ItemKind::Food,
+            kind: CatalogItemKind::Food,
             ..Default::default()
         };
 
@@ -3040,9 +3198,9 @@ mod tests {
 
     #[test]
     fn collapsed_currency_label_hides_the_historical_denomination() {
-        let definition = crate::spacetimedb::ItemDefinition {
+        let definition = crate::spacetimedb::CatalogItemView {
             id: "lubeck_mark".into(),
-            kind: crate::spacetimedb::ItemKind::Currency,
+            kind: crate::spacetimedb::CatalogItemKind::Currency,
             base_value: Some(1),
             weight: 0.01,
             ..Default::default()
@@ -3059,9 +3217,9 @@ mod tests {
 
     #[test]
     fn alcohol_labels_expose_a_shared_inventory_group() {
-        let definition = crate::spacetimedb::ItemDefinition {
+        let definition = crate::spacetimedb::CatalogItemView {
             id: "small_beer".into(),
-            kind: crate::spacetimedb::ItemKind::Simple,
+            kind: crate::spacetimedb::CatalogItemKind::Simple,
             alcohol_serving_ml: 500,
             ..Default::default()
         };
@@ -3144,11 +3302,11 @@ mod tests {
 
     #[test]
     fn durable_item_names_expose_quality_color_and_description() {
-        let definition = crate::spacetimedb::ItemDefinition {
+        let definition = crate::spacetimedb::CatalogItemView {
             id: "commissioned_sword".into(),
             weight: 1.0,
             slot: Slot::AnyHolding,
-            kind: crate::spacetimedb::ItemKind::Weapon,
+            kind: crate::spacetimedb::CatalogItemKind::Weapon,
             base_value: None,
             nutrition_kcal: 0.0,
             water_capacity_ml: 0,
@@ -3169,9 +3327,9 @@ mod tests {
 
     #[test]
     fn book_names_use_shared_quality_color_without_equipment_copy() {
-        let definition = crate::spacetimedb::ItemDefinition {
+        let definition = crate::spacetimedb::CatalogItemView {
             id: "human_anatomy".into(),
-            kind: crate::spacetimedb::ItemKind::Simple,
+            kind: crate::spacetimedb::CatalogItemKind::Simple,
             quality: 4,
             ..Default::default()
         };
@@ -3241,11 +3399,11 @@ mod tests {
             item_id: "sword".into(),
             quantity: 1,
         };
-        let mut definition = crate::spacetimedb::ItemDefinition {
+        let mut definition = crate::spacetimedb::CatalogItemView {
             id: "sword".into(),
             weight: 1.0,
             slot: Slot::AnyHolding,
-            kind: crate::spacetimedb::ItemKind::Weapon,
+            kind: crate::spacetimedb::CatalogItemKind::Weapon,
             base_value: None,
             nutrition_kcal: 0.0,
             water_capacity_ml: 0,
@@ -3256,11 +3414,11 @@ mod tests {
             durability_failure_share: 0.0,
             edge_sensitivity: 0.0,
             handling_sensitivity: 0.0,
-            equipment_placements: vec![EquipmentPlacement {
+            equipment_placements: vec![CatalogEquipmentPlacement {
                 id: "left_hand".into(),
-                occupancy: vec![EquipmentOccupancyRequirement {
+                occupancy: vec![OccupancyRequirement {
                     location: EquipmentLocation::LeftHand,
-                    channel: EquipmentChannel::Held,
+                    channel: CoreEquipmentChannel::Held,
                     order: 0,
                 }],
                 parents: Vec::new(),
@@ -3281,16 +3439,18 @@ mod tests {
         assert!(disabled.contains("aria-label=\"Not equippable\""));
         assert!(!disabled.contains("equipment-slot-control"));
 
-        definition.equipment_placements.push(EquipmentPlacement {
-            id: "left_hand".into(),
-            occupancy: vec![EquipmentOccupancyRequirement {
-                location: EquipmentLocation::LeftHand,
-                channel: EquipmentChannel::Held,
-                order: 0,
-            }],
-            parents: Vec::new(),
-            protection: Vec::new(),
-        });
+        definition
+            .equipment_placements
+            .push(CatalogEquipmentPlacement {
+                id: "left_hand".into(),
+                occupancy: vec![OccupancyRequirement {
+                    location: EquipmentLocation::LeftHand,
+                    channel: CoreEquipmentChannel::Held,
+                    order: 0,
+                }],
+                parents: Vec::new(),
+                protection: Vec::new(),
+            });
         let unbound =
             equipment_control(&inventory, Some(&definition), true, true, None).into_string();
         assert!(unbound.contains("check-mark.svg"));
@@ -3312,15 +3472,15 @@ mod tests {
             item_id: "tunic".into(),
             quantity: 1,
         };
-        let placement = |id: &str, channel| EquipmentPlacement {
+        let placement = |id: &str, channel| CatalogEquipmentPlacement {
             id: id.into(),
             occupancy: vec![
-                EquipmentOccupancyRequirement {
+                OccupancyRequirement {
                     location: EquipmentLocation::Chest,
                     channel,
                     order: 0,
                 },
-                EquipmentOccupancyRequirement {
+                OccupancyRequirement {
                     location: EquipmentLocation::Stomach,
                     channel,
                     order: 0,
@@ -3329,15 +3489,20 @@ mod tests {
             parents: Vec::new(),
             protection: vec![EquipmentBodyPart::Chest],
         };
-        let definition = crate::spacetimedb::ItemDefinition {
+        let definition = crate::spacetimedb::CatalogItemView {
             id: outer.item_id.clone(),
-            kind: crate::spacetimedb::ItemKind::Clothing,
+            kind: crate::spacetimedb::CatalogItemKind::Clothing,
             coverage: 0.8,
-            equipment_placements: vec![placement("worn", EquipmentChannel::Outerwear)],
+            equipment_placements: vec![placement("worn", CoreEquipmentChannel::Outerwear)],
             ..Default::default()
         };
         let occupancy = |inventory_item_id, location, channel| EquipmentOccupancy {
-            id: format!("{inventory_item_id}:{location:?}"),
+            id: format!(
+                "{inventory_item_id}:{}",
+                equipment_location_wire_label(crate::spacetimedb::core_equipment_location(
+                    location
+                ))
+            ),
             character_id: 9,
             inventory_item_id,
             anchor_kind: EquipmentAnchorKind::CharacterLocation,
@@ -3353,13 +3518,13 @@ mod tests {
             _character_id: 9,
             worn_item_ids: vec![outer.id, inner.id],
             equipment_nodes: vec![
-                CharacterEquippedItem {
+                EquippedItemView {
                     inventory_item_id: outer.id,
                     character_id: 9,
                     placement_id: "worn".into(),
                     item_name: outer.item_id.clone(),
                 },
-                CharacterEquippedItem {
+                EquippedItemView {
                     inventory_item_id: inner.id,
                     character_id: 9,
                     placement_id: "worn".into(),
@@ -3369,18 +3534,18 @@ mod tests {
             equipment_occupancies: vec![
                 occupancy(
                     outer.id,
-                    EquipmentLocation::Chest,
-                    EquipmentChannel::Outerwear,
+                    adventuresim_stdb_client::EquipmentLocation::Chest,
+                    SatsEquipmentChannel::Outerwear,
                 ),
                 occupancy(
                     outer.id,
-                    EquipmentLocation::Stomach,
-                    EquipmentChannel::Outerwear,
+                    adventuresim_stdb_client::EquipmentLocation::Stomach,
+                    SatsEquipmentChannel::Outerwear,
                 ),
                 occupancy(
                     inner.id,
-                    EquipmentLocation::Chest,
-                    EquipmentChannel::BaseClothing,
+                    adventuresim_stdb_client::EquipmentLocation::Chest,
+                    SatsEquipmentChannel::BaseClothing,
                 ),
             ],
             attachment_targets: Vec::new(),
@@ -3395,10 +3560,10 @@ mod tests {
         assert!(outer_control.contains("data-strategic-tooltip=\"G: Chest, layer 1\""));
         assert!(outer_control.contains("protects Chest (80% coverage)"));
 
-        let inner_definition = crate::spacetimedb::ItemDefinition {
+        let inner_definition = crate::spacetimedb::CatalogItemView {
             id: inner.item_id.clone(),
-            kind: crate::spacetimedb::ItemKind::Clothing,
-            equipment_placements: vec![placement("worn", EquipmentChannel::BaseClothing)],
+            kind: crate::spacetimedb::CatalogItemKind::Clothing,
+            equipment_placements: vec![placement("worn", CoreEquipmentChannel::BaseClothing)],
             ..Default::default()
         };
         let inner_control =
@@ -3422,10 +3587,10 @@ mod tests {
             item_id: "pouch".into(),
             quantity: 1,
         };
-        let definition = crate::spacetimedb::ItemDefinition {
+        let definition = crate::spacetimedb::CatalogItemView {
             id: child.item_id.clone(),
-            kind: crate::spacetimedb::ItemKind::Container,
-            equipment_placements: vec![EquipmentPlacement {
+            kind: crate::spacetimedb::CatalogItemKind::Container,
+            equipment_placements: vec![CatalogEquipmentPlacement {
                 id: "hung".into(),
                 occupancy: Vec::new(),
                 parents: Vec::new(),
@@ -3437,13 +3602,13 @@ mod tests {
             _character_id: 9,
             worn_item_ids: vec![parent.id, child.id],
             equipment_nodes: vec![
-                CharacterEquippedItem {
+                EquippedItemView {
                     inventory_item_id: parent.id,
                     character_id: 9,
                     placement_id: "worn".into(),
                     item_name: parent.item_id.clone(),
                 },
-                CharacterEquippedItem {
+                EquippedItemView {
                     inventory_item_id: child.id,
                     character_id: 9,
                     placement_id: "hung".into(),
@@ -3456,10 +3621,10 @@ mod tests {
                     character_id: 9,
                     inventory_item_id: parent.id,
                     anchor_kind: EquipmentAnchorKind::CharacterLocation,
-                    location: Some(EquipmentLocation::FrontBelt),
+                    location: Some(adventuresim_stdb_client::EquipmentLocation::FrontBelt),
                     parent_inventory_item_id: None,
                     attachment_point_id: None,
-                    channel: EquipmentChannel::Mount,
+                    channel: SatsEquipmentChannel::Mount,
                     order: 0,
                     requirement_index: 0,
                     capacity_index: 0,
@@ -3472,7 +3637,7 @@ mod tests {
                     location: None,
                     parent_inventory_item_id: Some(parent.id),
                     attachment_point_id: Some("front-loop".into()),
-                    channel: EquipmentChannel::Containment,
+                    channel: SatsEquipmentChannel::Containment,
                     order: 0,
                     requirement_index: 0,
                     capacity_index: 0,
@@ -3501,10 +3666,10 @@ mod tests {
             item_id: "oral_rehydration_draught".into(),
             quantity: 1,
         };
-        let definition = crate::spacetimedb::ItemDefinition {
+        let definition = crate::spacetimedb::CatalogItemView {
             id: inventory.item_id.clone(),
             slot: Slot::None,
-            kind: crate::spacetimedb::ItemKind::Medication,
+            kind: crate::spacetimedb::CatalogItemKind::Medication,
             ..Default::default()
         };
         let rendered =
@@ -3525,10 +3690,10 @@ mod tests {
             item_id: "oral_rehydration_draught".into(),
             quantity: 1,
         };
-        let definition = crate::spacetimedb::ItemDefinition {
+        let definition = crate::spacetimedb::CatalogItemView {
             id: inventory.item_id.clone(),
             slot: Slot::None,
-            kind: crate::spacetimedb::ItemKind::Medication,
+            kind: crate::spacetimedb::CatalogItemKind::Medication,
             ..Default::default()
         };
         let rendered =
@@ -3624,11 +3789,11 @@ mod tests {
             },
         ];
         let items = [
-            crate::spacetimedb::ItemDefinition {
+            crate::spacetimedb::CatalogItemView {
                 id: "sword".into(),
                 weight: 1.0,
                 slot: Slot::AnyHolding,
-                kind: crate::spacetimedb::ItemKind::Weapon,
+                kind: crate::spacetimedb::CatalogItemKind::Weapon,
                 base_value: None,
                 nutrition_kcal: 0.0,
                 water_capacity_ml: 0,
@@ -3641,11 +3806,11 @@ mod tests {
                 handling_sensitivity: 0.0,
                 ..Default::default()
             },
-            crate::spacetimedb::ItemDefinition {
+            crate::spacetimedb::CatalogItemView {
                 id: "cuirass".into(),
                 weight: 1.0,
                 slot: Slot::Chest,
-                kind: crate::spacetimedb::ItemKind::Armor,
+                kind: crate::spacetimedb::CatalogItemKind::Armor,
                 base_value: None,
                 nutrition_kcal: 0.0,
                 water_capacity_ml: 0,
@@ -3713,7 +3878,7 @@ mod tests {
             location: None,
             parent_inventory_item_id: Some(parent),
             attachment_point_id: Some("point".into()),
-            channel: EquipmentChannel::Mount,
+            channel: SatsEquipmentChannel::Mount,
             order: 0,
             requirement_index: 0,
             capacity_index: 0,
@@ -3752,7 +3917,7 @@ mod tests {
 
     #[test]
     fn ingredient_preparation_forms_are_detached_from_tables_with_complete_payloads() {
-        let character = Character {
+        let character = CharacterView {
             id: 7,
             name: "Cook".into(),
             xp: 0,

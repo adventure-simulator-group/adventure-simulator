@@ -12,8 +12,8 @@ use serde::Deserialize;
 use super::{AppState, PartyAction, PartyActionOutcome, execute_or_request_party_action};
 use crate::session::Session;
 use crate::spacetimedb::{
-    BackendCaseSitePin, BattleResult, Character, ContractPresentation, Party, TacticalServer,
-    TacticalServerRequest, sql_string_literal,
+    BackendCaseSitePin, BackendContract, BattleResult, CharacterView, MissionServerRequestView,
+    MissionServerView, PartyView, sql_string_literal,
 };
 use crate::templates::mission::{mission_status_fragment, mission_status_page};
 
@@ -48,9 +48,11 @@ async fn enter_mission(State(state): State<AppState>, session: Session) -> Redir
         return Redirect::to("/");
     };
 
-    let parties: Vec<Party> = state
+    let parties: Vec<PartyView> = state
         .db
-        .query(&crate::spacetimedb::party_by_id(party_id))
+        .query_sats_into::<adventuresim_stdb_client::Party, PartyView>(
+            &crate::spacetimedb::party_by_id(party_id),
+        )
         .await
         .unwrap_or_default();
 
@@ -63,10 +65,7 @@ async fn enter_mission(State(state): State<AppState>, session: Session) -> Redir
     };
     let contract = state
         .db
-        .query_one::<ContractPresentation>(&format!(
-            "SELECT * FROM backend_contracts WHERE id = {}",
-            sql_string_literal(quest_id)
-        ))
+        .query_one_sats::<BackendContract>(&crate::spacetimedb::contract_by_id(quest_id))
         .await
         .ok()
         .flatten();
@@ -78,7 +77,7 @@ async fn enter_mission(State(state): State<AppState>, session: Session) -> Redir
     };
     let site = state
         .db
-        .query_one::<BackendCaseSitePin>(&format!(
+        .query_one_sats::<BackendCaseSitePin>(&format!(
             "SELECT * FROM backend_case_site_pins WHERE owner_character_id = {character_id} AND case_site_id = {}",
             sql_string_literal(case_site_id)
         ))
@@ -148,10 +147,9 @@ async fn mission_status(
     let Some(mut server) = server else {
         let results: crate::spacetimedb::Result<Vec<BattleResult>> = state
             .db
-            .query(&format!(
-                "SELECT * FROM battle_result WHERE battle_id = {}",
-                sql_string_literal(&format!("battle:{mission_id}"))
-            ))
+            .query_sats(&crate::spacetimedb::battle_result_by_battle_id(&format!(
+                "battle:{mission_id}"
+            )))
             .await
             .map_err(|error| {
                 tracing::error!(%error, "failed to load mission result");
@@ -247,22 +245,22 @@ async fn cancel_mission(
 async fn get_mission_for_viewer(
     state: &AppState,
     mission_id: &str,
-) -> crate::spacetimedb::Result<Option<TacticalServer>> {
+) -> crate::spacetimedb::Result<Option<MissionServerView>> {
     if let Some(server) = get_ready_mission(state, mission_id).await? {
         return Ok(Some(server));
     }
 
-    let requests: Vec<TacticalServerRequest> = state
+    let requests: Vec<MissionServerRequestView> = state
         .db
-        .query(&format!(
-            "SELECT * FROM tactical_server_request WHERE mission_id = {}",
-            sql_string_literal(mission_id)
-        ))
+        .query_sats_into::<adventuresim_stdb_client::TacticalServerRequest, MissionServerRequestView>(
+            &crate::spacetimedb::tactical_server_request_by_mission_id(mission_id),
+        )
         .await?;
 
     Ok(requests.first().map(|request| {
-        TacticalServer::pending(
+        MissionServerView::pending(
             request.mission_id.clone(),
+            request.gateway_bucket,
             request.scene_key.clone(),
             request.party_id.clone(),
         )
@@ -272,22 +270,20 @@ async fn get_mission_for_viewer(
 async fn get_ready_mission(
     state: &AppState,
     mission_id: &str,
-) -> crate::spacetimedb::Result<Option<TacticalServer>> {
-    let servers: Vec<TacticalServer> = state
+) -> crate::spacetimedb::Result<Option<MissionServerView>> {
+    state
         .db
-        .query(&format!(
-            "SELECT * FROM tactical_server WHERE mission_id = {}",
-            sql_string_literal(mission_id)
-        ))
-        .await?;
-    Ok(servers.into_iter().next())
+        .query_one_sats_into::<adventuresim_stdb_client::TacticalServer, MissionServerView>(
+            &crate::spacetimedb::tactical_server_by_mission_id(mission_id),
+        )
+        .await
 }
 
-fn can_view_mission(viewer: &Character, server: &TacticalServer) -> bool {
+fn can_view_mission(viewer: &CharacterView, server: &MissionServerView) -> bool {
     viewer.party_id.as_deref() == Some(server.party_id.as_str())
 }
 
-fn present_mission_to_viewer(server: &mut TacticalServer, viewer: &Character) {
+fn present_mission_to_viewer(server: &mut MissionServerView, viewer: &CharacterView) {
     debug_assert!(can_view_mission(viewer, server));
     server.character_id = Some(viewer.id);
 }
@@ -296,8 +292,8 @@ fn present_mission_to_viewer(server: &mut TacticalServer, viewer: &Character) {
 mod tests {
     use super::*;
 
-    fn character(id: u64, party_id: &str) -> Character {
-        Character {
+    fn character(id: u64, party_id: &str) -> CharacterView {
+        CharacterView {
             id,
             name: "viewer".into(),
             xp: 0,
@@ -313,8 +309,8 @@ mod tests {
         }
     }
 
-    fn mission(party_id: &str) -> TacticalServer {
-        TacticalServer::pending("mission".into(), "hills".into(), party_id.into())
+    fn mission(party_id: &str) -> MissionServerView {
+        MissionServerView::pending("mission".into(), 0, "hills".into(), party_id.into())
     }
 
     #[test]
@@ -330,7 +326,7 @@ mod tests {
         let viewer = character(42, "party-a");
         for mut server in [
             mission("party-a"),
-            TacticalServer {
+            MissionServerView {
                 status: crate::spacetimedb::MissionStatus::Ready,
                 ..mission("party-a")
             },

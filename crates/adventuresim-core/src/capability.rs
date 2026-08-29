@@ -161,6 +161,7 @@ pub struct CharacterCapabilities {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
 pub struct RoleRequirements {
     pub melee: bool,
     pub ranged: bool,
@@ -348,6 +349,23 @@ pub fn evaluate_capabilities(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn role_requirements_round_trip_as_the_shared_boundary_type() {
+        let requirements = RoleRequirements {
+            melee: true,
+            weapon_precision: WEAPON_PRECISION_SWORD,
+            endurance: 3,
+            ..Default::default()
+        };
+        let encoded = serde_json::to_value(requirements).unwrap();
+        assert_eq!(encoded["melee"], serde_json::json!(true));
+        assert_eq!(encoded["endurance"], serde_json::json!(3));
+        assert_eq!(
+            serde_json::from_value::<RoleRequirements>(encoded).unwrap(),
+            requirements
+        );
+    }
 
     struct TestArmor {
         coverage: [f32; 7],

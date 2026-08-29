@@ -147,9 +147,7 @@ pub fn active_membership(
 }
 
 fn bestiary_category(id: &str) -> Option<BestiaryCategory> {
-    BestiaryCategory::ALL
-        .into_iter()
-        .find(|category| format!("{category:?}").eq_ignore_ascii_case(id))
+    BestiaryCategory::from_id(id)
 }
 
 fn skill_hours(skills: &CharacterSkills, skill: &str, leaf: Option<&str>) -> Option<(Skill, f32)> {

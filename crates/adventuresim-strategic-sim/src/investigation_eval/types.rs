@@ -3,9 +3,73 @@ use adventuresim_core::{
     quest_generation::{CausalBridge, FactorTrace, RouteClass, TemplateFamily},
 };
 use serde::{Deserialize, Serialize};
+use std::{fmt, str::FromStr};
 
-pub const EVAL_FORMAT_VERSION: u32 = 3;
+pub const EVAL_FORMAT_VERSION: u32 = 4;
 pub const MAX_PROVIDER_RESPONSE_BYTES: usize = 64 * 1024;
+const CHOICE_ID_PREFIX: &str = "choice:";
+const CHOICE_ID_DIGEST_HEX_LEN: usize = 24;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ChoiceIdError;
+
+impl fmt::Display for ChoiceIdError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("choice ID must contain the canonical v4 capability digest")
+    }
+}
+
+impl std::error::Error for ChoiceIdError {}
+
+/// Validated opaque identity for one currently offered evaluator capability.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[serde(transparent)]
+pub struct ChoiceId(String);
+
+impl ChoiceId {
+    pub fn parse(value: impl Into<String>) -> Result<Self, ChoiceIdError> {
+        let value = value.into();
+        let Some(digest) = value.strip_prefix(CHOICE_ID_PREFIX) else {
+            return Err(ChoiceIdError);
+        };
+        if digest.len() != CHOICE_ID_DIGEST_HEX_LEN
+            || !digest
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+        {
+            return Err(ChoiceIdError);
+        }
+        Ok(Self(value))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for ChoiceId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+impl FromStr for ChoiceId {
+    type Err = ChoiceIdError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        Self::parse(value)
+    }
+}
+
+impl<'de> Deserialize<'de> for ChoiceId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Self::parse(value).map_err(serde::de::Error::custom)
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -16,7 +80,7 @@ pub struct PlayerFrame {
     pub game_minute: u64,
     pub discovery: DiscoveryView,
     pub journal: JournalView,
-    pub party: PartyView,
+    pub party: EvaluationPartyView,
     pub legal_choices: Vec<LegalChoice>,
 }
 
@@ -90,7 +154,8 @@ pub enum LocationResolution {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct PartyView {
+/// Observer-safe evaluator inputs, not a persisted strategic party projection.
+pub struct EvaluationPartyView {
     pub members: u8,
     pub terrain_skill: u8,
     pub insight: u8,
@@ -104,7 +169,7 @@ pub struct PartyView {
 #[serde(deny_unknown_fields)]
 pub struct LegalChoice {
     /// Opaque stable capability ID. It is the only authority accepted back.
-    pub choice_id: String,
+    pub choice_id: ChoiceId,
     pub kind: ChoiceKind,
     pub label: String,
     pub typed_arguments: ChoiceArguments,
@@ -120,6 +185,20 @@ pub enum ChoiceKind {
     Prepare,
     Wait,
     Conclude,
+}
+
+impl ChoiceKind {
+    pub(crate) const fn metric_key(self) -> &'static str {
+        match self {
+            Self::EnterTavern => "EnterTavern",
+            Self::InterviewWitness => "InterviewWitness",
+            Self::Investigate => "Investigate",
+            Self::Travel => "Travel",
+            Self::Prepare => "Prepare",
+            Self::Wait => "Wait",
+            Self::Conclude => "Conclude",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -139,7 +218,7 @@ pub struct ArgumentValue {
 #[serde(deny_unknown_fields)]
 pub struct PolicyDecision {
     pub version: u32,
-    pub choice_id: String,
+    pub choice_id: ChoiceId,
     #[serde(default)]
     pub arguments: DecisionArguments,
 }
@@ -211,6 +290,19 @@ pub struct PublicDialogueLine {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "snake_case", deny_unknown_fields)]
+pub enum PreparationOutcome {
+    NotAttempted,
+    Prepared { tag: String },
+}
+
+impl PreparationOutcome {
+    pub(crate) const fn is_prepared(&self) -> bool {
+        matches!(self, Self::Prepared { .. })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PublicTraceEvent {
     pub step: u32,
@@ -220,7 +312,7 @@ pub struct PublicTraceEvent {
     pub observation_provenance: String,
     pub pre_observation_digest: String,
     pub post_observation_digest: String,
-    pub choice_id: String,
+    pub choice_id: ChoiceId,
     pub choice_kind: ChoiceKind,
     /// Exact label presented to the policy when it chose this action.
     pub action_label: String,
@@ -231,7 +323,7 @@ pub struct PublicTraceEvent {
     pub learned_claim_ids: Vec<String>,
     /// Structured correction provenance; metrics must not infer it from prose.
     pub corrected_proposition_ids: Vec<String>,
-    pub preparation_tags: Vec<String>,
+    pub preparation_outcome: PreparationOutcome,
     pub game_minutes: u32,
     pub resource_cost: u16,
 }
@@ -264,6 +356,19 @@ pub enum Termination {
     Loop,
     PolicyError,
     BudgetExceeded,
+}
+
+impl Termination {
+    pub(crate) const fn metric_key(self) -> &'static str {
+        match self {
+            Self::Solved => "Solved",
+            Self::StepLimit => "StepLimit",
+            Self::DeadEnd => "DeadEnd",
+            Self::Loop => "Loop",
+            Self::PolicyError => "PolicyError",
+            Self::BudgetExceeded => "BudgetExceeded",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -299,4 +404,56 @@ pub(crate) enum Capability {
     WaitForWitness(usize),
     Conclude(RouteClass),
     ResolveCarrier(RouteClass),
+}
+
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub(crate) enum CapabilityIdentity<'a> {
+    EnterTavern,
+    Interview {
+        index: u64,
+    },
+    Action {
+        index: u64,
+        action_kind: InvestigationActionKind,
+        route: RouteClass,
+    },
+    Travel {
+        site_id: &'a str,
+    },
+    Prepare {
+        tag: &'a str,
+    },
+    WaitForWitness {
+        index: u64,
+    },
+    Conclude {
+        route: RouteClass,
+    },
+    ResolveCarrier {
+        route: RouteClass,
+    },
+}
+
+impl<'a> From<&'a Capability> for CapabilityIdentity<'a> {
+    fn from(capability: &'a Capability) -> Self {
+        match capability {
+            Capability::EnterTavern => Self::EnterTavern,
+            Capability::Interview(index) => Self::Interview {
+                index: *index as u64,
+            },
+            Capability::Action(index, action_kind, route) => Self::Action {
+                index: *index as u64,
+                action_kind: *action_kind,
+                route: *route,
+            },
+            Capability::Travel(site_id) => Self::Travel { site_id },
+            Capability::Prepare(tag) => Self::Prepare { tag },
+            Capability::WaitForWitness(index) => Self::WaitForWitness {
+                index: *index as u64,
+            },
+            Capability::Conclude(route) => Self::Conclude { route: *route },
+            Capability::ResolveCarrier(route) => Self::ResolveCarrier { route: *route },
+        }
+    }
 }

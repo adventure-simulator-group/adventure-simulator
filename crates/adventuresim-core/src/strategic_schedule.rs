@@ -710,9 +710,8 @@ pub fn apply_curriculum_training(
                 }
             }
             TrainingTarget::Bestiary { category } => {
-                if let Some(category) = adventuresim_world_schema::BestiaryCategory::ALL
-                    .into_iter()
-                    .find(|value| format!("{value:?}").eq_ignore_ascii_case(category))
+                if let Some(category) =
+                    adventuresim_world_schema::BestiaryCategory::from_id(category)
                 {
                     award_direct(Skill::Bestiary, hours.bestiary.direct_mut(category), award);
                 }

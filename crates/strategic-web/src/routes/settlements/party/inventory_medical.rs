@@ -74,10 +74,14 @@ pub(super) async fn character_equipment_graph(
         format!("SELECT * FROM equipment_occupancy WHERE character_id = {character_id}");
     let inventory_sql = format!("SELECT * FROM inventory_item WHERE character_id = {character_id}");
     let (worn, occupancies, inventory, definitions) = tokio::join!(
-        state.db.query::<CharacterEquippedItem>(&worn_sql),
-        state.db.query::<EquipmentOccupancy>(&occupancy_sql),
-        state.db.query::<InventoryItem>(&inventory_sql),
-        state.db.query::<ItemDefinition>("SELECT * FROM item"),
+        state
+            .db
+            .query_sats_into::<adventuresim_stdb_client::CharacterEquippedItem, EquippedItemView>(
+                &worn_sql,
+            ),
+        state.db.query_sats::<EquipmentOccupancy>(&occupancy_sql),
+        state.db.query_sats::<InventoryItem>(&inventory_sql),
+        state.db.query_sats_into::<adventuresim_stdb_client::Item, CatalogItemView>("SELECT * FROM item"),
     );
     let mut worn = worn.unwrap_or_default();
     let worn_ids = worn
@@ -214,7 +218,7 @@ pub(super) async fn set_equipment(
     };
     let inventory: Option<InventoryItem> = match state
         .db
-        .query_one(&format!(
+        .query_one_sats(&format!(
             "SELECT * FROM inventory_item WHERE id = {} AND character_id = {character_id}",
             form.inventory_item_id
         ))
@@ -229,12 +233,11 @@ pub(super) async fn set_equipment(
     let Some(inventory) = inventory else {
         return (StatusCode::NOT_FOUND, "Item is not in this inventory").into_response();
     };
-    let definition: Option<ItemDefinition> = match state
+    let definition: Option<CatalogItemView> = match state
         .db
-        .query_one(&format!(
-            "SELECT * FROM item WHERE id = {}",
-            sql_string_literal(&inventory.item_id)
-        ))
+        .query_one_sats_into::<adventuresim_stdb_client::Item, CatalogItemView>(
+            &crate::spacetimedb::item_by_id(&inventory.item_id),
+        )
         .await
     {
         Ok(definition) => definition,
@@ -250,7 +253,7 @@ pub(super) async fn set_equipment(
     let Some(definition) = definition else {
         return (StatusCode::NOT_FOUND, "Item definition is missing").into_response();
     };
-    if definition.kind == crate::spacetimedb::ItemKind::Medication {
+    if definition.kind == crate::spacetimedb::CatalogItemKind::Medication {
         let administration = match standard_medication_administration(
             character_id,
             form.inventory_item_id,
@@ -589,7 +592,7 @@ pub(super) async fn render_party_stats(
     let active_party = match active_character.party_id.as_deref() {
         Some(party_id) => state
             .db
-            .query::<Party>(&crate::spacetimedb::party_by_id(party_id))
+            .query_sats_into::<adventuresim_stdb_client::Party, PartyView>(&crate::spacetimedb::party_by_id(party_id))
             .await
             .unwrap_or_default()
             .into_iter()
@@ -599,7 +602,7 @@ pub(super) async fn render_party_stats(
     let selected_party = match selected.party_id.as_deref() {
         Some(party_id) => state
             .db
-            .query::<Party>(&crate::spacetimedb::party_by_id(party_id))
+            .query_sats_into::<adventuresim_stdb_client::Party, PartyView>(&crate::spacetimedb::party_by_id(party_id))
             .await
             .unwrap_or_default()
             .into_iter()
@@ -608,22 +611,22 @@ pub(super) async fn render_party_stats(
     };
     let selected_attributes: Vec<CharacterAttributes> = state
         .db
-        .query(&format!(
-            "SELECT * FROM backend_character_attributes WHERE character_id = {character_id}"
+        .query_sats(&crate::spacetimedb::character_attributes_by_character_id(
+            character_id,
         ))
         .await
         .unwrap_or_default();
     let selected_skills: Vec<CharacterSkills> = state
         .db
-        .query(&format!(
-            "SELECT * FROM backend_character_skills WHERE character_id = {character_id}"
+        .query_sats(&crate::spacetimedb::character_skills_by_character_id(
+            character_id,
         ))
         .await
         .unwrap_or_default();
     let selected_limbs: Vec<CharacterLimbs> = state
         .db
-        .query(&format!(
-            "SELECT * FROM backend_character_limbs WHERE character_id = {character_id}"
+        .query_sats(&crate::spacetimedb::character_limbs_by_character_id(
+            character_id,
         ))
         .await
         .unwrap_or_default();
@@ -632,10 +635,12 @@ pub(super) async fn render_party_stats(
     let can_examine = false;
     let condition = get_strategic_condition(state, character_id).await;
     let morale_sources = get_morale_sources(state, character_id).await;
-    let religion =
-        query_single::<CharacterCondition>(state, "backend_character_conditions", character_id)
-            .await
-            .and_then(|condition| condition.religion_id);
+    let religion = query_single::<CharacterCondition>(
+        state,
+        crate::spacetimedb::character_condition_by_character_id(character_id),
+    )
+    .await
+    .and_then(|condition| condition.religion_id);
     let reputation = query_local_reputation(state, character_id, &location.id).await;
     let fame = reputation
         .as_ref()
@@ -643,25 +648,25 @@ pub(super) async fn render_party_stats(
     let infamy = reputation
         .as_ref()
         .map_or(0.0, |value| value.infamy as f32 / 100.0);
-    let personality: Option<CharacterPersonality> = None;
+    let personality: Option<Personality> = None;
     let medical = medical_presentation(state, active_character.id, character_id).await;
     let injuries = state
         .db
-        .query::<LimbInjury>(&format!(
+        .query_sats::<LimbInjury>(&format!(
             "SELECT * FROM limb_injury WHERE character_id = {character_id}"
         ))
         .await
         .unwrap_or_default();
     let projectiles = state
         .db
-        .query::<RetainedProjectile>(&format!(
+        .query_sats::<RetainedProjectile>(&format!(
             "SELECT * FROM retained_projectile WHERE character_id = {character_id}"
         ))
         .await
         .unwrap_or_default();
     let filth = state
         .db
-        .query::<CharacterFilth>(&format!(
+        .query_sats::<CharacterFilth>(&format!(
             "SELECT * FROM character_filth WHERE character_id = {character_id}"
         ))
         .await
@@ -705,7 +710,7 @@ pub(crate) async fn medical_presentation(
 ) -> crate::medical::MedicalPresentation {
     let rows = match state
         .db
-        .query::<BackendPhysiologyChart>(&format!(
+        .query_sats::<BackendPhysiologyChart>(&format!(
             "SELECT * FROM backend_physiology_charts WHERE observer_id = {viewer_id} AND patient_id = {target_id}"
         ))
         .await
@@ -723,7 +728,7 @@ pub(crate) async fn medical_presentation(
     {
         state
             .db
-            .query::<BackendPhysiologyAdministration>(&format!(
+            .query_sats::<BackendPhysiologyAdministration>(&format!(
                 "SELECT * FROM backend_physiology_administrations WHERE patient_id = {target_id}"
             ))
             .await
@@ -733,9 +738,9 @@ pub(crate) async fn medical_presentation(
     };
     let current_minute = match state
         .db
-        .query_one::<CharacterTime>(&format!(
-            "SELECT * FROM backend_character_times WHERE character_id = {target_id}"
-        ))
+        .query_one_sats::<CharacterTime>(
+            &crate::spacetimedb::character_time_by_character_id(target_id),
+        )
         .await
     {
         Ok(Some(time)) => time.minutes,
@@ -879,8 +884,7 @@ pub(super) async fn get_strategic_condition(
     }
     query_single(
         state,
-        "backend_character_strategic_conditions",
-        character_id,
+        crate::spacetimedb::character_strategic_condition_by_character_id(character_id),
     )
     .await
 }
@@ -891,7 +895,7 @@ pub(super) async fn get_morale_sources(
 ) -> Vec<CharacterMoraleSource> {
     let mut sources: Vec<CharacterMoraleSource> = state
         .db
-        .query(&format!(
+        .query_sats(&format!(
             "SELECT * FROM backend_character_morale_sources WHERE character_id = {character_id}"
         ))
         .await

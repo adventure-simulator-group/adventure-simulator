@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use super::recruitment_requirements_type::RecruitmentRequirements;
+use super::role_requirements_type::RoleRequirements;
 use super::saved_recruitment_role_type::SavedRecruitmentRole;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 

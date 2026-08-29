@@ -4,6 +4,8 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::case_site_id_type::CaseSiteId;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct BackendCorpse {
@@ -14,7 +16,7 @@ pub struct BackendCorpse {
     pub source_id: String,
     pub location: String,
     pub decomposition: String,
-    pub case_site_id: String,
+    pub case_site_id: Option<CaseSiteId>,
     pub settlement_id: String,
     pub opened: bool,
     pub permission: String,
@@ -39,7 +41,7 @@ pub struct BackendCorpseCols {
     pub source_id: __sdk::__query_builder::Col<BackendCorpse, String>,
     pub location: __sdk::__query_builder::Col<BackendCorpse, String>,
     pub decomposition: __sdk::__query_builder::Col<BackendCorpse, String>,
-    pub case_site_id: __sdk::__query_builder::Col<BackendCorpse, String>,
+    pub case_site_id: __sdk::__query_builder::Col<BackendCorpse, Option<CaseSiteId>>,
     pub settlement_id: __sdk::__query_builder::Col<BackendCorpse, String>,
     pub opened: __sdk::__query_builder::Col<BackendCorpse, bool>,
     pub permission: __sdk::__query_builder::Col<BackendCorpse, String>,

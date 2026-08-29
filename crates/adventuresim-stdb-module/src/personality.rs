@@ -812,14 +812,15 @@ pub enum MoraleStimulus {
 
 /// Classify durable event kinds once so religious events cannot silently miss
 /// Conviction merely because their label does not contain "religious".
-pub fn morale_event_stimulus(kind: &str) -> MoraleStimulus {
+pub fn morale_event_stimulus(kind: adventuresim_core::morale::MoraleEventKind) -> MoraleStimulus {
+    use adventuresim_core::morale::MoraleEventKind as K;
     match kind {
-        "victory" => MoraleStimulus::Victory,
-        "defeat" => MoraleStimulus::Defeat,
-        "holy_day_observed" | "religious_observance_neglected" | "travel_prayer_neglected" => {
-            MoraleStimulus::Religious
-        }
-        kind if kind.contains("religious") || kind.contains("prayer") => MoraleStimulus::Religious,
+        K::Victory => MoraleStimulus::Victory,
+        K::Defeat => MoraleStimulus::Defeat,
+        K::HolyDayObserved
+        | K::ReligiousObservanceNeglected
+        | K::TravelPrayerNeglected
+        | K::Prayer => MoraleStimulus::Religious,
         _ => MoraleStimulus::Other,
     }
 }
@@ -1119,7 +1120,8 @@ mod tests {
     fn observed_holy_days_receive_conviction_reactions_and_annotations() {
         let mut p = CharacterPersonality::neutral(1);
         p.conviction = Conviction::Zealous;
-        let stimulus = morale_event_stimulus("holy_day_observed");
+        let stimulus =
+            morale_event_stimulus(adventuresim_core::morale::MoraleEventKind::HolyDayObserved);
         assert_eq!(stimulus, MoraleStimulus::Religious);
         let (magnitude, annotations) = react_raw(&p, stimulus, 2.0);
         assert_eq!(magnitude, 3.0);

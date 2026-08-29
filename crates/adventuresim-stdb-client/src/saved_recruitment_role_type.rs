@@ -4,7 +4,7 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::recruitment_requirements_type::RecruitmentRequirements;
+use super::role_requirements_type::RoleRequirements;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -12,7 +12,7 @@ pub struct SavedRecruitmentRole {
     pub id: u64,
     pub owner_character_id: u64,
     pub name: String,
-    pub requirements: RecruitmentRequirements,
+    pub requirements: RoleRequirements,
 }
 
 impl __sdk::InModule for SavedRecruitmentRole {
@@ -26,7 +26,7 @@ pub struct SavedRecruitmentRoleCols {
     pub id: __sdk::__query_builder::Col<SavedRecruitmentRole, u64>,
     pub owner_character_id: __sdk::__query_builder::Col<SavedRecruitmentRole, u64>,
     pub name: __sdk::__query_builder::Col<SavedRecruitmentRole, String>,
-    pub requirements: __sdk::__query_builder::Col<SavedRecruitmentRole, RecruitmentRequirements>,
+    pub requirements: __sdk::__query_builder::Col<SavedRecruitmentRole, RoleRequirements>,
 }
 
 impl __sdk::__query_builder::HasCols for SavedRecruitmentRole {

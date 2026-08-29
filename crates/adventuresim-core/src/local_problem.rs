@@ -119,6 +119,18 @@ pub enum Symptom {
     VanishedLivestock,
 }
 
+impl Symptom {
+    pub const fn stable_variant_id(self) -> &'static str {
+        match self {
+            Self::MissingCaravans => "MissingCaravans",
+            Self::NightScreams => "NightScreams",
+            Self::SickLocals => "SickLocals",
+            Self::EmptyStalls => "EmptyStalls",
+            Self::VanishedLivestock => "VanishedLivestock",
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Effects {
     /// Positive makes merchant purchases dearer; negative makes them cheaper.

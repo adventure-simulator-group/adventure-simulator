@@ -1,10 +1,10 @@
 pub(super) type ServiceRenderer = fn(
-    &Settlement,
-    Option<&Character>,
+    &SettlementView,
+    Option<&CharacterView>,
     &[InventoryItem],
-    &[ItemDefinition],
+    &[CatalogItemView],
     &[FoodLot],
-    &[Character],
+    &[CharacterView],
     Option<&CharacterLimbs>,
     Option<&CharacterStats>,
     Option<&CharacterCondition>,
@@ -23,7 +23,7 @@ pub(super) async fn merchant_shop(
     let settlement_literal = sql_string_literal(&id);
     let settlement_sql = settlement_by_id(&id);
     let (settlements, active_character) = tokio::join!(
-        state.db.query::<Settlement>(settlement_sql.as_str()),
+        state.db.query_sats_into::<adventuresim_stdb_client::Settlement, SettlementView>(settlement_sql.as_str()),
         get_active_character(&state, session.character_id_u64()),
     );
     let settlements = settlements.unwrap_or_default();
@@ -60,16 +60,12 @@ pub(super) async fn merchant_shop(
         );
     };
     let condition_sql = "SELECT * FROM item_condition".to_string();
-    let smith_sql =
-        format!("SELECT * FROM settlement_smith WHERE settlement_id = {settlement_literal}");
+    let smith_sql = crate::spacetimedb::settlement_smith_by_settlement_id(&id);
     let order_sql = format!(
         "SELECT * FROM repair_order WHERE owner_character_id = {} AND settlement_id = {settlement_literal}",
         character.id
     );
-    let time_sql = format!(
-        "SELECT * FROM backend_character_times WHERE character_id = {}",
-        character.id
-    );
+    let time_sql = crate::spacetimedb::character_time_by_character_id(character.id);
     let consequence_sql = format!(
         "SELECT * FROM backend_local_problem_trade_effects WHERE character_id = {}",
         character.id
@@ -89,18 +85,18 @@ pub(super) async fn merchant_shop(
         personal_amounts,
     ) = tokio::join!(
         get_active_party_members(&state, Some(character)),
-        state.db.query::<ItemDefinition>("SELECT * FROM item"),
-        state.db.query::<FoodLot>("SELECT * FROM food_lot"),
+        state.db.query_sats_into::<adventuresim_stdb_client::Item, CatalogItemView>("SELECT * FROM item"),
+        state.db.query_sats::<FoodLot>("SELECT * FROM food_lot"),
         party::character_equipment_graph(&state, character.id),
         inventory_trade_context(&state, character),
-        state.db.query::<ItemCondition>(&condition_sql),
-        state.db.query::<SettlementSmith>(&smith_sql),
-        state.db.query::<RepairOrder>(&order_sql),
-        state.db.query::<CharacterTime>(&time_sql),
+        state.db.query_sats::<ItemCondition>(&condition_sql),
+        state.db.query_sats::<SettlementSmith>(&smith_sql),
+        state.db.query_sats::<RepairOrder>(&order_sql),
+        state.db.query_sats::<CharacterTime>(&time_sql),
         state
             .db
-            .query::<BackendLocalProblemTradeEffect>(&consequence_sql),
-        state.db.query::<InventoryItemAmount>(amount_sql),
+            .query_sats::<BackendLocalProblemTradeEffect>(&consequence_sql),
+        state.db.query_sats::<InventoryItemAmount>(amount_sql),
     );
     let items = items.unwrap_or_default();
     let (personal_targets, party_targets, pooled) = trade_context;
@@ -116,12 +112,17 @@ pub(super) async fn merchant_shop(
     .await;
     let (inn_rest_default, inn_soap_preview) = if matches!(shop, MerchantShop::Inn) {
         let (limbs, stats, condition) = tokio::join!(
-            query_single::<CharacterLimbs>(&state, "backend_character_limbs", character.id),
-            query_single::<CharacterStats>(&state, "backend_character_stats", character.id),
+            query_single::<CharacterLimbs>(
+                &state,
+                crate::spacetimedb::character_limbs_by_character_id(character.id),
+            ),
+            query_single::<CharacterStats>(
+                &state,
+                crate::spacetimedb::character_stats_by_character_id(character.id),
+            ),
             query_single::<CharacterCondition>(
                 &state,
-                "backend_character_conditions",
-                character.id
+                crate::spacetimedb::character_condition_by_character_id(character.id),
             ),
         );
         let (field_repair_minutes, smith_wait_minutes) =
@@ -145,13 +146,20 @@ pub(super) async fn merchant_shop(
     } else {
         (None, SoapRestPreview::default())
     };
-    let speaker = query_single::<CharacterSkills>(&state, "backend_character_skills", character.id)
-        .await
-        .map_or_default(|skills| skills.oral_languages);
-    let speaker_cap =
-        query_single::<CharacterAttributes>(&state, "backend_character_attributes", character.id)
-            .await
-            .map_or(0.0, |attributes| attributes.instinct * 1_000.0);
+    let speaker = query_single::<CharacterSkills>(
+        &state,
+        crate::spacetimedb::character_skills_by_character_id(character.id),
+    )
+    .await
+    .map_or_else(adventuresim_world_schema::OralLanguageHours::default, |skills| {
+        crate::spacetimedb::core_oral_language_hours(&skills.oral_languages)
+    });
+    let speaker_cap = query_single::<CharacterAttributes>(
+        &state,
+        crate::spacetimedb::character_attributes_by_character_id(character.id),
+    )
+    .await
+    .map_or(0.0, |attributes| attributes.instinct * 1_000.0);
     let mut merchant_languages = adventuresim_world_schema::OralLanguageHours::default();
     *merchant_languages.direct_mut(settlement.languages.dominant_german()) =
         adventuresim_world_schema::ORAL_FLUENCY_HOURS;
@@ -208,7 +216,7 @@ pub(super) async fn merchant_shop(
 
 pub(super) async fn inventory_trade_context(
     state: &AppState,
-    character: &Character,
+    character: &CharacterView,
 ) -> (
     Vec<InventoryQuantityTarget>,
     Vec<InventoryQuantityTarget>,
@@ -219,13 +227,13 @@ pub(super) async fn inventory_trade_context(
         character.id
     );
     let Some(party_id) = character.party_id.as_ref() else {
-        let personal = state.db.query(&personal_sql).await.unwrap_or_default();
+        let personal = state.db.query_sats(&personal_sql).await.unwrap_or_default();
         return (personal, Vec::new(), Vec::new());
     };
     let party_sql = crate::spacetimedb::party_by_id(party_id);
     let (personal, party) = tokio::join!(
-        state.db.query(&personal_sql),
-        state.db.query::<Party>(&party_sql),
+        state.db.query_sats(&personal_sql),
+        state.db.query_sats_into::<adventuresim_stdb_client::Party, PartyView>(&party_sql),
     );
     let personal = personal.unwrap_or_default();
     let party = party.unwrap_or_default().into_iter().next();
@@ -241,8 +249,8 @@ pub(super) async fn inventory_trade_context(
         sql_string_literal(party_id)
     );
     let (party_targets, pooled) = tokio::join!(
-        state.db.query(&party_targets_sql),
-        state.db.query(&pooled_sql),
+        state.db.query_sats(&party_targets_sql),
+        state.db.query_sats(&pooled_sql),
     );
     (
         personal,
@@ -255,7 +263,7 @@ pub(super) async fn personal_inventory_targets(
     state: &AppState,
     character_id: u64,
 ) -> Vec<InventoryQuantityTarget> {
-    state.db.query(&format!("SELECT * FROM inventory_quantity_target WHERE owner_character_id = {character_id} AND party_scope = false")).await.unwrap_or_default()
+    state.db.query_sats(&format!("SELECT * FROM inventory_quantity_target WHERE owner_character_id = {character_id} AND party_scope = false")).await.unwrap_or_default()
 }
 
 pub(super) async fn render_service_page(
@@ -267,7 +275,7 @@ pub(super) async fn render_service_page(
 ) -> Html<String> {
     let settlement_sql = crate::spacetimedb::settlement_by_id(&id);
     let (settlements, active_character) = tokio::join!(
-        state.db.query::<Settlement>(&settlement_sql),
+        state.db.query_sats_into::<adventuresim_stdb_client::Settlement, SettlementView>(&settlement_sql),
         get_active_character(&state, session.character_id_u64()),
     );
     let settlements = settlements.unwrap_or_default();
@@ -292,8 +300,11 @@ pub(super) async fn render_service_page(
     let limbs_lookup = async {
         match active_character_ref {
             Some(character) => {
-                query_single::<CharacterLimbs>(&state, "backend_character_limbs", character.id)
-                    .await
+                query_single::<CharacterLimbs>(
+                    &state,
+                    crate::spacetimedb::character_limbs_by_character_id(character.id),
+                )
+                .await
             }
             None => None,
         }
@@ -301,8 +312,11 @@ pub(super) async fn render_service_page(
     let stats_lookup = async {
         match active_character_ref {
             Some(character) => {
-                query_single::<CharacterStats>(&state, "backend_character_stats", character.id)
-                    .await
+                query_single::<CharacterStats>(
+                    &state,
+                    crate::spacetimedb::character_stats_by_character_id(character.id),
+                )
+                .await
             }
             None => None,
         }
@@ -312,8 +326,7 @@ pub(super) async fn render_service_page(
             Some(character) => {
                 query_single::<CharacterCondition>(
                     &state,
-                    "backend_character_conditions",
-                    character.id,
+                    crate::spacetimedb::character_condition_by_character_id(character.id),
                 )
                 .await
             }
@@ -330,8 +343,8 @@ pub(super) async fn render_service_page(
     };
     let (party_members, items, food_lots, limbs, stats, condition, equipment_recovery) = tokio::join!(
         get_active_party_members(&state, active_character_ref),
-        state.db.query::<ItemDefinition>("SELECT * FROM item"),
-        state.db.query::<FoodLot>("SELECT * FROM food_lot"),
+        state.db.query_sats_into::<adventuresim_stdb_client::Item, CatalogItemView>("SELECT * FROM item"),
+        state.db.query_sats::<FoodLot>("SELECT * FROM food_lot"),
         limbs_lookup,
         stats_lookup,
         condition_lookup,
@@ -376,24 +389,21 @@ pub(super) async fn equipment_rest_recommendation(
     settlement_id: &str,
     inventory: &[InventoryItem],
 ) -> (u64, u64) {
-    let skills_sql =
-        format!("SELECT * FROM backend_character_skills WHERE character_id = {character_id}");
-    let attributes_sql =
-        format!("SELECT * FROM backend_character_attributes WHERE character_id = {character_id}");
+    let skills_sql = crate::spacetimedb::character_skills_by_character_id(character_id);
+    let attributes_sql = crate::spacetimedb::character_attributes_by_character_id(character_id);
     let settlement_literal = sql_string_literal(settlement_id);
     let orders_sql = format!(
         "SELECT * FROM repair_order WHERE owner_character_id = {character_id} AND settlement_id = {settlement_literal}"
     );
-    let time_sql =
-        format!("SELECT * FROM backend_character_times WHERE character_id = {character_id}");
+    let time_sql = crate::spacetimedb::character_time_by_character_id(character_id);
     let (conditions, skills, attributes, orders, times) = tokio::join!(
         state
             .db
-            .query::<ItemCondition>("SELECT * FROM item_condition"),
-        state.db.query::<CharacterSkills>(&skills_sql),
-        state.db.query::<CharacterAttributes>(&attributes_sql),
-        state.db.query::<RepairOrder>(&orders_sql),
-        state.db.query::<CharacterTime>(&time_sql),
+            .query_sats::<ItemCondition>("SELECT * FROM item_condition"),
+        state.db.query_sats::<CharacterSkills>(&skills_sql),
+        state.db.query_sats::<CharacterAttributes>(&attributes_sql),
+        state.db.query_sats::<RepairOrder>(&orders_sql),
+        state.db.query_sats::<CharacterTime>(&time_sql),
     );
     let skills = skills.unwrap_or_default();
     let attributes = attributes.unwrap_or_default();

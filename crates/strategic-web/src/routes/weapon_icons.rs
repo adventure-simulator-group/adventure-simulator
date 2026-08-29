@@ -5,7 +5,7 @@ use std::{
     sync::{Mutex, OnceLock},
 };
 
-use adventuresim_core::physical_object::{CarriedInventoryScope, InventoryLocation};
+use adventuresim_core::physical_object::CarriedInventoryScope;
 use adventuresim_weapon_model::{
     DesignHash, GENERATOR_VERSION, HOLDER_GENERATOR_VERSION, ICON_RENDERER_VERSION, WeaponIconSpec,
     decode, decode_holder, design_hash, generate_holder_icon, generate_icon, holder_design_hash,
@@ -22,7 +22,9 @@ use axum::{
 use crate::{
     routes::AppState,
     session::Session,
-    spacetimedb::{BackendWeaponHolderInstance, BackendWeaponInstance, Character, InventoryObject},
+    spacetimedb::{
+        CharacterView, InventoryLocation, InventoryObject, WeaponHolderInstance, WeaponInstance,
+    },
 };
 
 const ICON_SIZE: u16 = 96;
@@ -73,9 +75,9 @@ async fn weapon_icon(
     };
     let actor = match state
         .db
-        .query_one::<Character>(&format!(
-            "SELECT * FROM backend_characters WHERE id = {actor_id}"
-        ))
+        .query_one_sats_into::<adventuresim_stdb_client::Character, CharacterView>(
+            &crate::spacetimedb::character_by_id(actor_id),
+        )
         .await
     {
         Ok(Some(actor)) => actor,
@@ -87,7 +89,7 @@ async fn weapon_icon(
     };
     let objects = match state
         .db
-        .query::<InventoryObject>("SELECT * FROM inventory_object")
+        .query_sats::<InventoryObject>("SELECT * FROM inventory_object")
         .await
     {
         Ok(objects) => objects
@@ -105,10 +107,9 @@ async fn weapon_icon(
     let owner_party = match &object.location {
         InventoryLocation::Personal(location) if location.character_id != actor.id => state
             .db
-            .query_one::<Character>(&format!(
-                "SELECT * FROM backend_characters WHERE id = {}",
-                location.character_id
-            ))
+            .query_one_sats_into::<adventuresim_stdb_client::Character, CharacterView>(
+                &crate::spacetimedb::character_by_id(location.character_id),
+            )
             .await
             .ok()
             .flatten()
@@ -128,10 +129,9 @@ async fn weapon_icon(
     }
     let weapon_instance = match state
         .db
-        .query_one::<BackendWeaponInstance>(&format!(
-            "SELECT * FROM backend_weapon_instances WHERE physical_object_id = {}",
-            object.id
-        ))
+        .query_one_sats::<WeaponInstance>(
+            &crate::spacetimedb::weapon_instance_by_physical_object_id(object.id),
+        )
         .await
     {
         Ok(instance) => instance,
@@ -145,10 +145,9 @@ async fn weapon_icon(
     } else {
         let holder = match state
             .db
-            .query_one::<BackendWeaponHolderInstance>(&format!(
-                "SELECT * FROM backend_weapon_holder_instances WHERE physical_object_id = {}",
-                object.id
-            ))
+            .query_one_sats::<WeaponHolderInstance>(
+                &crate::spacetimedb::weapon_holder_instance_by_physical_object_id(object.id),
+            )
             .await
         {
             Ok(Some(instance)) => instance,
@@ -227,7 +226,7 @@ fn custody_visible(
 
 fn authenticated_icon(
     object: &InventoryObject,
-    instance: &BackendWeaponInstance,
+    instance: &WeaponInstance,
 ) -> Result<(u16, DesignHash, Vec<u8>), String> {
     if instance.physical_object_id != object.id || instance.generator_version != GENERATOR_VERSION {
         return Err("weapon instance identity or generator version mismatch".into());
@@ -281,7 +280,7 @@ fn authenticated_icon(
 
 fn authenticated_holder_icon(
     object: &InventoryObject,
-    instance: &BackendWeaponHolderInstance,
+    instance: &WeaponHolderInstance,
 ) -> Result<(u16, DesignHash, Vec<u8>), String> {
     if instance.physical_object_id != object.id
         || instance.generator_version != HOLDER_GENERATOR_VERSION
@@ -338,7 +337,31 @@ fn authenticated_holder_icon(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use adventuresim_stdb_client::{
+        PartyInventoryLocation, PersonalInventoryLocation, RepairInventoryLocation,
+    };
     use adventuresim_weapon_model::{default_design, default_holder_design, encode, encode_holder};
+
+    fn personal(character_id: u64, row_id: u64) -> InventoryLocation {
+        InventoryLocation::Personal(PersonalInventoryLocation {
+            character_id,
+            row_id,
+        })
+    }
+
+    fn party(party_id: &str, row_id: u64) -> InventoryLocation {
+        InventoryLocation::Party(PartyInventoryLocation {
+            party_id: party_id.into(),
+            row_id,
+        })
+    }
+
+    fn repair(settlement_id: &str, row_id: u64) -> InventoryLocation {
+        InventoryLocation::Repair(RepairInventoryLocation {
+            settlement_id: settlement_id.into(),
+            row_id,
+        })
+    }
 
     fn object(location: InventoryLocation) -> InventoryObject {
         InventoryObject {
@@ -350,45 +373,40 @@ mod tests {
 
     #[test]
     fn custody_gate_allows_self_and_party_but_not_foreign_rows() {
-        assert!(custody_visible(
-            3,
-            None,
-            &object(InventoryLocation::personal(3, 9)),
-            None
-        ));
+        assert!(custody_visible(3, None, &object(personal(3, 9)), None));
         assert!(custody_visible(
             3,
             Some("party-a"),
-            &object(InventoryLocation::personal(4, 9)),
+            &object(personal(4, 9)),
             Some("party-a")
         ));
         assert!(custody_visible(
             3,
             Some("party-a"),
-            &object(InventoryLocation::party("party-a", 9)),
+            &object(party("party-a", 9)),
             None
         ));
         assert!(!custody_visible(
             3,
             Some("party-a"),
-            &object(InventoryLocation::personal(4, 9)),
+            &object(personal(4, 9)),
             Some("party-b")
         ));
         assert!(!custody_visible(
             3,
             Some("party-a"),
-            &object(InventoryLocation::repair("smithy", 9)),
+            &object(repair("smithy", 9)),
             None
         ));
     }
 
     #[test]
     fn icon_cache_authenticates_before_a_warm_hit() {
-        let object = object(InventoryLocation::personal(3, 9));
+        let object = object(personal(3, 9));
         let design = default_design("longsword").unwrap();
         let hash = design_hash(&design);
         let recipe = encode(&design).unwrap();
-        let instance = BackendWeaponInstance {
+        let instance = WeaponInstance {
             physical_object_id: object.id,
             generator_version: GENERATOR_VERSION,
             design_hash: hash.0.to_vec(),
@@ -408,12 +426,12 @@ mod tests {
 
     #[test]
     fn holder_icon_cache_authenticates_before_a_warm_hit() {
-        let mut object = object(InventoryLocation::personal(3, 9));
+        let mut object = object(personal(3, 9));
         object.item_id = "scabbard".into();
         let weapon = default_design("longsword").unwrap();
         let design = default_holder_design(&weapon).unwrap();
         let hash = holder_design_hash(&design);
-        let instance = BackendWeaponHolderInstance {
+        let instance = WeaponHolderInstance {
             physical_object_id: object.id,
             generator_version: HOLDER_GENERATOR_VERSION,
             design_hash: hash.0.to_vec(),

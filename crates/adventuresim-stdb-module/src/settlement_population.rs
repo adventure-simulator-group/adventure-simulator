@@ -26,6 +26,26 @@ pub enum NpcAgeBand {
     Adult,
     Elder,
 }
+
+impl NpcAgeBand {
+    pub(crate) const fn stable_id(self) -> &'static str {
+        match self {
+            Self::Child => "child",
+            Self::Adolescent => "adolescent",
+            Self::Adult => "adult",
+            Self::Elder => "elder",
+        }
+    }
+
+    pub(crate) const fn stable_variant_id(self) -> &'static str {
+        match self {
+            Self::Child => "Child",
+            Self::Adolescent => "Adolescent",
+            Self::Adult => "Adult",
+            Self::Elder => "Elder",
+        }
+    }
+}
 #[derive(Clone, Copy, Debug, SpacetimeType)]
 pub enum NpcPresentation {
     Man,
@@ -306,22 +326,63 @@ const SURNAMES: [&str; 12] = [
     "Wolf", "Hartmann", "Vogel",
 ];
 
+#[derive(Clone, Copy)]
+enum PopulationLocation<'a> {
+    Overview,
+    Market,
+    Forge,
+    Armoury,
+    Tailor,
+    Herbalist,
+    Bookstore,
+    Inn,
+    Church,
+    Residences,
+    Keep,
+    Organization(&'a str),
+}
+
+impl<'a> PopulationLocation<'a> {
+    fn parse(value: &'a str) -> Result<Self, String> {
+        match value {
+            "overview" => Ok(Self::Overview),
+            "market" => Ok(Self::Market),
+            "forge" => Ok(Self::Forge),
+            "armoury" => Ok(Self::Armoury),
+            "tailor" => Ok(Self::Tailor),
+            "herbalist" => Ok(Self::Herbalist),
+            "bookstore" => Ok(Self::Bookstore),
+            "inn" => Ok(Self::Inn),
+            "church" => Ok(Self::Church),
+            "residences" => Ok(Self::Residences),
+            "keep" => Ok(Self::Keep),
+            _ => value
+                .strip_prefix("organization-")
+                .filter(|organization_id| !organization_id.is_empty())
+                .map(Self::Organization)
+                .ok_or_else(|| format!("Unknown population location {value}")),
+        }
+    }
+
+    const fn context(self) -> LocationContext {
+        match self {
+            Self::Overview => LocationContext::Overview,
+            Self::Market | Self::Bookstore => LocationContext::Market,
+            Self::Forge => LocationContext::Forge,
+            Self::Armoury => LocationContext::Armoury,
+            Self::Tailor => LocationContext::Tailor,
+            Self::Herbalist => LocationContext::Herbalist,
+            Self::Inn => LocationContext::Inn,
+            Self::Church => LocationContext::Church,
+            Self::Residences => LocationContext::Residences,
+            Self::Keep => LocationContext::Keep,
+            Self::Organization(_organization_id) => LocationContext::Organization,
+        }
+    }
+}
+
 fn location_context(location: &str) -> Result<LocationContext, String> {
-    Ok(match location {
-        "overview" => LocationContext::Overview,
-        "market" => LocationContext::Market,
-        "forge" => LocationContext::Forge,
-        "armoury" => LocationContext::Armoury,
-        "tailor" => LocationContext::Tailor,
-        "herbalist" => LocationContext::Herbalist,
-        "bookstore" => LocationContext::Market,
-        "inn" => LocationContext::Inn,
-        "church" => LocationContext::Church,
-        "residences" => LocationContext::Residences,
-        "keep" => LocationContext::Keep,
-        location if location.starts_with("organization-") => LocationContext::Organization,
-        _ => return Err(format!("Unknown population location {location}")),
-    })
+    Ok(PopulationLocation::parse(location)?.context())
 }
 fn age(value: AgeBand) -> NpcAgeBand {
     match value {
@@ -340,8 +401,45 @@ fn profession(value: Profession) -> &'static str {
         Profession::ServiceProvider => "service provider",
     }
 }
+
+#[derive(Clone, Copy)]
+enum ResidentEntropyStream {
+    Identity,
+    Sex,
+    HouseholdName,
+    Complexion,
+    VisibleFeature,
+}
+
+impl ResidentEntropyStream {
+    const fn suffix(self) -> Option<&'static str> {
+        match self {
+            Self::Identity => None,
+            Self::Sex => Some("sex"),
+            Self::HouseholdName => Some("house"),
+            Self::Complexion => Some("complexion"),
+            Self::VisibleFeature => Some("feature"),
+        }
+    }
+}
+
+fn resident_entropy(seed: &str, stream: ResidentEntropyStream) -> u64 {
+    stream.suffix().map_or_else(
+        || population::stable_hash(seed),
+        |suffix| population::stable_hash(&format!("{seed}:{suffix}")),
+    )
+}
+
+fn resident_seed(settlement_id: &str, location: &str, ordinal: usize) -> String {
+    format!("resident:{settlement_id}:{location}:{ordinal}")
+}
+
+fn organization_representative_seed(settlement_id: &str, organization_id: &str) -> String {
+    format!("resident:organization-representative:{settlement_id}:{organization_id}")
+}
+
 fn resident_name(seed: &str, female: bool) -> String {
-    let hash = population::stable_hash(seed);
+    let hash = resident_entropy(seed, ResidentEntropyStream::Identity);
     let given = if female {
         FEMALE_NAMES[hash as usize % FEMALE_NAMES.len()]
     } else {
@@ -357,7 +455,7 @@ fn resident_name(seed: &str, female: bool) -> String {
 fn resident_character_id(seed: &str) -> u64 {
     // Keep generated residents in the upper half of the identity space. The
     // stable source coordinate is the identity; there is no parallel string ID.
-    population::stable_hash(seed) | (1u64 << 63)
+    resident_entropy(seed, ResidentEntropyStream::Identity) | (1u64 << 63)
 }
 
 #[expect(
@@ -374,7 +472,7 @@ fn insert_resident(
     ordinal: usize,
     is_default: bool,
 ) -> Result<(), String> {
-    let seed = format!("resident:{settlement_id}:{location}:{ordinal}");
+    let seed = resident_seed(settlement_id, location, ordinal);
     insert_resident_with_seed(
         ctx,
         seed,
@@ -468,11 +566,12 @@ fn insert_resident_with_seed(
     } else {
         supplied_role
     };
-    let female = population::stable_hash(&format!("{seed}:sex")).is_multiple_of(2);
+    let female = resident_entropy(&seed, ResidentEntropyStream::Sex).is_multiple_of(2);
     let age_band = age(profile.age);
     let household = format!(
         "the {} {}",
-        SURNAMES[population::stable_hash(&format!("{seed}:house")) as usize % SURNAMES.len()],
+        SURNAMES[resident_entropy(&seed, ResidentEntropyStream::HouseholdName) as usize
+            % SURNAMES.len()],
         profile.household_kind
     );
     insert_persistent_npc_character(
@@ -480,7 +579,7 @@ fn insert_resident_with_seed(
         resident_name(&seed, female),
         character_id,
         settlement_id,
-        population::stable_hash(&seed),
+        resident_entropy(&seed, ResidentEntropyStream::Identity),
         None,
     )?;
     let mut character = ctx
@@ -499,7 +598,7 @@ fn insert_resident_with_seed(
     ctx.db.npc_policy().insert(NpcPolicy {
         character_id,
         home_settlement_id: settlement_id.into(),
-        policy_seed: population::stable_hash(&seed),
+        policy_seed: resident_entropy(&seed, ResidentEntropyStream::Identity),
     });
     let resident = ctx
         .db
@@ -512,7 +611,7 @@ fn insert_resident_with_seed(
             build: profile.build.clone(),
             hair: profile.hair.clone(),
             facial_hair: if !female
-                && population::stable_hash(&seed).is_multiple_of(3)
+                && resident_entropy(&seed, ResidentEntropyStream::Identity).is_multiple_of(3)
                 && !matches!(age_band, NpcAgeBand::Child)
             {
                 "a neatly kept beard".into()
@@ -520,14 +619,14 @@ fn insert_resident_with_seed(
                 "none visible".into()
             },
             complexion: ["fair", "ruddy", "weathered", "olive"]
-                [population::stable_hash(&format!("{seed}:complexion")) as usize % 4]
+                [resident_entropy(&seed, ResidentEntropyStream::Complexion) as usize % 4]
                 .into(),
             visible_features: [
                 "a small scar at one brow",
                 "freckles",
                 "work-worn hands",
                 "no especially notable marks",
-            ][population::stable_hash(&format!("{seed}:feature")) as usize % 4]
+            ][resident_entropy(&seed, ResidentEntropyStream::VisibleFeature) as usize % 4]
                 .into(),
             clothing: if service.is_empty() {
                 "practical local woolens".into()
@@ -716,10 +815,7 @@ pub fn ensure_settlement_population(
                 settlement_id,
                 &organization.id,
             );
-        let representative_seed = format!(
-            "resident:organization-representative:{settlement_id}:{}",
-            organization.id
-        );
+        let representative_seed = organization_representative_seed(settlement_id, &organization.id);
         insert_resident_with_seed(
             ctx,
             representative_seed,
@@ -812,6 +908,25 @@ pub fn npc_presence_remaining_minutes_at(
 ) -> Option<u64> {
     let suppression =
         crate::outbreak::patient_presence_suppression_at(ctx, presence.character_id, minute)?;
+    DailyPresenceWindow {
+        start_minute: presence.start_minute,
+        end_minute: presence.end_minute,
+    }
+    .remaining_minutes(
+        minute,
+        suppression.context_suppressed,
+        suppression.health_suppressed,
+    )
+    .ok()
+}
+
+pub fn npc_presence_remaining_minutes_at_view(
+    ctx: &ViewContext,
+    presence: &SettlementResidentPresence,
+    minute: u64,
+) -> Option<u64> {
+    let suppression =
+        crate::outbreak::patient_presence_suppression_at_view(ctx, presence.character_id, minute)?;
     DailyPresenceWindow {
         start_minute: presence.start_minute,
         end_minute: presence.end_minute,
@@ -984,12 +1099,11 @@ mod tests {
         assert!(ensure.contains("representative.organization_id = organization.id.clone()"));
         assert!(ensure.contains("\"organization-representative\""));
         assert!(ensure.contains("organization_representative_id"));
-        assert!(
-            source
-                .contains("let seed = format!(\"resident:{settlement_id}:{location}:{ordinal}\")")
-        );
+        assert!(source.contains("fn resident_seed("));
+        assert!(source.contains("resident_seed(settlement_id, location, ordinal)"));
         assert!(ensure.contains("insert_resident_with_seed("));
-        assert!(ensure.contains("resident:organization-representative:{settlement_id}"));
+        assert!(source.contains("fn organization_representative_seed("));
+        assert!(ensure.contains("organization_representative_seed("));
         assert!(ensure.contains("physical_location == chapter.location_id.as_str()"));
     }
 

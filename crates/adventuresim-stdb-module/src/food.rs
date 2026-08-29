@@ -56,6 +56,37 @@ fn preparation_skill_check(
     Ok(skill.capped_training_rank(skills.effective_skill_hours(skill), &attributes))
 }
 
+fn cutting_weapon_binding(
+    scope: CarriedInventoryScope,
+    row_id: u64,
+    item_id: &str,
+    accuracy: f32,
+    edge_sensitivity: f32,
+    damage: DamageBins,
+) -> String {
+    use sha2::Digest as _;
+
+    let mut hash = sha2::Sha256::new();
+    for value in [
+        b"adventuresim.ingredient-preparation.cutting-weapon".as_slice(),
+        1u16.to_le_bytes().as_slice(),
+        scope.as_str().as_bytes(),
+        row_id.to_le_bytes().as_slice(),
+        item_id.as_bytes(),
+        accuracy.to_bits().to_le_bytes().as_slice(),
+        edge_sensitivity.to_bits().to_le_bytes().as_slice(),
+    ] {
+        hash.update((value.len() as u64).to_le_bytes());
+        hash.update(value);
+    }
+    for damage_bits in damage.0.map(f32::to_bits) {
+        let value = damage_bits.to_le_bytes();
+        hash.update((value.len() as u64).to_le_bytes());
+        hash.update(value);
+    }
+    format!("cutting-weapon:v1:{:x}", hash.finalize())
+}
+
 fn carried_item_rows(
     ctx: &ReducerContext,
     character_id: u64,
@@ -141,13 +172,13 @@ fn qualifying_cutting_weapon_binding(ctx: &ReducerContext, character_id: u64) ->
             .unwrap_or_default();
             (effective_weapon_stat(item.accuracy, damage, item.edge_sensitivity) >= 0.5).then(
                 || {
-                    format!(
-                        "{}|{row_id}|{}|{}|{}|{:?}",
-                        scope.as_str(),
-                        item.id,
-                        item.accuracy.to_bits(),
-                        item.edge_sensitivity.to_bits(),
-                        damage.0.map(f32::to_bits)
+                    cutting_weapon_binding(
+                        scope,
+                        row_id,
+                        &item.id,
+                        item.accuracy,
+                        item.edge_sensitivity,
+                        damage,
                     )
                 },
             )
@@ -1562,13 +1593,13 @@ fn view_cutting_weapon_binding(ctx: &ViewContext, actor: &crate::Character) -> O
             .unwrap_or_default();
             (effective_weapon_stat(item.accuracy, damage, item.edge_sensitivity) >= 0.5).then(
                 || {
-                    format!(
-                        "{}|{row_id}|{}|{}|{}|{:?}",
-                        scope.as_str(),
-                        item.id,
-                        item.accuracy.to_bits(),
-                        item.edge_sensitivity.to_bits(),
-                        damage.0.map(f32::to_bits)
+                    cutting_weapon_binding(
+                        scope,
+                        row_id,
+                        &item.id,
+                        item.accuracy,
+                        item.edge_sensitivity,
+                        damage,
                     )
                 },
             )
@@ -4428,6 +4459,22 @@ pub fn eat_food(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cutting_weapon_binding_has_a_fixed_versioned_vector() {
+        assert_eq!(
+            cutting_weapon_binding(
+                CarriedInventoryScope::Party,
+                17,
+                "item:knife",
+                0.75,
+                1.25,
+                DamageBins([0.0, 1.0, 2.5, -0.0, f32::INFINITY]),
+            ),
+            "cutting-weapon:v1:fb6b2e4b08c494dbdac835682f969d237b20df43b98965171a56e18aa83d2004"
+        );
+    }
+
     #[test]
     fn preparation_adapter_revalidates_and_persists_terminal_attempts() {
         let source = crate::production_source(include_str!("food.rs"));

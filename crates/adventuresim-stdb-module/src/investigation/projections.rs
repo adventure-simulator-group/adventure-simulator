@@ -55,14 +55,10 @@ pub struct BackendInvestigationAction {
     pub uncertainty_bps: u16,
     pub skill_contributions: String,
     pub weather_available: bool,
-    pub required_case_site_id: String,
-    pub available: bool,
-    pub can_travel_to_required_site: bool,
-    /// Stable machine-readable reason for unavailability. Empty when available.
-    pub unavailable_reason_code: String,
+    pub contact_character_id: Option<u64>,
+    pub required_case_site_id: Option<CaseSiteId>,
+    pub availability: action::InvestigationActionAvailability,
     pub unavailable_reason: String,
-    /// Exact bounded wait until a learned temporal condition next permits the action.
-    pub wait_minutes: u32,
 }
 
 #[derive(Clone, Debug, SpacetimeType)]
@@ -105,16 +101,12 @@ fn journal_case_resolution(ctx: &ViewContext, public_case_id: &str) -> (String, 
     let canonical_case_id = match canonical_matches.as_slice() {
         [canonical] => canonical.clone(),
         [] => public_case_id.to_owned(),
-        _ => return ("open".into(), 0),
+        _ => return (crate::strategic::CaseStatus::Open.stable_id().into(), 0),
     };
     let Some(case) = ctx.db.case_authority().id().find(canonical_case_id.clone()) else {
-        return ("open".into(), 0);
+        return (crate::strategic::CaseStatus::Open.stable_id().into(), 0);
     };
-    let status = match case.resolution_status {
-        crate::strategic::CaseStatus::Open => "open",
-        crate::strategic::CaseStatus::Resolved => "completed",
-        crate::strategic::CaseStatus::Failed => "failed",
-    };
+    let status = case.resolution_status.stable_id();
     let resolved_at = ctx
         .db
         .case_outcome()
@@ -181,7 +173,7 @@ pub fn backend_investigation_cases(ctx: &ViewContext) -> Vec<BackendInvestigatio
 pub struct BackendCaseSitePin {
     pub owner_character_id: u64,
     pub case_id: String,
-    pub case_site_id: String,
+    pub case_site_id: CaseSiteId,
     pub origin_settlement_id: String,
     pub name: String,
     pub description: String,
@@ -218,7 +210,7 @@ pub struct BackendPhysicalEvidence {
     pub owner_character_id: u64,
     pub evidence_id: String,
     pub case_id: String,
-    pub case_site_id: String,
+    pub case_site_id: CaseSiteId,
     pub label: String,
     pub portrait_icon: String,
     pub description: String,
@@ -302,7 +294,7 @@ pub fn backend_physical_evidence(ctx: &ViewContext) -> Vec<BackendPhysicalEviden
             continue;
         };
         for generated in &validated.manifest.evidence {
-            if generated.site_id.0 != pin.case_site_id {
+            if generated.site_id.0 != pin.case_site_id.as_str() {
                 continue;
             }
             let Some(authority) = ctx
@@ -492,10 +484,13 @@ pub fn backend_investigation_actions(ctx: &ViewContext) -> Vec<BackendInvestigat
                 return None;
             }
             let cost = action::base_cost(kind);
-            let required_case_site_id =
-                exact_action_site_for_observer(ctx, &capability, kind).unwrap_or_default();
-            let availability =
-                action_unavailable_reason_view(ctx, &capability, kind, &required_case_site_id);
+            let required_case_site_id = exact_action_site_for_observer(ctx, &capability, kind);
+            let availability = action_unavailable_reason_view(
+                ctx,
+                &capability,
+                kind,
+                required_case_site_id.as_ref(),
+            );
             let case_id = projected_action_public_case_id(ctx, &capability)?;
             Some(BackendInvestigationAction {
                 owner_character_id: capability.owner_character_id,
@@ -512,12 +507,13 @@ pub fn backend_investigation_actions(ctx: &ViewContext) -> Vec<BackendInvestigat
                     "terrain, awareness, stealth, local familiarity, and bounded party assistance"
                         .into(),
                 weather_available: true,
+                contact_character_id: (capability.target_kind
+                    == action::InvestigationTargetKind::Contact)
+                    .then(|| capability.target_id.parse::<u64>().ok())
+                    .flatten(),
                 required_case_site_id,
-                available: availability.unavailable_reason.is_none(),
-                can_travel_to_required_site: availability.can_travel_to_required_site,
-                unavailable_reason_code: availability.unavailable_reason_code,
+                availability: availability.availability,
                 unavailable_reason: availability.unavailable_reason.unwrap_or_default(),
-                wait_minutes: availability.wait_minutes,
             })
         })
         .collect()
@@ -733,7 +729,7 @@ fn generated_pattern_authority(
     if capability.method != action_method(generated.kind)
         || capability.target_kind != generated.target_kind
         || capability.target_id != generated.target_id
-        || capability.target_terrain != format!("{expected_terrain:?}").to_ascii_lowercase()
+        || capability.target_terrain != expected_terrain.stable_id()
         || capability.required_action_id != expected_required
         || capability.alternate_route_action_id != expected_alternate
         || capability.safe_summary != generated.safe_summary
@@ -1194,7 +1190,7 @@ fn exact_action_site_for_observer(
     ctx: &ViewContext,
     capability: &InvestigationActionCapability,
     kind: action::InvestigationActionKind,
-) -> Option<String> {
+) -> Option<CaseSiteId> {
     if kind != action::InvestigationActionKind::InspectSite
         || capability.target_kind != action::InvestigationTargetKind::Site
     {
@@ -1232,12 +1228,12 @@ fn exact_action_site_for_observer(
         lead.destination_stage,
         &lead.corrected_by,
         &site.case_id,
-        &site.id.value,
+        site.id.as_str(),
         lead.latitude_e7 == site.latitude_e7 && lead.longitude_e7 == site.longitude_e7,
         generated_aliases.as_ref().map(|aliases| aliases.0.as_str()),
         generated_aliases.as_ref().map(|aliases| aliases.1.as_str()),
     )
-    .then_some(lead.exact_location_id)
+    .then_some(site.id)
 }
 
 #[expect(
@@ -1278,65 +1274,74 @@ fn exact_site_knowledge_is_live(
 
 struct ProjectedActionAvailability {
     unavailable_reason: Option<String>,
-    unavailable_reason_code: String,
-    can_travel_to_required_site: bool,
-    wait_minutes: u32,
+    availability: action::InvestigationActionAvailability,
+}
+
+impl ProjectedActionAvailability {
+    fn available() -> Self {
+        Self {
+            unavailable_reason: None,
+            availability: action::InvestigationActionAvailability::Available,
+        }
+    }
+
+    fn unavailable(
+        reason: action::InvestigationActionUnavailableReason,
+        can_travel_to_required_site: bool,
+        wait_minutes: u32,
+        message: impl Into<String>,
+    ) -> Self {
+        Self {
+            unavailable_reason: Some(message.into()),
+            availability: action::InvestigationActionAvailability::unavailable(
+                reason,
+                can_travel_to_required_site,
+                wait_minutes,
+            ),
+        }
+    }
 }
 
 fn projected_action_availability(
     party_ready: bool,
-    required_case_site_id: &str,
+    required_case_site_id: Option<&CaseSiteId>,
     occupying_required_site: bool,
     temporal_wait_minutes: u32,
 ) -> ProjectedActionAvailability {
     if !party_ready {
-        return ProjectedActionAvailability {
-            unavailable_reason: Some(
-                "An incapacitated party member must recover before the party can investigate."
-                    .into(),
-            ),
-            unavailable_reason_code: "party_not_ready".into(),
-            can_travel_to_required_site: false,
-            wait_minutes: 0,
-        };
+        return ProjectedActionAvailability::unavailable(
+            action::InvestigationActionUnavailableReason::PartyNotReady,
+            false,
+            0,
+            "An incapacitated party member must recover before the party can investigate.",
+        );
     }
-    if !required_case_site_id.is_empty() && !occupying_required_site {
-        return ProjectedActionAvailability {
-            unavailable_reason: Some(
-                "Travel to the known investigation site before inspecting it.".into(),
-            ),
-            unavailable_reason_code: "travel_required".into(),
-            can_travel_to_required_site: true,
-            wait_minutes: 0,
-        };
+    if required_case_site_id.is_some() && !occupying_required_site {
+        return ProjectedActionAvailability::unavailable(
+            action::InvestigationActionUnavailableReason::TravelRequired,
+            true,
+            0,
+            "Travel to the known investigation site before inspecting it.",
+        );
     }
     if temporal_wait_minutes > 0 {
-        return ProjectedActionAvailability {
-            unavailable_reason: Some(
-                "Wait until the learned nighttime activity window begins.".into(),
-            ),
-            unavailable_reason_code: "night_window".into(),
-            can_travel_to_required_site: false,
-            wait_minutes: temporal_wait_minutes,
-        };
+        return ProjectedActionAvailability::unavailable(
+            action::InvestigationActionUnavailableReason::NightWindow,
+            false,
+            temporal_wait_minutes,
+            "Wait until the learned nighttime activity window begins.",
+        );
     }
-    ProjectedActionAvailability {
-        unavailable_reason: None,
-        unavailable_reason_code: String::new(),
-        can_travel_to_required_site: false,
-        wait_minutes: 0,
-    }
+    ProjectedActionAvailability::available()
 }
 
 fn projected_target_changed_availability() -> ProjectedActionAvailability {
-    ProjectedActionAvailability {
-        unavailable_reason: Some(
-            "The circumstances supporting this action changed. Replan before acting.".into(),
-        ),
-        unavailable_reason_code: "target_changed".into(),
-        can_travel_to_required_site: false,
-        wait_minutes: 0,
-    }
+    ProjectedActionAvailability::unavailable(
+        action::InvestigationActionUnavailableReason::TargetChanged,
+        false,
+        0,
+        "The circumstances supporting this action changed. Replan before acting.",
+    )
 }
 
 fn public_contact_schedule_wait_minutes(
@@ -1349,15 +1354,33 @@ fn public_contact_schedule_wait_minutes(
     if presence.context_suppressed || presence.health_suppressed {
         return None;
     }
-    let current = minute % adventuresim_core::strategic_time::MINUTES_PER_DAY;
-    let start = u64::from(presence.start_minute);
-    let wait = (start + adventuresim_core::strategic_time::MINUTES_PER_DAY - current)
-        % adventuresim_core::strategic_time::MINUTES_PER_DAY;
-    Some(if wait == 0 {
-        adventuresim_core::strategic_time::MINUTES_PER_DAY
-    } else {
-        wait
-    } as u32)
+    adventuresim_core::strategic_presence::DailyPresenceWindow {
+        start_minute: presence.start_minute,
+        end_minute: presence.end_minute,
+    }
+    .minutes_until_start(minute)
+    .ok()
+}
+
+fn projected_contact_schedule_wait_minutes(
+    ctx: &ViewContext,
+    presence: &crate::SettlementResidentPresence,
+    minute: u64,
+) -> Option<u32> {
+    if crate::settlement_population::npc_presence_remaining_minutes_at_view(ctx, presence, minute)
+        .is_some()
+    {
+        return Some(0);
+    }
+    let suppression =
+        crate::outbreak::patient_presence_suppression_at_view(ctx, presence.character_id, minute)?;
+    if suppression.context_suppressed || suppression.health_suppressed {
+        return None;
+    }
+    let mut historical_presence = presence.clone();
+    historical_presence.context_suppressed = false;
+    historical_presence.health_suppressed = false;
+    public_contact_schedule_wait_minutes(&historical_presence, minute)
 }
 
 fn referred_contact_target_matches(
@@ -1419,8 +1442,8 @@ fn referred_contact_is_current_view(
             resident_character_id: npc.character_id,
             display_name: npc.name.clone(),
             demographic: crate::strategic::generated_npc_demographic(&npc),
-            age_band: format!("{:?}", npc.age_band).to_ascii_lowercase(),
-            sex: format!("{:?}", npc.sex).to_ascii_lowercase(),
+            age_band: npc.age_band.stable_id().to_owned(),
+            sex: npc.sex.stable_id().to_owned(),
             profession: npc.profession.clone(),
             visible_description: String::new(),
             expected_location: presence.location_id.clone(),
@@ -1469,22 +1492,22 @@ fn projected_contact_presence_availability(
     {
         return Some(projected_target_changed_availability());
     }
-    match started_at.and_then(|minute| public_contact_schedule_wait_minutes(&presence, minute)) {
+    match started_at
+        .and_then(|minute| projected_contact_schedule_wait_minutes(ctx, &presence, minute))
+    {
         Some(0) => None,
-        Some(wait_minutes) => Some(ProjectedActionAvailability {
-            unavailable_reason: Some(
-                "Wait until the referred contact's public schedule resumes.".into(),
-            ),
-            unavailable_reason_code: "contact_schedule_window".into(),
-            can_travel_to_required_site: false,
+        Some(wait_minutes) => Some(ProjectedActionAvailability::unavailable(
+            action::InvestigationActionUnavailableReason::ContactScheduleWindow,
+            false,
             wait_minutes,
-        }),
-        None => Some(ProjectedActionAvailability {
-            unavailable_reason: Some("The referred contact is not currently available.".into()),
-            unavailable_reason_code: "contact_not_present".into(),
-            can_travel_to_required_site: false,
-            wait_minutes: 0,
-        }),
+            "Wait until the referred contact's public schedule resumes.",
+        )),
+        None => Some(ProjectedActionAvailability::unavailable(
+            action::InvestigationActionUnavailableReason::ContactNotPresent,
+            false,
+            0,
+            "The referred contact is not currently available.",
+        )),
     }
 }
 
@@ -1639,7 +1662,7 @@ fn victim_cohort_is_current_view(
     };
     if kind != action::InvestigationActionKind::Patrol
         || capability.target_id != cohort_id
-        || target.demographic != format!("{demographic:?}").to_ascii_lowercase()
+        || target.demographic != demographic.as_str()
         || target.age_band != age_band
         || target.sex != sex
         || target.profession != profession
@@ -1665,8 +1688,8 @@ fn victim_cohort_is_current_view(
             resident_character_id: npc.character_id,
             display_name: npc.name.clone(),
             demographic: crate::strategic::generated_npc_demographic(&npc),
-            age_band: format!("{:?}", npc.age_band).to_ascii_lowercase(),
-            sex: format!("{:?}", npc.sex).to_ascii_lowercase(),
+            age_band: npc.age_band.stable_id().to_owned(),
+            sex: npc.sex.stable_id().to_owned(),
             profession: npc.profession.clone(),
             visible_description: String::new(),
             expected_location: presence.location_id.clone(),
@@ -1681,45 +1704,41 @@ fn victim_cohort_is_current_view(
         &expected,
         &current,
         &presence.settlement_id,
-    ) && crate::settlement_population::npc_presence_remaining_minutes(&presence, started_at)
-        .is_some()
+    ) && crate::settlement_population::npc_presence_remaining_minutes_at_view(
+        ctx, &presence, started_at,
+    )
+    .is_some()
 }
 
 fn action_unavailable_reason_view(
     ctx: &ViewContext,
     capability: &InvestigationActionCapability,
     kind: action::InvestigationActionKind,
-    required_case_site_id: &str,
+    required_case_site_id: Option<&CaseSiteId>,
 ) -> ProjectedActionAvailability {
     let Some(character) = ctx.db.character().id().find(capability.owner_character_id) else {
-        return ProjectedActionAvailability {
-            unavailable_reason: Some(
-                "The investigating character is currently unavailable.".into(),
-            ),
-            unavailable_reason_code: "character_unavailable".into(),
-            can_travel_to_required_site: false,
-            wait_minutes: 0,
-        };
+        return ProjectedActionAvailability::unavailable(
+            action::InvestigationActionUnavailableReason::CharacterUnavailable,
+            false,
+            0,
+            "The investigating character is currently unavailable.",
+        );
     };
     if !character.alive {
-        return ProjectedActionAvailability {
-            unavailable_reason: Some(
-                "The investigating character is currently unavailable.".into(),
-            ),
-            unavailable_reason_code: "character_unavailable".into(),
-            can_travel_to_required_site: false,
-            wait_minutes: 0,
-        };
+        return ProjectedActionAvailability::unavailable(
+            action::InvestigationActionUnavailableReason::CharacterUnavailable,
+            false,
+            0,
+            "The investigating character is currently unavailable.",
+        );
     }
     let Some(party_id) = character.party_id else {
-        return ProjectedActionAvailability {
-            unavailable_reason: Some(
-                "Join or form a party before attempting this investigation.".into(),
-            ),
-            unavailable_reason_code: "party_required".into(),
-            can_travel_to_required_site: false,
-            wait_minutes: 0,
-        };
+        return ProjectedActionAvailability::unavailable(
+            action::InvestigationActionUnavailableReason::PartyRequired,
+            false,
+            0,
+            "Join or form a party before attempting this investigation.",
+        );
     };
     let party_ready = !ctx
         .db
@@ -1738,16 +1757,15 @@ fn action_unavailable_reason_view(
                         == adventuresim_core::morale::IncapacitationStatus::Incapacitated
                 })
         });
-    let occupying_required_site = !required_case_site_id.is_empty()
-        && ctx
-            .db
-            .party_authority()
-            .id()
-            .find(&party_id)
-            .and_then(|party| party.current_case_site_id)
-            .and_then(|site| site.to_place())
-            .zip(canonical_case_site_place(required_case_site_id))
-            .is_some_and(|(occupied, required)| occupied == required);
+    let occupying_required_site = ctx
+        .db
+        .party_authority()
+        .id()
+        .find(&party_id)
+        .and_then(|party| party.current_case_site_id)
+        .map(|site| site.to_place())
+        .zip(required_case_site_id.map(CaseSiteId::to_place))
+        .is_some_and(|(occupied, required)| occupied == required);
     let projected_started_at = projected_party_activity_minute(ctx, &party_id);
     if let Some(availability) = projected_contact_presence_availability(
         ctx,

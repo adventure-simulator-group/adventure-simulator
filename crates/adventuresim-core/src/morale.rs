@@ -5,6 +5,119 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Closed vocabulary for durable morale events.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+#[serde(rename_all = "snake_case")]
+pub enum MoraleEventKind {
+    CorpseHandling,
+    SocialInteraction,
+    WitnessCharm,
+    WitnessCommand,
+    WitnessBluff,
+    Victory,
+    Defeat,
+    Injury,
+    MasteryEnjoyment,
+    ReligiousObservanceNeglected,
+    HolyDayObserved,
+    Prayer,
+    Meditation,
+    TravelPrayerNeglected,
+    SpouseLeisure,
+    Carousing,
+    AlcoholSatisfied,
+    AlcoholUnsatisfied,
+    ResidenceLeisure,
+    Leisure,
+}
+
+impl MoraleEventKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::CorpseHandling => "corpse_handling",
+            Self::SocialInteraction => "social_interaction",
+            Self::WitnessCharm => "witness_charm",
+            Self::WitnessCommand => "witness_command",
+            Self::WitnessBluff => "witness_bluff",
+            Self::Victory => "victory",
+            Self::Defeat => "defeat",
+            Self::Injury => "injury",
+            Self::MasteryEnjoyment => "mastery_enjoyment",
+            Self::ReligiousObservanceNeglected => "religious_observance_neglected",
+            Self::HolyDayObserved => "holy_day_observed",
+            Self::Prayer => "prayer",
+            Self::Meditation => "meditation",
+            Self::TravelPrayerNeglected => "travel_prayer_neglected",
+            Self::SpouseLeisure => "spouse_leisure",
+            Self::Carousing => "carousing",
+            Self::AlcoholSatisfied => "alcohol_satisfied",
+            Self::AlcoholUnsatisfied => "alcohol_unsatisfied",
+            Self::ResidenceLeisure => "residence_leisure",
+            Self::Leisure => "leisure",
+        }
+    }
+}
+
+/// Closed vocabulary for projected contributors to current morale.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+#[serde(rename_all = "snake_case")]
+pub enum MoraleSourceKind {
+    Injury,
+    Cleanliness,
+    Religion,
+    ReligiousDiscord,
+    Prayer,
+    Meditation,
+    Power,
+    Ally,
+    CorpseHandling,
+    SocialInteraction,
+    WitnessCharm,
+    WitnessCommand,
+    WitnessBluff,
+    Victory,
+    Defeat,
+    MasteryEnjoyment,
+    ReligiousObservanceNeglected,
+    HolyDayObserved,
+    TravelPrayerNeglected,
+    SpouseLeisure,
+    Carousing,
+    AlcoholSatisfied,
+    AlcoholUnsatisfied,
+    ResidenceLeisure,
+    Leisure,
+}
+
+impl From<MoraleEventKind> for MoraleSourceKind {
+    fn from(kind: MoraleEventKind) -> Self {
+        match kind {
+            MoraleEventKind::CorpseHandling => Self::CorpseHandling,
+            MoraleEventKind::SocialInteraction => Self::SocialInteraction,
+            MoraleEventKind::WitnessCharm => Self::WitnessCharm,
+            MoraleEventKind::WitnessCommand => Self::WitnessCommand,
+            MoraleEventKind::WitnessBluff => Self::WitnessBluff,
+            MoraleEventKind::Victory => Self::Victory,
+            MoraleEventKind::Defeat => Self::Defeat,
+            MoraleEventKind::Injury => Self::Injury,
+            MoraleEventKind::MasteryEnjoyment => Self::MasteryEnjoyment,
+            MoraleEventKind::ReligiousObservanceNeglected => Self::ReligiousObservanceNeglected,
+            MoraleEventKind::HolyDayObserved => Self::HolyDayObserved,
+            MoraleEventKind::Prayer => Self::Prayer,
+            MoraleEventKind::Meditation => Self::Meditation,
+            MoraleEventKind::TravelPrayerNeglected => Self::TravelPrayerNeglected,
+            MoraleEventKind::SpouseLeisure => Self::SpouseLeisure,
+            MoraleEventKind::Carousing => Self::Carousing,
+            MoraleEventKind::AlcoholSatisfied => Self::AlcoholSatisfied,
+            MoraleEventKind::AlcoholUnsatisfied => Self::AlcoholUnsatisfied,
+            MoraleEventKind::ResidenceLeisure => Self::ResidenceLeisure,
+            MoraleEventKind::Leisure => Self::Leisure,
+        }
+    }
+}
+
 /// Minimum Will check used as a divisor for negative morale.
 pub const MINIMUM_WILL_CHECK: f32 = 0.25;
 /// Surplus morale which produces roughly 63% of a character's maximum ally bonus.
@@ -258,6 +371,20 @@ pub fn thirst_incapacitation(water_balance_ml: f32, travel_water_ml_per_day: f32
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn morale_kind_serialization_is_closed_and_canonical() {
+        assert_eq!(
+            serde_json::to_string(&MoraleEventKind::ReligiousObservanceNeglected).unwrap(),
+            "\"religious_observance_neglected\""
+        );
+        assert_eq!(
+            serde_json::to_string(&MoraleSourceKind::ReligiousDiscord).unwrap(),
+            "\"religious_discord\""
+        );
+        assert!(serde_json::from_str::<MoraleEventKind>("\"wording_changed\"").is_err());
+        assert!(serde_json::from_str::<MoraleSourceKind>("\"wording_changed\"").is_err());
+    }
 
     #[test]
     fn morale_effects_have_ranked_diminishing_returns() {

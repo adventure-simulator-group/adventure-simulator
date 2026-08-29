@@ -7,7 +7,7 @@ use std::collections::HashSet;
 use crate::repair::{ItemCondition, item_condition__view};
 use crate::{
     Character, CharacterAttributes, CharacterLimbs, CharacterSkills, CharacterStats, Item,
-    ItemKind,
+    PersistedItemKind,
     character::{character, character_equipped_item, equipment_occupancy},
     character__view, character_attributes__view, character_equipped_item__view,
     character_limbs__view, character_skills__view, character_stats__view,
@@ -610,6 +610,24 @@ fn leave_mission_for_server(
 /// profile is reused. The bootstrap capability is checked by the only caller;
 /// keeping the cleanup here lets it share the authoritative mission teardown
 /// primitives without exposing a new reducer.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum MissionCaseIdentity<'a> {
+    Standalone { mission_id: &'a str },
+    Other,
+}
+
+impl<'a> MissionCaseIdentity<'a> {
+    fn parse(value: &'a str) -> Self {
+        let mut components = value.splitn(3, ':');
+        match (components.next(), components.next(), components.next()) {
+            (Some("case"), Some("standalone"), Some(mission_id)) if !mission_id.is_empty() => {
+                Self::Standalone { mission_id }
+            }
+            _ => Self::Other,
+        }
+    }
+}
+
 pub(crate) fn retire_interrupted_standalone_server_for_character(
     ctx: &ReducerContext,
     character_id: u64,
@@ -627,8 +645,12 @@ pub(crate) fn retire_interrupted_standalone_server_for_character(
             .id()
             .find(&server.mission_id)
             .ok_or("Interrupted tactical server has no mission authority")?;
-        if !mission.case_id.starts_with("case:standalone:") {
-            return Err("Refusing to retire a non-standalone tactical server".into());
+        match MissionCaseIdentity::parse(&mission.case_id) {
+            MissionCaseIdentity::Standalone { mission_id }
+                if mission_id == server.mission_id.as_str() => {}
+            MissionCaseIdentity::Standalone { .. } | MissionCaseIdentity::Other => {
+                return Err("Refusing to retire a non-standalone tactical server".into());
+            }
         }
         fail_bound_mission_attempt(ctx, &server.mission_id)?;
         let connected: Vec<_> = ctx
@@ -692,7 +714,12 @@ pub fn request_tactical_server(
     let case_site = party
         .current_case_site_id
         .as_ref()
-        .and_then(|site_id| ctx.db.case_site_authority().id_key().find(&site_id.value))
+        .and_then(|site_id| {
+            ctx.db
+                .case_site_authority()
+                .id_key()
+                .find(site_id.to_string())
+        })
         .ok_or("Party must be at a case site")?;
     if party.current_case_site_id.as_deref() != Some(case_site.id.as_str()) {
         return Err("Party must be at its active quest location".into());
@@ -1101,11 +1128,15 @@ fn validate_tactical_receipt(
             .ok_or("Tactical equipment contact item definition not found")?;
         let valid_role = match contact.role {
             TacticalEquipmentContactRole::AttackerWeapon => {
-                held && definition.kind == ItemKind::Weapon
+                held && definition.kind == PersistedItemKind::Weapon
             }
             TacticalEquipmentContactRole::DefenderEquipment => {
-                (held && matches!(definition.kind, ItemKind::Weapon | ItemKind::Shield))
-                    || (worn && definition.kind == ItemKind::Armor)
+                (held
+                    && matches!(
+                        definition.kind,
+                        PersistedItemKind::Weapon | PersistedItemKind::Shield
+                    ))
+                    || (worn && definition.kind == PersistedItemKind::Armor)
             }
         };
         if !valid_role {
@@ -1265,7 +1296,7 @@ fn end_tactical_server_by_instance(
             crate::condition::record_morale_event(
                 ctx,
                 character.id,
-                "defeat",
+                adventuresim_core::morale::MoraleEventKind::Defeat,
                 -5.0,
                 Some(server.mission_id.clone()),
             )?;
@@ -1298,6 +1329,27 @@ mod authority_tests {
             injuries: Vec::new(),
             blood_loss_fraction: 0.0,
             ammunition_used: 0,
+        }
+    }
+
+    #[test]
+    fn standalone_case_identity_requires_the_exact_structured_tag() {
+        assert_eq!(
+            MissionCaseIdentity::parse("case:standalone:mission:animation-walk"),
+            MissionCaseIdentity::Standalone {
+                mission_id: "mission:animation-walk"
+            }
+        );
+        for malformed in [
+            "case:standalone:",
+            "case:other:mission:animation-walk",
+            "prefix:case:standalone:mission:animation-walk",
+            "case-standalone:mission:animation-walk",
+        ] {
+            assert_eq!(
+                MissionCaseIdentity::parse(malformed),
+                MissionCaseIdentity::Other
+            );
         }
     }
 

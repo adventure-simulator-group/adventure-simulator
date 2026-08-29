@@ -22,7 +22,7 @@ pub type ControlledPlayer = Actions<Player>;
     CharacterDimensions,
     Limbs,
     Skills,
-    Attributes,
+    TacticalAttributes,
     Stats,
     crate::animation::SkeletonState
 )]
@@ -512,32 +512,18 @@ impl PlayerSkills for Skills {
 }
 
 /// Genetic attributes of a [`Player`].
-#[derive(Component, Serialize, Deserialize, Debug, Reflect, Clone, PartialEq)]
-#[reflect(Component)]
+#[derive(Component, Serialize, Deserialize, Debug, Reflect, Clone, PartialEq, Deref, DerefMut)]
+#[serde(transparent)]
+#[reflect(opaque)]
+#[reflect(Component, PartialEq, Clone, Serialize, Deserialize)]
 #[component(immutable)]
-pub struct Attributes {
-    pub endurance: f32,
-    pub immunity: f32,
-    pub gut: f32,
-    pub intelligence: f32,
-    pub instinct: f32,
-    pub eyesight: f32,
-    pub hearing: f32,
-    pub left_arm_strength: f32,
-    pub right_arm_strength: f32,
-    pub left_leg_strength: f32,
-    pub right_leg_strength: f32,
-    pub left_arm_agility: f32,
-    pub right_arm_agility: f32,
-    pub left_leg_agility: f32,
-    pub right_leg_agility: f32,
-}
+pub struct TacticalAttributes(pub PlayerAttributeValues);
 
-impl Default for Attributes {
+impl Default for TacticalAttributes {
     fn default() -> Self {
         let default = adventuresim_core::starting_character::default_character("tactical");
         let attributes = default.attributes;
-        Self {
+        Self(PlayerAttributeValues {
             endurance: attributes.endurance,
             immunity: attributes.immunity,
             gut: attributes.gut,
@@ -553,40 +539,28 @@ impl Default for Attributes {
             right_arm_agility: attributes.agility,
             left_leg_agility: attributes.agility,
             right_leg_agility: attributes.agility,
-        }
+        })
     }
 }
 
-impl PlayerAttributes for Attributes {
+impl From<PlayerAttributeValues> for TacticalAttributes {
+    fn from(attributes: PlayerAttributeValues) -> Self {
+        Self(attributes)
+    }
+}
+
+impl PlayerAttributes for TacticalAttributes {
     fn raw_limb_attr(&self, attr: LimbAttribute, limb: BodyPart) -> f32 {
-        match (attr, limb) {
-            (LimbAttribute::Strength, BodyPart::LeftArm) => self.left_arm_strength,
-            (LimbAttribute::Strength, BodyPart::RightArm) => self.right_arm_strength,
-            (LimbAttribute::Strength, BodyPart::LeftLeg) => self.left_leg_strength,
-            (LimbAttribute::Strength, BodyPart::RightLeg) => self.right_leg_strength,
-            (LimbAttribute::Agility, BodyPart::LeftArm) => self.left_arm_agility,
-            (LimbAttribute::Agility, BodyPart::RightArm) => self.right_arm_agility,
-            (LimbAttribute::Agility, BodyPart::LeftLeg) => self.left_leg_agility,
-            (LimbAttribute::Agility, BodyPart::RightLeg) => self.right_leg_agility,
-            _ => unimplemented!(),
-        }
+        self.0.raw_limb_attr(attr, limb)
     }
 
     fn raw_single_body_part_attr(&self, attr: SimpleAttribute) -> f32 {
-        match attr {
-            SimpleAttribute::Endurance => self.endurance,
-            SimpleAttribute::Immunity => self.immunity,
-            SimpleAttribute::Gut => self.gut,
-            SimpleAttribute::Intelligence => self.intelligence,
-            SimpleAttribute::Instinct => self.instinct,
-            SimpleAttribute::Eyesight => self.eyesight,
-            SimpleAttribute::Hearing => self.hearing,
-        }
+        self.0.raw_single_body_part_attr(attr)
     }
 }
 
 pub type TacticalPlayerView<'v, 'w, 's> =
-    PlayerInfo<&'v Attributes, &'v Limbs, &'v Stats, InventoryView<'v, 'w, 's>, &'v Skills>;
+    PlayerInfo<&'v TacticalAttributes, &'v Limbs, &'v Stats, InventoryView<'v, 'w, 's>, &'v Skills>;
 
 #[derive(SystemParam)]
 pub struct TacticalPlayerViewer<'w, 's> {
@@ -598,7 +572,7 @@ pub struct TacticalPlayerViewer<'w, 's> {
             &'static Limbs,
             &'static Skills,
             &'static Stats,
-            &'static Attributes,
+            &'static TacticalAttributes,
         ),
     >,
 }
@@ -693,7 +667,7 @@ mod tactical_combat_state_tests {
     #[test]
     fn component_defaults_project_john_fabelgeist() {
         let player = Player::default();
-        let attributes = Attributes::default();
+        let attributes = TacticalAttributes::default();
         let skills = Skills::default();
         assert_eq!(player.name, "John Fabelgeist");
         assert_eq!(attributes.endurance, 4.0);
@@ -708,6 +682,23 @@ mod tactical_combat_state_tests {
         assert_eq!(
             Skill::Command.capped_training_rank(skills.command_hours, &attributes),
             3.0
+        );
+    }
+
+    #[test]
+    fn tactical_attributes_keep_the_flat_shared_boundary_shape() {
+        let attributes = TacticalAttributes(PlayerAttributeValues {
+            endurance: 1.0,
+            hearing: 4.5,
+            ..PlayerAttributeValues::default()
+        });
+        let wire = serde_json::to_value(&attributes).unwrap();
+        assert_eq!(wire["endurance"], 1.0);
+        assert_eq!(wire["hearing"], 4.5);
+        assert!(wire.get("0").is_none());
+        assert_eq!(
+            serde_json::from_value::<TacticalAttributes>(wire).unwrap(),
+            attributes
         );
     }
 

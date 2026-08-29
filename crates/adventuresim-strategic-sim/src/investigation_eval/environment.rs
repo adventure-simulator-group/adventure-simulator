@@ -1,9 +1,9 @@
 use super::{
-    ArgumentValue, Capability, ChoiceArguments, ChoiceKind, DeveloperCaseAnalysis, DiscoveryView,
-    EVAL_FORMAT_VERSION, JournalView, LegalChoice, LocationResolution, PartyView, PlayerFrame,
-    PolicyClassification, PublicClaim, PublicDialogueLine, PublicEvidence, PublicLocation,
-    PublicQuestTrace, PublicTraceEvent, Termination, TerminationErrorCode, WitnessAvailability,
-    WitnessReferral,
+    ArgumentValue, Capability, CapabilityIdentity, ChoiceArguments, ChoiceId, ChoiceKind,
+    DeveloperCaseAnalysis, DiscoveryView, EVAL_FORMAT_VERSION, EvaluationPartyView, JournalView,
+    LegalChoice, LocationResolution, PlayerFrame, PolicyClassification, PreparationOutcome,
+    PublicClaim, PublicDialogueLine, PublicEvidence, PublicLocation, PublicQuestTrace,
+    PublicTraceEvent, Termination, TerminationErrorCode, WitnessAvailability, WitnessReferral,
 };
 use adventuresim_core::{
     investigation::DestinationKnowledgeStage,
@@ -19,7 +19,7 @@ use std::collections::{BTreeMap, BTreeSet};
 pub struct EvalCaseConfig {
     pub seed: u64,
     pub family: TemplateFamily,
-    pub party: PartyView,
+    pub party: EvaluationPartyView,
 }
 
 impl EvalCaseConfig {
@@ -27,7 +27,7 @@ impl EvalCaseConfig {
         Self {
             seed,
             family,
-            party: PartyView {
+            party: EvaluationPartyView {
                 members: 3,
                 terrain_skill: 55,
                 insight: 50,
@@ -47,7 +47,7 @@ pub struct InvestigationEnvironment {
     settlement_name: String,
     current_location: String,
     frame: PlayerFrame,
-    capabilities: BTreeMap<String, Capability>,
+    capabilities: BTreeMap<ChoiceId, Capability>,
     tavern_entered: bool,
     visible_witnesses: BTreeSet<usize>,
     interviewed: BTreeSet<usize>,
@@ -55,6 +55,7 @@ pub struct InvestigationEnvironment {
     completed_remediations: BTreeSet<String>,
     exact_sites: BTreeSet<String>,
     visited_sites: BTreeSet<String>,
+    journal_location_indexes: BTreeMap<JournalLocationKey, usize>,
     prepared: BTreeSet<String>,
     /// Ordinary schedules are player-visible state, not a pipeline error.
     witness_returns_at: BTreeMap<usize, u64>,
@@ -72,6 +73,15 @@ struct CompletedAction {
     target_id: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum JournalLocationKey {
+    CaseSite(String),
+    ActionDestination {
+        action_index: usize,
+        output_index: usize,
+    },
+}
+
 impl InvestigationEnvironment {
     pub fn generate(config: EvalCaseConfig) -> Result<Self, String> {
         let context = generation_context(config.seed, config.family);
@@ -81,13 +91,16 @@ impl InvestigationEnvironment {
         Self::from_generated_at(generated, config.party, settlement_name)
     }
 
-    pub fn from_generated(generated: GeneratedCase, party: PartyView) -> Result<Self, String> {
+    pub fn from_generated(
+        generated: GeneratedCase,
+        party: EvaluationPartyView,
+    ) -> Result<Self, String> {
         Self::from_generated_at(generated, party, "the settlement".into())
     }
 
     fn from_generated_at(
         generated: GeneratedCase,
-        party: PartyView,
+        party: EvaluationPartyView,
         settlement_name: String,
     ) -> Result<Self, String> {
         let analysis = developer_analysis(&generated)?;
@@ -124,6 +137,7 @@ impl InvestigationEnvironment {
             completed_remediations: BTreeSet::new(),
             exact_sites: BTreeSet::new(),
             visited_sites: BTreeSet::new(),
+            journal_location_indexes: BTreeMap::new(),
             prepared: BTreeSet::new(),
             witness_returns_at,
             trace: Vec::new(),
@@ -163,8 +177,13 @@ impl InvestigationEnvironment {
         let action_label = legal.label.clone();
         let game_minute = self.frame.game_minute;
         let action_step = self.frame.step;
-        let pre_observation_digest = semantic_digest(&self.frame)?;
+        let pre_observation_digest =
+            semantic_digest(SemanticDigestPurpose::PlayerFrame, &self.frame)?;
         let waiting_for_witness = matches!(&capability, Capability::WaitForWitness(_));
+        let preparation_outcome = match &capability {
+            Capability::Prepare(tag) => PreparationOutcome::Prepared { tag: tag.clone() },
+            _ => PreparationOutcome::NotAttempted,
+        };
         let mut learned = Vec::new();
         let mut learned_claim_ids = Vec::new();
         let mut dialogue = Vec::new();
@@ -176,7 +195,7 @@ impl InvestigationEnvironment {
                 self.frame.discovery.problem_summary =
                     self.generated.consequence.public_summary.clone();
                 self.frame.discovery.consequence_summary =
-                    format!("{:?}", self.generated.consequence.symptom);
+                    symptom_key(self.generated.consequence.symptom).to_owned();
                 self.frame.discovery.learned_at = "settlement tavern rumor".into();
                 if let Some(witness) = self.generated.witnesses.first() {
                     self.visible_witnesses.insert(0);
@@ -313,7 +332,7 @@ impl InvestigationEnvironment {
                     target_kind: action.target_kind,
                     target_id: action.target_id.clone(),
                 });
-                for output in &action.outputs {
+                for (output_index, output) in action.outputs.iter().enumerate() {
                     match output {
                         GeneratedActionOutput::Destination { stage, site_id } => {
                             let label = site_id
@@ -331,8 +350,17 @@ impl InvestigationEnvironment {
                             } else {
                                 LocationResolution::Approximate
                             };
+                            let location_key = site_id.as_ref().map_or_else(
+                                || JournalLocationKey::ActionDestination {
+                                    action_index: index,
+                                    output_index,
+                                },
+                                |id| JournalLocationKey::CaseSite(id.0.clone()),
+                            );
                             upsert_location(
                                 &mut self.frame.journal.locations,
+                                &mut self.journal_location_indexes,
+                                location_key,
                                 label.clone(),
                                 resolution,
                             );
@@ -414,6 +442,8 @@ impl InvestigationEnvironment {
                     self.current_location = site.safe_label.clone();
                     upsert_location(
                         &mut self.frame.journal.locations,
+                        &mut self.journal_location_indexes,
+                        JournalLocationKey::CaseSite(site_id.clone()),
                         site.safe_label.clone(),
                         LocationResolution::Visited,
                     );
@@ -487,21 +517,13 @@ impl InvestigationEnvironment {
             }
         };
         self.frame.party.supplies = self.frame.party.supplies.saturating_sub(cost);
-        let preparation_tags = if kind == ChoiceKind::Prepare {
-            learned
-                .iter()
-                .filter_map(|item| item.strip_prefix("Prepared "))
-                .map(|item| item.trim_end_matches('.').to_owned())
-                .collect()
-        } else {
-            Vec::new()
-        };
         self.frame.step += 1;
         if !waiting_for_witness {
             self.frame.game_minute += u64::from(minutes);
         }
         self.refresh_choices();
-        let post_observation_digest = semantic_digest(&self.frame)?;
+        let post_observation_digest =
+            semantic_digest(SemanticDigestPurpose::PlayerFrame, &self.frame)?;
         self.trace.push(PublicTraceEvent {
             step: action_step,
             game_minute,
@@ -517,7 +539,7 @@ impl InvestigationEnvironment {
             learned,
             learned_claim_ids,
             corrected_proposition_ids,
-            preparation_tags,
+            preparation_outcome,
             game_minutes: minutes,
             resource_cost: cost,
         });
@@ -552,7 +574,7 @@ impl InvestigationEnvironment {
             route: self.route,
             semantic_digest: String::new(),
         };
-        trace.semantic_digest = semantic_digest(&trace)?;
+        trace.semantic_digest = semantic_digest(SemanticDigestPurpose::PublicQuestTrace, &trace)?;
         Ok(trace)
     }
 
@@ -683,7 +705,7 @@ impl InvestigationEnvironment {
                     self.push_choice(
                         &mut choices,
                         ChoiceKind::Conclude,
-                        &format!("Attempt the {:?} finale.", finale.kind),
+                        &format!("Attempt the {} finale.", finale.kind.stable_variant_id()),
                         Capability::Conclude(route),
                     );
                     break;
@@ -865,26 +887,114 @@ fn validate_arguments(
     }
 }
 
-fn choice_id(case_id: &str, step: u32, ordinal: usize, capability: &Capability) -> String {
-    let digest = blake3::hash(format!("{case_id}:{step}:{ordinal}:{capability:?}").as_bytes());
-    format!("choice:{}", &digest.to_hex()[..24])
+fn choice_id(case_id: &str, step: u32, ordinal: usize, capability: &Capability) -> ChoiceId {
+    #[derive(serde::Serialize)]
+    struct ChoiceIdentity<'a> {
+        version: u32,
+        case_id: &'a str,
+        step: u32,
+        ordinal: u64,
+        capability: CapabilityIdentity<'a>,
+    }
+
+    let identity = ChoiceIdentity {
+        version: EVAL_FORMAT_VERSION,
+        case_id,
+        step,
+        ordinal: ordinal as u64,
+        capability: capability.into(),
+    };
+    let digest = semantic_digest(SemanticDigestPurpose::ChoiceCapability, &identity)
+        .expect("capability identity is serializable");
+    ChoiceId::parse(format!("choice:{}", &digest[..24]))
+        .expect("framed capability digest produces a canonical choice ID")
 }
 
 fn upsert_location(
     locations: &mut Vec<PublicLocation>,
+    indexes: &mut BTreeMap<JournalLocationKey, usize>,
+    key: JournalLocationKey,
     label: String,
     resolution: LocationResolution,
 ) {
-    if let Some(existing) = locations.iter_mut().find(|entry| entry.label == label) {
+    if let Some(index) = indexes.get(&key).copied() {
+        let existing = locations
+            .get_mut(index)
+            .expect("private journal location indexes stay aligned with public locations");
+        existing.label = label;
         existing.resolution = resolution;
     } else {
+        indexes.insert(key, locations.len());
         locations.push(PublicLocation { label, resolution });
     }
 }
 
-pub fn semantic_digest<T: serde::Serialize>(value: &T) -> Result<String, String> {
-    let bytes = serde_json::to_vec(value).map_err(|error| error.to_string())?;
-    Ok(blake3::hash(&bytes).to_hex().to_string())
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SemanticDigestPurpose {
+    ActionPath,
+    ChoiceCapability,
+    GeneratorManifest,
+    ObservableState,
+    PlayerFrame,
+    PublicEvaluationReport,
+    PublicQuestTrace,
+    WitnessIdentity,
+}
+
+impl SemanticDigestPurpose {
+    const fn domain(self) -> &'static str {
+        match self {
+            Self::ActionPath => "action-path",
+            Self::ChoiceCapability => "choice-capability",
+            Self::GeneratorManifest => "generator-manifest",
+            Self::ObservableState => "observable-state",
+            Self::PlayerFrame => "player-frame",
+            Self::PublicEvaluationReport => "public-evaluation-report",
+            Self::PublicQuestTrace => "public-quest-trace",
+            Self::WitnessIdentity => "witness-identity",
+        }
+    }
+}
+
+pub fn semantic_digest<T: serde::Serialize>(
+    purpose: SemanticDigestPurpose,
+    value: &T,
+) -> Result<String, String> {
+    const DIGEST_FRAME_VERSION: u32 = 1;
+    const DIGEST_DOMAIN: &[u8] = b"fabelgeist.investigation-eval.semantic-digest\0";
+
+    let canonical = canonical_json(value)?;
+    let purpose = purpose.domain().as_bytes();
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(DIGEST_DOMAIN);
+    hasher.update(&DIGEST_FRAME_VERSION.to_le_bytes());
+    hasher.update(&EVAL_FORMAT_VERSION.to_le_bytes());
+    hasher.update(&(purpose.len() as u32).to_le_bytes());
+    hasher.update(purpose);
+    hasher.update(&(canonical.len() as u64).to_le_bytes());
+    hasher.update(&canonical);
+    Ok(hasher.finalize().to_hex().to_string())
+}
+
+fn canonical_json<T: serde::Serialize>(value: &T) -> Result<Vec<u8>, String> {
+    fn normalize(value: serde_json::Value) -> serde_json::Value {
+        match value {
+            serde_json::Value::Array(values) => {
+                serde_json::Value::Array(values.into_iter().map(normalize).collect())
+            }
+            serde_json::Value::Object(values) => {
+                let ordered = values
+                    .into_iter()
+                    .map(|(key, value)| (key, normalize(value)))
+                    .collect::<BTreeMap<_, _>>();
+                serde_json::Value::Object(ordered.into_iter().collect())
+            }
+            scalar => scalar,
+        }
+    }
+
+    let value = serde_json::to_value(value).map_err(|error| error.to_string())?;
+    serde_json::to_vec(&normalize(value)).map_err(|error| error.to_string())
 }
 
 fn developer_analysis(case: &GeneratedCase) -> Result<DeveloperCaseAnalysis, String> {
@@ -894,11 +1004,11 @@ fn developer_analysis(case: &GeneratedCase) -> Result<DeveloperCaseAnalysis, Str
         .find(|site| site.is_true_location)
         .map(|site| site.id.0.clone())
         .ok_or("generated case lacks true site")?;
-    let private_digest = semantic_digest(case)?;
+    let private_digest = semantic_digest(SemanticDigestPurpose::GeneratorManifest, case)?;
     Ok(DeveloperCaseAnalysis {
         family: case.family,
         canonical_case_id: case.canonical_case_id.clone(),
-        canonical_cause: format!("{:?}", case.cause),
+        canonical_cause: canonical_cause_key(case.cause),
         generation_seed: case.generation_seed,
         catalog_revision: case.catalog_revision.clone(),
         true_site,
@@ -906,6 +1016,27 @@ fn developer_analysis(case: &GeneratedCase) -> Result<DeveloperCaseAnalysis, Str
         bridges: case.bridges.clone(),
         generator_manifest_digest: private_digest,
     })
+}
+
+fn symptom_key(symptom: adventuresim_core::local_problem::Symptom) -> &'static str {
+    use adventuresim_core::local_problem::Symptom;
+    match symptom {
+        Symptom::MissingCaravans => "MissingCaravans",
+        Symptom::NightScreams => "NightScreams",
+        Symptom::SickLocals => "SickLocals",
+        Symptom::EmptyStalls => "EmptyStalls",
+        Symptom::VanishedLivestock => "VanishedLivestock",
+    }
+}
+
+fn canonical_cause_key(cause: qg::CanonicalCause) -> String {
+    match cause {
+        qg::CanonicalCause::Hostile(threat) => threat.as_str().to_owned(),
+        qg::CanonicalCause::VoluntaryDisappearance => "VoluntaryDisappearance".into(),
+        qg::CanonicalCause::ConcealmentByWitness => "ConcealmentByWitness".into(),
+        qg::CanonicalCause::IncidentalLoss => "IncidentalLoss".into(),
+        qg::CanonicalCause::FabricatedClaim => "FabricatedClaim".into(),
+    }
 }
 
 fn opaque_handle(kind: &str, index: usize) -> String {
@@ -936,9 +1067,7 @@ fn generation_context(seed: u64, family: TemplateFamily) -> qg::GenerationContex
     ]);
     let witness = |id: &str, display_name: &str, demographic, description: &str, location: &str| {
         WitnessCandidate {
-            resident_character_id: adventuresim_core::settlement_population::stable_hash(&format!(
-                "investigation-eval-witness:{id}"
-            )) | (1u64 << 63),
+            resident_character_id: witness_character_id(id),
             display_name: display_name.into(),
             demographic,
             age_band: "adult".into(),
@@ -990,10 +1119,151 @@ fn generation_context(seed: u64, family: TemplateFamily) -> qg::GenerationContex
     }
 }
 
+fn witness_character_id(witness_key: &str) -> u64 {
+    #[derive(serde::Serialize)]
+    struct WitnessIdentity<'a> {
+        witness_key: &'a str,
+    }
+
+    let digest = semantic_digest(
+        SemanticDigestPurpose::WitnessIdentity,
+        &WitnessIdentity { witness_key },
+    )
+    .expect("witness identity is serializable");
+    let low_bits = u64::from_str_radix(&digest[..16], 16)
+        .expect("semantic digests start with sixteen hexadecimal digits");
+    low_bits | (1u64 << 63)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::investigation_eval::{DecisionArguments, PolicyDecision};
+
+    #[test]
+    fn journal_location_identity_is_invariant_to_label_wording() {
+        let mut locations = Vec::new();
+        let mut indexes = BTreeMap::new();
+        let key = JournalLocationKey::CaseSite("private-site:ford".into());
+        upsert_location(
+            &mut locations,
+            &mut indexes,
+            key.clone(),
+            "the old wording".into(),
+            LocationResolution::Approximate,
+        );
+        upsert_location(
+            &mut locations,
+            &mut indexes,
+            key,
+            "a reworded public label".into(),
+            LocationResolution::Exact,
+        );
+        assert_eq!(
+            locations,
+            vec![PublicLocation {
+                label: "a reworded public label".into(),
+                resolution: LocationResolution::Exact,
+            }]
+        );
+
+        upsert_location(
+            &mut locations,
+            &mut indexes,
+            JournalLocationKey::CaseSite("private-site:mill".into()),
+            "a reworded public label".into(),
+            LocationResolution::Visited,
+        );
+        assert_eq!(locations.len(), 2, "distinct authority IDs stay distinct");
+    }
+
+    #[test]
+    fn evaluator_v4_choice_ids_use_typed_capability_identity() {
+        assert_eq!(EVAL_FORMAT_VERSION, 4);
+        let capability = Capability::Action(
+            7,
+            adventuresim_core::investigation_action::InvestigationActionKind::FollowTracks,
+            RouteClass::PhysicalTrail,
+        );
+        assert_eq!(
+            serde_json::to_value(CapabilityIdentity::from(&capability)).unwrap(),
+            serde_json::json!({
+                "kind": "action",
+                "index": 7,
+                "action_kind": "follow_tracks",
+                "route": "physical_trail"
+            })
+        );
+        assert_eq!(
+            choice_id("case:public", 2, 3, &capability),
+            choice_id("case:public", 2, 3, &capability)
+        );
+        assert_ne!(
+            choice_id("case:public", 2, 3, &capability),
+            choice_id("case:public", 2, 4, &capability)
+        );
+    }
+
+    #[test]
+    fn semantic_digest_has_fixed_purpose_version_and_canonical_json_framing() {
+        let value = serde_json::json!({"z": [2, 1], "a": {"b": true, "a": null}});
+        assert_eq!(
+            semantic_digest(SemanticDigestPurpose::ObservableState, &value).unwrap(),
+            "5570adf0ca65dd52f43533918f7cb9b03c368e21a2b54cec77ac1e2ff98206e1"
+        );
+        assert_ne!(
+            semantic_digest(SemanticDigestPurpose::ObservableState, &value).unwrap(),
+            semantic_digest(SemanticDigestPurpose::PlayerFrame, &value).unwrap()
+        );
+    }
+
+    #[test]
+    fn evaluator_v4_witness_ids_have_a_purpose_framed_fixed_vector() {
+        assert_eq!(EVAL_FORMAT_VERSION, 4);
+        assert_eq!(witness_character_id("watchman"), 0xbda9_8bcd_c38c_2fca);
+        assert_ne!(
+            witness_character_id("watchman"),
+            witness_character_id("cooper")
+        );
+    }
+
+    #[test]
+    fn choice_ids_validate_at_deserialization() {
+        let valid = ChoiceId::parse("choice:0123456789abcdef01234567").unwrap();
+        assert_eq!(
+            serde_json::to_string(&valid).unwrap(),
+            "\"choice:0123456789abcdef01234567\""
+        );
+        assert!(serde_json::from_str::<ChoiceId>("\"choice:short\"").is_err());
+        assert!(serde_json::from_str::<ChoiceId>("\"choice:0123456789ABCDEF01234567\"").is_err());
+    }
+
+    #[test]
+    fn preparation_outcomes_have_a_typed_v4_wire_shape() {
+        assert_eq!(EVAL_FORMAT_VERSION, 4);
+        assert_eq!(
+            serde_json::to_value(PreparationOutcome::Prepared {
+                tag: "cold_weather_gear".into(),
+            })
+            .unwrap(),
+            serde_json::json!({
+                "status": "prepared",
+                "tag": "cold_weather_gear"
+            })
+        );
+        assert_eq!(
+            serde_json::to_value(PreparationOutcome::NotAttempted).unwrap(),
+            serde_json::json!({"status": "not_attempted"})
+        );
+        assert!(
+            serde_json::from_value::<PreparationOutcome>(serde_json::json!({
+                "status": "prepared",
+                "tag": "cold_weather_gear",
+                "legacy_tags": []
+            }))
+            .is_err()
+        );
+    }
 
     #[test]
     fn forged_choices_and_arguments_fail_closed() {
@@ -1005,7 +1275,7 @@ mod tests {
         assert!(
             env.apply(&PolicyDecision {
                 version: EVAL_FORMAT_VERSION,
-                choice_id: "choice:forged".into(),
+                choice_id: ChoiceId::parse("choice:000000000000000000000000").unwrap(),
                 arguments: DecisionArguments::default(),
             })
             .is_err()

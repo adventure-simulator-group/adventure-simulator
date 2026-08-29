@@ -9,12 +9,9 @@ fn party_next_walking_minutes(
         .id()
         .find(party_id.to_string())
         .ok_or("Party not found")?;
-    let now = living_party_member_ids(ctx, party_id)
-        .into_iter()
-        .filter_map(|id| ctx.db.character_time().character_id().find(id))
-        .map(|time| time.minutes)
-        .max()
-        .unwrap_or(0);
+    let now = party_wilderness_environment_minutes(&party)
+        .map(|(journey_minute, _)| journey_minute)
+        .ok_or("Party wilderness clock is not initialized")?;
     let itinerary = forecast_itinerary(
         now,
         remaining_movement,
@@ -255,12 +252,26 @@ fn record_party_journey_camp(
 
 /// One predicate shared by every authoritative consumer that treats a party
 /// and journey row as an exact reached camp.
-pub(crate) fn party_journey_is_current_camp(party: &Party, journey: &PartyJourney) -> bool {
+fn party_journey_is_active(party: &Party, journey: &PartyJourney) -> bool {
     party.current_settlement_id.is_none()
         && party.current_case_site_id.is_none()
         && party.camp_destination.as_ref() == Some(&journey.destination)
         && journey.completed_movement_minutes < journey.total_movement_minutes
+}
+
+pub(crate) fn party_journey_is_current_camp(party: &Party, journey: &PartyJourney) -> bool {
+    party_journey_is_active(party, journey)
         && journey
+            .reached_camp_movement_minutes
+            .contains(&journey.completed_movement_minutes)
+}
+
+/// A resolved interruption or an ordinary walking boundary remains an active
+/// journey location, but it is not a durable camp and therefore owns no camp
+/// fireplace custody.
+pub(crate) fn party_journey_is_between_camps(party: &Party, journey: &PartyJourney) -> bool {
+    party_journey_is_active(party, journey)
+        && !journey
             .reached_camp_movement_minutes
             .contains(&journey.completed_movement_minutes)
 }

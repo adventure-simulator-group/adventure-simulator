@@ -74,6 +74,13 @@ pub enum EquipmentHand {
 }
 
 impl EquipmentHand {
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Left => "Left",
+            Self::Right => "Right",
+        }
+    }
+
     pub const fn slot(self) -> EquipSlot {
         match self {
             Self::Left => EquipSlot::HoldingLeft,
@@ -202,6 +209,12 @@ mod equipment_action_mapping_tests {
     use adventuresim_tactical_core::prelude::EquipmentLocation;
     use bevy::ecs::entity::{EntityHashMap, MapEntities};
     use bevy::prelude::Entity;
+
+    #[test]
+    fn equipment_hand_ids_have_explicit_stable_values() {
+        assert_eq!(EquipmentHand::Left.id(), "Left");
+        assert_eq!(EquipmentHand::Right.id(), "Right");
+    }
 
     #[test]
     fn request_maps_entities_nested_inside_equipment_action() {

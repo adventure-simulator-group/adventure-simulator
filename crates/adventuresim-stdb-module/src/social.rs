@@ -435,7 +435,7 @@ pub(crate) fn apply_corpse_family_offense(
     crate::condition::record_morale_event(
         ctx,
         resident_character_id,
-        "corpse_handling",
+        adventuresim_core::morale::MoraleEventKind::CorpseHandling,
         morale_delta,
         Some(format!("corpse-family:{event_id}")),
     )
@@ -698,7 +698,7 @@ pub fn spend_time_with_settlement_resident(
     crate::condition::record_morale_event(
         ctx,
         resident_character_id,
-        "social_interaction",
+        adventuresim_core::morale::MoraleEventKind::SocialInteraction,
         morale_delta,
         Some(format!(
             "resident-chat:{actor_id}:{resident_character_id}:{action_id}"
@@ -814,7 +814,7 @@ pub fn chat_with_party_member(
     crate::condition::record_morale_event(
         ctx,
         target_id,
-        "social_interaction",
+        adventuresim_core::morale::MoraleEventKind::SocialInteraction,
         morale_delta,
         Some(format!("casual-chat:{actor_id}:{target_id}:{action_id}")),
     )?;
@@ -1125,7 +1125,7 @@ fn apply_witness_relationship_outcome(
     morale_delta: f32,
     affinity_delta: f32,
     morale_source_id: &str,
-    morale_source_kind: &str,
+    morale_source_kind: adventuresim_core::morale::MoraleEventKind,
 ) -> Result<f32, String> {
     if morale_delta != 0.0 {
         crate::condition::record_morale_event(
@@ -1232,6 +1232,13 @@ pub fn approach_dialogue_witness(
         return Err("Actor could not complete the conversation".into());
     }
     let after = now.saturating_add(SOCIAL_RESPONSE_MINUTES);
+    let morale_source_kind = match approach {
+        ClaimChallengeApproach::Charm => adventuresim_core::morale::MoraleEventKind::WitnessCharm,
+        ClaimChallengeApproach::Command => {
+            adventuresim_core::morale::MoraleEventKind::WitnessCommand
+        }
+        ClaimChallengeApproach::Bluff => adventuresim_core::morale::MoraleEventKind::WitnessBluff,
+    };
     let affinity_delta = apply_witness_relationship_outcome(
         ctx,
         observer_character_id,
@@ -1241,7 +1248,7 @@ pub fn approach_dialogue_witness(
         outcome.morale_delta,
         outcome.affinity_delta,
         &format!("npc-morale-approach:{receipt_id}"),
-        &format!("witness_{approach_kind}"),
+        morale_source_kind,
     )?;
     let released = outcome.succeeded && capability.has_bound_concern && !capability.bound_released;
     claim.outcome = if outcome.succeeded {
@@ -2355,8 +2362,8 @@ fn shares_concern(ctx: &ReducerContext, character_id: u64, topic: SocialTopic) -
         .character_id()
         .filter(character_id)
         .any(|source| {
-            social_source_eligible(&source.kind, source.magnitude)
-                && topic_for_source_kind(&source.kind) == Some(topic)
+            social_source_eligible(source.kind, source.magnitude)
+                && topic_for_source_kind(source.kind) == Some(topic)
         })
 }
 
@@ -2674,10 +2681,10 @@ fn perform_social_action_authoritative(
     if source.character_id != target_id {
         return Err("Morale source does not belong to target".into());
     }
-    if !social_source_eligible(&source.kind, source.magnitude) {
+    if !social_source_eligible(source.kind, source.magnitude) {
         return Err("Only current, negative, recognized morale sources can be addressed".into());
     }
-    let topic = topic_for_source_kind(&source.kind).ok_or("Morale source is not actionable")?;
+    let topic = topic_for_source_kind(source.kind).ok_or("Morale source is not actionable")?;
     if !action.available_for(topic) {
         return Err("That social approach does not fit this concern".into());
     }
@@ -2853,7 +2860,7 @@ fn perform_social_action_authoritative(
         crate::condition::record_morale_event(
             ctx,
             target_id,
-            "social_interaction",
+            adventuresim_core::morale::MoraleEventKind::SocialInteraction,
             outcome.morale_delta,
             Some(event_source),
         )?;
@@ -2885,7 +2892,7 @@ fn perform_social_action_authoritative(
         actor_id,
         target_id,
         source_id: source_id.clone(),
-        topic: format!("{topic:?}").to_ascii_lowercase(),
+        topic: topic.stable_id().to_owned(),
         action_kind: action_kind.clone(),
         succeeded: if is_self { true } else { outcome.succeeded },
         morale_delta: if is_self { 0.0 } else { outcome.morale_delta },
@@ -2910,7 +2917,7 @@ fn perform_social_action_authoritative(
         id: cooldown_id.clone(),
         actor_id,
         target_id,
-        topic: format!("{topic:?}").to_ascii_lowercase(),
+        topic: topic.stable_id().to_owned(),
         action_kind,
         available_at_minute: now.saturating_add(SOCIAL_COOLDOWN_MINUTES),
     };
@@ -2997,7 +3004,7 @@ pub(crate) fn apply_automatic_social_chats(
                 .character_morale_source()
                 .character_id()
                 .filter(preference.target_id)
-                .filter(|source| social_source_eligible(&source.kind, source.magnitude))
+                .filter(|source| social_source_eligible(source.kind, source.magnitude))
                 .filter(|source| !source_addressed(ctx, actor_id, preference.target_id, &source.id))
                 .collect();
             sources.sort_by(|left, right| left.id.cmp(&right.id));
@@ -3030,7 +3037,7 @@ pub(crate) fn apply_automatic_social_chats(
             .character_morale_source()
             .id()
             .find(&source_id)
-            .and_then(|source| topic_for_source_kind(&source.kind))
+            .and_then(|source| topic_for_source_kind(source.kind))
             .expect("automatic target planner only returns actionable sources");
         let Some(action) = automatic_social_action(ctx, actor_id, target_id, topic)? else {
             continue;
@@ -3130,6 +3137,32 @@ pub fn cleanup_character_social(ctx: &ReducerContext, character_id: u64) {
         .collect::<Vec<_>>()
     {
         ctx.db.automatic_social_chat().id().delete(&row.id);
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SocialDemoMoraleSourceId {
+    ZealousDefeat,
+    Defeat,
+    Injury,
+}
+
+impl SocialDemoMoraleSourceId {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::ZealousDefeat => "social-demo:zealous-defeat",
+            Self::Defeat => "social-demo:defeat",
+            Self::Injury => "social-demo:injury",
+        }
+    }
+
+    fn parse(source_id: &str) -> Option<Self> {
+        match source_id {
+            "social-demo:zealous-defeat" => Some(Self::ZealousDefeat),
+            "social-demo:defeat" => Some(Self::Defeat),
+            "social-demo:injury" => Some(Self::Injury),
+            _ => None,
+        }
     }
 }
 
@@ -3242,7 +3275,7 @@ pub(crate) fn seed_social_demo(ctx: &ReducerContext) -> Result<(), String> {
         .filter(|row| {
             row.source_id
                 .as_deref()
-                .is_some_and(|id| id.starts_with("social-demo:"))
+                .is_some_and(|id| SocialDemoMoraleSourceId::parse(id).is_some())
         })
         .collect::<Vec<_>>()
     {
@@ -3251,9 +3284,9 @@ pub(crate) fn seed_social_demo(ctx: &ReducerContext) -> Result<(), String> {
     crate::condition::record_morale_event(
         ctx,
         ZEALOUS_TARGET,
-        "defeat",
+        adventuresim_core::morale::MoraleEventKind::Defeat,
         -8.0,
-        Some("social-demo:zealous-defeat".into()),
+        Some(SocialDemoMoraleSourceId::ZealousDefeat.as_str().into()),
     )?;
     for row in ctx
         .db
@@ -3265,7 +3298,7 @@ pub(crate) fn seed_social_demo(ctx: &ReducerContext) -> Result<(), String> {
         if row
             .source_id
             .as_deref()
-            .is_some_and(|id| id.starts_with("social-demo:"))
+            .is_some_and(|id| SocialDemoMoraleSourceId::parse(id).is_some())
         {
             ctx.db.morale_event().id().delete(row.id);
         }
@@ -3273,16 +3306,16 @@ pub(crate) fn seed_social_demo(ctx: &ReducerContext) -> Result<(), String> {
     crate::condition::record_morale_event(
         ctx,
         TARGET,
-        "defeat",
+        adventuresim_core::morale::MoraleEventKind::Defeat,
         -8.0,
-        Some("social-demo:defeat".into()),
+        Some(SocialDemoMoraleSourceId::Defeat.as_str().into()),
     )?;
     crate::condition::record_morale_event(
         ctx,
         TARGET,
-        "injury",
+        adventuresim_core::morale::MoraleEventKind::Injury,
         -3.0,
-        Some("social-demo:injury".into()),
+        Some(SocialDemoMoraleSourceId::Injury.as_str().into()),
     )?;
     put_affinity(ctx, TARGET, VIEWER, 18.0);
     let (low_id, high_id) = canonical_pair(VIEWER, TARGET).expect("distinct demo ids");
@@ -3440,7 +3473,7 @@ mod contract_tests {
             .expect("authoritative action");
         assert!(authoritative.contains("bedside_reassurance_approach(topic)"));
         assert!(authoritative.contains("language_scaled_effect"));
-        assert!(authoritative.contains("\"social_interaction\""));
+        assert!(authoritative.contains("MoraleEventKind::SocialInteraction"));
         assert!(!authoritative.contains("physiology_administration"));
         assert!(!authoritative.contains("record_health"));
     }

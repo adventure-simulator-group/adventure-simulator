@@ -332,7 +332,7 @@ fn apply_dialogue_investigation_action(
     if binding.session_id != session.id
         || binding.character_id != character_id
         || binding.party_id != party_id
-        || binding.action_family != format!("{action:?}")
+        || binding.action_family != dialogue_investigation_action_id(action)
         || binding.source_scope != source_scope
         || binding.issued_revision != session.revision
         || !binding.consumed_by.is_empty()

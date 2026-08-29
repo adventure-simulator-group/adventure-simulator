@@ -7,7 +7,9 @@ mod protocol;
 mod ragdoll;
 mod ranged;
 
-use adventuresim_core::item_references::ARROW_ID;
+use adventuresim_core::{
+    inventory_measurement::ItemQuantity as CoreItemQuantity, item_references::ARROW_ID,
+};
 pub(crate) use adventuresim_tactical_core::player::TacticalCombatSide;
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::{
@@ -15,7 +17,7 @@ use adventuresim_tactical_netcode::{
     message::{DefendRequest, MeleeActionRequest, RangedActionRequest, SuccessfulAttackResponse},
 };
 use bevy::prelude::*;
-use std::{collections::HashMap, num::NonZeroU32};
+use std::collections::HashMap;
 
 use crate::player_projection::{
     AuthoritativeMovementIntent, PlayerProjectionSet, begin_attack_facing,
@@ -77,8 +79,8 @@ pub(crate) struct TacticalConsequenceAccumulator {
     pub equipment_contacts: Vec<AccumulatedEquipmentContact>,
 }
 
-fn remaining_ammo_after_shot(quantity: NonZeroU32) -> Option<NonZeroU32> {
-    NonZeroU32::new(quantity.get() - 1)
+fn remaining_ammo_after_shot(quantity: CoreItemQuantity) -> Option<CoreItemQuantity> {
+    CoreItemQuantity::new(quantity.get() - 1)
 }
 
 #[derive(Event, Clone, Copy, Debug)]
@@ -529,9 +531,9 @@ mod tests {
 
     #[test]
     fn ranged_ammo_consumption_and_receipt_are_bounded() {
-        assert_eq!(remaining_ammo_after_shot(NonZeroU32::new(1).unwrap()), None);
+        assert_eq!(remaining_ammo_after_shot(CoreItemQuantity::ONE), None);
         assert_eq!(
-            remaining_ammo_after_shot(NonZeroU32::new(3).unwrap()).map(NonZeroU32::get),
+            remaining_ammo_after_shot(CoreItemQuantity::new(3).unwrap()).map(CoreItemQuantity::get),
             Some(2)
         );
         let mut consequences = TacticalConsequenceAccumulator::default();
@@ -713,12 +715,12 @@ mod tests {
             .world_mut()
             .spawn((
                 Player::default(),
-                Attributes {
+                TacticalAttributes(PlayerAttributeValues {
                     endurance,
                     left_leg_strength: 3.0,
                     right_leg_strength: 3.0,
                     ..default()
-                },
+                }),
                 TacticalCombatState {
                     exhaustion: 0.25,
                     ..default()

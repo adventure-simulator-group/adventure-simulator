@@ -14,6 +14,7 @@ use crate::{
     },
     time::{character_time, character_time__view, world_clock},
 };
+use adventuresim_core::strategic_place::CaseSiteId;
 use adventuresim_core::strategic_time::MINUTES_PER_DAY;
 use adventuresim_core::threat_escalation::bounded_public_threat_candidates as bounded_public_candidates;
 use adventuresim_core::{encounter::EncounterArchetype, local_problem as lp};
@@ -187,7 +188,7 @@ pub struct PublicThreatDisclosure {
     pub character_id: u64,
     pub public_case_id: String,
     pub threat_type: String,
-    pub exact_site_id: String,
+    pub exact_site_id: CaseSiteId,
     pub approximate_count: String,
     pub source_kind: String,
     pub source_resident_character_id: u64,
@@ -631,10 +632,10 @@ fn ensure_generated_incidents_inner(
                 proposition_id: proposition_id.clone(),
                 witness_resident_character_id: witness.resident_character_id,
                 victim_resident_character_id: victim.resident_character_id,
-                circumstance: format!("{circumstance:?}").to_ascii_lowercase(),
+                circumstance: circumstance.as_str().to_owned(),
                 site_id: site.id.0.clone(),
                 evidence_id: evidence_id.clone(),
-                evidence_kind: format!("{evidence_kind:?}").to_ascii_lowercase(),
+                evidence_kind: evidence_kind.as_str().to_owned(),
                 public_summary,
                 witness_account,
             };
@@ -1393,7 +1394,7 @@ fn surface_public_threat(
         character_id,
         public_case_id: validated.manifest.public_case_id.clone(),
         threat_type: threat.as_str().into(),
-        exact_site_id: site.id.0.clone(),
+        exact_site_id: case_site.id.clone(),
         approximate_count: count_band.into(),
         source_kind: source_kind.into(),
         source_resident_character_id: source_npc.character_id,

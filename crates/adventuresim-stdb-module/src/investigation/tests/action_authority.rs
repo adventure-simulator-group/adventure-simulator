@@ -1006,3 +1006,13 @@ fn exact_site_actions_replan_typed_effects_without_replacing_replay_or_private_r
     assert!(knowledge.contains("observer_personal_minute"));
     assert!(!knowledge.contains("u64::MAX"));
 }
+#[test]
+fn referred_contact_position_races_are_coded_as_action_unavailable() {
+    let position = INVESTIGATION_SOURCE
+        .split("fn validate_action_position")
+        .nth(1)
+        .and_then(|tail| tail.split("fn validate_generated_pattern_condition").next())
+        .expect("action position validation");
+    assert!(position.contains("ReducerErrorCode::InvestigationActionUnavailable"));
+    assert!(position.contains("unavailable(\"The referred contact is not currently present\")"));
+}

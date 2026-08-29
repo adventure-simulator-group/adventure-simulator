@@ -11,13 +11,15 @@ use adventuresim_core::{
 };
 
 use crate::{
-    character::{character, character_attributes, character_death},
+    character::{
+        character, character__view, character_attributes, character_death, character_death__view,
+    },
     corpse::strategic_corpse,
-    disease::infection_episode,
+    disease::{infection_episode, infection_episode__view},
     inventory_container::{container_liquid, inventory_object},
     investigation::investigation_action_capability,
     local_problem::{local_problem_receipt, local_problem_receipt__view},
-    relationship::character_kinship,
+    relationship::{character_birth__view, character_kinship},
     settlement_population::{settlement_resident_presence, settlement_resident_profile},
     time::character_time,
     world_actor::character_context_membership,
@@ -1041,12 +1043,11 @@ pub(crate) fn materialize_generated_outbreak(
         StrategicPlaceId::case_site(outbreak.patient_presentation_site.0.clone())
             .map_err(|_| "Outbreak patient case-site identity is malformed")?;
     let disease_id = crate::disease::disease_key(outbreak.disease).to_string();
-    let transmission_route = format!("{:?}", outbreak.transmission_route).to_ascii_lowercase();
+    let transmission_route = outbreak.transmission_route.stable_id().to_owned();
     let source_json =
         serde_json::to_string(&outbreak.source).map_err(|_| "Could not encode outbreak source")?;
     let responsible_resident_character_id = responsible.map(|value| value.resident_character_id);
-    let culpability =
-        responsible.map(|value| format!("{:?}", value.culpability).to_ascii_lowercase());
+    let culpability = responsible.map(|value| value.culpability.stable_id().to_owned());
     let carrier_threat_id = carrier.map(str::to_owned);
     let chronology_json = serde_json::to_string(&outbreak.exposure_chronology)
         .map_err(|_| "Could not encode outbreak chronology")?;
@@ -1557,6 +1558,68 @@ pub(crate) fn patient_presence_suppression_at(
     minute: u64,
 ) -> Option<adventuresim_core::strategic_presence::PresenceSuppression> {
     let alive_at_observer = crate::relationship::character_alive_at(ctx, character_id, minute);
+    let mut aggregate = adventuresim_core::strategic_presence::PresenceSuppression {
+        context_suppressed: false,
+        health_suppressed: !alive_at_observer,
+    };
+    for patient in ctx
+        .db
+        .outbreak_patient_authority()
+        .patient_character_id()
+        .filter(character_id)
+    {
+        let episode = ctx.db.infection_episode().id().find(patient.episode_id)?;
+        let authority = ctx
+            .db
+            .outbreak_authority()
+            .case_id()
+            .find(&patient.case_id)?;
+        if episode.character_id != character_id || episode.disease_id != authority.disease_id {
+            return None;
+        }
+        let disease_id = crate::disease::parse_id(&episode.disease_id).ok()?;
+        let definition = adventuresim_core::disease::definition(disease_id);
+        let recovery_minute = episode
+            .contracted_at
+            .checked_add(definition.incubation_minutes)?
+            .checked_add(definition.rise_minutes)?
+            .checked_add(definition.peak_minutes)?
+            .checked_add(definition.recovery_minutes)?;
+        let suppression = adventuresim_core::strategic_presence::outbreak_patient_suppression_at(
+            episode.contracted_at,
+            recovery_minute,
+            authority.remediated_at,
+            minute,
+            alive_at_observer,
+        )
+        .ok()?;
+        aggregate.context_suppressed |= suppression.context_suppressed;
+        aggregate.health_suppressed |= suppression.health_suppressed;
+    }
+    Some(aggregate)
+}
+
+/// View-context counterpart to [`patient_presence_suppression_at`]. Public
+/// availability projections must reconstruct the same historical suppression
+/// as reducer validation instead of consulting mutable materialized flags.
+pub(crate) fn patient_presence_suppression_at_view(
+    ctx: &ViewContext,
+    character_id: u64,
+    minute: u64,
+) -> Option<adventuresim_core::strategic_presence::PresenceSuppression> {
+    let alive_at_observer = ctx.db.character().id().find(character_id).is_some()
+        && ctx
+            .db
+            .character_birth()
+            .character_id()
+            .find(character_id)
+            .is_none_or(|birth| i128::from(birth.birth_minute) <= i128::from(minute))
+        && ctx
+            .db
+            .character_death()
+            .character_id()
+            .find(character_id)
+            .is_none_or(|death| death.strategic_minute > minute);
     let mut aggregate = adventuresim_core::strategic_presence::PresenceSuppression {
         context_suppressed: false,
         health_suppressed: !alive_at_observer,

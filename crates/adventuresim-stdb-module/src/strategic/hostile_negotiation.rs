@@ -32,7 +32,7 @@ pub struct HostileNegotiationReceipt {
 #[derive(Clone, Debug, SpacetimeType)]
 pub struct BackendHostileNegotiation {
     pub owner_character_id: u64,
-    pub case_site_id: String,
+    pub case_site_id: CaseSiteId,
     pub spokesman_id: u64,
     pub context_ref: String,
     pub expected_revision: u32,
@@ -85,7 +85,7 @@ fn exact_spokesman_for_view(
         .filter(|row| {
             row.context_kind == crate::world_actor::CharacterContextKind::HostileGroup
                 && row.role == crate::world_actor::CharacterContextRole::Counterparty
-                && row.location_id == group.case_site_id.value
+                && row.location_id == group.case_site_id.as_str()
                 && crate::world_actor::context_membership_valid_at(row, minute)
                 && ctx
                     .db
@@ -163,7 +163,7 @@ fn current_drive_off_capability_for_view(
         .db
         .case_site_authority()
         .id_key()
-        .find(&group.case_site_id.value)
+        .find(group.case_site_id.to_string())
         .filter(|site| site.id == group.case_site_id)
     else {
         return false;
@@ -374,7 +374,7 @@ pub fn backend_hostile_negotiations(ctx: &ViewContext) -> Vec<BackendHostileNego
             .db
             .hostile_group_authority()
             .case_site_id_key()
-            .find(&case_site_id.value)
+            .find(case_site_id.to_string())
             .filter(|group| group.disposition == HostileGroupDisposition::Active)
         else {
             continue;
@@ -421,7 +421,7 @@ pub fn backend_hostile_negotiations(ctx: &ViewContext) -> Vec<BackendHostileNego
             .map(|receipt| receipt.response);
         rows.push(BackendHostileNegotiation {
             owner_character_id: party.leader_id,
-            case_site_id: case_site_id.value.clone(),
+            case_site_id: case_site_id.clone(),
             spokesman_id: spokesman.character_id,
             context_ref: HOSTILE_NEGOTIATION_CONTEXT_REF.into(),
             expected_revision: spokesman.revision,
@@ -459,7 +459,10 @@ fn exact_hostile_negotiation_authority(
         .find(&party_id)
         .filter(|party| {
             party.leader_id == actor_id
-                && party.current_case_site_id.as_ref().map(|site| site.value.as_str())
+                && party
+                    .current_case_site_id
+                    .as_ref()
+                    .map(CaseSiteId::as_str)
                     == Some(case_site_id)
         })
         .ok_or("Only the present party leader may negotiate")?;
@@ -573,7 +576,7 @@ pub fn negotiate_hostile_withdrawal(
         .find(&receipt_id)
     {
         return if existing.actor_id == actor_id
-            && existing.case_site_id.value == case_site_id
+            && existing.case_site_id.as_str() == case_site_id
             && existing.spokesman_id == spokesman_id
             && existing.context_ref == context_ref
             && existing.expected_revision == expected_revision

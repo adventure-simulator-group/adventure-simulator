@@ -48,11 +48,11 @@ pub mod prelude {
     };
     pub use crate::combat_config::*;
     pub use crate::inventory::{
-        ArmorItem, ArmorSide, ArmorSlot, EquipSlot, EquipmentActionState, EquipmentPhysical,
-        EquipmentTopology, EquipmentTopologyOccupancy, InventoryItems, ItemOf, ItemProperties,
-        ItemQuantity, ShieldItem, TACTICAL_ITEM_LAYER, TACTICAL_TERRAIN_LAYER,
-        TacticalEquipmentAnchor, TacticalSceneItem, WeaponAppearance, WeaponHolderAppearance,
-        WeaponItem, rebuild_inventory_holding_cache,
+        ArmorItem, ArmorSide, ArmorSlot, EquipSlot, EquipmentActionState, EquipmentTopology,
+        EquipmentTopologyOccupancy, InventoryItems, ItemOf, ItemProperties, ShieldItem,
+        TACTICAL_ITEM_LAYER, TACTICAL_TERRAIN_LAYER, TacticalEquipmentAnchor,
+        TacticalEquipmentPhysical, TacticalItemQuantity, TacticalSceneItem, WeaponAppearance,
+        WeaponHolderAppearance, WeaponItem, rebuild_inventory_holding_cache,
     };
     pub use crate::physics::{
         AdventureSimulatorPhysicsSet, BREATH_PER_METRE_PER_SECOND, CharacterMotionSnapshot,
@@ -68,8 +68,8 @@ pub mod prelude {
         tactical_movement_speed_for_guard, tactical_movement_speed_for_pace, tactical_sprint_speed,
     };
     pub use crate::player::{
-        Attributes, BestiaryCategories, CharacterDimensions, CharacterId, ControlledPlayer, Limbs,
-        Player, Skills, Stats, TacticalCombatSide, TacticalCombatState,
+        BestiaryCategories, CharacterDimensions, CharacterId, ControlledPlayer, Limbs, Player,
+        Skills, Stats, TacticalAttributes, TacticalCombatSide, TacticalCombatState,
         TacticalIncapacitationSources, TacticalPlayerView, TacticalPlayerViewer,
         attack_preparation_secs, attack_recovery_secs, configure_attack_curve,
         default_tactical_character_id, effective_weapon_handling_skill,

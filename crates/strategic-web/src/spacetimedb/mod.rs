@@ -4,34 +4,29 @@ mod client;
 mod queries;
 mod types;
 
-pub(crate) use client::{Result, SpacetimeClient};
-pub(crate) use queries::{party_by_id, settlement_by_id};
+pub(crate) use client::{Result, SpacetimeClient, SpacetimeError};
+pub(crate) use queries::{
+    SqlQuery, automatic_social_chat_by_id, autoresolve_report_by_battle_id,
+    battle_result_by_battle_id, case_site_pin_by_case_site_id, character_affinity_by_id,
+    character_attributes_by_character_id, character_by_id, character_capability_by_character_id,
+    character_case_site_location_by_character_id, character_condition_by_character_id,
+    character_death_by_character_id, character_familiarity_by_id, character_limbs_by_character_id,
+    character_needs_by_character_id, character_personality_by_character_id,
+    character_relationship_status_by_character_id, character_residence_status_by_character_id,
+    character_skills_by_character_id, character_stats_by_character_id,
+    character_strategic_condition_by_character_id, character_time_by_character_id,
+    character_training_schedule_by_character_id, contract_by_id, fireplace_dish_by_station_key,
+    fireplace_station_by_key, forage_attempt_state_by_character_id, inventory_item_by_id,
+    inventory_object_by_id, item_by_id, organization_presentation_by_character_id,
+    party_action_request_by_id, party_by_id, party_journey_by_party_id,
+    party_journey_route_by_party_id, party_recruitment_role_by_id, settlement_by_id,
+    settlement_resident_by_character_id, settlement_resident_presence_by_character_id,
+    settlement_smith_by_settlement_id, social_address_by_id, sql_string_literal,
+    strategic_encounter_by_party_id, tactical_server_by_mission_id,
+    tactical_server_request_by_mission_id, weapon_holder_instance_by_physical_object_id,
+    weapon_instance_by_physical_object_id, world_clock_singleton,
+};
 pub use types::*;
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct SqlQuery(String);
-
-impl SqlQuery {
-    fn new(query: String) -> Self {
-        Self(query)
-    }
-
-    pub(crate) fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl std::ops::Deref for SqlQuery {
-    type Target = str;
-
-    fn deref(&self) -> &Self::Target {
-        self.as_str()
-    }
-}
-
-pub(crate) fn sql_string_literal(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "''"))
-}
 
 /// SpacetimeDB's raw HTTP reducer API represents algebraic `Option<T>` values
 /// as sum variants rather than Serde's scalar-or-null representation.
@@ -99,12 +94,7 @@ pub(crate) fn sats_unit_variant(variant: impl SatsUnitVariant) -> serde_json::Va
 
 #[cfg(test)]
 mod tests {
-    use super::{sats_option, sats_unit_variant, sql_string_literal};
-
-    #[test]
-    fn sql_string_literals_escape_quotes() {
-        assert_eq!(sql_string_literal("St. John's"), "'St. John''s'");
-    }
+    use super::{sats_option, sats_unit_variant};
 
     #[test]
     fn reducer_options_use_spacetimedb_sum_encoding() {

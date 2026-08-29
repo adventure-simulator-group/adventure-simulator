@@ -252,7 +252,7 @@ impl Plugin for BotPlugin {
 
 #[cfg(test)]
 mod tests {
-    use std::{num::NonZeroU32, time::Duration};
+    use std::time::Duration;
 
     use super::defense::PendingBotReaction;
     use super::*;
@@ -395,7 +395,7 @@ mod tests {
                     id: ARROW_ID.to_owned(),
                     weight: 0.05,
                 },
-                ItemQuantity(NonZeroU32::new(1).unwrap()),
+                TacticalItemQuantity::default(),
             ))
             .id();
         (actor, ammo)

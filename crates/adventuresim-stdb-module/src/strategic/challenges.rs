@@ -233,7 +233,7 @@ pub struct ErrantryAuthority {
     pub issuer_resident_character_id: u64,
     pub issuer_settlement_id: String,
     pub issuer_location_id: String,
-    pub finale_case_site_id: String,
+    pub finale_case_site_id: CaseSiteId,
     pub finale_hostile_group_id: String,
     pub preliminary_challenge_ids: Vec<String>,
     pub finale_defenses_json: String,
@@ -252,7 +252,7 @@ pub struct RoadChallengeAuthority {
     #[index(btree)]
     pub party_id: String,
     pub case_id: String,
-    pub finale_case_site_id: String,
+    pub finale_case_site_id: Option<CaseSiteId>,
     pub finale_hostile_group_id: String,
     pub journey_departure_minute: u64,
     pub camp_movement_minute: u64,
@@ -281,7 +281,7 @@ pub struct NarrativeEncounterPrivateAuthority {
     pub occurrence_id: String,
     pub origin: NarrativeEncounterOrigin,
     pub case_id: Option<String>,
-    pub finale_case_site_id: Option<String>,
+    pub finale_case_site_id: Option<CaseSiteId>,
     pub finale_hostile_group_id: Option<String>,
     pub reward_eligible: bool,
     pub reward_addendum: Option<String>,
@@ -397,7 +397,7 @@ pub struct ChallengeAuthority {
     pub case_id: String,
     #[index(btree)]
     pub party_id: String,
-    pub finale_case_site_id: String,
+    pub finale_case_site_id: CaseSiteId,
     pub finale_hostile_group_id: String,
     pub journey_departure_minute: u64,
     pub camp_movement_minute: u64,
@@ -437,7 +437,7 @@ pub struct BackendChallenge {
     pub case_id: String,
     pub party_id: String,
     pub owner_character_id: u64,
-    pub finale_case_site_id: String,
+    pub finale_case_site_id: CaseSiteId,
     pub puzzle_projection_json: String,
     pub presenter_catalog_id: ChallengePresenterCatalogId,
     pub revision: u32,
@@ -684,10 +684,10 @@ pub fn backend_road_challenges(ctx: &ViewContext) -> Vec<BackendRoadChallenge> {
         .collect()
 }
 
-fn journey_destination_matches(endpoint: &JourneyEndpoint, case_site_id: &str) -> bool {
+fn journey_destination_matches(endpoint: &JourneyEndpoint, case_site_id: &CaseSiteId) -> bool {
     matches!(
         endpoint,
-        JourneyEndpoint::CaseSite(site) if site.id.value == case_site_id
+        JourneyEndpoint::CaseSite(site) if &site.id == case_site_id
     )
 }
 
@@ -925,7 +925,7 @@ pub(crate) fn materialize_chance_narrative_encounter(
             gateway_bucket: 0,
             party_id: party_id.into(),
             case_id: String::new(),
-            finale_case_site_id: String::new(),
+            finale_case_site_id: None,
             finale_hostile_group_id: String::new(),
             journey_departure_minute: journey.departure_minute,
             camp_movement_minute: journey.completed_movement_minutes,
@@ -1273,7 +1273,7 @@ pub(crate) fn bind_errantry_trials_to_current_camp(
             challenge.open
                 && challenge.solved_at_minute.is_none()
                 && challenge.case_id == contract.case_id
-                && challenge.finale_case_site_id == destination.id.value
+                && challenge.finale_case_site_id == destination.id
                 && challenge.journey_departure_minute == 0
         })
         .collect::<Vec<_>>();
@@ -1313,7 +1313,7 @@ pub(crate) fn bind_errantry_trials_to_current_camp(
         .filter(|challenge| {
             challenge.open
                 && challenge.case_id == contract.case_id
-                && challenge.finale_case_site_id == destination.id.value
+                && challenge.finale_case_site_id.as_ref() == Some(&destination.id)
                 && challenge.journey_departure_minute == 0
         })
         .collect::<Vec<_>>();
@@ -1629,7 +1629,7 @@ pub fn resolve_errantry_road_challenge(
             .find(&contract.case_id)
             .ok_or("Errantry authority not found")?;
         if !errantry.preliminary_challenge_ids.contains(&challenge.id)
-            || overlay.finale_case_site_id.as_deref() != Some(errantry.finale_case_site_id.as_str())
+            || overlay.finale_case_site_id.as_ref() != Some(&errantry.finale_case_site_id)
             || overlay.finale_hostile_group_id.as_deref()
                 != Some(errantry.finale_hostile_group_id.as_str())
         {
@@ -1862,9 +1862,8 @@ fn active_puzzle_demo(
     party_id: &str,
     character_id: u64,
     puzzle_kind: PuzzleKind,
-) -> Option<(ChallengeAuthority, Contract)> {
+) -> Option<(ChallengeAuthority, ContractAuthority)> {
     let party_key = party_id.to_string();
-    let demo_prefix = format!("challenge:{}:demo:{character_id}:", puzzle_kind.slug());
     let mut challenges = ctx
         .db
         .challenge_authority()
@@ -1873,7 +1872,11 @@ fn active_puzzle_demo(
         .filter(|challenge| {
             challenge.open
                 && challenge.solved_at_minute.is_none()
-                && challenge.id.starts_with(&demo_prefix)
+                && ErrantryChallengeId::parse(&challenge.id).is_some_and(|identity| {
+                    identity.puzzle_kind == puzzle_kind.slug()
+                        && identity.namespace == ErrantryChallengeNamespace::Demo
+                        && identity.character_id == character_id
+                })
         })
         .collect::<Vec<_>>();
     challenges.sort_by(|left, right| left.id.cmp(&right.id));
@@ -1890,6 +1893,44 @@ fn active_puzzle_demo(
             })?;
         Some((challenge, contract))
     })
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum ErrantryChallengeNamespace {
+    Demo,
+    Order,
+}
+
+struct ErrantryChallengeId<'a> {
+    puzzle_kind: &'a str,
+    namespace: ErrantryChallengeNamespace,
+    character_id: u64,
+}
+
+impl<'a> ErrantryChallengeId<'a> {
+    fn parse(value: &'a str) -> Option<Self> {
+        let mut parts = value.split(':');
+        let domain = parts.next()?;
+        let puzzle_kind = parts.next()?;
+        let namespace = match parts.next()? {
+            "demo" => ErrantryChallengeNamespace::Demo,
+            "order" => ErrantryChallengeNamespace::Order,
+            _ => return None,
+        };
+        let character_id = parts.next()?.parse().ok()?;
+        let _ordinal = parts.next()?.parse::<u64>().ok()?;
+        if domain != "challenge"
+            || puzzle_kind.is_empty()
+            || parts.next().is_some()
+        {
+            return None;
+        }
+        Some(Self {
+            puzzle_kind,
+            namespace,
+            character_id,
+        })
+    }
 }
 
 fn puzzle_demo_suffix(character_id: u64, ordinal: u64) -> String {
@@ -2175,29 +2216,26 @@ fn materialize_order_errantry(
             active_contract.title
         ));
     }
-    let namespace = match launch {
-        ErrantryLaunch::DirectDemoCamp(_) => "demo",
-        ErrantryLaunch::NormalTravel => "order",
-    };
     let puzzle_kind = match launch {
         ErrantryLaunch::NormalTravel => adventuresim_puzzles::PuzzleKind::OrderedSigils,
         ErrantryLaunch::DirectDemoCamp(kind) => kind,
     };
-    let challenge_prefix = format!(
-        "challenge:{}:{namespace}:{character_id}:",
-        puzzle_kind.slug()
-    );
     let ordinal = ctx
         .db
         .challenge_authority()
         .party_id()
         .filter(&party_id)
-        .filter(|challenge| match launch {
-            ErrantryLaunch::NormalTravel => challenge.id.starts_with(&challenge_prefix),
-            ErrantryLaunch::DirectDemoCamp(_) => {
-                challenge.id.starts_with("challenge:")
-                    && challenge.id.contains(&format!(":demo:{character_id}:"))
+        .filter(|challenge| match (launch, ErrantryChallengeId::parse(&challenge.id)) {
+            (ErrantryLaunch::NormalTravel, Some(identity)) => {
+                identity.namespace == ErrantryChallengeNamespace::Order
+                    && identity.puzzle_kind == puzzle_kind.slug()
+                    && identity.character_id == character_id
             }
+            (ErrantryLaunch::DirectDemoCamp(_), Some(identity)) => {
+                identity.namespace == ErrantryChallengeNamespace::Demo
+                    && identity.character_id == character_id
+            }
+            (_, None) => false,
         })
         .count() as u64;
     let suffix = errantry_suffix(character_id, ordinal, launch);
@@ -2209,7 +2247,7 @@ fn materialize_order_errantry(
     let contract_id = format!("contract:errantry-puzzle:{suffix}");
     let challenge_id = format!("challenge:{}:{suffix}", puzzle_kind.slug());
     let courier_challenge_id = format!("challenge:road-encounter:{suffix}");
-    let case_site_id = format!("case-site:errantry-finale:{suffix}");
+    let case_site_id = CaseSiteId::from(format!("case-site:errantry-finale:{suffix}"));
     let hostile_group_id = format!("hostile-group:errantry-finale:{suffix}");
     // The preliminary trial is a true optional boon: defeating the finale
     // resolves the case whether or not ChallengeSolved was emitted.
@@ -2272,7 +2310,7 @@ fn materialize_order_errantry(
             "Choose the most ready pack that meets every named hazard within its burden.",
         ),
     };
-    ctx.db.contract_authority().insert(Contract {
+    ctx.db.contract_authority().insert(ContractAuthority {
         id: contract_id.clone(),
         gateway_bucket: 0,
         case_id: case_id.clone(),
@@ -2299,8 +2337,8 @@ fn materialize_order_errantry(
     )
     .ok_or("Errantry site is not a valid WGS84 coordinate")?;
     let site = CaseSiteAuthority {
-        id_key: case_site_id.clone(),
-        id: CaseSiteId::from(case_site_id.clone()),
+        id_key: case_site_id.as_str().to_owned(),
+        id: case_site_id.clone(),
         case_id: case_id.clone(),
         origin_settlement_id: origin_settlement_id.clone(),
         name: "The Black Knight's Ford".into(),
@@ -2367,7 +2405,7 @@ fn materialize_order_errantry(
             gateway_bucket: 0,
             party_id: party_id.clone(),
             case_id: case_id.clone(),
-            finale_case_site_id: case_site_id.clone(),
+            finale_case_site_id: Some(case_site_id.clone()),
             finale_hostile_group_id: hostile_group_id.clone(),
             journey_departure_minute: 0,
             camp_movement_minute: 0,
@@ -2429,7 +2467,7 @@ fn materialize_order_errantry(
         "the Order of St. George",
     )?;
     let destination = JourneyEndpoint::CaseSite(JourneyCaseSiteEndpoint {
-        id: CaseSiteId::from(case_site_id.clone()),
+        id: case_site_id,
         name: site.name.clone(),
     });
     party.active_contract_id = Some(contract_id.clone());
@@ -2493,9 +2531,26 @@ fn materialize_order_errantry(
 #[cfg(test)]
 mod challenge_source_boundary_tests {
     use super::{
-        ChallengeAttemptReceipt, ERRANTRY_FINALE_THREAT_ID, narrative_combat_roll,
-        puzzle_demo_suffix, validate_challenge_retry,
+        ChallengeAttemptReceipt, ERRANTRY_FINALE_THREAT_ID, ErrantryChallengeId,
+        ErrantryChallengeNamespace, narrative_combat_roll, puzzle_demo_suffix,
+        validate_challenge_retry,
     };
+
+    #[test]
+    fn errantry_challenge_id_requires_the_exact_tagged_shape() {
+        let parsed = ErrantryChallengeId::parse("challenge:logic:demo:7:2").unwrap();
+        assert_eq!(parsed.puzzle_kind, "logic");
+        assert!(parsed.namespace == ErrantryChallengeNamespace::Demo);
+        assert_eq!(parsed.character_id, 7);
+        for invalid in [
+            "prefix-challenge:logic:demo:7:2",
+            "challenge:logic:demonstration:7:2",
+            "challenge:logic:demo:7:2:extra",
+            "challenge::demo:7:2",
+        ] {
+            assert!(ErrantryChallengeId::parse(invalid).is_none());
+        }
+    }
 
     #[test]
     fn public_projection_omits_private_truth_fields() {

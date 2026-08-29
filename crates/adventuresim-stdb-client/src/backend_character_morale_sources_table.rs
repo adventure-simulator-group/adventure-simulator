@@ -3,6 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::character_morale_source_type::CharacterMoraleSource;
+use super::morale_source_kind_type::MoraleSourceKind;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `backend_character_morale_sources`.

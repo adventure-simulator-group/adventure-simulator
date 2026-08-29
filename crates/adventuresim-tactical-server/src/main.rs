@@ -394,7 +394,7 @@ fn on_debug_dump_world_request(_request: On<FromClient<DebugDumpWorldRequest>>, 
         .allow_component::<CharacterId>()
         .allow_component::<Skills>()
         .allow_component::<Limbs>()
-        .allow_component::<Attributes>()
+        .allow_component::<TacticalAttributes>()
         .allow_component::<Stats>()
         .allow_component::<TacticalCombatState>()
         .allow_component::<TacticalCombatSide>()
@@ -420,7 +420,7 @@ fn on_debug_dump_world_request(_request: On<FromClient<DebugDumpWorldRequest>>, 
         // `ChildOf`/`Children` pair in dynamic scenes.
         .allow_component::<InventoryItems>()
         .allow_component::<ItemOf>()
-        .allow_component::<ItemQuantity>()
+        .allow_component::<TacticalItemQuantity>()
         .allow_component::<ItemProperties>()
         .allow_component::<WeaponItem>()
         .allow_component::<ShieldItem>()
@@ -707,7 +707,7 @@ mod debug_dump_world_tests {
             .world_mut()
             .spawn((
                 ItemOf(player_entity),
-                ItemQuantity::default(),
+                TacticalItemQuantity::default(),
                 ItemProperties {
                     id: "sword".to_string(),
                     weight: 1.2,

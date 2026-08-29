@@ -31,6 +31,7 @@ fn simulation_quest_fixture_exposes_ordinary_provisioning_to_both_paths() {
         simulation_quest_provisioning_economy(SettlementEconomyProfile::stage_placeholder())
             .unwrap();
     assert!(economy.services.contains(&SettlementService::GeneralStore));
+    assert!(economy.services.contains(&SettlementService::Temple));
     assert!(
         economy
             .stock
@@ -243,7 +244,7 @@ fn dialogue_case_provenance_fails_closed_for_generated_authority_damage() {
         settlement_name: context.settlement_name.clone(),
         seed: generated.generation_seed,
         catalog_revision: generated.catalog_revision.clone(),
-        context_commitment: quest_generation_context_commitment(&context_snapshot_json),
+        context_commitment: quest_generation_context_commitment(&context_snapshot_json).unwrap(),
         context_snapshot_json,
         manifest_json: serde_json::to_string(&generated).unwrap(),
         factor_trace_json: serde_json::to_string(&generated.factor_trace).unwrap(),
@@ -288,7 +289,7 @@ fn dialogue_case_provenance_fails_closed_for_generated_authority_damage() {
             changed.context_snapshot_json = serde_json::to_string(&context).unwrap();
             if refresh_commitment {
                 changed.context_commitment =
-                    quest_generation_context_commitment(&changed.context_snapshot_json);
+                    quest_generation_context_commitment(&changed.context_snapshot_json).unwrap();
             }
             changed
         };
@@ -443,7 +444,7 @@ fn generated_hostile_materialization_preserves_manifest_identity_across_links() 
             .expect("hostile-group site exists");
         let site = CaseSiteAuthority {
             id_key: generated_site.id.0.clone(),
-            id: crate::investigation::CaseSiteId::from(generated_site.id.0.clone()),
+            id: CaseSiteId::from(generated_site.id.0.clone()),
             case_id: generated.canonical_case_id.clone(),
             origin_settlement_id: "test-settlement".into(),
             name: generated_site.safe_label.clone(),
@@ -458,7 +459,7 @@ fn generated_hostile_materialization_preserves_manifest_identity_across_links() 
             hostile_group_authority_row(hostile_group_id, &site, threat.as_str().into(), *count, 2)
                 .expect("canonical hostile-group row materializes");
         assert_eq!(group.id, *hostile_group_id);
-        assert_eq!(group.case_site_id_key, site.id.value);
+        assert_eq!(group.case_site_id_key, site.id.as_str());
         assert_eq!(group.case_site_id, site.id);
 
         let linked_finales: Vec<_> = generated
@@ -585,7 +586,7 @@ fn generated_combat_eligibility_fails_closed_across_site_group_and_finale_author
     };
     let group = HostileGroupAuthority {
         id: hostile_group_id.clone(),
-        case_site_id_key: site.id.value.clone(),
+        case_site_id_key: site.id.as_str().to_owned(),
         case_site_id: site.id.clone(),
         enemy_type: "test-hostile".into(),
         base_enemy_count: 1,
@@ -609,7 +610,7 @@ fn generated_combat_eligibility_fails_closed_across_site_group_and_finale_author
         .map(|(path_index, _)| CaseFinaleAuthority {
             id: format!("finale:{}:{path_index}", generated.canonical_case_id),
             case_id: generated.canonical_case_id.clone(),
-            kind: FinaleKind::RecordResolution,
+            kind: FinaleExecutionKind::RecordResolution,
             resolution_status: CaseStatus::Resolved,
             eligible_path_index: Some(path_index as u16),
             priority: 100,
@@ -773,7 +774,7 @@ fn generated_truth_and_replay_authority_have_no_public_subscription_surface() {
     let authority = strategic
         .split("pub struct QuestGenerationAuthority")
         .nth(1)
-        .and_then(|tail| tail.split("pub struct Contract").next())
+        .and_then(|tail| tail.split("pub struct ContractAuthority").next())
         .unwrap();
     for field in [
         "seed",
@@ -791,13 +792,16 @@ fn generated_truth_and_replay_authority_have_no_public_subscription_surface() {
 
     let generated_client = crate::production_source(include_str!("../../../../adventuresim-stdb-client/src/mod.rs"));
     assert!(!generated_client.contains("quest_generation_authority_table"));
-    let web_types = crate::production_source(include_str!("../../../../strategic-web/src/spacetimedb/types.rs"));
-    let contract = web_types
-        .split("pub struct ContractPresentation")
+    let generated_contract = crate::production_source(include_str!(
+        "../../../../adventuresim-stdb-client/src/backend_contract_type.rs"
+    ));
+    let contract = generated_contract
+        .split("pub struct BackendContract")
         .nth(1)
-        .and_then(|tail| tail.split("pub struct RecruitmentOffer").next())
+        .and_then(|tail| tail.split("pub struct BackendContractCols").next())
         .unwrap();
     assert!(contract.contains("opposition_wording"));
+    assert!(contract.contains("opposition_count: u32"));
     for forbidden in [
         "seed",
         "manifest",
@@ -810,6 +814,18 @@ fn generated_truth_and_replay_authority_have_no_public_subscription_surface() {
 }
 
 #[test]
+fn quest_context_commitment_is_canonical_and_versioned() {
+    let canonical = quest_generation_context_commitment(r#"{"a":1,"b":2}"#).unwrap();
+    let reordered = quest_generation_context_commitment(" { \"b\": 2, \"a\": 1 } ").unwrap();
+    assert_eq!(canonical, reordered);
+    assert_eq!(
+        canonical,
+        "6d0b1f7712c6e549e781ea1b861f893d5e1cbaff62696e7e8bb619183feeb196"
+    );
+    assert!(quest_generation_context_commitment("not-json").is_err());
+}
+
+#[test]
 fn generated_activity_is_contract_free_and_counted_by_open_case_authority() {
     let source = STRATEGIC_SOURCE.replace('\r', "");
     let generation = source
@@ -818,7 +834,7 @@ fn generated_activity_is_contract_free_and_counted_by_open_case_authority() {
         .and_then(|tail| tail.split("#[reducer]").next())
         .expect("generated quest materialization");
     assert!(!generation.contains("contract_authority().insert"));
-    assert!(!generation.contains("Contract {"));
+    assert!(!generation.contains("ContractAuthority {"));
     let activity = source
         .rsplit("fn ensure_settlement_activity_inner")
         .next()

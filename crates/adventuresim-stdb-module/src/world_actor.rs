@@ -181,7 +181,7 @@ pub fn backend_context_characters(ctx: &ViewContext) -> Vec<BackendContextCharac
                                     party.leader_id,
                                     time.minutes,
                                 )
-                                .and_then(|occupancy| occupancy.case_site_id.to_place())
+                                .map(|occupancy| occupancy.case_site_id.to_place())
                                 .zip(canonical_case_site_place(&row.location_id))
                                 .is_some_and(
                                     |(party_place, context_place)| party_place == context_place,
@@ -641,7 +641,7 @@ fn exact_case_site_visible_to_observer_view(
     else {
         return false;
     };
-    if site.id.to_place().as_ref() != Some(&place) {
+    if site.id.to_place() != place {
         return false;
     }
     let Some(generated_aliases) = case_site_provenance_view(ctx, &site) else {

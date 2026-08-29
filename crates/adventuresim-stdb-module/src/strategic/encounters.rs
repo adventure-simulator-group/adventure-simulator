@@ -40,7 +40,7 @@ fn journey_fallback_position(
                 .db
                 .case_site_authority()
                 .id_key()
-                .find(&endpoint.id.value)
+                .find(endpoint.id.to_string())
                 .and_then(|site| {
                     decode_position_e7(
                         site.longitude_e7,
@@ -73,7 +73,7 @@ fn journey_coordinates_are_geographic(ctx: &ReducerContext, journey: &PartyJourn
             .db
             .case_site_authority()
             .id_key()
-            .find(&endpoint.id.value)
+            .find(endpoint.id.to_string())
             .map(|site| site.coordinates_are_geographic),
         JourneyEndpoint::Camp(_) => None,
     };
@@ -313,7 +313,7 @@ pub(crate) fn build_strategic_encounter(
         absolute_minute,
         longitude_e7,
         latitude_e7,
-        terrain: format!("{terrain_kind:?}").to_ascii_lowercase(),
+        terrain: terrain_kind.stable_id().to_owned(),
         party_aware: matches!(
             awareness,
             adventuresim_core::encounter::Awareness::PartyOnly
@@ -448,7 +448,7 @@ fn maybe_interrupt_travel(
                 ctx.db
                     .hostile_group_authority()
                     .iter()
-                    .map(|group| (group.id, group.case_site_id.value, group.enemy_type)),
+                    .map(|group| (group.id, group.case_site_id.into_string(), group.enemy_type)),
             )
         });
     let member_ids = living_party_member_ids(ctx, party_id);
@@ -685,14 +685,9 @@ fn commit_encounter_scan(
         (true, true) => adventuresim_core::encounter::Awareness::Both,
         (false, false) => return Err("Encounter has no aware participants".into()),
     };
-    let terrain = core_encounter_terrain(match encounter.terrain.as_str() {
-        "road" => JourneyTerrainKind::Road,
-        "open" => JourneyTerrainKind::Open,
-        "sparsewoods" | "sparse_woods" => JourneyTerrainKind::SparseWoods,
-        "deepwoods" | "deep_woods" => JourneyTerrainKind::DeepWoods,
-        "wetland" => JourneyTerrainKind::Wetland,
-        _ => JourneyTerrainKind::Open,
-    });
+    let terrain_kind = JourneyTerrainKind::from_stable_id(&encounter.terrain)
+        .ok_or_else(|| "Encounter has an unknown terrain code".to_owned())?;
+    let terrain = core_encounter_terrain(terrain_kind);
     encounter.enemy_count = adventuresim_core::encounter::scale_enemy_count(
         adventuresim_core::encounter::enemy_count(seed, encounter.roll_index, capable),
         archetype,
@@ -1077,7 +1072,7 @@ fn commit_autoresolve_outcome(
             crate::condition::record_morale_event(
                 ctx,
                 *member_id,
-                "defeat",
+                adventuresim_core::morale::MoraleEventKind::Defeat,
                 -defeat_morale_penalty,
                 Some(source_id.to_string()),
             )?;
@@ -1136,7 +1131,7 @@ fn resolve_random_encounter_battle(
         &encounter.encounter_id,
         &encounter.party_id,
         "",
-        "",
+        None,
         &encounter.archetype,
         &outcome,
     )?;
@@ -1159,7 +1154,7 @@ fn resolve_random_encounter_battle(
             crate::condition::record_morale_event(
                 ctx,
                 *member_id,
-                "victory",
+                adventuresim_core::morale::MoraleEventKind::Victory,
                 5.0 + f32::from(encounter.enemy_count),
                 Some(encounter.encounter_id.clone()),
             )?;
@@ -1475,7 +1470,7 @@ fn revalidate_party_after_departure_sync(
         .party_id()
         .filter(party_id)
         .filter(|incident| incident.status == IncidentStatus::Pending)
-        .map(|incident| incident.case_site_id.value)
+        .map(|incident| incident.case_site_id.into_string())
         .collect();
     if !departure_snapshot_allows_travel(
         party_matches,

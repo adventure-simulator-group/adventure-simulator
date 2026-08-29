@@ -4,13 +4,15 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::case_site_id_type::CaseSiteId;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct BackendPhysicalEvidence {
     pub owner_character_id: u64,
     pub evidence_id: String,
     pub case_id: String,
-    pub case_site_id: String,
+    pub case_site_id: CaseSiteId,
     pub label: String,
     pub portrait_icon: String,
     pub description: String,
@@ -28,7 +30,7 @@ pub struct BackendPhysicalEvidenceCols {
     pub owner_character_id: __sdk::__query_builder::Col<BackendPhysicalEvidence, u64>,
     pub evidence_id: __sdk::__query_builder::Col<BackendPhysicalEvidence, String>,
     pub case_id: __sdk::__query_builder::Col<BackendPhysicalEvidence, String>,
-    pub case_site_id: __sdk::__query_builder::Col<BackendPhysicalEvidence, String>,
+    pub case_site_id: __sdk::__query_builder::Col<BackendPhysicalEvidence, CaseSiteId>,
     pub label: __sdk::__query_builder::Col<BackendPhysicalEvidence, String>,
     pub portrait_icon: __sdk::__query_builder::Col<BackendPhysicalEvidence, String>,
     pub description: __sdk::__query_builder::Col<BackendPhysicalEvidence, String>,

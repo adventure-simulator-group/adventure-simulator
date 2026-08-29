@@ -14,8 +14,8 @@ mod rest_form_tests {
         settlement_rest_minutes, travel_rest_minutes,
     };
     use crate::spacetimedb::{
-        Character, CharacterFilth, CharacterPersonality, Conscience, Conviction, Drive,
-        FilthOrigin, FilthSubstance, Hygiene, InventoryItem, InventoryItemAmount, ItemDefinition,
+        CharacterView, CharacterFilth, Personality, Conscience, Conviction, Drive,
+        FilthOrigin, FilthSubstance, Hygiene, InventoryItem, InventoryItemAmount, CatalogItemView,
         Nerve, Outlook, PartyInventoryItem, PartyItemAmount, SelfRegard, Sociability,
         StrategicEncounterStatus, Temperance,
     };
@@ -65,8 +65,8 @@ mod rest_form_tests {
         assert!(travel_rest_minutes(&form("1.5", "minutes", None)).is_err());
     }
 
-    fn member(id: u64) -> Character {
-        Character {
+    fn member(id: u64) -> CharacterView {
+        CharacterView {
             id,
             name: format!("Member {id}"),
             xp: 0,
@@ -82,9 +82,8 @@ mod rest_form_tests {
         }
     }
 
-    fn personality(character_id: u64, temperance: Temperance) -> CharacterPersonality {
-        CharacterPersonality {
-            character_id,
+    fn personality(character_id: u64, temperance: Temperance) -> (u64, Personality) {
+        (character_id, Personality {
             nerve: Nerve::Neutral,
             drive: Drive::Neutral,
             outlook: Outlook::Neutral,
@@ -94,8 +93,8 @@ mod rest_form_tests {
             conviction: Conviction::Neutral,
             hygiene: Hygiene::Neutral,
             temperance,
-            ..CharacterPersonality::neutral(character_id)
-        }
+            ..Personality::neutral()
+        })
     }
 
     #[test]
@@ -185,12 +184,12 @@ mod rest_form_tests {
                 quantity: 1,
             },
         ];
-        let alcohol = ItemDefinition {
+        let alcohol = CatalogItemView {
             id: "table_wine".into(),
             alcohol_serving_ml: 250,
             alcohol_abv_basis_points: 1_200,
             alcohol_potable: true,
-            ..ItemDefinition::default()
+            ..CatalogItemView::default()
         };
         let amounts = [
             InventoryItemAmount {
@@ -341,7 +340,7 @@ mod rest_form_tests {
         for field in [
             "character_id",
             "requested_settlement_id_length = id.len()",
-            "service = kind.as_str()",
+            "service = service_kind.tag()",
             "rejection_status = %error.status()",
             "error = %error",
         ] {
@@ -380,7 +379,7 @@ mod rest_form_tests {
             "requested_settlement_id = %id",
             "requested_minutes = ?form.requested_minutes",
             "public_service = ?public_service",
-            "route_service = kind.as_str()",
+            "route_service = service_kind.tag()",
             "duration_length = form.duration.len()",
             "reason = message",
         ] {
@@ -420,7 +419,7 @@ mod rest_form_tests {
             "character_settlement_id",
             "requested_minutes",
             "public_service = ?public_service",
-            "route_service = kind.as_str()",
+            "route_service = service_kind.tag()",
             "error = %error",
         ] {
             assert!(reducer_error[..sanitization].contains(field), "{field}");

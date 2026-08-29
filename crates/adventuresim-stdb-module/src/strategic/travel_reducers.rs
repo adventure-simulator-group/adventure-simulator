@@ -5,10 +5,7 @@ pub fn travel_to_case_site(
     case_site_id: CaseSiteId,
 ) -> Result<(), String> {
     require_strategic_gateway(ctx)?;
-    case_site_id
-        .to_place()
-        .ok_or("Case-site identity is malformed")?;
-    travel_to_case_site_impl(ctx, character_id, case_site_id.value, None)
+    travel_to_case_site_impl(ctx, character_id, case_site_id.into_string(), None)
 }
 
 #[reducer]
@@ -19,10 +16,36 @@ pub fn travel_to_case_site_planned(
     route: JourneyRoutePlan,
 ) -> Result<(), String> {
     require_strategic_gateway(ctx)?;
-    case_site_id
-        .to_place()
-        .ok_or("Case-site identity is malformed")?;
-    travel_to_case_site_impl(ctx, character_id, case_site_id.value, Some(route))
+    travel_to_case_site_impl(ctx, character_id, case_site_id.into_string(), Some(route))
+}
+
+fn authoritative_case_route_binding_digest(
+    departure_minute: u64,
+    origin: &JourneyRoutePoint,
+    destination: &JourneyRoutePoint,
+    coordinates_are_geographic: bool,
+    distance_m: u64,
+    minutes: u64,
+) -> String {
+    use sha2::Digest as _;
+
+    let mut hash = sha2::Sha256::new();
+    for value in [
+        b"adventuresim.authoritative-case-route".as_slice(),
+        1u16.to_le_bytes().as_slice(),
+        departure_minute.to_le_bytes().as_slice(),
+        origin.latitude_e7.to_le_bytes().as_slice(),
+        origin.longitude_e7.to_le_bytes().as_slice(),
+        destination.latitude_e7.to_le_bytes().as_slice(),
+        destination.longitude_e7.to_le_bytes().as_slice(),
+        [u8::from(coordinates_are_geographic)].as_slice(),
+        distance_m.to_le_bytes().as_slice(),
+        minutes.to_le_bytes().as_slice(),
+    ] {
+        hash.update((value.len() as u64).to_le_bytes());
+        hash.update(value);
+    }
+    format!("{:x}", hash.finalize())
 }
 
 fn authoritative_straight_line_case_route(
@@ -65,16 +88,13 @@ fn authoritative_straight_line_case_route(
         adventuresim_core::weather::Precipitation::Rain => JourneyPrecipitation::Rain,
         adventuresim_core::weather::Precipitation::Snow => JourneyPrecipitation::Snow,
     };
-    let digest_domain = format!(
-        "authoritative-straight-line-v1:{departure_minute}:{:?}:{:?}:{distance_m}:{minutes}",
-        points[0], points[1]
-    );
-    let package_digest = format!(
-        "{:016x}{:016x}{:016x}{:016x}",
-        adventuresim_core::settlement_population::stable_hash(&digest_domain),
-        adventuresim_core::settlement_population::stable_hash(&(digest_domain.clone() + ":1")),
-        adventuresim_core::settlement_population::stable_hash(&(digest_domain.clone() + ":2")),
-        adventuresim_core::settlement_population::stable_hash(&(digest_domain + ":3")),
+    let package_digest = authoritative_case_route_binding_digest(
+        departure_minute,
+        &points[0],
+        &points[1],
+        coordinates_are_geographic,
+        distance_m,
+        minutes,
     );
     let span = JourneyTerrainSpan {
         kind: JourneyTerrainKind::Open,
@@ -143,13 +163,15 @@ fn travel_to_case_site_impl(
     }
     if character.current_settlement_id != expected_settlement_id
         || crate::investigation::character_case_site_id(ctx, character_id)
-            != expected_case_site_id.as_ref().map(|id| id.value.clone())
+            != expected_case_site_id
+                .as_ref()
+                .map(|id| id.as_str().to_owned())
     {
         return Err("Party leader location does not match the party".into());
     }
     if expected_case_site_id
         .as_ref()
-        .is_some_and(|origin| origin.value == case_site_id)
+        .is_some_and(|origin| origin.as_str() == case_site_id)
     {
         return Err("The party is already at that case site".into());
     }
@@ -206,7 +228,7 @@ fn travel_to_case_site_impl(
                 .db
                 .case_site_authority()
                 .id_key()
-                .find(&origin_id.value)
+                .find(origin_id.to_string())
                 .ok_or("Current case site not found")?;
             let origin_is_geographic =
                 site.coordinates_are_geographic && origin.coordinates_are_geographic;
@@ -259,7 +281,7 @@ fn travel_to_case_site_impl(
         &party,
         origin_endpoint,
         JourneyEndpoint::CaseSite(JourneyCaseSiteEndpoint {
-            id: CaseSiteId::try_new(site.id.value.clone())?,
+            id: site.id.clone(),
             name: site.name.clone(),
         }),
         travel_minutes,
@@ -406,7 +428,7 @@ fn complete_settlement_arrival(
         let departing_incident = departing_case_site.and_then(|site_id| {
             ctx.db.strategic_incident().iter().find(|incident| {
                 incident.party_id == party.id
-                    && incident.case_site_id.value == site_id
+                    && incident.case_site_id.as_str() == site_id
                     && incident.status == IncidentStatus::Pending
             })
         });
@@ -602,7 +624,7 @@ fn travel_to_settlement_impl(
                         .map_or_else(|| quest_journey_minutes(distance_m), |route| route.minutes)
                 },
                 "case_site",
-                site.id.value,
+                site.id.into_string(),
                 site.name,
                 zero_distance_return,
             )
@@ -663,7 +685,8 @@ fn travel_to_settlement_impl(
                     name: origin_name.clone(),
                 }),
                 "case_site" => JourneyEndpoint::CaseSite(JourneyCaseSiteEndpoint {
-                    id: CaseSiteId::try_new(origin_id.clone())?,
+                    id: CaseSiteId::try_new(origin_id.clone())
+                        .map_err(|_| "Case-site identity is malformed".to_owned())?,
                     name: origin_name.clone(),
                 }),
                 _ => return Err("Journey origin kind is invalid".into()),
@@ -869,11 +892,22 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
         .camp_destination
         .clone()
         .ok_or("The party is not camped")?;
-    let camp_place = current_journey_camp_place(ctx, &party_id)?;
-    crate::food::require_clear_current_camp_fireplace(ctx, &camp_place)?;
+    let journey = ctx
+        .db
+        .party_journey_authority()
+        .party_id()
+        .find(&party_id)
+        .ok_or("Party journey not found")?;
+    if party_journey_is_current_camp(&party, &journey) {
+        let camp_place = current_journey_camp_place(ctx, &party_id)?;
+        crate::food::require_clear_current_camp_fireplace(ctx, &camp_place)?;
+    } else if !party_journey_is_between_camps(&party, &journey) {
+        return Err("Party journey is not at a continuable location".into());
+    }
     // Refresh only after the exact pre-refresh camp and every persisted
-    // fireplace custody row have been validated. Forecast refresh must never
-    // mint a new identity around existing custody.
+    // fireplace custody row have been validated, or after authority proves an
+    // active between-camps interruption with no camp custody. Forecast refresh
+    // must never mint a new identity around existing custody.
     refresh_party_journey_forecast(ctx, &party_id)?;
     let proposed_leg_minutes = party.camp_remaining_minutes.min(party_next_walking_minutes(
         ctx,
@@ -942,7 +976,7 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
             party.current_case_site_id = None;
         }
         JourneyEndpoint::CaseSite(endpoint) => {
-            let destination_id = endpoint.id.value;
+            let destination_id = endpoint.id.into_string();
             let site = ctx
                 .db
                 .case_site_authority()
@@ -987,7 +1021,12 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
         .id()
         .find(&party_id)
         .and_then(|party| party.current_case_site_id)
-        .and_then(|site_id| ctx.db.case_site_authority().id_key().find(&site_id.value))
+        .and_then(|site_id| {
+            ctx.db
+                .case_site_authority()
+                .id_key()
+                .find(site_id.to_string())
+        })
     {
         commit_case_site_arrival_objectives(ctx, &party_id, &arrived_site)?;
     }

@@ -9,7 +9,7 @@ pub enum FinaleStatus {
 }
 
 #[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
-pub enum FinaleKind {
+pub enum FinaleExecutionKind {
     RecordResolution,
     ResolveLocalProblem,
 }
@@ -181,24 +181,6 @@ pub struct SettlementDescription {
     #[primary_key]
     pub id: String,
     #[index(btree)]
-    pub settlement_id: String,
-    pub kind: SettlementDescriptionKind,
-    pub language: Option<String>,
-    pub body: String,
-}
-
-#[derive(Clone, Debug, SpacetimeType)]
-pub struct SettlementAliasBatchRow {
-    pub id: String,
-    pub settlement_id: String,
-    pub name: String,
-    pub prefix: Option<String>,
-    pub language: Option<String>,
-}
-
-#[derive(Clone, Debug, SpacetimeType)]
-pub struct SettlementDescriptionBatchRow {
-    pub id: String,
     pub settlement_id: String,
     pub kind: SettlementDescriptionKind,
     pub language: Option<String>,
@@ -945,13 +927,13 @@ mod route_terrain_boundary_tests {
 #[reducer]
 pub fn import_settlement_aliases(
     ctx: &ReducerContext,
-    aliases: Vec<SettlementAliasBatchRow>,
+    aliases: Vec<SettlementAlias>,
 ) -> Result<(), String> {
     require_active_world_import(ctx)?;
     if aliases.is_empty() {
         return Err("Settlement-alias batch is empty".into());
     }
-    for alias in aliases {
+    for mut alias in aliases {
         if alias.id.trim().is_empty() {
             return Err("Settlement alias ID must not be empty".into());
         }
@@ -981,8 +963,9 @@ pub fn import_settlement_aliases(
                 alias.id, SETTLEMENT_ALIAS_PREFIX_MAX_BYTES
             ));
         }
-        let language = alias
+        alias.language = alias
             .language
+            .take()
             .map(|value| {
                 value
                     .parse::<LanguageCode>()
@@ -990,17 +973,10 @@ pub fn import_settlement_aliases(
                     .map_err(|error| format!("Settlement alias {}: {error}", alias.id))
             })
             .transpose()?;
-        let row = SettlementAlias {
-            id: alias.id,
-            settlement_id: alias.settlement_id,
-            name: alias.name,
-            prefix: alias.prefix,
-            language,
-        };
-        if ctx.db.settlement_alias().id().find(&row.id).is_some() {
-            ctx.db.settlement_alias().id().update(row);
+        if ctx.db.settlement_alias().id().find(&alias.id).is_some() {
+            ctx.db.settlement_alias().id().update(alias);
         } else {
-            ctx.db.settlement_alias().insert(row);
+            ctx.db.settlement_alias().insert(alias);
         }
     }
     Ok(())
@@ -1129,13 +1105,13 @@ fn reconstruct_geology_profile(
 #[reducer]
 pub fn import_settlement_descriptions(
     ctx: &ReducerContext,
-    descriptions: Vec<SettlementDescriptionBatchRow>,
+    descriptions: Vec<SettlementDescription>,
 ) -> Result<(), String> {
     require_active_world_import(ctx)?;
     if descriptions.is_empty() {
         return Err("Settlement-description batch is empty".into());
     }
-    for description in descriptions {
+    for mut description in descriptions {
         if description.id.trim().is_empty() {
             return Err("Settlement description ID must not be empty".into());
         }
@@ -1157,8 +1133,9 @@ pub fn import_settlement_descriptions(
                 description.id, SETTLEMENT_DESCRIPTION_MAX_BYTES
             ));
         }
-        let language = description
+        description.language = description
             .language
+            .take()
             .map(|value| {
                 value
                     .parse::<LanguageCode>()
@@ -1166,17 +1143,16 @@ pub fn import_settlement_descriptions(
                     .map_err(|error| format!("Settlement description {}: {error}", description.id))
             })
             .transpose()?;
-        let row = SettlementDescription {
-            id: description.id,
-            settlement_id: description.settlement_id,
-            kind: description.kind,
-            language,
-            body: description.body,
-        };
-        if ctx.db.settlement_description().id().find(&row.id).is_some() {
-            ctx.db.settlement_description().id().update(row);
+        if ctx
+            .db
+            .settlement_description()
+            .id()
+            .find(&description.id)
+            .is_some()
+        {
+            ctx.db.settlement_description().id().update(description);
         } else {
-            ctx.db.settlement_description().insert(row);
+            ctx.db.settlement_description().insert(description);
         }
     }
     Ok(())

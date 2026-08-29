@@ -273,7 +273,29 @@ fn dialogue_binding_id(
     action: &adventuresim_dialogue::InvestigationAction,
     revision: u64,
 ) -> String {
-    format!("{session_id}:{character_id}:{source_scope}:{action:?}:{revision}")
+    format!(
+        "{session_id}:{character_id}:{source_scope}:{}:{revision}",
+        dialogue_investigation_action_id(action)
+    )
+}
+
+fn dialogue_investigation_action_id(
+    action: &adventuresim_dialogue::InvestigationAction,
+) -> &'static str {
+    use adventuresim_dialogue::InvestigationAction as A;
+
+    match action {
+        A::Locate => "Locate",
+        A::Identify => "Identify",
+        A::Expose => "Expose",
+        A::PresentProof => "PresentProof",
+        A::PresentTestimony => "PresentTestimony",
+        A::Negotiate => "Negotiate",
+        A::ReturnAsset => "ReturnAsset",
+        A::ReleaseSubject => "ReleaseSubject",
+        A::ExchangeAsset => "ExchangeAsset",
+        A::ReportToIssuer => "ReportToIssuer",
+    }
 }
 
 fn observer_case_refs(ctx: &ReducerContext, case: &CaseAuthority) -> HashSet<String> {
@@ -432,7 +454,7 @@ fn dialogue_objective_recipient(
     action: &adventuresim_dialogue::InvestigationAction,
     resident_character_ids: &HashSet<String>,
     fallback_recipient_id: &str,
-    active_contract: Option<&Contract>,
+    active_contract: Option<&ContractAuthority>,
 ) -> Option<String> {
     use adventuresim_core::case::ObjectiveRequirement as R;
     use adventuresim_dialogue::InvestigationAction as A;
@@ -815,7 +837,7 @@ fn issue_dialogue_investigation_bindings(
                 character_id,
                 party_id: party_id.clone(),
                 intended_recipient_id,
-                action_family: format!("{action:?}"),
+                action_family: dialogue_investigation_action_id(action).into(),
                 source_scope: source_scope.into(),
                 case_id,
                 objective_id,

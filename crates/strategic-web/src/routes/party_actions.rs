@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::spacetimedb::RecruitmentRequirements;
+use crate::spacetimedb::RoleRequirements;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "action", rename_all = "snake_case")]
@@ -20,14 +20,14 @@ pub(crate) enum PartyAction {
     CreateRecruitmentRole {
         name: String,
         quantity: u32,
-        requirements: RecruitmentRequirements,
+        requirements: RoleRequirements,
         save_role: bool,
     },
     UpdateRecruitmentRole {
         role_id: u64,
         name: String,
         quantity: u32,
-        requirements: RecruitmentRequirements,
+        requirements: RoleRequirements,
     },
     DeleteRecruitmentRole {
         role_id: u64,
@@ -321,7 +321,7 @@ mod tests {
 
     #[test]
     fn recruitment_role_payload_keeps_the_id_and_embeds_weapon_precision_in_requirements() {
-        let requirements = RecruitmentRequirements {
+        let requirements = RoleRequirements {
             weapon_precision: adventuresim_core::capability::WEAPON_PRECISION_SWORD,
             ..Default::default()
         };

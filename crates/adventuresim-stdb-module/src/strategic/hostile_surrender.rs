@@ -34,7 +34,7 @@ pub struct HostileSurrenderReceipt {
 #[derive(Clone, Debug, SpacetimeType)]
 pub struct BackendHostileSurrender {
     pub owner_character_id: u64,
-    pub case_site_id: String,
+    pub case_site_id: CaseSiteId,
     pub spokesman_id: u64,
     pub context_ref: String,
     pub expected_revision: u32,
@@ -56,7 +56,7 @@ fn surrender_awareness_for_group_view(
     ctx.db
         .case_site_authority()
         .id_key()
-        .find(&group.case_site_id.value)
+        .find(group.case_site_id.to_string())
         .and_then(|site| ctx.db.case_authority().id().find(&site.case_id))
         .and_then(|case| case.local_problem_id)
         .and_then(|id| ctx.db.local_problem_authority().id().find(&id))
@@ -100,7 +100,7 @@ pub fn backend_hostile_surrenders(ctx: &ViewContext) -> Vec<BackendHostileSurren
             .db
             .hostile_group_authority()
             .case_site_id_key()
-            .find(&case_site_id.value)
+            .find(case_site_id.to_string())
             .filter(|group| group.disposition == HostileGroupDisposition::Active)
         else {
             continue;
@@ -153,7 +153,7 @@ pub fn backend_hostile_surrenders(ctx: &ViewContext) -> Vec<BackendHostileSurren
             .map(|receipt| receipt.response);
         rows.push(BackendHostileSurrender {
             owner_character_id: party.leader_id,
-            case_site_id: case_site_id.value.clone(),
+            case_site_id: case_site_id.clone(),
             spokesman_id: spokesman.character_id,
             context_ref: HOSTILE_NEGOTIATION_CONTEXT_REF.into(),
             expected_revision: spokesman.revision,
@@ -183,7 +183,7 @@ fn resolve_hostile_surrender(ctx: &ReducerContext, request: SurrenderRequest) ->
     let receipt_id = format!("hostile-surrender:{}:{}", request.actor_id, request.action_id);
     if let Some(existing) = ctx.db.hostile_surrender_receipt().id().find(&receipt_id) {
         return if existing.actor_id == request.actor_id
-            && existing.case_site_id.value == request.case_site_id
+            && existing.case_site_id.as_str() == request.case_site_id
             && existing.spokesman_id == request.spokesman_id
             && existing.context_ref == request.context_ref
             && existing.expected_revision == request.expected_revision

@@ -7,6 +7,7 @@
 #[cfg(test)]
 pub(crate) const LIVE_CORE_SOURCE: &str = concat!(
     include_str!("model.rs"),
+    include_str!("error.rs"),
     include_str!("failure_projection.rs"),
     include_str!("policy.rs"),
     include_str!("survival.rs"),
@@ -21,6 +22,7 @@ pub(crate) const LIVE_CORE_SOURCE: &str = concat!(
 );
 
 include!("model.rs");
+include!("error.rs");
 include!("failure_projection.rs");
 include!("policy.rs");
 include!("survival.rs");

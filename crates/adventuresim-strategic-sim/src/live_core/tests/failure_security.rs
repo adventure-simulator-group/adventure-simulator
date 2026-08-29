@@ -108,7 +108,8 @@ fn effective_activity_distinguishes_authored_policy_from_safe_fallback() {
 #[test]
 fn failed_activity_error_classification_never_echoes_raw_backend_text() {
     let raw = "Not enough coin: secret internal reducer context";
-    let category = safe_core_loop_failure(raw).0;
+    let projection = project_core_loop_failure(&CoreLoopError::Other(raw.into()));
+    let category = projection.category.as_str();
     let schedule = medical_rest_schedule();
     let detail = format_failed_activity_detail(
         ActivityExecutionDiagnostic {
@@ -137,30 +138,36 @@ fn failed_activity_error_classification_never_echoes_raw_backend_text() {
     assert!(detail.contains("error_category=core_loop_error"));
     assert!(!detail.contains("secret internal reducer context"));
     assert_eq!(
-        safe_core_loop_failure("simulation settlement offers neither an Inn nor a Temple").0,
+        project_core_loop_failure(&CoreLoopError::Other(
+            "simulation settlement offers neither an Inn nor a Temple".into()
+        ))
+        .category
+        .as_str(),
         "core_loop_error"
     );
 }
 
 #[test]
 fn equipment_trade_failure_is_classified_without_backend_text() {
-    let raw =
-        "purchase_personal_storefront_with_party_stake failed: hidden provider authority changed";
-    let (category, message) = safe_core_loop_failure(raw);
-    assert_eq!(category, "equipment_purchase_failed");
+    let error = CoreLoopError::operation(
+        ReducerOperation::PurchasePersonalStorefrontWithPartyStake,
+        "hidden provider authority changed",
+    );
+    let projection = project_core_loop_failure(&error);
+    assert_eq!(projection.category.as_str(), "equipment_purchase_failed");
     assert_eq!(
-        safe_failure_operation(raw),
-        Some(FailureOperation::PurchasePersonalStorefrontWithPartyStake)
+        projection.operation,
+        Some(ReducerOperation::PurchasePersonalStorefrontWithPartyStake)
     );
     assert_eq!(
-        safe_failure_reason_code(raw, category),
+        projection.reason.as_str(),
         "equipment_storefront_trade_failed"
     );
-    assert!(!message.contains("hidden provider authority"));
+    assert!(!projection.message.contains("hidden provider authority"));
 }
 
 #[test]
-fn failure_artifact_version_nine_serializes_safe_operation_context() {
+fn failure_artifact_version_nine_has_an_exact_full_wire_golden() {
     let artifact = CoreLoopFailureArtifact {
         schema_version: CORE_LOOP_FAILURE_SCHEMA_VERSION,
         category: "investigation_temporally_unavailable".into(),
@@ -182,20 +189,117 @@ fn failure_artifact_version_nine_serializes_safe_operation_context() {
         final_agents: Vec::new(),
     };
     let value = serde_json::to_value(artifact).unwrap();
-    assert_eq!(value["schema_version"], serde_json::json!(9));
-    assert_eq!(
-        value["fixture_disease"],
-        serde_json::json!(DEFAULT_SIMULATION_DISEASE)
+    let expected: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/core-loop-failure-v9.json")).unwrap();
+    assert_eq!(value, expected);
+}
+
+#[test]
+fn semantic_event_dedup_uses_typed_subject_not_detail_prose() {
+    let first = CoreLoopEventPayload::direct_contract(
+        CoreLoopEventKind::AcceptContract,
+        "party:1",
+        "contract:1",
+        "first wording",
     );
-    assert_eq!(
-        value["operation"],
-        serde_json::json!("perform_investigation_action")
+    let reworded = CoreLoopEventPayload::direct_contract(
+        CoreLoopEventKind::AcceptContract,
+        "party:1",
+        "contract:1",
+        "entirely different wording",
     );
-    assert_eq!(
-        value["reason_code"],
-        serde_json::json!("investigation_night_window")
+    let other_contract = CoreLoopEventPayload::direct_contract(
+        CoreLoopEventKind::AcceptContract,
+        "party:1",
+        "contract:2",
+        "first wording",
     );
-    assert_eq!(value["trace"][0]["kind"], "quest_decision");
+    let first_key = first.semantic_key(7);
+    assert!(is_duplicate_semantic_event(
+        Some(&first_key),
+        &reworded.semantic_key(7)
+    ));
+    assert!(!is_duplicate_semantic_event(
+        Some(&first_key),
+        &other_contract.semantic_key(7)
+    ));
+
+    let medical_suppression = CoreLoopEventPayload::agent(
+        CoreLoopEventKind::QuestSuppressed,
+        "medical wording",
+    )
+    .semantic_key(7);
+    let generated_case_suppression = CoreLoopEventPayload::generated_case(
+        CoreLoopEventKind::QuestSuppressed,
+        "party:1",
+        "case:1",
+        "generated-case wording",
+    )
+    .semantic_key(7);
+    assert!(!is_duplicate_semantic_event(
+        Some(&medical_suppression),
+        &generated_case_suppression
+    ));
+
+    let repeatable = CoreLoopEventPayload::direct_contract(
+        CoreLoopEventKind::Travel,
+        "party:1",
+        "contract:1",
+        "outbound",
+    )
+    .semantic_key(7);
+    assert!(!is_duplicate_semantic_event(Some(&repeatable), &repeatable));
+}
+
+#[test]
+fn typed_event_payload_preserves_public_event_wire() {
+    let event = CoreLoopEventPayload::generated_case(
+        CoreLoopEventKind::GeneratedQuestDiscovered,
+        "party:1",
+        "case:1",
+        "display wording",
+    )
+    .into_public(11, 4);
+    assert_eq!(
+        serde_json::to_value(event).unwrap(),
+        serde_json::json!({
+            "sequence": 11,
+            "agent_id": 4,
+            "kind": "generated_quest_discovered",
+            "detail": "display wording"
+        })
+    );
+}
+
+#[test]
+fn typed_failure_recorder_preserves_v9_wire_without_detail_prose() {
+    let path = std::env::temp_dir().join(format!(
+        "adventuresim-typed-failure-{}-{}.json",
+        std::process::id(),
+        std::thread::current().name().unwrap_or("test")
+    ));
+    let _ = std::fs::remove_file(&path);
+    let recorder = FailureRecorder::new(Some(path.clone()), DEFAULT_SIMULATION_DISEASE.into());
+    let coded = adventuresim_core::reducer_error::coded_reducer_error(
+        ReducerErrorCode::InvestigationNightWindow,
+        "secret wording that may change freely",
+    );
+    let error =
+        CoreLoopError::reducer_rejected(ReducerOperation::PerformInvestigationAction, coded);
+    recorder.record(error.clone());
+    recorder.write(&error.to_string()).unwrap();
+
+    let artifact: CoreLoopFailureArtifact =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    std::fs::remove_file(path).unwrap();
+    assert_eq!(artifact.schema_version, 9);
+    assert_eq!(artifact.category, "investigation_temporally_unavailable");
+    assert_eq!(
+        artifact.operation.as_deref(),
+        Some("perform_investigation_action")
+    );
+    assert_eq!(artifact.reason_code, "investigation_night_window");
+    assert!(!artifact.message.contains("secret wording"));
 }
 
 fn quest_coverage_report() -> CoreLoopReport {
@@ -291,34 +395,35 @@ fn quest_coverage_gate_requires_both_paths_and_safe_final_state() {
 
     report.metrics.quests_attempted = 1;
     assert_eq!(
-        validate_quest_coverage(&report).unwrap_err(),
-        "quest coverage acceptance failed: metric=quests_attempted"
+        validate_quest_coverage(&report).unwrap_err().metric(),
+        QuestCoverageMetric::QuestsAttempted
     );
     report.metrics.quests_attempted = 2;
     report.quest_coverage.as_mut().unwrap().generated_completed = false;
     assert_eq!(
-        validate_quest_coverage(&report).unwrap_err(),
-        "quest coverage acceptance failed: metric=fixture_generated_completed"
+        validate_quest_coverage(&report).unwrap_err().metric(),
+        QuestCoverageMetric::FixtureGeneratedCompleted
     );
     report.quest_coverage.as_mut().unwrap().generated_completed = true;
     report.final_agents[0].journey_destination = Some("case-site:test".into());
     assert_eq!(
-        validate_quest_coverage(&report).unwrap_err(),
-        "quest coverage acceptance failed: metric=final_agents_not_stranded"
+        validate_quest_coverage(&report).unwrap_err().metric(),
+        QuestCoverageMetric::FinalAgentsNotStranded
     );
 }
 
 #[test]
-fn aggregate_progress_and_safe_abandonment_cannot_impersonate_fixture_completion() {
+fn safe_abandonment_resolves_the_direct_lane_but_not_generated_completion() {
     let mut report = quest_coverage_report();
     report.metrics.direct_contracts_completed = 10;
     report.metrics.generated_quests_completed = 10;
     let coverage = report.quest_coverage.as_mut().unwrap();
     coverage.direct_reported = false;
     coverage.direct_safely_abandoned = true;
+    coverage.generated_completed = false;
     assert_eq!(
-        validate_quest_coverage(&report).unwrap_err(),
-        "quest coverage acceptance failed: metric=fixture_direct_reported"
+        validate_quest_coverage(&report).unwrap_err().metric(),
+        QuestCoverageMetric::FixtureGeneratedCompleted
     );
 }
 
@@ -331,14 +436,20 @@ fn quest_coverage_failure_artifact_names_unmet_metric() {
         report.seed
     ));
     let _ = std::fs::remove_file(&path);
-    let error = "quest coverage acceptance failed: metric=generated_case_intakes";
-    write_quest_coverage_failure(&report, &path, error).unwrap();
+    let mut failed_report = report.clone();
+    failed_report
+        .quest_coverage
+        .as_mut()
+        .unwrap()
+        .generated_intake = false;
+    let error = validate_quest_coverage(&failed_report).unwrap_err();
+    write_quest_coverage_failure(&report, &path, &error).unwrap();
     let artifact: CoreLoopFailureArtifact =
         serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
     std::fs::remove_file(path).unwrap();
     assert_eq!(artifact.category, "quest_coverage_acceptance");
-    assert_eq!(artifact.reason_code, "generated_case_intakes");
-    assert_eq!(artifact.message, error);
+    assert_eq!(artifact.reason_code, "fixture_generated_intake");
+    assert_eq!(artifact.message, error.to_string());
     assert_eq!(artifact.metrics, report.metrics);
 }
 
@@ -348,18 +459,19 @@ fn expected_investigation_failure_is_allowlisted_without_raw_text() {
         ReducerErrorCode::InvestigationNightWindow,
         "hidden authority with freely changeable wording",
     );
-    let raw = format!("perform_investigation_action failed: {coded}");
-    let (category, message) = safe_core_loop_failure(&raw);
-    assert_eq!(category, "investigation_temporally_unavailable");
+    let error =
+        CoreLoopError::reducer_rejected(ReducerOperation::PerformInvestigationAction, coded);
+    let projection = project_core_loop_failure(&error);
     assert_eq!(
-        safe_failure_operation(&raw),
-        Some(FailureOperation::PerformInvestigationAction)
+        projection.category.as_str(),
+        "investigation_temporally_unavailable"
     );
     assert_eq!(
-        safe_failure_reason_code(&raw, category),
-        "investigation_night_window"
+        projection.operation,
+        Some(ReducerOperation::PerformInvestigationAction)
     );
-    assert!(!message.contains("hidden authority"));
+    assert_eq!(projection.reason.as_str(), "investigation_night_window");
+    assert!(!projection.message.contains("hidden authority"));
 }
 
 #[test]
@@ -368,19 +480,17 @@ fn invalid_investigation_route_is_allowlisted_without_raw_text() {
         ReducerErrorCode::InvestigationRouteInvalid,
         "hidden canonical action with freely changeable wording",
     );
-    let raw = format!("perform_investigation_action failed: {coded}");
-    let (category, message) = safe_core_loop_failure(&raw);
-    assert_eq!(category, "invalid_investigation_route");
+    let error =
+        CoreLoopError::reducer_rejected(ReducerOperation::PerformInvestigationAction, coded);
+    let projection = project_core_loop_failure(&error);
+    assert_eq!(projection.category.as_str(), "invalid_investigation_route");
     assert_eq!(
-        safe_failure_operation(&raw),
-        Some(FailureOperation::PerformInvestigationAction)
+        projection.operation,
+        Some(ReducerOperation::PerformInvestigationAction)
     );
-    assert_eq!(
-        safe_failure_reason_code(&raw, category),
-        "invalid_investigation_route"
-    );
-    assert!(!message.contains("hidden canonical action"));
-    assert!(!message.contains(&raw));
+    assert_eq!(projection.reason.as_str(), "invalid_investigation_route");
+    assert!(!projection.message.contains("hidden canonical action"));
+    assert!(!projection.message.contains(&error.to_string()));
 }
 
 #[test]
@@ -398,18 +508,19 @@ fn victim_cohort_state_changes_are_narrowly_classified_without_raw_text() {
             ReducerErrorCode::VictimCohortStateChanged,
             detail,
         );
-        let raw = format!("perform_investigation_action failed: {coded}");
-        let (category, message) = safe_core_loop_failure(&raw);
-        assert_eq!(category, "investigation_state_changed");
+        let error =
+            CoreLoopError::reducer_rejected(ReducerOperation::PerformInvestigationAction, coded);
+        let projection = project_core_loop_failure(&error);
+        assert_eq!(projection.category.as_str(), "investigation_state_changed");
         assert_eq!(
-            safe_failure_operation(&raw),
-            Some(FailureOperation::PerformInvestigationAction)
+            projection.operation,
+            Some(ReducerOperation::PerformInvestigationAction)
         );
         assert_eq!(
-            safe_failure_reason_code(&raw, category),
+            projection.reason.as_str(),
             "investigation_victim_cohort_state_changed"
         );
-        assert!(!message.contains(detail));
+        assert!(!projection.message.contains(detail));
     }
     assert_eq!(
         parse_reducer_error(
@@ -454,18 +565,18 @@ fn generated_action_trace_uses_subject_and_public_attempt_evidence() {
 
 #[test]
 fn discovery_contact_failures_are_sanitized_without_reducer_text() {
-    let raw = "start_discovery_dialogue failed: public discovery contact failed; hidden authority";
-    let (category, message) = safe_core_loop_failure(raw);
-    assert_eq!(category, "discovery_contact_failed");
-    assert_eq!(
-        safe_failure_operation(raw),
-        Some(FailureOperation::StartDiscoveryDialogue)
+    let error = CoreLoopError::operation(
+        ReducerOperation::StartDiscoveryDialogue,
+        "public discovery contact failed; hidden authority",
     );
+    let projection = project_core_loop_failure(&error);
+    assert_eq!(projection.category.as_str(), "discovery_contact_failed");
     assert_eq!(
-        safe_failure_reason_code(raw, category),
-        "discovery_contact_failed"
+        projection.operation,
+        Some(ReducerOperation::StartDiscoveryDialogue)
     );
-    assert!(!message.contains("hidden authority"));
+    assert_eq!(projection.reason.as_str(), "discovery_contact_failed");
+    assert!(!projection.message.contains("hidden authority"));
 }
 
 #[test]
@@ -474,95 +585,200 @@ fn journey_camp_failures_are_allowlisted_without_raw_text() {
         ReducerErrorCode::JourneyDaylightWindowRequired,
         "hidden route authority with freely changeable wording",
     );
-    let temporal = format!("continue_camp_travel failed: {coded}");
-    let (category, message) = safe_core_loop_failure(&temporal);
-    assert_eq!(category, "journey_temporally_unavailable");
+    let temporal = CoreLoopError::reducer_rejected(ReducerOperation::ContinueCampTravel, coded);
+    let projection = project_core_loop_failure(&temporal);
     assert_eq!(
-        safe_failure_operation(&temporal),
-        Some(FailureOperation::ContinueCampTravel)
+        projection.category.as_str(),
+        "journey_temporally_unavailable"
     );
     assert_eq!(
-        safe_failure_operation(
-            "rest_at_camp failed: journey camp projection is incoherent; hidden details"
-        ),
-        Some(FailureOperation::RestAtCamp)
+        projection.operation,
+        Some(ReducerOperation::ContinueCampTravel)
     );
     assert_eq!(
-        safe_failure_reason_code(&temporal, category),
+        project_core_loop_failure(&CoreLoopError::operation(
+            ReducerOperation::RestAtCamp,
+            "journey camp projection is incoherent; hidden details"
+        ))
+        .operation,
+        Some(ReducerOperation::RestAtCamp)
+    );
+    assert_eq!(
+        projection.reason.as_str(),
         "journey_daylight_window_rest_required"
     );
-    assert!(!message.contains("hidden route authority"));
+    assert!(!projection.message.contains("hidden route authority"));
 
-    let incoherent = "journey camp projection is incoherent: hidden itinerary implementation";
-    let (category, message) = safe_core_loop_failure(incoherent);
-    assert_eq!(category, "core_loop_error");
-    assert_eq!(
-        safe_failure_reason_code(incoherent, category),
-        "unclassified_core_loop_error"
+    let incoherent = CoreLoopError::Other(
+        "journey camp projection is incoherent: hidden itinerary implementation".into(),
     );
-    assert!(!message.contains("hidden itinerary implementation"));
+    let projection = project_core_loop_failure(&incoherent);
+    assert_eq!(projection.category.as_str(), "core_loop_error");
+    assert_eq!(projection.reason.as_str(), "unclassified_core_loop_error");
+    assert!(
+        !projection
+            .message
+            .contains("hidden itinerary implementation")
+    );
 
-    let purchase = "purchase_journey_provisions failed: Merchant service provider is not available; hidden provider";
-    let (category, message) = safe_core_loop_failure(purchase);
-    assert_eq!(category, "journey_provision_purchase_failed");
-    assert_eq!(
-        safe_failure_operation(purchase),
-        Some(FailureOperation::PurchaseJourneyProvisions)
+    let purchase = CoreLoopError::operation(
+        ReducerOperation::PurchaseJourneyProvisions,
+        "Merchant service provider is not available; hidden provider",
     );
+    let projection = project_core_loop_failure(&purchase);
     assert_eq!(
-        safe_failure_reason_code(purchase, category),
+        projection.category.as_str(),
         "journey_provision_purchase_failed"
     );
-    assert!(!message.contains("hidden provider"));
+    assert_eq!(
+        projection.operation,
+        Some(ReducerOperation::PurchaseJourneyProvisions)
+    );
+    assert_eq!(
+        projection.reason.as_str(),
+        "journey_provision_purchase_failed"
+    );
+    assert!(!projection.message.contains("hidden provider"));
 
-    let held = "travel_camps failed: journey has no ready, asymptomatic, noncritical actor; hidden health authority";
-    let (category, message) = safe_core_loop_failure(held);
-    assert_eq!(category, "journey_travel_failed");
-    assert_eq!(
-        safe_failure_operation(held),
-        Some(FailureOperation::TravelCamps)
+    let held = CoreLoopError::operation(
+        ReducerOperation::TravelCamps,
+        "journey has no ready, asymptomatic, noncritical actor; hidden health authority",
     );
-    assert_eq!(
-        safe_failure_reason_code(held, category),
-        "journey_travel_reducer_failed"
-    );
-    assert!(!message.contains("hidden health authority"));
+    let projection = project_core_loop_failure(&held);
+    assert_eq!(projection.category.as_str(), "journey_travel_failed");
+    assert_eq!(projection.operation, Some(ReducerOperation::TravelCamps));
+    assert_eq!(projection.reason.as_str(), "journey_travel_reducer_failed");
+    assert!(!projection.message.contains("hidden health authority"));
 
-    let travel = "return_to_settlement failed: hidden journey authority panic";
-    let (category, message) = safe_core_loop_failure(travel);
-    assert_eq!(category, "journey_travel_failed");
-    assert_eq!(
-        safe_failure_operation(travel),
-        Some(FailureOperation::ReturnToSettlement)
+    let travel = CoreLoopError::operation(
+        ReducerOperation::ReturnToSettlement,
+        "hidden journey authority panic",
     );
+    let projection = project_core_loop_failure(&travel);
+    assert_eq!(projection.category.as_str(), "journey_travel_failed");
     assert_eq!(
-        safe_failure_reason_code(travel, category),
-        "journey_travel_reducer_failed"
+        projection.operation,
+        Some(ReducerOperation::ReturnToSettlement)
     );
-    assert!(!message.contains("hidden journey authority panic"));
+    assert_eq!(projection.reason.as_str(), "journey_travel_reducer_failed");
+    assert!(
+        !projection
+            .message
+            .contains("hidden journey authority panic")
+    );
 }
 
 #[test]
 fn projected_night_wait_hints_are_strictly_bounded() {
     assert_eq!(
-        projected_investigation_wait_minutes("night_window", 840),
+        projected_investigation_wait_minutes(
+            InvestigationActionUnavailableReason::NightWindow,
+            840,
+        ),
         Some(840)
     );
     assert_eq!(
-        projected_investigation_wait_minutes("contact_schedule_window", 420),
+        projected_investigation_wait_minutes(
+            InvestigationActionUnavailableReason::ContactScheduleWindow,
+            420,
+        ),
         Some(420)
     );
     assert_eq!(
-        projected_investigation_wait_minutes("travel_required", 840),
+        projected_investigation_wait_minutes(
+            InvestigationActionUnavailableReason::TravelRequired,
+            840,
+        ),
         None
     );
     assert_eq!(
-        projected_investigation_wait_minutes("night_window", 0),
+        projected_investigation_wait_minutes(InvestigationActionUnavailableReason::NightWindow, 0),
         None
     );
     assert_eq!(
-        projected_investigation_wait_minutes("night_window", 1_441),
+        projected_investigation_wait_minutes(
+            InvestigationActionUnavailableReason::NightWindow,
+            1_441,
+        ),
         None
+    );
+
+    let stable_keys = [
+        (
+            InvestigationActionUnavailableReason::PartyNotReady,
+            "party_not_ready",
+        ),
+        (
+            InvestigationActionUnavailableReason::TravelRequired,
+            "travel_required",
+        ),
+        (
+            InvestigationActionUnavailableReason::NightWindow,
+            "night_window",
+        ),
+        (
+            InvestigationActionUnavailableReason::TargetChanged,
+            "target_changed",
+        ),
+        (
+            InvestigationActionUnavailableReason::ContactScheduleWindow,
+            "contact_schedule_window",
+        ),
+        (
+            InvestigationActionUnavailableReason::ContactNotPresent,
+            "contact_not_present",
+        ),
+        (
+            InvestigationActionUnavailableReason::CharacterUnavailable,
+            "character_unavailable",
+        ),
+        (
+            InvestigationActionUnavailableReason::PartyRequired,
+            "party_required",
+        ),
+    ];
+    for (reason, expected) in stable_keys {
+        assert_eq!(investigation_unavailable_reason_key(reason), expected);
+    }
+}
+
+#[test]
+fn contact_schedule_recheck_uses_typed_identity_and_public_presence() {
+    let action = BackendInvestigationAction {
+        owner_character_id: 1,
+        case_id: "case".into(),
+        action_id: "action".into(),
+        method: "mutable wording is irrelevant".into(),
+        expected_version: 0,
+        summary: String::new(),
+        known_prerequisites: String::new(),
+        duration_min_minutes: 15,
+        duration_max_minutes: 45,
+        uncertainty_bps: 0,
+        skill_contributions: String::new(),
+        weather_available: true,
+        contact_character_id: Some(9),
+        required_case_site_id: None,
+        availability: InvestigationActionAvailability::Available,
+        unavailable_reason: String::new(),
+    };
+    let presence = SettlementResidentPresence {
+        character_id: 9,
+        settlement_id: "ironforge".into(),
+        location_id: "keep".into(),
+        start_minute: 240,
+        end_minute: 960,
+        is_default: true,
+        context_suppressed: false,
+        health_suppressed: false,
+    };
+    assert_eq!(
+        current_contact_schedule_wait_minutes(&action, [presence.clone()], 77),
+        Some(163)
+    );
+    assert_eq!(
+        current_contact_schedule_wait_minutes(&action, [presence], 300),
+        Some(0)
     );
 }
 
@@ -570,4 +786,27 @@ fn projected_night_wait_hints_are_strictly_bounded() {
 fn repeated_daily_quest_decisions_are_not_semantic_duplicate_failures() {
     assert!(event_is_repeatable(&CoreLoopEventKind::QuestDecision));
     assert!(!event_is_repeatable(&CoreLoopEventKind::AcceptContract));
+}
+#[test]
+fn investigation_action_replans_depend_only_on_typed_codes() {
+    for detail in ["contact absent", "wording changed completely"] {
+        let coded = adventuresim_core::reducer_error::coded_reducer_error(
+            ReducerErrorCode::InvestigationActionUnavailable,
+            detail,
+        );
+        assert_eq!(
+            investigation_action_replan_reason(&CoreLoopError::reducer_rejected(
+                ReducerOperation::PerformInvestigationAction,
+                coded,
+            )),
+            Some(InvestigationActionReplanReason::Unavailable)
+        );
+    }
+    assert_eq!(
+        investigation_action_replan_reason(&CoreLoopError::reducer_rejected(
+            ReducerOperation::PerformInvestigationAction,
+            "investigation_action_unavailable without a typed envelope",
+        )),
+        None
+    );
 }

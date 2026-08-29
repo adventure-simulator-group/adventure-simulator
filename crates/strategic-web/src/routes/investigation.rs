@@ -12,7 +12,7 @@ use crate::{
     session::Session,
     spacetimedb::{
         BackendBestiaryDeduction, BackendInvestigationCaseSummary,
-        BackendInvestigationJournalEntry, BackendInvestigationLead, Character,
+        BackendInvestigationJournalEntry, BackendInvestigationLead, CharacterView,
     },
     templates::investigation::journal_page,
 };
@@ -29,9 +29,9 @@ async fn journal(State(state): State<AppState>, session: Session) -> Response {
     };
     let character = match state
         .db
-        .query_one::<Character>(&format!(
-            "SELECT * FROM backend_characters WHERE id = {character_id}"
-        ))
+        .query_one_sats_into::<adventuresim_stdb_client::Character, CharacterView>(
+            &crate::spacetimedb::character_by_id(character_id),
+        )
         .await
     {
         Ok(Some(character)) => character,
@@ -46,7 +46,7 @@ async fn journal(State(state): State<AppState>, session: Session) -> Response {
 
 async fn journal_response(
     state: &AppState,
-    character: &Character,
+    character: &CharacterView,
     feedback: Option<&str>,
     status: StatusCode,
 ) -> Response {
@@ -68,12 +68,14 @@ async fn journal_response(
     let (entries, leads, cases, deductions) = tokio::join!(
         state
             .db
-            .query::<BackendInvestigationJournalEntry>(&entries_sql),
-        state.db.query::<BackendInvestigationLead>(&leads_sql),
+            .query_sats::<BackendInvestigationJournalEntry>(&entries_sql),
+        state.db.query_sats::<BackendInvestigationLead>(&leads_sql),
         state
             .db
-            .query::<BackendInvestigationCaseSummary>(&cases_sql),
-        state.db.query::<BackendBestiaryDeduction>(&deductions_sql)
+            .query_sats::<BackendInvestigationCaseSummary>(&cases_sql),
+        state
+            .db
+            .query_sats::<BackendBestiaryDeduction>(&deductions_sql)
     );
     match (entries, leads, cases, deductions) {
         (Ok(mut entries), Ok(mut leads), Ok(cases), Ok(deductions)) => {
@@ -141,9 +143,9 @@ async fn perform_action(
             let feedback = safe_investigation_action_error(&error);
             match state
                 .db
-                .query_one::<Character>(&format!(
-                    "SELECT * FROM backend_characters WHERE id = {character_id}"
-                ))
+                .query_one_sats_into::<adventuresim_stdb_client::Character, CharacterView>(
+                    &crate::spacetimedb::character_by_id(character_id),
+                )
                 .await
             {
                 Ok(Some(character)) => {

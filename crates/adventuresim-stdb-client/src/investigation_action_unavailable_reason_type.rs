@@ -4,18 +4,27 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::settlement_description_kind_type::SettlementDescriptionKind;
-
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct SettlementDescriptionBatchRow {
-    pub id: String,
-    pub settlement_id: String,
-    pub kind: SettlementDescriptionKind,
-    pub language: Option<String>,
-    pub body: String,
+#[derive(Copy, Eq, Hash)]
+pub enum InvestigationActionUnavailableReason {
+    PartyNotReady,
+
+    TravelRequired,
+
+    NightWindow,
+
+    TargetChanged,
+
+    ContactScheduleWindow,
+
+    ContactNotPresent,
+
+    CharacterUnavailable,
+
+    PartyRequired,
 }
 
-impl __sdk::InModule for SettlementDescriptionBatchRow {
+impl __sdk::InModule for InvestigationActionUnavailableReason {
     type Module = super::RemoteModule;
 }

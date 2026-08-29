@@ -13,10 +13,12 @@ use axum::{
 use axum_extra::extract::CookieJar;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use hmac::{Hmac, Mac};
-use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
-use crate::{routes::AppState, spacetimedb::sql_string_literal};
+use crate::{
+    routes::AppState,
+    spacetimedb::{BackendBrowserCharacterAccess, sql_string_literal},
+};
 
 pub const SESSION_COOKIE: &str = "adventuresim_session";
 const SESSION_VERSION: &str = "v2";
@@ -143,15 +145,15 @@ fn owner_key(id: &[u8; SESSION_ID_BYTES]) -> String {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct CharacterId(u64);
+pub struct GrantedCharacterId(u64);
 
-impl CharacterId {
+impl GrantedCharacterId {
     pub const fn get(self) -> u64 {
         self.0
     }
 }
 
-impl fmt::Display for CharacterId {
+impl fmt::Display for GrantedCharacterId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
     }
@@ -161,20 +163,20 @@ impl fmt::Display for CharacterId {
 pub struct Session {
     owner_key: Option<String>,
     token: Option<String>,
-    character_id: Option<CharacterId>,
-    character_ids: Vec<CharacterId>,
+    character_id: Option<GrantedCharacterId>,
+    character_ids: Vec<GrantedCharacterId>,
 }
 
 impl Session {
     pub fn character_id_u64(&self) -> Option<u64> {
-        self.character_id.map(CharacterId::get)
+        self.character_id.map(GrantedCharacterId::get)
     }
 
     pub fn character_ids(&self) -> Vec<u64> {
         self.character_ids
             .iter()
             .copied()
-            .map(CharacterId::get)
+            .map(GrantedCharacterId::get)
             .collect()
     }
 
@@ -185,13 +187,6 @@ impl Session {
     pub(crate) fn token(&self) -> Option<&str> {
         self.token.as_deref()
     }
-}
-
-#[derive(Clone, Debug, Deserialize)]
-struct BackendBrowserCharacterAccess {
-    owner_key: String,
-    character_id: u64,
-    selected: bool,
 }
 
 pub struct SessionUnavailable;
@@ -228,7 +223,7 @@ impl FromRequestParts<AppState> for Session {
         };
         let rows = state
             .db
-            .query::<BackendBrowserCharacterAccess>(&format!(
+            .query_sats::<BackendBrowserCharacterAccess>(&format!(
                 "SELECT * FROM backend_browser_character_access WHERE owner_key = {}",
                 sql_string_literal(&owner_key)
             ))
@@ -244,10 +239,10 @@ impl FromRequestParts<AppState> for Session {
         let character_id = rows
             .iter()
             .find(|row| row.selected)
-            .map(|row| CharacterId(row.character_id));
+            .map(|row| GrantedCharacterId(row.character_id));
         let character_ids = rows
             .into_iter()
-            .map(|row| CharacterId(row.character_id))
+            .map(|row| GrantedCharacterId(row.character_id))
             .collect();
         Ok(Session {
             owner_key: Some(owner_key),
@@ -284,6 +279,13 @@ mod tests {
 
     fn test_codec(secret_byte: u8, secure: bool) -> SessionCodec {
         SessionCodec::from_base64url(&URL_SAFE_NO_PAD.encode([secret_byte; 32]), secure).unwrap()
+    }
+
+    #[test]
+    fn granted_character_id_preserves_the_session_authority_value() {
+        let granted = GrantedCharacterId(42);
+        assert_eq!(granted.get(), 42);
+        assert_eq!(granted.to_string(), "42");
     }
 
     #[test]

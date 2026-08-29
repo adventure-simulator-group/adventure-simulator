@@ -347,7 +347,10 @@ fn update_grab_input(
     properties: Query<&ItemProperties>,
     action_states: Query<&EquipmentActionState>,
     cameras: Query<&GlobalTransform, With<TacticalGameplayCamera>>,
-    scene_items: Query<(Entity, &GlobalTransform, &EquipmentPhysical), With<TacticalSceneItem>>,
+    scene_items: Query<
+        (Entity, &GlobalTransform, &TacticalEquipmentPhysical),
+        With<TacticalSceneItem>,
+    >,
     spatial: SpatialQuery,
     mut session: ResMut<GrabSession>,
 ) {
@@ -452,7 +455,10 @@ fn update_grab_input(
 fn auto_aim_scene_item(
     actor: &GlobalTransform,
     cameras: &Query<&GlobalTransform, With<TacticalGameplayCamera>>,
-    scene_items: &Query<(Entity, &GlobalTransform, &EquipmentPhysical), With<TacticalSceneItem>>,
+    scene_items: &Query<
+        (Entity, &GlobalTransform, &TacticalEquipmentPhysical),
+        With<TacticalSceneItem>,
+    >,
     spatial: &SpatialQuery,
 ) -> Option<Entity> {
     let camera = cameras.single().ok()?;
@@ -1336,14 +1342,14 @@ fn spawn_item_placeholders(
     added: Query<
         (
             Entity,
-            &EquipmentPhysical,
+            &TacticalEquipmentPhysical,
             Option<&EquipmentTopology>,
             Option<&ItemProperties>,
             Option<&WeaponAppearance>,
             Option<&WeaponHolderAppearance>,
         ),
         Or<(
-            Added<EquipmentPhysical>,
+            Added<TacticalEquipmentPhysical>,
             Added<EquipmentTopology>,
             Changed<EquipmentTopology>,
             Added<ItemProperties>,
@@ -2263,8 +2269,8 @@ mod tests {
         assert!(cached_weapon(&tampered, &mut cache, &mut meshes, &mut materials).is_none());
     }
 
-    fn valid_physical() -> EquipmentPhysical {
-        EquipmentPhysical {
+    fn valid_physical() -> TacticalEquipmentPhysical {
+        TacticalEquipmentPhysical {
             dimensions_m: Vec3::new(0.25, 1.4, 0.08),
             grip_to_tip_m: 1.15,
             anchor_offset_m: Vec3::new(0.0, -0.45, 0.0),

@@ -168,6 +168,21 @@ pub enum EvidenceKnowledgeAdapterError {
     InvalidKnowledge(crate::knowledge::KnowledgeError),
 }
 
+fn evidence_knowledge_adapter_numeric_id(persisted_id: &str) -> u64 {
+    use sha2::Digest as _;
+
+    let mut hasher = sha2::Sha256::new();
+    for value in [
+        b"adventuresim.evidence-knowledge-adapter-id.v1".as_slice(),
+        persisted_id.as_bytes(),
+    ] {
+        hasher.update((value.len() as u64).to_le_bytes());
+        hasher.update(value);
+    }
+    let digest = hasher.finalize();
+    u64::from_le_bytes(digest[..8].try_into().expect("SHA-256 prefix")).max(1)
+}
+
 /// Adapts one existing evidence-custody row to the observer-private knowledge
 /// contract without changing its persisted identity or chronology.
 ///
@@ -188,8 +203,6 @@ pub fn adapt_evidence_knowledge(
         KnowledgeRevision, KnowledgeSource, KnowledgeSubject, KnowledgeVisibility,
         ObserverKnowledgeRecord,
     };
-    use sha2::Digest as _;
-
     let observer = crate::physical_object::CustodyCharacterId::try_new(owner_character_id)
         .map_err(|_| EvidenceKnowledgeAdapterError::InvalidObserver)?;
     let case_id =
@@ -198,11 +211,7 @@ pub fn adapt_evidence_knowledge(
         .map_err(EvidenceKnowledgeAdapterError::InvalidDomainIdentity)?;
     let source_id = EvidenceKnowledgeSourceId::new(source_id)
         .map_err(EvidenceKnowledgeAdapterError::InvalidDomainIdentity)?;
-    let digest = sha2::Sha256::digest(persisted_id.as_bytes());
-    let mut numeric = u64::from_le_bytes(digest[..8].try_into().expect("SHA-256 prefix"));
-    if numeric == 0 {
-        numeric = 1;
-    }
+    let numeric = evidence_knowledge_adapter_numeric_id(persisted_id);
     let envelope = KnowledgeEnvelope::try_new(
         KnowledgeRecordId::try_new(numeric)
             .map_err(EvidenceKnowledgeAdapterError::InvalidKnowledge)?,
@@ -255,6 +264,10 @@ mod evidence_knowledge_adapter_tests {
             "evidence-knowledge:7:case:mill:evidence:print"
         );
         assert_eq!(record.record().envelope().observer().get(), 7);
+        assert_eq!(
+            record.record().envelope().record_id().get(),
+            9_659_161_521_840_095_999
+        );
         assert!(matches!(
             record.record().envelope().visibility(),
             KnowledgeVisibility::ObserverPrivate
@@ -422,6 +435,17 @@ pub enum DisclosureMode {
     Conceal,
     Distort,
 }
+
+impl DisclosureMode {
+    pub const fn stable_variant_id(self) -> &'static str {
+        match self {
+            Self::Disclose => "Disclose",
+            Self::Omit => "Omit",
+            Self::Conceal => "Conceal",
+            Self::Distort => "Distort",
+        }
+    }
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TransmissionCondition {
     Clear,
@@ -429,6 +453,14 @@ pub enum TransmissionCondition {
     Hearsay,
 }
 impl TransmissionCondition {
+    pub const fn stable_variant_id(self) -> &'static str {
+        match self {
+            Self::Clear => "Clear",
+            Self::PoorTranslation => "PoorTranslation",
+            Self::Hearsay => "Hearsay",
+        }
+    }
+
     const fn fidelity(self) -> BasisPoints {
         match self {
             Self::Clear => BasisPoints::valid(9_500),

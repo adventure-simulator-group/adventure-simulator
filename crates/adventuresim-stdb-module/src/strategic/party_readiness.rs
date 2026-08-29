@@ -144,7 +144,7 @@ fn authoritative_evacuation_settlement(ctx: &ReducerContext, party: &Party) -> O
             .db
             .case_site_authority()
             .id_key()
-            .find(&site_id.value)
+            .find(site_id.to_string())
             .map(|site| site.origin_settlement_id);
     }
     let journey = ctx

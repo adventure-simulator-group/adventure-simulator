@@ -40,7 +40,7 @@ const LATITUDE: LatitudeMicrodegrees = LatitudeMicrodegrees::new(53_500_000).unw
 const LONGITUDE: LongitudeMicrodegrees = LongitudeMicrodegrees::new(10_000_000).unwrap();
 
 #[derive(Resource)]
-struct CaptureState {
+struct SkyCaptureState {
     output: PathBuf,
     settle_frames: u32,
     settled: u32,
@@ -151,7 +151,7 @@ pub(super) fn run(view: SkyView, output: PathBuf, settle_frames: u32) {
             })
             .set(WindowPlugin {
                 primary_window: Some(Window {
-                    title: format!("Fabelgeist tactical sky: {view:?}"),
+                    title: format!("Fabelgeist tactical sky: {}", view.id()),
                     resolution: WindowResolution::new(VIEW_WIDTH, VIEW_HEIGHT)
                         .with_scale_factor_override(1.0),
                     present_mode: PresentMode::AutoNoVsync,
@@ -191,7 +191,7 @@ pub(super) fn run(view: SkyView, output: PathBuf, settle_frames: u32) {
         view,
     ))))
     .insert_resource(ClearColor(Color::BLACK))
-    .insert_resource(CaptureState {
+    .insert_resource(SkyCaptureState {
         output,
         settle_frames,
         settled: 0,
@@ -327,10 +327,10 @@ fn setup_view(world: &mut World, view: SkyView) {
     ));
     world.spawn((
         Name::new("Sky verification environment"),
-        SceneId(format!("sky-{view:?}")),
+        SceneId(format!("sky-{}", view.id())),
         terrain,
         SceneEnvironment {
-            scene_digest: format!("sky-{view:?}"),
+            scene_digest: format!("sky-{}", view.id()),
             generation_version: TACTICAL_SCENE_GENERATION_VERSION,
             latitude_microdegrees: LATITUDE.get(),
             longitude_microdegrees: LONGITUDE.get(),
@@ -405,7 +405,7 @@ fn camera_observation_matches(
 
 fn capture_view(
     mut commands: Commands,
-    mut state: ResMut<CaptureState>,
+    mut state: ResMut<SkyCaptureState>,
     camera: Single<(&Exposure, &GlobalTransform, &Projection), With<TacticalGameplayCamera>>,
     camera_probe: Res<SkyCameraProbe>,
     sunlight: Single<&DirectionalLight, With<crate::presentation::TacticalSunlight>>,
@@ -447,7 +447,7 @@ fn capture_view(
     state.in_flight = true;
     if !state.prime_complete {
         commands.spawn(Screenshot::primary_window()).observe(
-            |_: On<ScreenshotCaptured>, mut state: ResMut<CaptureState>| {
+            |_: On<ScreenshotCaptured>, mut state: ResMut<SkyCaptureState>| {
                 state.prime_complete = true;
                 state.settled = 0;
                 state.in_flight = false;
@@ -461,7 +461,7 @@ fn capture_view(
     let solar_source_illuminance_lux = sunlight.illuminance;
     commands.spawn(Screenshot::primary_window()).observe(
         move |captured: On<ScreenshotCaptured>,
-              state: Res<CaptureState>,
+              state: Res<SkyCaptureState>,
               mut exit: MessageWriter<AppExit>| {
             let horizon_row = projected_horizon_row(
                 captured.image.height(),

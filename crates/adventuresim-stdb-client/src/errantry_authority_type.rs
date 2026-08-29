@@ -4,6 +4,8 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::case_site_id_type::CaseSiteId;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct ErrantryAuthority {
@@ -13,7 +15,7 @@ pub struct ErrantryAuthority {
     pub issuer_resident_character_id: u64,
     pub issuer_settlement_id: String,
     pub issuer_location_id: String,
-    pub finale_case_site_id: String,
+    pub finale_case_site_id: CaseSiteId,
     pub finale_hostile_group_id: String,
     pub preliminary_challenge_ids: Vec<String>,
     pub finale_defenses_json: String,
@@ -33,7 +35,7 @@ pub struct ErrantryAuthorityCols {
     pub issuer_resident_character_id: __sdk::__query_builder::Col<ErrantryAuthority, u64>,
     pub issuer_settlement_id: __sdk::__query_builder::Col<ErrantryAuthority, String>,
     pub issuer_location_id: __sdk::__query_builder::Col<ErrantryAuthority, String>,
-    pub finale_case_site_id: __sdk::__query_builder::Col<ErrantryAuthority, String>,
+    pub finale_case_site_id: __sdk::__query_builder::Col<ErrantryAuthority, CaseSiteId>,
     pub finale_hostile_group_id: __sdk::__query_builder::Col<ErrantryAuthority, String>,
     pub preliminary_challenge_ids: __sdk::__query_builder::Col<ErrantryAuthority, Vec<String>>,
     pub finale_defenses_json: __sdk::__query_builder::Col<ErrantryAuthority, String>,

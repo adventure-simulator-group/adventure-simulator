@@ -1,5 +1,6 @@
 use crate::rng::sub_seed;
 use adventuresim_core::{
+    attribute::PlayerAttributeValues,
     personality::{
         Conscience, Conviction, Courtship, Drive, Hygiene, Inclination, Mirth, Nerve, Outlook,
         Personality, Presentation, SelfKnowledge, SelfRegard, Sex, Sociability, Temperance,
@@ -12,26 +13,6 @@ use fabelgeist_determinism::SplitMix64;
 use serde::{Deserialize, Serialize};
 
 const PROFILE_DOMAIN: u64 = 0x5052_4f46_494c_4501;
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Attributes {
-    pub endurance: f32,
-    pub immunity: f32,
-    pub gut: f32,
-    pub intelligence: f32,
-    pub instinct: f32,
-    pub eyesight: f32,
-    pub hearing: f32,
-    pub left_arm_strength: f32,
-    pub right_arm_strength: f32,
-    pub left_leg_strength: f32,
-    pub right_leg_strength: f32,
-    pub left_arm_agility: f32,
-    pub right_arm_agility: f32,
-    pub left_leg_agility: f32,
-    pub right_leg_agility: f32,
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -85,7 +66,7 @@ pub struct EquipmentPreferences {
 pub struct AgentProfile {
     pub agent_id: u32,
     pub profile_seed: u64,
-    pub attributes: Attributes,
+    pub attributes: PlayerAttributeValues,
     pub personality: Personality,
     pub build: AgentBuild,
     pub initial_skills: SkillHours,
@@ -113,7 +94,7 @@ pub fn generate_profile(seed: u64, agent_id: u32) -> AgentProfile {
     let coordination = rng.range_f32(1.2, 4.5);
     let cognition = rng.range_f32(1.0, 4.6);
     let resilience = rng.range_f32(1.0, 4.6);
-    let attributes = Attributes {
+    let attributes = PlayerAttributeValues {
         endurance: bounded((physique + resilience) * 0.5, 0.35, &mut rng),
         immunity: bounded(resilience, 0.45, &mut rng),
         gut: bounded(resilience, 0.5, &mut rng),
@@ -428,7 +409,7 @@ fn generated_personality(rng: &mut SplitMix64) -> Personality {
     p
 }
 
-pub fn derive_build(p: &Personality, a: &Attributes) -> AgentBuild {
+pub fn derive_build(p: &Personality, a: &PlayerAttributeValues) -> AgentBuild {
     let arm_strength = (a.left_arm_strength + a.right_arm_strength) * 0.5;
     let frontline_viable = a.endurance >= 3.0 && arm_strength >= 3.0;
     let arm_agility = (a.left_arm_agility + a.right_arm_agility) * 0.5;
@@ -510,14 +491,14 @@ fn set_activity(profile: &mut AgentProfile, preference: ActivityPreference) {
 mod tests {
     use super::*;
     use adventuresim_core::autoresolve::{
-        BattleOpening, CombatArmor, CombatAttributes, CombatEquipment, CombatSkills, CombatWeapon,
-        Combatant, authored_threat_combatant, autoresolve_combat_power,
-        combat_power_meets_safety_margin, resolve_battle,
+        BattleOpening, CombatArmor, CombatEquipment, CombatSkills, CombatWeapon, Combatant,
+        authored_threat_combatant, autoresolve_combat_power, combat_power_meets_safety_margin,
+        resolve_battle,
     };
     use adventuresim_core::equipment::WeaponSkillDistribution;
 
-    fn attributes(endurance: f32, arm_strength: f32) -> Attributes {
-        Attributes {
+    fn attributes(endurance: f32, arm_strength: f32) -> PlayerAttributeValues {
+        PlayerAttributeValues {
             endurance,
             immunity: 3.0,
             gut: 3.0,
@@ -569,6 +550,21 @@ mod tests {
         }
     }
 
+    #[test]
+    fn profile_attributes_keep_the_direct_core_wire_shape() {
+        let profile = generate_profile(42, 0);
+        let encoded = serde_json::to_value(&profile).unwrap();
+        let attributes = encoded["attributes"].as_object().unwrap();
+        assert_eq!(attributes.len(), 15);
+        assert!(attributes.contains_key("endurance"));
+        assert!(attributes.contains_key("right_leg_agility"));
+        assert!(!attributes.contains_key("values"));
+
+        let decoded: AgentProfile = serde_json::from_value(encoded).unwrap();
+        let _: &PlayerAttributeValues = &decoded.attributes;
+        assert_eq!(decoded, profile);
+    }
+
     /// Load-equivalent combatant for a freshly configured simulator agent:
     /// generated attributes/skills plus the ordinary default katzbalger,
     /// buckler, and region-specific padded equipment created for every adult.
@@ -576,7 +572,7 @@ mod tests {
         let a = &profile.attributes;
         let s = profile.initial_skills;
         let mut combatant = Combatant::new(id);
-        combatant.attributes = CombatAttributes {
+        combatant.attributes = PlayerAttributeValues {
             endurance: a.endurance,
             immunity: a.immunity,
             gut: a.gut,

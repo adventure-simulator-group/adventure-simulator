@@ -238,7 +238,9 @@ fn medical_policy_uses_only_authorized_public_chart_and_patient_inventory() {
         .find("self.observe_deaths()")
         .map(|offset| administration + offset)
         .unwrap();
-    let medical_rest = recovery.find("medical_recovery_rest").unwrap();
+    let medical_rest = recovery
+        .find("ReducerOperation::MedicalRecoveryRest")
+        .unwrap();
     assert!(schedule_sync < chart_read);
     assert!(administration < post_administration_death_check);
     assert!(post_administration_death_check < medical_rest);
@@ -348,6 +350,7 @@ fn settlement_rest_sponsorship_is_public_bounded_and_self_payment_first() {
     assert!(recovery.contains(".sponsor_party_member_inn_rest_then("));
     assert!(recovery.contains("withdraw_stake_for_personal_purchase"));
     assert!(recovery.contains("sponsored_settlement_rest=completed"));
+    assert!(!recovery.contains("&& !symptomatic"));
     assert!(recovery.contains("thermal_before"));
     assert!(recovery.contains("wetness_bps_before"));
     assert!(recovery.contains("thermal_strain_before"));
@@ -356,6 +359,8 @@ fn settlement_rest_sponsorship_is_public_bounded_and_self_payment_first() {
     assert!(recovery.contains("saturating_sub(rest_started_at)"));
     assert!(recovery.contains("sponsored_settlement_rest_requested_minutes"));
     assert!(recovery.contains("sponsored_settlement_rest_elapsed_minutes"));
+    assert!(recovery.contains("patient_party_stake.min(party_treasury)"));
+    assert!(recovery.contains("selected patient could not withdraw their own public stake"));
     assert!(recovery.contains("MedicalChoice::RestNaturally => natural_rest_venue"));
     assert!(recovery.contains("MedicalChoice::BuyAndRest => medicated_rest_venue"));
     assert!(recovery.contains("selected_rest_venue.map_or(\"unavailable\""));

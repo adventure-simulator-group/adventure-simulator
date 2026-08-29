@@ -12,7 +12,7 @@ fn ingest_hostile_group_defeat_fact(
         .db
         .case_site_authority()
         .id_key()
-        .find(&group.case_site_id.value)
+        .find(group.case_site_id.to_string())
         .ok_or("Hostile group has no case site")?;
     let Some(_) = ctx.db.case_authority().id().find(&site.case_id) else {
         // Incidents and random encounters intentionally have no case.
@@ -137,7 +137,8 @@ fn validate_custody_fact_retry_attribution(
 #[cfg(test)]
 mod custody_party_dispatch_tests {
     use super::{
-        CustodyPartyDispatch, apply_custody_party_continuity, custody_party_dispatch,
+        CaseOutcomeSource, CustodyPartyDispatch, apply_custody_party_continuity,
+        custody_party_dispatch,
         validate_custody_fact_retry_attribution,
     };
     use std::cell::Cell;
@@ -214,6 +215,24 @@ mod custody_party_dispatch_tests {
                 .contains("Conflicting custody retry outcome fact attribution")
             );
         }
+    }
+
+    #[test]
+    fn case_outcome_source_parses_the_exact_mission_outcome_tag() {
+        assert_eq!(
+            CaseOutcomeSource::parse("outcome:mission:7")
+                .unwrap()
+                .fact_coordinate(),
+            "mission:7"
+        );
+        assert_eq!(
+            CaseOutcomeSource::parse("incident:7")
+                .unwrap()
+                .fact_coordinate(),
+            "incident:7"
+        );
+        assert!(CaseOutcomeSource::parse("outcome:").is_err());
+        assert!(CaseOutcomeSource::parse("").is_err());
     }
 }
 
@@ -674,7 +693,7 @@ fn commit_case_site_arrival_objectives(
         else {
             continue;
         };
-        if site_id != &site.id.value {
+        if site_id != site.id.as_str() {
             continue;
         }
         let current = ctx
@@ -694,7 +713,7 @@ fn commit_case_site_arrival_objectives(
             &format!(
                 "arrival:{}:{party_id}:{}:{}",
                 site.case_id,
-                site.id.value,
+                site.id.as_str(),
                 objective.id.as_str()
             ),
             &site.case_id,
@@ -702,7 +721,7 @@ fn commit_case_site_arrival_objectives(
             CustodyObjectKind::Subject,
             subject_id.as_str(),
             CustodyHolderKind::Site,
-            &site.id.value,
+            site.id.as_str(),
             current.version.saturating_add(1),
             Some(F::SubjectEscorted {
                 subject_id: subject_id.clone(),
@@ -943,6 +962,7 @@ pub(crate) fn ingest_case_outcome_fact(
     party_id: &str,
     mut kind: adventuresim_core::case::OutcomeFactKind,
 ) -> Result<(), String> {
+    let outcome_source = CaseOutcomeSource::parse(source_id)?;
     let mut case = ctx
         .db
         .case_authority()
@@ -968,10 +988,7 @@ pub(crate) fn ingest_case_outcome_fact(
     let expression: adventuresim_core::case::ObjectiveExpression =
         serde_json::from_str(&case.objective_expression_json)
             .map_err(|_| "Case objective authority is invalid")?;
-    let fact_id = format!(
-        "fact:{}",
-        source_id.strip_prefix("outcome:").unwrap_or(source_id)
-    );
+    let fact_id = format!("fact:{}", outcome_source.fact_coordinate());
     let fact = adventuresim_core::case::OutcomeFact {
         id: adventuresim_core::case::OutcomeFactId::new(fact_id.clone())
             .map_err(|_| "Outcome fact ID is invalid")?,
@@ -1096,6 +1113,32 @@ pub(crate) fn ingest_case_outcome_fact(
     Ok(())
 }
 
+enum CaseOutcomeSource<'a> {
+    MissionOutcome(&'a str),
+    DomainEvent(&'a str),
+}
+
+impl<'a> CaseOutcomeSource<'a> {
+    fn parse(source_id: &'a str) -> Result<Self, String> {
+        if let Some(coordinate) = source_id.strip_prefix("outcome:") {
+            if coordinate.is_empty() {
+                return Err("Mission outcome source has no coordinate".into());
+            }
+            Ok(Self::MissionOutcome(coordinate))
+        } else if source_id.is_empty() {
+            Err("Case outcome source is empty".into())
+        } else {
+            Ok(Self::DomainEvent(source_id))
+        }
+    }
+
+    const fn fact_coordinate(self) -> &'a str {
+        match self {
+            Self::MissionOutcome(value) | Self::DomainEvent(value) => value,
+        }
+    }
+}
+
 fn select_case_finale(
     ctx: &ReducerContext,
     case_id: &str,
@@ -1165,7 +1208,7 @@ fn execute_case_finale(
         .find(&finale.case_id)
         .ok_or("Finale case not found")?;
     let now = crate::time::refresh_clock(ctx)?;
-    let resolved_local_problem_id = if finale.kind == FinaleKind::ResolveLocalProblem
+    let resolved_local_problem_id = if finale.kind == FinaleExecutionKind::ResolveLocalProblem
         && case.resolution_status == CaseStatus::Resolved
     {
         case.local_problem_id.as_deref()
@@ -1253,7 +1296,7 @@ pub(crate) fn generated_case_site_combat_group_id<'a>(
         .finales
         .iter()
         .filter(|finale| {
-            finale.site_id.0 == case_site.id.value && finale.strategic_outcome_compatible
+            finale.site_id.0 == case_site.id.as_str() && finale.strategic_outcome_compatible
         })
         .filter_map(|finale| finale.hostile_group_id.as_deref())
         .collect();
@@ -1263,7 +1306,7 @@ pub(crate) fn generated_case_site_combat_group_id<'a>(
             .hostile_groups
             .iter()
             .any(|(group_id, site_id, _, _)| {
-                group_id == hostile_group_id && site_id.0 == case_site.id.value
+                group_id == hostile_group_id && site_id.0 == case_site.id.as_str()
             }))
     .then_some(hostile_group_id)
 }
@@ -1314,7 +1357,7 @@ pub(crate) fn generated_case_site_hostile_resolution_eligible<'a>(
     let generated_site = generated
         .sites
         .iter()
-        .find(|site| site.id.0 == case_site.id.value)?;
+        .find(|site| site.id.0 == case_site.id.as_str())?;
     if generated_site.safe_label != case_site.name {
         return None;
     }
@@ -1371,7 +1414,7 @@ pub(crate) fn generated_case_site_hostile_resolution_eligible<'a>(
             hostile_pending
                 && finales.iter().any(|finale| {
                     finale.case_id == case.id
-                        && finale.kind == FinaleKind::RecordResolution
+                        && finale.kind == FinaleExecutionKind::RecordResolution
                         && finale.resolution_status == CaseStatus::Resolved
                         && finale.status == FinaleStatus::Available
                         && finale.eligible_path_index == u16::try_from(path_index).ok()
@@ -1402,7 +1445,7 @@ pub(crate) fn ensure_bound_mission_authority(
             Err("Mission ID is already bound to different authority".into())
         };
     }
-    if exact_case_site_for_observer(ctx, observer_character_id, &case_site.id.value).is_none() {
+    if exact_case_site_for_observer(ctx, observer_character_id, case_site.id.as_str()).is_none() {
         return Err("Mission observer does not know or have a visited exact case site".into());
     }
     let case = ctx
@@ -1470,7 +1513,7 @@ pub(crate) fn ensure_bound_mission_authority(
                 .db
                 .hostile_group_authority()
                 .case_site_id_key()
-                .find(&case_site.id.value)
+                .find(case_site.id.to_string())
                 .ok_or("Case site has no materialized hostile group")?;
             if group.disposition != HostileGroupDisposition::Active {
                 return Err("Hostile group is already resolved".into());
@@ -1529,7 +1572,7 @@ pub(crate) fn ensure_bound_mission_authority(
                             if custody.case_id != case.id
                                 || custody.object_kind != CustodyObjectKind::Subject
                                 || custody.holder_kind != CustodyHolderKind::Site
-                                || custody.holder_id != case_site.id.value
+                                || custody.holder_id != case_site.id.as_str()
                             {
                                 continue;
                             }
@@ -1562,7 +1605,7 @@ pub(crate) fn ensure_bound_mission_authority(
             let id = mission_approach_capability_id(
                 observer_character_id,
                 &case.id,
-                &case_site.id.value,
+                case_site.id.as_str(),
                 &hostile_group_id,
                 path_index,
                 objective.id.as_str(),

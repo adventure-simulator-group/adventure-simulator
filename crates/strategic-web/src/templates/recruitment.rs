@@ -2,8 +2,8 @@ use adventuresim_core::strategic_schedule::CombatTrainingProfile;
 use maud::{Markup, html};
 
 use crate::spacetimedb::{
-    Character, CharacterAttributes, CharacterCapability, CharacterLimbs, CharacterSkills, Party,
-    PartyJoinRequest, PartyRecruitmentRole, RecruitmentRequirements, SavedRecruitmentRole,
+    CharacterAttributes, CharacterCapability, CharacterLimbs, CharacterSkills, CharacterView,
+    PartyJoinRequest, PartyView, RecruitmentRoleView, RoleRequirements, SavedRecruitmentRole,
 };
 use crate::templates::settlement::{character_stats_panel, character_visual_preview};
 use crate::templates::stat_game_icon_name;
@@ -17,7 +17,7 @@ pub struct PartyCheckSummary {
 
 pub struct RecruitmentApplicant {
     pub request: PartyJoinRequest,
-    pub character: Character,
+    pub character: CharacterView,
     pub capability: Option<CharacterCapability>,
     pub attributes: Option<CharacterAttributes>,
     pub skills: Option<CharacterSkills>,
@@ -28,8 +28,8 @@ pub struct RecruitmentApplicant {
 }
 
 pub struct RecruitmentRolePanel {
-    pub role: PartyRecruitmentRole,
-    pub filled: Vec<Character>,
+    pub role: RecruitmentRoleView,
+    pub filled: Vec<CharacterView>,
     pub requests: Vec<RecruitmentApplicant>,
 }
 
@@ -79,7 +79,7 @@ pub fn service_role_inspection(
 }
 
 pub fn recruitment_panel(
-    party: &Party,
+    party: &PartyView,
     _active_character_id: u64,
     roles: &[RecruitmentRolePanel],
     saved_roles: &[SavedRecruitmentRole],
@@ -201,7 +201,7 @@ pub fn recruitment_panel(
                                     button type="button" class="saved-role-load"
                                         data-load-saved-role
                                         data-role-name=(&saved.name)
-                                        data-role-requirements=(requirements_json(saved.requirements))
+                                        data-role-requirements=(requirements_json(crate::spacetimedb::role_requirements(&saved.requirements)))
                                     { (&saved.name) }
                                     button type="button" class="saved-role-action saved-role-rename"
                                         data-rename-saved-role data-role-id=(saved.id) data-role-name=(&saved.name)
@@ -294,7 +294,7 @@ pub fn recruitment_panel(
     }
 }
 
-fn role_requirements_detail(role: &PartyRecruitmentRole, remaining: usize) -> Markup {
+fn role_requirements_detail(role: &RecruitmentRoleView, remaining: usize) -> Markup {
     html! {
         section class="role-inspection-content" {
             h3 class="sidebar-header" { (&role.name) }
@@ -329,7 +329,7 @@ fn role_requirements_detail(role: &PartyRecruitmentRole, remaining: usize) -> Ma
 }
 
 fn role_requests_detail(
-    party: &Party,
+    party: &PartyView,
     panel: &RecruitmentRolePanel,
     checks: PartyCheckSummary,
 ) -> Markup {
@@ -433,7 +433,7 @@ fn numeric_requirement(name: &str, label: &str) -> Markup {
 /// Shared aggregate-check display for leader editing and applicant projections.
 /// Projected displays omit checks to which the candidate contributes nothing.
 pub fn aggregate_check_bars(
-    party: &Party,
+    party: &PartyView,
     checks: PartyCheckSummary,
     contribution: Option<PartyCheckSummary>,
     can_manage: bool,
@@ -460,7 +460,7 @@ pub fn aggregate_check_bars(
     reason = "this domain boundary names each independent input explicitly"
 )]
 fn aggregate_check_control(
-    party: &Party,
+    party: &PartyView,
     label: &str,
     icon: &str,
     field: &str,
@@ -494,7 +494,7 @@ fn aggregate_check_control(
     reason = "this domain boundary names each independent input explicitly"
 )]
 fn party_check_target_form(
-    party: &Party,
+    party: &PartyView,
     field: &str,
     label: &str,
     current: f32,
@@ -565,11 +565,11 @@ fn armor_requirement() -> Markup {
     } }
 }
 
-fn requirements_json(requirements: RecruitmentRequirements) -> String {
+fn requirements_json(requirements: RoleRequirements) -> String {
     serde_json::to_string(&requirements).unwrap_or_else(|_| "{}".into())
 }
 
-pub fn requirements_label(r: RecruitmentRequirements) -> String {
+pub fn requirements_label(r: RoleRequirements) -> String {
     let mut labels = Vec::new();
     for (required, label) in [
         (r.melee, "Melee"),

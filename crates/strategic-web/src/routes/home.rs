@@ -9,7 +9,7 @@ use axum::{
 
 use super::AppState;
 use crate::session::{Session, clear_character_cookie, redirect_with_session_cookie};
-use crate::spacetimedb::{Character, party_by_id};
+use crate::spacetimedb::{CharacterView, party_by_id};
 use serde_json::json;
 
 pub fn routes() -> Router<AppState> {
@@ -25,7 +25,7 @@ fn character_location_path(
         .or_else(|| case_site_id.map(|id| format!("/locations/case-site/{id}")))
 }
 
-fn home_path(character: &crate::spacetimedb::Character, party_is_camping: bool) -> String {
+fn home_path(character: &crate::spacetimedb::CharacterView, party_is_camping: bool) -> String {
     if party_is_camping {
         "/camp".into()
     } else if let Some(path) = character_location_path(
@@ -97,7 +97,9 @@ async fn home(State(state): State<AppState>, session: Session) -> Response {
         Ok(None) => {
             let destination = match state
                 .db
-                .query::<Character>("SELECT * FROM backend_characters")
+                .query_sats_into::<adventuresim_stdb_client::Character, CharacterView>(
+                    "SELECT * FROM backend_characters",
+                )
                 .await
             {
                 Ok(characters) if characters.is_empty() => "/characters/candidates",
@@ -121,7 +123,10 @@ async fn home(State(state): State<AppState>, session: Session) -> Response {
                 let query = party_by_id(party_id);
                 state
                     .db
-                    .query_one::<crate::spacetimedb::Party>(query.as_str())
+                    .query_one_sats_into::<
+                        adventuresim_stdb_client::Party,
+                        crate::spacetimedb::PartyView,
+                    >(query.as_str())
                     .await
                     .ok()
                     .flatten()
@@ -137,8 +142,8 @@ async fn home(State(state): State<AppState>, session: Session) -> Response {
 mod tests {
     use super::{character_location_path, home_path};
 
-    fn character() -> crate::spacetimedb::Character {
-        crate::spacetimedb::Character {
+    fn character() -> crate::spacetimedb::CharacterView {
+        crate::spacetimedb::CharacterView {
             id: 1,
             name: "Ada".into(),
             xp: 0,

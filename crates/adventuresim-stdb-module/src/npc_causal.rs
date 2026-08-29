@@ -28,6 +28,16 @@ pub enum NpcPolicyDecisionPhase {
     Romance,
 }
 
+impl NpcPolicyDecisionPhase {
+    const fn stable_id(self) -> &'static str {
+        match self {
+            Self::Schedule => "Schedule",
+            Self::Housing => "Housing",
+            Self::Romance => "Romance",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
 pub enum NpcPolicyDecisionOutcome {
     ScheduleInitialized,
@@ -109,7 +119,7 @@ fn stable_npc_cohort(ctx: &ReducerContext, target_minute: u64) -> Vec<CharacterT
 }
 
 fn receipt_id(character_id: u64, day: u64, phase: NpcPolicyDecisionPhase) -> String {
-    format!("npc-policy:{character_id}:{day}:{phase:?}")
+    format!("npc-policy:{character_id}:{day}:{}", phase.stable_id())
 }
 
 fn phase_already_decided(
@@ -401,7 +411,8 @@ fn settle_romance_decision(
             candidate_sex,
         );
         let outcome =
-            crate::relationship::establish_npc_courtship_and_wedding(ctx, suitor_id, partner_id)?;
+            crate::relationship::establish_npc_courtship_and_wedding(ctx, suitor_id, partner_id)
+                .map_err(crate::relationship::CourtshipPairError::into_reducer_error)?;
         let receipt_outcome = match outcome {
             crate::relationship::NpcCourtshipOutcome::Formal => {
                 NpcPolicyDecisionOutcome::RomanceEstablishedFormal

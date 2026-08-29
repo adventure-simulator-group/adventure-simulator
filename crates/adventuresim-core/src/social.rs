@@ -131,6 +131,21 @@ pub enum SocialTopic {
     Filth,
 }
 
+impl SocialTopic {
+    /// Stable storage component for cooldown identity. Display formatting is
+    /// deliberately not part of the persistence contract.
+    pub const fn stable_id(self) -> &'static str {
+        match self {
+            Self::Defeat => "defeat",
+            Self::Injury => "injury",
+            Self::Fatigue => "fatigue",
+            Self::Hunger => "hunger",
+            Self::Faith => "faith",
+            Self::Filth => "filth",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
 pub enum PersonalityAxis {
@@ -422,21 +437,23 @@ pub fn flirt_charm_modifier(
     Some(courtship + recognition)
 }
 
-pub fn topic_for_source_kind(kind: &str) -> Option<SocialTopic> {
+pub fn topic_for_source_kind(kind: crate::morale::MoraleSourceKind) -> Option<SocialTopic> {
+    use crate::morale::MoraleSourceKind as K;
     match kind {
-        "defeat" => Some(SocialTopic::Defeat),
-        "injury" | "pain" => Some(SocialTopic::Injury),
-        "fatigue" => Some(SocialTopic::Fatigue),
-        "hunger" | "thirst" => Some(SocialTopic::Hunger),
-        "religion" | "faith" | "holy_day" | "religious_discord" | "prayer" => {
-            Some(SocialTopic::Faith)
-        }
-        "filth" | "cleanliness" => Some(SocialTopic::Filth),
+        K::Defeat => Some(SocialTopic::Defeat),
+        K::Injury => Some(SocialTopic::Injury),
+        K::Religion
+        | K::ReligiousDiscord
+        | K::Prayer
+        | K::ReligiousObservanceNeglected
+        | K::HolyDayObserved
+        | K::TravelPrayerNeglected => Some(SocialTopic::Faith),
+        K::Cleanliness => Some(SocialTopic::Filth),
         _ => None,
     }
 }
 
-pub fn social_source_eligible(kind: &str, magnitude: f32) -> bool {
+pub fn social_source_eligible(kind: crate::morale::MoraleSourceKind, magnitude: f32) -> bool {
     magnitude.is_finite() && magnitude < 0.0 && topic_for_source_kind(kind).is_some()
 }
 
@@ -445,7 +462,7 @@ pub fn social_source_eligible(kind: &str, magnitude: f32) -> bool {
 pub fn unaddressed_social_source_count<'a>(
     actor_id: u64,
     target_id: u64,
-    sources: impl IntoIterator<Item = (&'a str, &'a str, f32)>,
+    sources: impl IntoIterator<Item = (&'a str, crate::morale::MoraleSourceKind, f32)>,
     interactions: impl IntoIterator<Item = (u64, u64, &'a str, bool)>,
 ) -> usize {
     let addressed: HashSet<&str> = interactions
@@ -457,24 +474,28 @@ pub fn unaddressed_social_source_count<'a>(
     sources
         .into_iter()
         .filter(|(source_id, kind, magnitude)| {
-            social_source_eligible(kind, *magnitude) && !addressed.contains(source_id)
+            social_source_eligible(*kind, *magnitude) && !addressed.contains(source_id)
         })
         .count()
 }
 
 /// Current ranked projection inputs are already personality- and Will-adjusted.
 /// Social restoration is visually capped by the gross actionable loss.
-pub fn resolved_social_morale<'a>(sources: impl IntoIterator<Item = (&'a str, f32)>) -> f32 {
+pub fn resolved_social_morale(
+    sources: impl IntoIterator<Item = (crate::morale::MoraleSourceKind, f32)>,
+) -> f32 {
     let sources: Vec<_> = sources.into_iter().collect();
     let gross_actionable = sources
         .iter()
-        .filter(|(kind, magnitude)| social_source_eligible(kind, *magnitude))
+        .filter(|(kind, magnitude)| social_source_eligible(*kind, *magnitude))
         .map(|(_, magnitude)| -*magnitude)
         .sum::<f32>()
         .max(0.0);
     let restoration = sources
         .iter()
-        .filter(|(kind, magnitude)| *kind == "social_interaction" && *magnitude > 0.0)
+        .filter(|(kind, magnitude)| {
+            *kind == crate::morale::MoraleSourceKind::SocialInteraction && *magnitude > 0.0
+        })
         .map(|(_, magnitude)| *magnitude)
         .sum::<f32>();
     restoration.min(gross_actionable)
@@ -527,7 +548,7 @@ pub fn canonical_cooldown_id(
     topic: SocialTopic,
     action_kind: &str,
 ) -> String {
-    format!("{actor_id}:{target_id}:{topic:?}:{action_kind}").to_ascii_lowercase()
+    format!("{actor_id}:{target_id}:{}:{action_kind}", topic.stable_id())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -1757,25 +1778,28 @@ mod tests {
 
     #[test]
     fn source_topics_are_closed_and_negative_only() {
-        assert_eq!(topic_for_source_kind("defeat"), Some(SocialTopic::Defeat));
+        use crate::morale::MoraleSourceKind as K;
+
+        assert_eq!(topic_for_source_kind(K::Defeat), Some(SocialTopic::Defeat));
         assert_eq!(
-            topic_for_source_kind("religious_discord"),
+            topic_for_source_kind(K::ReligiousDiscord),
             Some(SocialTopic::Faith)
         );
-        assert_eq!(topic_for_source_kind("prayer"), Some(SocialTopic::Faith));
-        assert_eq!(topic_for_source_kind("social_interaction"), None);
-        assert_eq!(topic_for_source_kind("made_up"), None);
-        assert!(social_source_eligible("defeat", -1.0));
-        assert!(!social_source_eligible("defeat", 1.0));
-        assert!(!social_source_eligible("social_interaction", -1.0));
+        assert_eq!(topic_for_source_kind(K::Prayer), Some(SocialTopic::Faith));
+        assert_eq!(topic_for_source_kind(K::SocialInteraction), None);
+        assert!(social_source_eligible(K::Defeat, -1.0));
+        assert!(!social_source_eligible(K::Defeat, 1.0));
+        assert!(!social_source_eligible(K::SocialInteraction, -1.0));
     }
 
     #[test]
     fn notification_count_is_per_source_actor_target_and_success() {
+        use crate::morale::MoraleSourceKind as K;
+
         let sources = [
-            ("loss-a", "defeat", -3.0),
-            ("loss-b", "defeat", -1.0),
-            ("good", "victory", 2.0),
+            ("loss-a", K::Defeat, -3.0),
+            ("loss-b", K::Defeat, -1.0),
+            ("good", K::Victory, 2.0),
         ];
         let interactions = [
             (7, 9, "loss-a", false),
@@ -1799,20 +1823,22 @@ mod tests {
 
     #[test]
     fn resolved_segment_uses_projected_values_and_caps_at_actionable_loss() {
+        use crate::morale::MoraleSourceKind as K;
+
         assert_eq!(
             resolved_social_morale([
-                ("defeat", -4.0),
-                ("injury", -2.0),
-                ("social_interaction", 3.0),
+                (K::Defeat, -4.0),
+                (K::Injury, -2.0),
+                (K::SocialInteraction, 3.0),
             ]),
             3.0
         );
         assert_eq!(
-            resolved_social_morale([("defeat", -2.0), ("social_interaction", 8.0)]),
+            resolved_social_morale([(K::Defeat, -2.0), (K::SocialInteraction, 8.0)]),
             2.0
         );
         assert_eq!(
-            resolved_social_morale([("made_up", -9.0), ("social_interaction", 4.0)]),
+            resolved_social_morale([(K::Victory, -9.0), (K::SocialInteraction, 4.0)]),
             0.0
         );
     }

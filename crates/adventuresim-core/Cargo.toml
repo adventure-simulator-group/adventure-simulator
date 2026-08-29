@@ -30,5 +30,8 @@ serde_json.workspace = true
 sha2.workspace = true
 adventuresim-world-schema.workspace = true
 
+[dev-dependencies]
+spacetimedb-sats.workspace = true
+
 [lints]
 workspace = true

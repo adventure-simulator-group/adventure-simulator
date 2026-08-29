@@ -167,12 +167,10 @@ pub(super) async fn rest(
     session: Session,
     form: Result<Form<RestForm>, FormRejection>,
 ) -> Response {
-    let public_service = match kind.as_str() {
-        "inn" => Some(adventuresim_world_schema::SettlementActionService::Inn),
-        "temple" => Some(adventuresim_world_schema::SettlementActionService::Temple),
-        "residence" => None,
-        _ => return Html("<h1>Rest service not found</h1>".to_string()).into_response(),
+    let Some(service_kind) = RestServiceKind::parse(&kind) else {
+        return Html("<h1>Rest service not found</h1>".to_string()).into_response();
     };
+    let public_service = service_kind.public_service();
     let Some(character_id) = session.character_id_u64() else {
         return Html("<h1>Choose a character first</h1>".to_string()).into_response();
     };
@@ -182,7 +180,7 @@ pub(super) async fn rest(
             tracing::warn!(
                 character_id,
                 requested_settlement_id_length = id.len(),
-                service = kind.as_str(),
+                service = service_kind.tag(),
                 rejection_status = %error.status(),
                 error = %error,
                 "settlement rest form extraction rejected request"
@@ -191,9 +189,11 @@ pub(super) async fn rest(
         }
     };
     let settlement_query = settlement_by_id(&id);
-    let settlements: Vec<Settlement> = state
+    let settlements: Vec<SettlementView> = state
         .db
-        .query(settlement_query.as_str())
+        .query_sats_into::<adventuresim_stdb_client::Settlement, SettlementView>(
+            settlement_query.as_str(),
+        )
         .await
         .unwrap_or_default();
     let Some(settlement) = settlements.first() else {
@@ -218,7 +218,7 @@ pub(super) async fn rest(
                 requested_settlement_id = %id,
                 requested_minutes = ?form.requested_minutes,
                 public_service = ?public_service,
-                route_service = kind.as_str(),
+                route_service = service_kind.tag(),
                 unit,
                 duration_length = form.duration.len(),
                 reason = message.as_str(),
@@ -230,17 +230,7 @@ pub(super) async fn rest(
                     crate::templates::strategic_notice_page(
                         "Unable to rest",
                         &message,
-                        &format!(
-                            "/settlements/{id}/{}",
-                            match public_service {
-                                Some(adventuresim_world_schema::SettlementActionService::Inn) =>
-                                    "inn",
-                                Some(
-                                    adventuresim_world_schema::SettlementActionService::Temple,
-                                ) => "religion",
-                                None => "places/residences",
-                            }
-                        ),
+                        &format!("/settlements/{id}/{}", service_kind.page_path()),
                         "Return to rest service",
                         None,
                     )
@@ -251,14 +241,19 @@ pub(super) async fn rest(
         }
     };
     let before_character = get_active_character(&state, Some(character_id)).await;
-    let before_limbs =
-        query_single::<CharacterLimbs>(&state, "backend_character_limbs", character_id).await;
-    let before_skills =
-        query_single::<CharacterSkills>(&state, "backend_character_skills", character_id).await;
+    let before_limbs = query_single::<CharacterLimbs>(
+        &state,
+        crate::spacetimedb::character_limbs_by_character_id(character_id),
+    )
+    .await;
+    let before_skills = query_single::<CharacterSkills>(
+        &state,
+        crate::spacetimedb::character_skills_by_character_id(character_id),
+    )
+    .await;
     let before_time = query_single::<crate::spacetimedb::CharacterTime>(
         &state,
-        "backend_character_times",
-        character_id,
+        crate::spacetimedb::character_time_by_character_id(character_id),
     )
     .await;
     let before_reputation = query_local_reputation(&state, character_id, &id).await;
@@ -266,9 +261,9 @@ pub(super) async fn rest(
         .as_ref()
         .and_then(|(character, _)| character.current_settlement_id.as_deref())
         .unwrap_or("<none>");
-    let reducer = match public_service {
-        Some(_) => "rest_at_settlement_hours",
-        None => "rest_at_residence_hours",
+    let reducer = match service_kind {
+        RestServiceKind::Inn | RestServiceKind::Temple => "rest_at_settlement_hours",
+        RestServiceKind::Residence => "rest_at_residence_hours",
     };
     let reducer_arguments = match public_service {
         Some(service) => vec![
@@ -285,7 +280,7 @@ pub(super) async fn rest(
             character_settlement_id,
             requested_minutes,
             public_service = ?public_service,
-            route_service = kind.as_str(),
+            route_service = service_kind.tag(),
             error = %error,
             "settlement rest reducer rejected request"
         );
@@ -295,15 +290,7 @@ pub(super) async fn rest(
                 crate::templates::strategic_notice_page(
                     "Unable to rest",
                     safe_rest_error(&error.to_string()),
-                    &format!(
-                        "/settlements/{id}/{}",
-                        match public_service {
-                            Some(adventuresim_world_schema::SettlementActionService::Inn) => "inn",
-                            Some(adventuresim_world_schema::SettlementActionService::Temple) =>
-                                "religion",
-                            None => "places/residences",
-                        }
-                    ),
+                    &format!("/settlements/{id}/{}", service_kind.page_path()),
                     "Return to rest service",
                     None,
                 )
@@ -325,14 +312,19 @@ pub(super) async fn rest(
         active_character.as_ref().map(|(character, _)| character),
     )
     .await;
-    let after_limbs =
-        query_single::<CharacterLimbs>(&state, "backend_character_limbs", character_id).await;
-    let after_skills =
-        query_single::<CharacterSkills>(&state, "backend_character_skills", character_id).await;
+    let after_limbs = query_single::<CharacterLimbs>(
+        &state,
+        crate::spacetimedb::character_limbs_by_character_id(character_id),
+    )
+    .await;
+    let after_skills = query_single::<CharacterSkills>(
+        &state,
+        crate::spacetimedb::character_skills_by_character_id(character_id),
+    )
+    .await;
     let after_time = query_single::<crate::spacetimedb::CharacterTime>(
         &state,
-        "backend_character_times",
-        character_id,
+        crate::spacetimedb::character_time_by_character_id(character_id),
     )
     .await;
     let after_reputation = query_local_reputation(&state, character_id, &id).await;
@@ -359,12 +351,12 @@ pub(super) async fn rest(
         .map(|(character, _)| character.name.clone());
     let items = state
         .db
-        .query::<ItemDefinition>("SELECT * FROM item")
+        .query_sats_into::<adventuresim_stdb_client::Item, CatalogItemView>("SELECT * FROM item")
         .await
         .unwrap_or_default();
     let food_lots = state
         .db
-        .query::<FoodLot>("SELECT * FROM food_lot")
+        .query_sats::<FoodLot>("SELECT * FROM food_lot")
         .await
         .unwrap_or_default();
     let soap_preview = soap_rest_preview(
@@ -397,20 +389,11 @@ pub(super) async fn rest(
     .into_response()
 }
 
-pub(super) async fn query_single<T: serde::de::DeserializeOwned>(
+pub(super) async fn query_single<T: spacetimedb_sats::de::DeserializeOwned>(
     state: &AppState,
-    table: &str,
-    character_id: u64,
+    query: crate::spacetimedb::SqlQuery,
 ) -> Option<T> {
-    state
-        .db
-        .query(&format!(
-            "SELECT * FROM {table} WHERE character_id = {character_id}"
-        ))
-        .await
-        .unwrap_or_default()
-        .into_iter()
-        .next()
+    state.db.query_one_sats(&query).await.ok().flatten()
 }
 
 pub(super) async fn query_local_reputation(
@@ -420,7 +403,7 @@ pub(super) async fn query_local_reputation(
 ) -> Option<CharacterSettlementReputation> {
     state
         .db
-        .query(&format!(
+        .query_sats(&format!(
             "SELECT * FROM character_settlement_reputation WHERE character_id = {character_id} AND settlement_id = {}",
             crate::spacetimedb::sql_string_literal(settlement_id)
         ))
@@ -599,11 +582,11 @@ mod surgery_skill_delta_tests {
     fn surgery_training_is_reported_as_a_leaf_skill_delta() {
         let before = CharacterSkills {
             surgery_hours: 12.0,
-            ..Default::default()
+            ..crate::spacetimedb::generated_character_skills_fixture()
         };
         let after = CharacterSkills {
             surgery_hours: 13.5,
-            ..Default::default()
+            ..crate::spacetimedb::generated_character_skills_fixture()
         };
         assert_eq!(skill_deltas(&before, &after), vec![("Surgery".into(), 1.5)]);
     }

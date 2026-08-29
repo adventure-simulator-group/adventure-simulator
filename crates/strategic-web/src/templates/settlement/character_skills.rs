@@ -18,9 +18,10 @@ use maud::{Markup, html};
 
 use super::character_health::stat_icon;
 use crate::spacetimedb::{
-    CharacterAttributes, CharacterCapability, CharacterLimbs, CharacterSkills, CharacterStats,
-    CharacterTrainingSchedule, OrganizationMembership, OrganizationMembershipStatus,
-    ScheduleAllocation, Settlement,
+    BackendOrganizationMembership, BestiaryHoursExt, CharacterAttributes, CharacterCapability,
+    CharacterLimbs, CharacterSkills, CharacterStats, CharacterTrainingSchedule,
+    OralLanguageHoursExt, OrganizationMembershipStatus, ReligionHoursExt, ScheduleAllocation,
+    SettlementView, WrittenLanguageHoursExt,
 };
 use crate::templates::{
     game_icon, religion_icon, religion_icon_path, sidebar_section, stat_icon_path,
@@ -583,7 +584,7 @@ impl ActivityPreviewRates {
         skills: Option<&CharacterSkills>,
         limbs: Option<&CharacterLimbs>,
         capability: Option<&CharacterCapability>,
-        settlement: Option<&Settlement>,
+        settlement: Option<&SettlementView>,
         stats: Option<&CharacterStats>,
     ) -> Self {
         let current_fatigue = stats.map_or(0.0, |stats| stats.calories_used.max(0.0));
@@ -658,7 +659,7 @@ impl ActivityPreviewRates {
         mut self,
         attributes: Option<&CharacterAttributes>,
         skills: Option<&CharacterSkills>,
-        settlement: Option<&Settlement>,
+        settlement: Option<&SettlementView>,
         owned_item_ids: impl IntoIterator<Item = &'a str>,
     ) -> Self {
         use adventuresim_core::{
@@ -773,8 +774,8 @@ impl ActivityPreviewRates {
             self.reading = Some(ReadingPreview {
                 rate: adventuresim_core::book::reading_rate(medium_rank),
                 description: format!(
-                    "Read {title} ({:?}, ranks {}→{}). Literacy converts each reading hour into {:.0}% of an effective training hour.",
-                    selected.book.medium,
+                    "Read {title} ({}, ranks {}→{}). Literacy converts each reading hour into {:.0}% of an effective training hour.",
+                    selected.book.medium.descriptor().english,
                     lower,
                     upper,
                     adventuresim_core::book::reading_rate(medium_rank) * 100.0,
@@ -788,7 +789,7 @@ impl ActivityPreviewRates {
         mut self,
         attributes: Option<&CharacterAttributes>,
         _skills: Option<&CharacterSkills>,
-        memberships: &[OrganizationMembership],
+        memberships: &[BackendOrganizationMembership],
         settlement_id: &str,
         minute: u64,
     ) -> Self {
@@ -861,7 +862,9 @@ fn training_target_label(target: &adventuresim_core::organization::TrainingTarge
         TrainingTarget::Religion { religion } => format!("{religion} Religion"),
         TrainingTarget::Bestiary { category } => format!("{category} Bestiary"),
         TrainingTarget::Terrain { terrain } => format!("{terrain} Terrain"),
-        TrainingTarget::Written { language } => format!("{language:?} literacy"),
+        TrainingTarget::Written { language } => {
+            format!("{} literacy", language.descriptor().english)
+        }
         TrainingTarget::EquippedWeaponSkills => "equipped weapon skills".into(),
     }
 }
@@ -2289,8 +2292,27 @@ impl ActivityEffectRates {
     }
 }
 
-fn activity_effect_cell(kind: &str, value: f32) -> Markup {
-    let rounded = if kind == "gold" {
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ActivityEffectKind {
+    Gold,
+    Reputation,
+    Morale,
+    Fatigue,
+}
+
+impl ActivityEffectKind {
+    const fn tag(self) -> &'static str {
+        match self {
+            Self::Gold => "gold",
+            Self::Reputation => "reputation",
+            Self::Morale => "morale",
+            Self::Fatigue => "fatigue",
+        }
+    }
+}
+
+fn activity_effect_cell(kind: ActivityEffectKind, value: f32) -> Markup {
+    let rounded = if kind == ActivityEffectKind::Gold {
         value.round()
     } else {
         (value * 10.0).round() / 10.0
@@ -2304,13 +2326,13 @@ fn activity_effect_cell(kind: &str, value: f32) -> Markup {
     };
     let display = if state == "neutral" {
         "0".to_string()
-    } else if kind == "gold" {
+    } else if kind == ActivityEffectKind::Gold {
         format!("{rounded:+.0}")
     } else {
         format!("{rounded:+.1}")
     };
     html! {
-        td class=(format!("schedule-effect schedule-effect-{state}")) data-activity-effect=(kind) {
+        td class=(format!("schedule-effect schedule-effect-{state}")) data-activity-effect=(kind.tag()) {
             (display)
         }
     }
@@ -2418,10 +2440,10 @@ fn schedule_special_row(
                 (schedule_icon(label, icon, actionable, allocation_name))
                 span class="sr-only" { (label) }
             }
-            (activity_effect_cell("gold", values[0]))
-            (activity_effect_cell("reputation", values[1]))
-            (activity_effect_cell("morale", values[2]))
-            (activity_effect_cell("fatigue", values[3]))
+            (activity_effect_cell(ActivityEffectKind::Gold, values[0]))
+            (activity_effect_cell(ActivityEffectKind::Reputation, values[1]))
+            (activity_effect_cell(ActivityEffectKind::Morale, values[2]))
+            (activity_effect_cell(ActivityEffectKind::Fatigue, values[3]))
             (activity_training_cell(
                 label,
                 allocation_name,
@@ -2580,6 +2602,145 @@ mod tests {
     use super::*;
     use crate::spacetimedb::*;
 
+    fn empty_religion_hours() -> adventuresim_stdb_client::ReligionHours {
+        adventuresim_stdb_client::ReligionHours {
+            roman_catholic: 0.0,
+            lutheran: 0.0,
+            reformed: 0.0,
+            anglican: 0.0,
+            eastern_orthodox: 0.0,
+            islamic: 0.0,
+            judaism: 0.0,
+        }
+    }
+
+    fn empty_bestiary_hours() -> adventuresim_stdb_client::BestiaryHours {
+        adventuresim_stdb_client::BestiaryHours {
+            beast: 0.0,
+            undead: 0.0,
+            human: 0.0,
+            werekin: 0.0,
+            elf: 0.0,
+            dwarf: 0.0,
+            fey: 0.0,
+            spirit: 0.0,
+            greenskin: 0.0,
+            insectoid: 0.0,
+            draconid: 0.0,
+            construct: 0.0,
+            wildmen: 0.0,
+        }
+    }
+
+    fn empty_oral_language_hours() -> adventuresim_stdb_client::OralLanguageHours {
+        adventuresim_stdb_client::OralLanguageHours {
+            east_central: 0.0,
+            west_central: 0.0,
+            low: 0.0,
+            yiddish: 0.0,
+            latin: 0.0,
+            romani: 0.0,
+            elven: 0.0,
+            dwarfish: 0.0,
+        }
+    }
+
+    fn empty_written_language_hours() -> adventuresim_stdb_client::WrittenLanguageHours {
+        adventuresim_stdb_client::WrittenLanguageHours {
+            german: 0.0,
+            low: 0.0,
+            latin: 0.0,
+            hebrew: 0.0,
+            yiddish: 0.0,
+            elven: 0.0,
+            dwarfish: 0.0,
+        }
+    }
+
+    fn empty_character_skills() -> CharacterSkills {
+        CharacterSkills {
+            character_id: 0,
+            polearm_hours: 0.0,
+            axe_hours: 0.0,
+            bludgeon_hours: 0.0,
+            sword_hours: 0.0,
+            knife_hours: 0.0,
+            dodge_hours: 0.0,
+            block_hours: 0.0,
+            bow_hours: 0.0,
+            crossbow_hours: 0.0,
+            firearm_hours: 0.0,
+            throw_hours: 0.0,
+            will_hours: 0.0,
+            insight_hours: 0.0,
+            charm_hours: 0.0,
+            command_hours: 0.0,
+            deception_hours: 0.0,
+            physiology_hours: 0.0,
+            cooking_hours: 0.0,
+            herbalism_hours: 0.0,
+            religion_hours: empty_religion_hours(),
+            bestiary_hours: empty_bestiary_hours(),
+            oral_languages: empty_oral_language_hours(),
+            written_languages: empty_written_language_hours(),
+            stealth_hours: 0.0,
+            balance_hours: 0.0,
+            terrain_plains_hours: 0.0,
+            terrain_forest_hours: 0.0,
+            terrain_hills_hours: 0.0,
+            terrain_wetlands_hours: 0.0,
+            terrain_urban_hours: 0.0,
+            terrain_snow_hours: 0.0,
+            surgery_hours: 0.0,
+            tailoring_hours: 0.0,
+            smithing_hours: 0.0,
+        }
+    }
+
+    fn empty_character_capability() -> CharacterCapability {
+        CharacterCapability {
+            character_id: 0,
+            melee: false,
+            ranged: false,
+            precise: false,
+            heavy: false,
+            quarter_armor: false,
+            half_armor: false,
+            three_quarter_armor: false,
+            full_armor: false,
+            blunt: false,
+            slash: false,
+            pierce: false,
+            athletics: 0.0,
+            endurance: 0.0,
+            physiology: 0.0,
+            knife: 0.0,
+            tailoring: 0.0,
+            surgery: 0.0,
+            command: 0.0,
+            religion: 0.0,
+            weapon_precision: 0.0,
+            autoresolve_combat_power: 0,
+        }
+    }
+
+    fn empty_schedule_allocation() -> ScheduleAllocation {
+        ScheduleAllocation {
+            reading_minutes: 0,
+            combat_training_minutes: 0,
+            carousing_minutes: 0,
+            socializing_minutes: 0,
+            apprenticeship_minutes: 0,
+            apprenticeship_organization_id: None,
+            profession_practice_minutes: 0,
+            practice_organization_id: None,
+            labor_minutes: 0,
+            prayer_minutes: 0,
+            thievery_minutes: 0,
+            raiding_minutes: 0,
+        }
+    }
+
     fn test_attributes(value: f32) -> CharacterAttributes {
         CharacterAttributes {
             character_id: 1,
@@ -2615,7 +2776,7 @@ mod tests {
 
         let skills = CharacterSkills {
             surgery_hours: Skill::Surgery.hours_for_rank(4.0),
-            ..Default::default()
+            ..empty_character_skills()
         };
         let icons = character_summary_icons(
             None,
@@ -2638,7 +2799,7 @@ mod tests {
             knife_hours: 50_000.0,
             block_hours: 50_000.0,
             command_hours: 50_000.0,
-            ..Default::default()
+            ..empty_character_skills()
         };
         let profile = CombatTrainingProfile {
             weapons: adventuresim_core::equipment::WeaponSkillDistribution {
@@ -2650,7 +2811,7 @@ mod tests {
         };
         let capability = CharacterCapability {
             full_armor: true,
-            ..Default::default()
+            ..empty_character_capability()
         };
         let icons = character_summary_icons(
             Some(&capability),
@@ -2677,12 +2838,12 @@ mod tests {
         let skills = CharacterSkills {
             dodge_hours: 100.0,
             block_hours: 50_000.0,
-            ..Default::default()
+            ..empty_character_skills()
         };
         let icons = character_summary_icons(
             Some(&CharacterCapability {
                 quarter_armor: true,
-                ..Default::default()
+                ..empty_character_capability()
             }),
             Some(&test_attributes(5.0)),
             Some(&skills),
@@ -2705,9 +2866,9 @@ mod tests {
     #[test]
     fn summary_uses_outline_silhouette_for_no_armor() {
         let icons = character_summary_icons(
-            Some(&CharacterCapability::default()),
+            Some(&empty_character_capability()),
             Some(&test_attributes(5.0)),
-            Some(&CharacterSkills::default()),
+            Some(&empty_character_skills()),
             CombatTrainingProfile::default(),
             None,
         );
@@ -2727,7 +2888,7 @@ mod tests {
             insight_hours: 50_000.0,
             charm_hours: 1.0,
             command_hours: 50_000.0,
-            ..Default::default()
+            ..empty_character_skills()
         };
         let icons = character_summary_icons(
             None,
@@ -2749,12 +2910,12 @@ mod tests {
     #[test]
     fn summary_religion_uses_the_contextual_primary_icon_and_shared_score() {
         let skills = CharacterSkills {
-            religion_hours: adventuresim_world_schema::ReligionHours {
+            religion_hours: adventuresim_stdb_client::ReligionHours {
                 roman_catholic: 50_000.0,
                 lutheran: 50_000.0,
-                ..Default::default()
+                ..empty_religion_hours()
             },
-            ..Default::default()
+            ..empty_character_skills()
         };
         let icons = character_summary_icons(
             None,
@@ -2787,7 +2948,7 @@ mod tests {
         let skills = CharacterSkills {
             sword_hours: f32::NAN,
             command_hours: f32::INFINITY,
-            ..Default::default()
+            ..empty_character_skills()
         };
         let icons = character_summary_icons(
             None,
@@ -2816,7 +2977,7 @@ mod tests {
             charm_hours: 80.0,
             command_hours: 40.0,
             deception_hours: 20.0,
-            ..CharacterSkills::default()
+            ..empty_character_skills()
         };
         let markup = social_skill_rows(&skills, 5.0, 1.0, None).into_string();
         assert!(markup.contains("data-social-primary"));
@@ -2870,7 +3031,7 @@ mod tests {
 
         let skills = CharacterSkills {
             cooking_hours: Skill::Cooking.hours_for_rank(1.5),
-            ..Default::default()
+            ..empty_character_skills()
         };
         let healthy = party_skill_row(
             &skills,
@@ -2907,7 +3068,7 @@ mod tests {
     #[test]
     fn forage_action_replaces_the_terrain_skill_icon_not_the_expand_control() {
         let rendered = terrain_skill_rows(
-            &CharacterSkills::default(),
+            &empty_character_skills(),
             1.0,
             false,
             Some(SkillAction::Get {
@@ -2949,13 +3110,13 @@ mod tests {
             physiology_hours: 0.0,
             cooking_hours: 0.0,
             herbalism_hours: 0.0,
-            religion_hours: adventuresim_world_schema::ReligionHours {
+            religion_hours: adventuresim_stdb_client::ReligionHours {
                 roman_catholic: 1_000.0,
-                ..Default::default()
+                ..empty_religion_hours()
             },
-            bestiary_hours: Default::default(),
-            oral_languages: Default::default(),
-            written_languages: Default::default(),
+            bestiary_hours: empty_bestiary_hours(),
+            oral_languages: empty_oral_language_hours(),
+            written_languages: empty_written_language_hours(),
             stealth_hours: 0.0,
             balance_hours: 0.0,
             terrain_plains_hours: 0.0,
@@ -2973,7 +3134,7 @@ mod tests {
             downtime: crate::spacetimedb::ScheduleAllocation {
                 combat_training_minutes: 90,
                 prayer_minutes: 120,
-                ..Default::default()
+                ..empty_schedule_allocation()
             },
         };
         let attributes = test_attributes(5.0);
@@ -3197,7 +3358,7 @@ mod tests {
     fn defense_will_uses_head_health_for_its_injury_adjusted_rank() {
         let skills = CharacterSkills {
             will_hours: 5_000.0,
-            ..Default::default()
+            ..empty_character_skills()
         };
         let rendered = combat_skill_rows(
             &skills,
@@ -3228,7 +3389,7 @@ mod tests {
         let skills = CharacterSkills {
             cooking_hours: 100.0,
             knife_hours: 1_000.0,
-            ..Default::default()
+            ..empty_character_skills()
         };
         let cooking = party_skill_row(
             &skills,
@@ -3270,7 +3431,7 @@ mod tests {
             surgery_hours: 1_000.0,
             knife_hours: 0.0,
             tailoring_hours: 0.0,
-            ..Default::default()
+            ..empty_character_skills()
         };
         let rendered = party_skill_row(
             &skills,
@@ -3296,7 +3457,7 @@ mod tests {
     fn terrain_rows_render_intuitive_cross_habitat_projection() {
         let skills = CharacterSkills {
             terrain_forest_hours: 1_000.0,
-            ..Default::default()
+            ..empty_character_skills()
         };
         let rendered = terrain_skill_rows(&skills, 5.0, false, None).into_string();
         assert!(rendered.contains("0.0 direct hours trained"));
@@ -3312,16 +3473,16 @@ mod tests {
     #[test]
     fn language_families_are_expandable_accessible_and_color_coded() {
         let skills = CharacterSkills {
-            oral_languages: adventuresim_world_schema::OralLanguageHours {
+            oral_languages: adventuresim_stdb_client::OralLanguageHours {
                 east_central: 5_000.0,
                 west_central: 1_000.0,
-                ..Default::default()
+                ..empty_oral_language_hours()
             },
-            written_languages: adventuresim_world_schema::WrittenLanguageHours {
+            written_languages: adventuresim_stdb_client::WrittenLanguageHours {
                 german: 1_000.0,
-                ..Default::default()
+                ..empty_written_language_hours()
             },
-            ..Default::default()
+            ..empty_character_skills()
         };
         let rendered = language_skill_rows(&skills, 5.0, 5.0, false).into_string();
         assert!(rendered.contains("Expand Oral languages"));
@@ -3353,7 +3514,7 @@ mod tests {
     #[test]
     fn language_families_are_hidden_without_effective_hours() {
         let rendered =
-            language_skill_rows(&CharacterSkills::default(), 5.0, 5.0, false).into_string();
+            language_skill_rows(&empty_character_skills(), 5.0, 5.0, false).into_string();
         assert!(!rendered.contains("Expand Oral languages"));
         assert!(!rendered.contains("Expand Written languages"));
         assert!(!rendered.contains("data-language-detail"));
@@ -3396,7 +3557,7 @@ mod tests {
             thievery_minutes: 60,
             raiding_minutes: 180,
             labor_minutes: 240,
-            ..Default::default()
+            ..empty_schedule_allocation()
         };
         let effective = effective_preview_schedule(
             &saved,
@@ -3436,11 +3597,11 @@ mod tests {
     #[test]
     fn reading_preview_names_the_selected_title_and_uses_medium_literacy() {
         let skills = CharacterSkills {
-            written_languages: adventuresim_world_schema::WrittenLanguageHours {
+            written_languages: adventuresim_stdb_client::WrittenLanguageHours {
                 german: 2_500.0,
-                ..Default::default()
+                ..empty_written_language_hours()
             },
-            ..Default::default()
+            ..empty_character_skills()
         };
         let preview = ActivityPreviewRates::default().with_reading(
             Some(&test_attributes(5.0)),
@@ -3458,6 +3619,26 @@ mod tests {
             .as_str();
         assert!(reading.description.contains(selected_title));
         assert!(reading.description.contains("50%"));
+    }
+
+    #[test]
+    fn written_training_labels_use_language_descriptors() {
+        use adventuresim_core::organization::TrainingTarget;
+        use adventuresim_world_schema::WrittenLanguage;
+
+        assert_eq!(
+            WrittenLanguage::ALL
+                .map(|language| training_target_label(&TrainingTarget::Written { language })),
+            [
+                "German literacy",
+                "Low literacy",
+                "Latin literacy",
+                "Hebrew literacy",
+                "Yiddish literacy",
+                "Elven literacy",
+                "Dwarfish literacy",
+            ]
+        );
     }
 
     #[test]
@@ -3504,7 +3685,7 @@ mod tests {
             ("physicians_college", "student", "Physiology"),
             ("surgeons_guild", "apprentice", "Surgery"),
         ] {
-            let membership = OrganizationMembership {
+            let membership = BackendOrganizationMembership {
                 id: 1,
                 character_id: 1,
                 organization_id: organization_id.into(),
@@ -3550,12 +3731,22 @@ mod tests {
 
     #[test]
     fn server_rendered_effects_normalize_negative_zero() {
-        let rendered = activity_effect_cell("fatigue", -0.0006).into_string();
+        assert_eq!(
+            [
+                ActivityEffectKind::Gold,
+                ActivityEffectKind::Reputation,
+                ActivityEffectKind::Morale,
+                ActivityEffectKind::Fatigue,
+            ]
+            .map(ActivityEffectKind::tag),
+            ["gold", "reputation", "morale", "fatigue"]
+        );
+        let rendered = activity_effect_cell(ActivityEffectKind::Fatigue, -0.0006).into_string();
         assert!(rendered.contains("schedule-effect-neutral"));
         assert!(rendered.contains(">0</td>"));
         assert!(!rendered.contains("-0.0"));
 
-        let negative = activity_effect_cell("fatigue", -0.06).into_string();
+        let negative = activity_effect_cell(ActivityEffectKind::Fatigue, -0.06).into_string();
         assert!(negative.contains("schedule-effect-negative"));
         assert!(negative.contains(">-0.1</td>"));
     }
@@ -3575,7 +3766,7 @@ mod tests {
         let schedule = ScheduleAllocation {
             labor_minutes: 240,
             combat_training_minutes: 720,
-            ..Default::default()
+            ..empty_schedule_allocation()
         };
         let leisure = leisure_preview(&schedule, 0.0);
         assert_eq!(leisure.outcome.leisure_hours, 8.0);
@@ -3696,12 +3887,12 @@ mod tests {
     fn bestiary_skill_family_lists_correlated_categories_and_accessible_lore() {
         let css = include_str!("../../../static/css/strategic.css");
         let skills = CharacterSkills {
-            bestiary_hours: adventuresim_world_schema::BestiaryHours {
+            bestiary_hours: adventuresim_stdb_client::BestiaryHours {
                 human: 1_000.0,
                 wildmen: 500.0,
-                ..Default::default()
+                ..empty_bestiary_hours()
             },
-            ..Default::default()
+            ..empty_character_skills()
         };
         let rendered = bestiary_skill_rows(&skills, 5.0, 1.0, false).into_string();
         let family_tooltip = bestiary_family_tooltip(&skills);

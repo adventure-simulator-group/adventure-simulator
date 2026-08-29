@@ -4,16 +4,16 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::investigation_action_unavailable_fields_type::InvestigationActionUnavailableFields;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct SettlementAliasBatchRow {
-    pub id: String,
-    pub settlement_id: String,
-    pub name: String,
-    pub prefix: Option<String>,
-    pub language: Option<String>,
+pub enum InvestigationActionAvailability {
+    Available,
+
+    Unavailable(InvestigationActionUnavailableFields),
 }
 
-impl __sdk::InModule for SettlementAliasBatchRow {
+impl __sdk::InModule for InvestigationActionAvailability {
     type Module = super::RemoteModule;
 }

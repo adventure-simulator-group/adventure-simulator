@@ -4,6 +4,9 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::case_site_id_type::CaseSiteId;
+use super::investigation_action_availability_type::InvestigationActionAvailability;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct BackendInvestigationAction {
@@ -19,12 +22,10 @@ pub struct BackendInvestigationAction {
     pub uncertainty_bps: u16,
     pub skill_contributions: String,
     pub weather_available: bool,
-    pub required_case_site_id: String,
-    pub available: bool,
-    pub can_travel_to_required_site: bool,
-    pub unavailable_reason_code: String,
+    pub contact_character_id: Option<u64>,
+    pub required_case_site_id: Option<CaseSiteId>,
+    pub availability: InvestigationActionAvailability,
     pub unavailable_reason: String,
-    pub wait_minutes: u32,
 }
 
 impl __sdk::InModule for BackendInvestigationAction {
@@ -47,12 +48,12 @@ pub struct BackendInvestigationActionCols {
     pub uncertainty_bps: __sdk::__query_builder::Col<BackendInvestigationAction, u16>,
     pub skill_contributions: __sdk::__query_builder::Col<BackendInvestigationAction, String>,
     pub weather_available: __sdk::__query_builder::Col<BackendInvestigationAction, bool>,
-    pub required_case_site_id: __sdk::__query_builder::Col<BackendInvestigationAction, String>,
-    pub available: __sdk::__query_builder::Col<BackendInvestigationAction, bool>,
-    pub can_travel_to_required_site: __sdk::__query_builder::Col<BackendInvestigationAction, bool>,
-    pub unavailable_reason_code: __sdk::__query_builder::Col<BackendInvestigationAction, String>,
+    pub contact_character_id: __sdk::__query_builder::Col<BackendInvestigationAction, Option<u64>>,
+    pub required_case_site_id:
+        __sdk::__query_builder::Col<BackendInvestigationAction, Option<CaseSiteId>>,
+    pub availability:
+        __sdk::__query_builder::Col<BackendInvestigationAction, InvestigationActionAvailability>,
     pub unavailable_reason: __sdk::__query_builder::Col<BackendInvestigationAction, String>,
-    pub wait_minutes: __sdk::__query_builder::Col<BackendInvestigationAction, u32>,
 }
 
 impl __sdk::__query_builder::HasCols for BackendInvestigationAction {
@@ -83,21 +84,16 @@ impl __sdk::__query_builder::HasCols for BackendInvestigationAction {
                 "skill_contributions",
             ),
             weather_available: __sdk::__query_builder::Col::new(table_name, "weather_available"),
+            contact_character_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "contact_character_id",
+            ),
             required_case_site_id: __sdk::__query_builder::Col::new(
                 table_name,
                 "required_case_site_id",
             ),
-            available: __sdk::__query_builder::Col::new(table_name, "available"),
-            can_travel_to_required_site: __sdk::__query_builder::Col::new(
-                table_name,
-                "can_travel_to_required_site",
-            ),
-            unavailable_reason_code: __sdk::__query_builder::Col::new(
-                table_name,
-                "unavailable_reason_code",
-            ),
+            availability: __sdk::__query_builder::Col::new(table_name, "availability"),
             unavailable_reason: __sdk::__query_builder::Col::new(table_name, "unavailable_reason"),
-            wait_minutes: __sdk::__query_builder::Col::new(table_name, "wait_minutes"),
         }
     }
 }

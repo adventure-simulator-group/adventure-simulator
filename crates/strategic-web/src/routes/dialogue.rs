@@ -1,12 +1,18 @@
-use super::{
-    AppState, BackendSettlementResidentRow as SettlementResidentRow, SocialActionId, SocialDuration,
-};
+use super::{AppState, SocialActionId, SocialDuration};
 use crate::spacetimedb::{
-    AffinityBand, BackendCharacterRelationshipStatus, CourtshipKind, FamiliarityBand, MoraleBand,
-    Settlement, SettlementCategory, SocialChatOutcome, SocialChatTargetKind,
+    AffinityBand, BackendCharacterRelationshipStatus, BackendDialogueEvent,
+    BackendDialogueParticipant, BackendDialoguePrompt, BackendDialogueSession,
+    BackendDialogueTopicOption, BackendDialogueWitnessClaim, BackendSettlementResident,
+    BackendSettlementResidentRelationship, BackendSocialChatReceipt, CharacterTime, CourtshipKind,
+    FamiliarityBand, MoraleBand, SettlementCategory, SettlementResidentPresence, SettlementView,
+    SocialChatOutcome, SocialChatTargetKind, SpacetimeError, npc_age_band_id, npc_presentation_id,
 };
 use crate::{session::Session, spacetimedb::sql_string_literal};
-use adventuresim_core::courtship::{CourtshipRejectionCode, parse_courtship_rejection};
+use adventuresim_core::{
+    courtship::{CourtshipRejectionCode, parse_courtship_rejection},
+    dialogue_boundary::{PublicDialogueStartError, PublicDialogueStartOutcome},
+    reducer_error::ReducerErrorCode,
+};
 use axum::{
     Json, Router,
     extract::{Path, State},
@@ -42,16 +48,8 @@ pub fn routes() -> Router<AppState> {
         )
 }
 
-#[derive(Deserialize)]
-struct SessionRow {
-    id: String,
-    conversation_id: String,
-    settlement_id: String,
-    catalog_revision: String,
-    revision: u64,
-}
-#[derive(Clone, Deserialize, Serialize)]
-struct ParticipantRow {
+#[derive(Clone, Serialize)]
+struct DialogueParticipantView {
     id: String,
     session_id: String,
     role: String,
@@ -59,55 +57,27 @@ struct ParticipantRow {
     actor_id: String,
     display_name: String,
 }
-#[derive(Deserialize)]
-struct EventRow {
-    sequence: u32,
-    speaker_role: String,
-    fragments_json: String,
-    source_refs_json: String,
-}
-#[derive(Deserialize)]
-struct PromptRow {
-    id: String,
-    mode: String,
-    choices_json: String,
-    min_choices: u32,
-    max_choices: u32,
-    state: String,
-    source_refs_json: String,
-}
-#[derive(Deserialize)]
-struct TopicRow {
-    id: String,
-    topic_id: String,
-    label: String,
-    source_ref_json: String,
-}
 
-#[derive(Clone, Deserialize)]
-struct WitnessClaimRow {
-    event_sequence: u32,
-    claim_order: u32,
-    challenge_token: String,
-    displayed_text: String,
-    charm_response: Option<String>,
-    command_response: Option<String>,
-    bluff_response: Option<String>,
-    assessment_direction: String,
-    assessment_strength: f32,
-    resolved: bool,
-    outcome: String,
-    affinity_delta: f32,
-}
-
-#[derive(Deserialize)]
-struct NpcPresenceRow {
-    character_id: u64,
-    settlement_id: String,
-    location_id: String,
-    start_minute: u16,
-    end_minute: u16,
-    is_default: bool,
+impl From<BackendDialogueParticipant> for DialogueParticipantView {
+    fn from(participant: BackendDialogueParticipant) -> Self {
+        let BackendDialogueParticipant {
+            id,
+            session_id,
+            role,
+            character_id,
+            actor_id,
+            display_name,
+            owner_character_id: _,
+        } = participant;
+        Self {
+            id,
+            session_id,
+            role,
+            character_id,
+            actor_id,
+            display_name,
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -118,17 +88,6 @@ struct NpcView {
     description: String,
     is_default: bool,
     service_id: String,
-}
-
-#[derive(Deserialize)]
-struct NpcSocialRelationshipRow {
-    #[serde(deserialize_with = "crate::spacetimedb::deserialize_affinity_band")]
-    affinity_band: AffinityBand,
-    #[serde(deserialize_with = "crate::spacetimedb::deserialize_familiarity_band")]
-    familiarity_band: FamiliarityBand,
-    #[serde(deserialize_with = "crate::spacetimedb::deserialize_morale_band")]
-    morale_band: MoraleBand,
-    uses_familiar_address: bool,
 }
 
 fn serialize_affinity_band<S>(value: &AffinityBand, serializer: S) -> Result<S::Ok, S::Error>
@@ -196,16 +155,6 @@ where
     }
 }
 
-#[derive(Deserialize)]
-struct SocialChatReceiptRow {
-    #[serde(deserialize_with = "crate::spacetimedb::deserialize_social_chat_target_kind")]
-    target_kind: SocialChatTargetKind,
-    target_id: String,
-    requested_minutes: u64,
-    #[serde(deserialize_with = "crate::spacetimedb::deserialize_social_chat_outcome")]
-    outcome: SocialChatOutcome,
-}
-
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 enum RomanceAction {
@@ -244,6 +193,83 @@ struct NpcAboutTopic {
     answer: String,
 }
 
+const fn affinity_revision_tag(value: AffinityBand) -> &'static str {
+    match value {
+        AffinityBand::Hostile => "Hostile",
+        AffinityBand::Reserved => "Reserved",
+        AffinityBand::Warm => "Warm",
+        AffinityBand::Trusted => "Trusted",
+    }
+}
+
+const fn familiarity_revision_tag(value: FamiliarityBand) -> &'static str {
+    match value {
+        FamiliarityBand::New => "New",
+        FamiliarityBand::Known => "Known",
+        FamiliarityBand::Familiar => "Familiar",
+        FamiliarityBand::WellKnown => "WellKnown",
+    }
+}
+
+const fn morale_revision_tag(value: MoraleBand) -> &'static str {
+    match value {
+        MoraleBand::Uncertain => "Uncertain",
+        MoraleBand::Distressed => "Distressed",
+        MoraleBand::Guarded => "Guarded",
+        MoraleBand::Settled => "Settled",
+    }
+}
+
+const fn courtship_revision_tag(value: CourtshipKind) -> &'static str {
+    match value {
+        CourtshipKind::Formal => "Formal",
+        CourtshipKind::Informal => "Informal",
+    }
+}
+
+fn npc_social_revision(
+    character_id: u64,
+    affinity: AffinityBand,
+    familiarity: FamiliarityBand,
+    morale: MoraleBand,
+    wedding_countdown_days: Option<u64>,
+    courtship_kind: Option<CourtshipKind>,
+    courtship_exposed: bool,
+) -> String {
+    fn append_field(revision: &mut String, name: &str, value: &str) {
+        use std::fmt::Write as _;
+        write!(revision, "|{}#{name}={}#{value}", name.len(), value.len())
+            .expect("writing to a String cannot fail");
+    }
+
+    let wedding_countdown_days =
+        wedding_countdown_days.map_or_else(|| "none".to_owned(), |days| format!("some:{days}"));
+    let courtship_kind = courtship_kind.map_or("none".to_owned(), |kind| {
+        format!("some:{}", courtship_revision_tag(kind))
+    });
+    let mut revision = "dialogue-social-revision:v1".to_owned();
+    append_field(&mut revision, "character_id", &character_id.to_string());
+    append_field(&mut revision, "affinity", affinity_revision_tag(affinity));
+    append_field(
+        &mut revision,
+        "familiarity",
+        familiarity_revision_tag(familiarity),
+    );
+    append_field(&mut revision, "morale", morale_revision_tag(morale));
+    append_field(
+        &mut revision,
+        "wedding_countdown_days",
+        &wedding_countdown_days,
+    );
+    append_field(&mut revision, "courtship_kind", &courtship_kind);
+    append_field(
+        &mut revision,
+        "courtship_exposed",
+        if courtship_exposed { "1" } else { "0" },
+    );
+    revision
+}
+
 #[derive(Serialize)]
 struct NpcRomanceActionResult {
     ok: bool,
@@ -262,7 +288,7 @@ struct ConversationView {
     session_id: String,
     revision: u64,
     catalog_revision: String,
-    participants: Vec<ParticipantRow>,
+    participants: Vec<DialogueParticipantView>,
     events: Vec<EventView>,
     topics: Vec<TopicView>,
     open_prompt: Option<PromptView>,
@@ -406,7 +432,7 @@ fn npc_presence_contains(start_minute: u16, end_minute: u16, minute: u64) -> boo
 }
 
 fn npc_matches_location_binding(
-    npc: &SettlementResidentRow,
+    npc: &BackendSettlementResident,
     settlement_id: &str,
     location_id: &str,
     profile: &adventuresim_world_schema::SettlementEconomyProfile,
@@ -441,20 +467,20 @@ fn npc_matches_location_binding(
 #[cfg(test)]
 mod npc_navigation_tests {
     use super::{
-        AffinityBand, CourtshipKind, CourtshipRejectionCode, FamiliarityBand, MoraleBand,
-        NpcChatRequest, NpcSocialView, RomanceAction, SettlementResidentRow, SocialChatOutcome,
-        npc_location_is_navigable, npc_matches_location_binding, npc_presence_contains,
-        romantic_rejection_message,
+        AffinityBand, BackendSettlementResident, CourtshipKind, CourtshipRejectionCode,
+        FamiliarityBand, MoraleBand, NpcChatRequest, NpcSocialView, RomanceAction,
+        SocialChatOutcome, npc_location_is_navigable, npc_matches_location_binding,
+        npc_presence_contains, npc_social_revision, romantic_rejection_message,
     };
-    use crate::spacetimedb::SettlementCategory;
+    use crate::spacetimedb::{NpcAgeBand, NpcPresentation, SettlementCategory};
 
-    fn npc(id: u64, organization_id: &str, conversation_id: &str) -> SettlementResidentRow {
-        SettlementResidentRow {
+    fn npc(id: u64, organization_id: &str, conversation_id: &str) -> BackendSettlementResident {
+        BackendSettlementResident {
             character_id: id,
             home_settlement_id: "viabundus-0".into(),
             name: "Greta Test".into(),
-            age_band: "adult".into(),
-            presentation: "woman".into(),
+            age_band: NpcAgeBand::Adult,
+            presentation: NpcPresentation::Woman,
             height: "average".into(),
             build: "sturdy".into(),
             hair: "brown hair".into(),
@@ -474,21 +500,12 @@ mod npc_navigation_tests {
     #[test]
     fn browser_npc_description_uses_presentation_not_private_sex() {
         let source = include_str!("dialogue.rs");
-        let transport = include_str!("mod.rs");
-        let row = transport
-            .split("pub(crate) struct BackendSettlementResidentRow {")
-            .nth(1)
-            .and_then(|tail| tail.split_once('}').map(|(body, _)| body))
-            .expect("NPC transport row");
-        assert!(row.contains("presentation: String"));
-        assert!(!row.contains("sex: String"));
-        assert!(!row.contains("projection_id:"));
         let endpoint = source
             .rsplit_once("async fn location_npcs(")
             .map(|(_, tail)| tail)
             .and_then(|tail| tail.split("async fn build_view").next())
             .expect("NPC endpoint");
-        assert!(endpoint.contains("npc.presentation.to_lowercase()"));
+        assert!(endpoint.contains("npc_presentation_id(npc.presentation)"));
         assert!(endpoint.contains("character_is_alive_as_observed"));
         assert!(endpoint.contains("alive_npc_ids.contains"));
         assert!(!endpoint.contains("npc.sex"));
@@ -656,6 +673,34 @@ mod npc_navigation_tests {
     }
 
     #[test]
+    fn social_revision_has_a_fixed_typed_vector() {
+        assert_eq!(
+            npc_social_revision(
+                42,
+                AffinityBand::Trusted,
+                FamiliarityBand::WellKnown,
+                MoraleBand::Settled,
+                Some(365),
+                Some(CourtshipKind::Formal),
+                false,
+            ),
+            "dialogue-social-revision:v1|12#character_id=2#42|8#affinity=7#Trusted|11#familiarity=9#WellKnown|6#morale=7#Settled|22#wedding_countdown_days=8#some:365|14#courtship_kind=11#some:Formal|17#courtship_exposed=1#0"
+        );
+        assert_eq!(
+            npc_social_revision(
+                42,
+                AffinityBand::Hostile,
+                FamiliarityBand::New,
+                MoraleBand::Uncertain,
+                None,
+                None,
+                true,
+            ),
+            "dialogue-social-revision:v1|12#character_id=2#42|8#affinity=7#Hostile|11#familiarity=3#New|6#morale=9#Uncertain|22#wedding_countdown_days=4#none|14#courtship_kind=4#none|17#courtship_exposed=1#1"
+        );
+    }
+
+    #[test]
     fn social_request_parsing_enforces_duration_and_action_id_invariants() {
         let valid: NpcChatRequest = serde_json::from_value(serde_json::json!({
             "requested_minutes": 60,
@@ -729,9 +774,9 @@ async fn location_npcs(
     let character_id = session.character_id_u64().ok_or(StatusCode::UNAUTHORIZED)?;
     let character = state
         .db
-        .query_one::<crate::spacetimedb::Character>(&format!(
-            "SELECT * FROM backend_characters WHERE id = {character_id}"
-        ))
+        .query_one_sats_into::<adventuresim_stdb_client::Character, crate::spacetimedb::CharacterView>(
+            &crate::spacetimedb::character_by_id(character_id),
+        )
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
         .ok_or(StatusCode::UNAUTHORIZED)?;
@@ -740,7 +785,9 @@ async fn location_npcs(
     }
     let settlement = state
         .db
-        .query_one::<Settlement>(&crate::spacetimedb::settlement_by_id(&settlement_id))
+        .query_one_sats_into::<adventuresim_stdb_client::Settlement, SettlementView>(
+            &crate::spacetimedb::settlement_by_id(&settlement_id),
+        )
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
         .ok_or(StatusCode::NOT_FOUND)?;
@@ -754,7 +801,7 @@ async fn location_npcs(
     }
     let npcs = state
         .db
-        .query::<SettlementResidentRow>(&format!(
+        .query_sats::<BackendSettlementResident>(&format!(
             "SELECT * FROM backend_settlement_residents WHERE home_settlement_id = {}",
             sql_string_literal(&settlement_id)
         ))
@@ -762,7 +809,7 @@ async fn location_npcs(
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
     let presences = state
         .db
-        .query::<NpcPresenceRow>(&format!(
+        .query_sats::<SettlementResidentPresence>(&format!(
             "SELECT * FROM settlement_resident_presence WHERE settlement_id = {}",
             sql_string_literal(&settlement_id)
         ))
@@ -786,8 +833,8 @@ async fn location_npcs(
     }
     let minute = state
         .db
-        .query_one::<crate::spacetimedb::CharacterTime>(&format!(
-            "SELECT * FROM backend_character_times WHERE character_id = {character_id}"
+        .query_one_sats::<CharacterTime>(&crate::spacetimedb::character_time_by_character_id(
+            character_id,
         ))
         .await
         .ok()
@@ -801,7 +848,7 @@ async fn location_npcs(
                 && npc_matches_location_binding(npc, &settlement_id, &location_id, &settlement.economy)
         })?;
         let facial = if npc.facial_hair == "none visible" { String::new() } else { format!(", with {}", npc.facial_hair) };
-        Some(NpcView { id: npc.character_id.to_string(), name: npc.name.clone(), initials: npc.name.split_whitespace().filter_map(|part| part.chars().next()).take(2).collect(), description: format!("{} is a {} {} person with {} presentation, a {} build, {}{}, and a {} complexion. Visible details include {}. They wear {}. Occupation: {}. Household: {}. Local role: {}.", npc.name, npc.height, npc.age_band.to_lowercase(), npc.presentation.to_lowercase(), npc.build, npc.hair, facial, npc.complexion, npc.visible_features, npc.clothing, npc.profession, npc.household, npc.local_role), is_default: presence.is_default, service_id: npc.service_id.clone() })
+        Some(NpcView { id: npc.character_id.to_string(), name: npc.name.clone(), initials: npc.name.split_whitespace().filter_map(|part| part.chars().next()).take(2).collect(), description: format!("{} is a {} {} person with {} presentation, a {} build, {}{}, and a {} complexion. Visible details include {}. They wear {}. Occupation: {}. Household: {}. Local role: {}.", npc.name, npc.height, npc_age_band_id(npc.age_band), npc_presentation_id(npc.presentation), npc.build, npc.hair, facial, npc.complexion, npc.visible_features, npc.clothing, npc.profession, npc.household, npc.local_role), is_default: presence.is_default, service_id: npc.service_id.clone() })
     }).collect::<Vec<_>>();
     views.sort_by_key(|view| (!view.is_default, view.name.clone()));
     Ok(Json(views))
@@ -813,12 +860,12 @@ async fn social_npc_in_scope(
     settlement_id: &str,
     location_id: &str,
     resident_character_id: u64,
-) -> Result<SettlementResidentRow, StatusCode> {
+) -> Result<BackendSettlementResident, StatusCode> {
     let character = state
         .db
-        .query_one::<crate::spacetimedb::Character>(&format!(
-            "SELECT * FROM backend_characters WHERE id = {character_id}"
-        ))
+        .query_one_sats_into::<adventuresim_stdb_client::Character, crate::spacetimedb::CharacterView>(
+            &crate::spacetimedb::character_by_id(character_id),
+        )
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
         .ok_or(StatusCode::UNAUTHORIZED)?;
@@ -827,7 +874,9 @@ async fn social_npc_in_scope(
     }
     let settlement = state
         .db
-        .query_one::<Settlement>(&crate::spacetimedb::settlement_by_id(settlement_id))
+        .query_one_sats_into::<adventuresim_stdb_client::Settlement, SettlementView>(
+            &crate::spacetimedb::settlement_by_id(settlement_id),
+        )
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
         .ok_or(StatusCode::NOT_FOUND)?;
@@ -841,9 +890,9 @@ async fn social_npc_in_scope(
     }
     let npc = state
         .db
-        .query_one::<SettlementResidentRow>(&format!(
-            "SELECT * FROM backend_settlement_residents WHERE character_id = {resident_character_id}"
-        ))
+        .query_one_sats::<BackendSettlementResident>(
+            &crate::spacetimedb::settlement_resident_by_character_id(resident_character_id),
+        )
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
         .filter(|npc| {
@@ -877,7 +926,7 @@ async fn available_social_npc(
     settlement_id: &str,
     location_id: &str,
     resident_character_id: u64,
-) -> Result<SettlementResidentRow, StatusCode> {
+) -> Result<BackendSettlementResident, StatusCode> {
     let npc = social_npc_in_scope(
         state,
         character_id,
@@ -888,8 +937,8 @@ async fn available_social_npc(
     .await?;
     let minute = state
         .db
-        .query_one::<crate::spacetimedb::CharacterTime>(&format!(
-            "SELECT * FROM backend_character_times WHERE character_id = {character_id}"
+        .query_one_sats::<CharacterTime>(&crate::spacetimedb::character_time_by_character_id(
+            character_id,
         ))
         .await
         .ok()
@@ -898,9 +947,11 @@ async fn available_social_npc(
         % adventuresim_core::strategic_time::MINUTES_PER_DAY;
     let present = state
         .db
-        .query::<NpcPresenceRow>(&format!(
-            "SELECT * FROM settlement_resident_presence WHERE character_id = {resident_character_id}"
-        ))
+        .query_sats::<SettlementResidentPresence>(
+            &crate::spacetimedb::settlement_resident_presence_by_character_id(
+                resident_character_id,
+            ),
+        )
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
         .into_iter()
@@ -915,12 +966,12 @@ async fn available_social_npc(
 async fn npc_social_view(
     state: &AppState,
     character_id: u64,
-    npc: SettlementResidentRow,
+    npc: BackendSettlementResident,
     last_outcome: Option<SocialChatOutcome>,
 ) -> Result<NpcSocialView, StatusCode> {
     let relationship = state
         .db
-        .query_one::<NpcSocialRelationshipRow>(&format!(
+        .query_one_sats::<BackendSettlementResidentRelationship>(&format!(
             "SELECT * FROM backend_settlement_resident_relationships WHERE observer_character_id = {character_id} AND resident_character_id = {}",
             npc.character_id
         ))
@@ -928,17 +979,17 @@ async fn npc_social_view(
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
     let status = state
         .db
-        .query_one::<BackendCharacterRelationshipStatus>(&format!(
-            "SELECT * FROM backend_character_relationship_statuses WHERE character_id = {character_id}"
-        ))
+        .query_one_sats::<BackendCharacterRelationshipStatus>(
+            &crate::spacetimedb::character_relationship_status_by_character_id(character_id),
+        )
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
         .filter(|status| status.character_id == character_id);
     let active_commitment = active_commitment_with(state, character_id, npc.character_id).await?;
     let actor_minute = state
         .db
-        .query_one::<crate::spacetimedb::CharacterTime>(&format!(
-            "SELECT * FROM backend_character_times WHERE character_id = {character_id}"
+        .query_one_sats::<CharacterTime>(&crate::spacetimedb::character_time_by_character_id(
+            character_id,
         ))
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
@@ -1054,15 +1105,14 @@ async fn npc_social_view(
             answer: pledge,
         },
     ];
-    let social_revision = format!(
-        "{}:{:?}:{:?}:{:?}:{:?}:{:?}:{}",
+    let social_revision = npc_social_revision(
         npc.character_id,
         affinity,
         familiarity,
         morale,
         wedding_countdown_days,
         courtship_kind,
-        courtship_exposed
+        courtship_exposed,
     );
     Ok(NpcSocialView {
         resident_character_id: npc.character_id.to_string(),
@@ -1088,9 +1138,9 @@ async fn active_commitment_with(
 ) -> Result<Option<BackendCharacterRelationshipStatus>, StatusCode> {
     let status = state
         .db
-        .query_one::<BackendCharacterRelationshipStatus>(&format!(
-            "SELECT * FROM backend_character_relationship_statuses WHERE character_id = {actor_id}"
-        ))
+        .query_one_sats::<BackendCharacterRelationshipStatus>(
+            &crate::spacetimedb::character_relationship_status_by_character_id(actor_id),
+        )
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
     Ok(status.filter(|row| {
@@ -1195,8 +1245,8 @@ async fn npc_romance_action(
         Ok(()) => (true, success.to_owned()),
         Err(error) => {
             let error_text = error.to_string();
-            if let Some(code) = parse_courtship_rejection(&error_text) {
-                (false, romantic_rejection_message(code).to_owned())
+            if let Some(rejection) = parse_courtship_rejection(&error_text) {
+                (false, romantic_rejection_message(rejection.code).to_owned())
             } else {
                 tracing::warn!(
                     character_id,
@@ -1256,7 +1306,7 @@ async fn chat_with_npc(
     let receipt_id = format!("{character_id}:{}", request.action_id.as_str());
     if let Some(receipt) = state
         .db
-        .query_one::<SocialChatReceiptRow>(&format!(
+        .query_one_sats::<BackendSocialChatReceipt>(&format!(
             "SELECT * FROM backend_social_chat_receipts WHERE id = {} AND actor_id = {character_id}",
             sql_string_literal(&receipt_id)
         ))
@@ -1296,7 +1346,7 @@ async fn chat_with_npc(
         .map_err(|_| StatusCode::CONFLICT)?;
     let receipt = state
         .db
-        .query_one::<SocialChatReceiptRow>(&format!(
+        .query_one_sats::<BackendSocialChatReceipt>(&format!(
             "SELECT * FROM backend_social_chat_receipts WHERE id = {} AND actor_id = {character_id}",
             sql_string_literal(&receipt_id)
         ))
@@ -1312,7 +1362,7 @@ fn claim_view(
     event_sequence: u32,
     claim_order: u32,
     displayed_text: &str,
-    claims: &[WitnessClaimRow],
+    claims: &[BackendDialogueWitnessClaim],
 ) -> Option<ClaimView> {
     let claim = claims.iter().find(|claim| {
         claim.event_sequence == event_sequence
@@ -1339,7 +1389,7 @@ async fn build_view(
 ) -> Result<ConversationView, StatusCode> {
     let session = state
         .db
-        .query_one::<SessionRow>(&format!(
+        .query_one_sats::<BackendDialogueSession>(&format!(
             "SELECT * FROM backend_dialogue_sessions WHERE id = {} AND owner_character_id = {character_id}",
             sql_string_literal(session_id),
         ))
@@ -1348,7 +1398,7 @@ async fn build_view(
         .ok_or(StatusCode::NOT_FOUND)?;
     let mut participants = state
         .db
-        .query::<ParticipantRow>(&format!(
+        .query_sats::<BackendDialogueParticipant>(&format!(
             "SELECT * FROM backend_dialogue_participants WHERE session_id = {} AND owner_character_id = {character_id}",
             sql_string_literal(session_id),
         ))
@@ -1367,7 +1417,7 @@ async fn build_view(
         .collect();
     let mut claims = state
         .db
-        .query::<WitnessClaimRow>(&format!(
+        .query_sats::<BackendDialogueWitnessClaim>(&format!(
             "SELECT * FROM backend_dialogue_witness_claims WHERE session_id = {} AND observer_character_id = {character_id}",
             sql_string_literal(session_id),
         ))
@@ -1376,7 +1426,7 @@ async fn build_view(
     claims.sort_by_key(|claim| (claim.event_sequence, claim.claim_order));
     let mut events = state
         .db
-        .query::<EventRow>(&format!(
+        .query_sats::<BackendDialogueEvent>(&format!(
             "SELECT * FROM backend_dialogue_events WHERE session_id = {} AND owner_character_id = {character_id}",
             sql_string_literal(session_id),
         ))
@@ -1425,7 +1475,7 @@ async fn build_view(
         .collect();
     let mut topics = state
         .db
-        .query::<TopicRow>(&format!(
+        .query_sats::<BackendDialogueTopicOption>(&format!(
             "SELECT * FROM backend_dialogue_topic_options WHERE session_id = {} AND owner_character_id = {character_id}",
             sql_string_literal(session_id),
         ))
@@ -1452,7 +1502,7 @@ async fn build_view(
         .collect();
     let mut prompts = state
         .db
-        .query::<PromptRow>(&format!(
+        .query_sats::<BackendDialoguePrompt>(&format!(
             "SELECT * FROM backend_dialogue_prompts WHERE session_id = {} AND owner_character_id = {character_id}",
             sql_string_literal(session_id),
         ))
@@ -1496,7 +1546,7 @@ async fn build_view(
         session_id: session.id,
         revision: session.revision,
         catalog_revision: session.catalog_revision,
-        participants,
+        participants: participants.into_iter().map(Into::into).collect(),
         events,
         topics,
         open_prompt,
@@ -1509,6 +1559,56 @@ struct StartRequest {
     npc_actor_id: String,
     location_id: String,
 }
+
+fn classify_public_dialogue_start_reducer_error(
+    error: SpacetimeError,
+) -> Result<
+    PublicDialogueStartOutcome<ConversationView>,
+    PublicDialogueStartError<SpacetimeError, StatusCode>,
+> {
+    if error.reducer_code() == Some(ReducerErrorCode::DialogueContactUnavailable) {
+        Ok(PublicDialogueStartOutcome::ContactUnavailable)
+    } else {
+        Err(PublicDialogueStartError::Reducer(error))
+    }
+}
+
+async fn start_public_dialogue(
+    state: &AppState,
+    character_id: u64,
+    session_id: &str,
+    conversation_id: &str,
+    npc_actor_id: &str,
+    location_id: &str,
+) -> Result<
+    PublicDialogueStartOutcome<ConversationView>,
+    PublicDialogueStartError<SpacetimeError, StatusCode>,
+> {
+    if let Err(error) = state
+        .db
+        .call(
+            "start_dialogue",
+            &[
+                json!(character_id),
+                json!(session_id),
+                json!(conversation_id),
+                json!(npc_actor_id),
+                json!(location_id),
+                json!(adventuresim_dialogue::CATALOG_DIGEST),
+            ],
+        )
+        .await
+    {
+        return classify_public_dialogue_start_reducer_error(error);
+    }
+
+    match build_view(state, character_id, session_id).await {
+        Ok(view) => Ok(PublicDialogueStartOutcome::Started(view)),
+        Err(StatusCode::NOT_FOUND) => Err(PublicDialogueStartError::SessionProjectionMissing),
+        Err(status) => Err(PublicDialogueStartError::Projection(status)),
+    }
+}
+
 async fn start(
     State(state): State<AppState>,
     session: Session,
@@ -1521,17 +1621,17 @@ async fn start(
         .map_err(|_| StatusCode::BAD_REQUEST)?;
     let npc = state
         .db
-        .query_one::<SettlementResidentRow>(&format!(
-            "SELECT * FROM backend_settlement_residents WHERE character_id = {npc_actor_id}"
-        ))
+        .query_one_sats::<BackendSettlementResident>(
+            &crate::spacetimedb::settlement_resident_by_character_id(npc_actor_id),
+        )
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
         .ok_or(StatusCode::BAD_REQUEST)?;
     let settlement = state
         .db
-        .query_one::<Settlement>(&crate::spacetimedb::settlement_by_id(
-            &npc.home_settlement_id,
-        ))
+        .query_one_sats_into::<adventuresim_stdb_client::Settlement, SettlementView>(
+            &crate::spacetimedb::settlement_by_id(&npc.home_settlement_id),
+        )
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
         .ok_or(StatusCode::BAD_REQUEST)?;
@@ -1558,21 +1658,28 @@ async fn start(
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_micros());
     let session_id = format!("dialogue:{character_id}:{nonce}");
-    state
-        .db
-        .call(
-            "start_dialogue",
-            &[
-                json!(character_id),
-                json!(&session_id),
-                json!(conversation),
-                json!(request.npc_actor_id),
-                json!(request.location_id),
-                json!(adventuresim_dialogue::CATALOG_DIGEST),
-            ],
-        )
-        .await
-        .map_err(|error| {
+    match start_public_dialogue(
+        &state,
+        character_id,
+        &session_id,
+        &conversation,
+        &request.npc_actor_id,
+        &request.location_id,
+    )
+    .await
+    {
+        Ok(PublicDialogueStartOutcome::Started(view)) => Ok(Json(view)),
+        Ok(PublicDialogueStartOutcome::ContactUnavailable) => Err(StatusCode::CONFLICT),
+        Err(PublicDialogueStartError::SessionProjectionMissing) => {
+            tracing::warn!(
+                character_id,
+                npc_actor_id = %request.npc_actor_id,
+                session_id,
+                "started dialogue session was absent from the owner projection"
+            );
+            Err(StatusCode::SERVICE_UNAVAILABLE)
+        }
+        Err(PublicDialogueStartError::Reducer(error)) => {
             tracing::warn!(
                 %error,
                 character_id,
@@ -1580,9 +1687,10 @@ async fn start(
                 location_id = %request.location_id,
                 "start_dialogue reducer rejected an NPC encounter"
             );
-            StatusCode::CONFLICT
-        })?;
-    Ok(Json(build_view(&state, character_id, &session_id).await?))
+            Err(StatusCode::CONFLICT)
+        }
+        Err(PublicDialogueStartError::Projection(status)) => Err(status),
+    }
 }
 async fn view(
     State(state): State<AppState>,
@@ -1633,16 +1741,52 @@ struct AnswerRequest {
     action_id: String,
     expected_revision: u64,
 }
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct DialogueSessionId<'a>(&'a str);
+
+impl<'a> DialogueSessionId<'a> {
+    fn parse(value: &'a str) -> Option<Self> {
+        value
+            .strip_prefix("dialogue:")
+            .filter(|identity| !identity.is_empty() && !identity.contains(":prompt:"))?;
+        Some(Self(value))
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct DialoguePromptRowId<'a> {
+    session_id: DialogueSessionId<'a>,
+    prompt_id: &'a str,
+}
+
+impl<'a> DialoguePromptRowId<'a> {
+    fn parse(value: &'a str) -> Option<Self> {
+        let (session_id, prompt_id) = value.split_once(":prompt:")?;
+        if prompt_id.is_empty() || prompt_id.contains(":prompt:") {
+            return None;
+        }
+        Some(Self {
+            session_id: DialogueSessionId::parse(session_id)?,
+            prompt_id,
+        })
+    }
+}
+
+fn dialogue_prompt_row_belongs_to_session(prompt_row_id: &str, session_id: &str) -> bool {
+    let Some(prompt) = DialoguePromptRowId::parse(prompt_row_id) else {
+        return false;
+    };
+    DialogueSessionId::parse(session_id).is_some_and(|session| prompt.session_id == session)
+}
+
 async fn answer(
     State(state): State<AppState>,
     session: Session,
     Json(request): Json<AnswerRequest>,
 ) -> Result<Json<ConversationView>, StatusCode> {
     let character_id = session.character_id_u64().ok_or(StatusCode::UNAUTHORIZED)?;
-    if !request
-        .prompt_row_id
-        .starts_with(&format!("{}:prompt:", request.session_id))
-    {
+    if !dialogue_prompt_row_belongs_to_session(&request.prompt_row_id, &request.session_id) {
         return Err(StatusCode::BAD_REQUEST);
     }
     state
@@ -1739,8 +1883,30 @@ async fn witness_approach(
 mod tests {
     use super::*;
 
-    fn claim(text: &str, order: u32) -> WitnessClaimRow {
-        WitnessClaimRow {
+    #[test]
+    fn dialogue_participant_projection_explicitly_omits_owner_authority() {
+        let view = DialogueParticipantView::from(BackendDialogueParticipant {
+            id: "participant:1".into(),
+            session_id: "dialogue:7:test".into(),
+            role: "witness".into(),
+            character_id: Some(7),
+            actor_id: "resident:11".into(),
+            display_name: "Marta".into(),
+            owner_character_id: 7,
+        });
+        assert_eq!(view.id, "participant:1");
+        assert_eq!(view.session_id, "dialogue:7:test");
+        assert_eq!(view.role, "witness");
+        assert_eq!(view.character_id, Some(7));
+        assert_eq!(view.actor_id, "resident:11");
+        assert_eq!(view.display_name, "Marta");
+    }
+
+    fn claim(text: &str, order: u32) -> BackendDialogueWitnessClaim {
+        BackendDialogueWitnessClaim {
+            observer_character_id: 7,
+            session_id: "dialogue:7:test".into(),
+            resident_character_id: 11,
             event_sequence: 4,
             claim_order: order,
             challenge_token: format!("opaque-{order}"),
@@ -1764,5 +1930,60 @@ mod tests {
         assert!(claim_view(3, 0, "alone", &rows).is_none());
         assert!(claim_view(4, 1, "alone", &rows).is_none());
         assert!(claim_view(4, 0, "different text", &rows).is_none());
+    }
+
+    #[test]
+    fn prompt_row_ids_require_an_exact_session_tag() {
+        assert!(dialogue_prompt_row_belongs_to_session(
+            "dialogue:7:request:prompt:choice:answer",
+            "dialogue:7:request"
+        ));
+        assert!(!dialogue_prompt_row_belongs_to_session(
+            "dialogue:7:request-spoof:prompt:choice:answer",
+            "dialogue:7:request"
+        ));
+        assert!(!dialogue_prompt_row_belongs_to_session(
+            "dialogue:7:request:event:choice",
+            "dialogue:7:request"
+        ));
+        assert!(!dialogue_prompt_row_belongs_to_session(
+            "7:request:prompt:choice:answer",
+            "dialogue:7:request"
+        ));
+        assert!(!dialogue_prompt_row_belongs_to_session(
+            "dialogue:7:request:prompt:",
+            "dialogue:7:request"
+        ));
+        assert!(!dialogue_prompt_row_belongs_to_session(
+            "dialogue:7:request:prompt:choice:prompt:spoof",
+            "dialogue:7:request"
+        ));
+        assert!(!dialogue_prompt_row_belongs_to_session(
+            "dialogue:7:request:prompt:choice",
+            "7:request"
+        ));
+    }
+
+    #[test]
+    fn dialogue_contact_race_classification_ignores_detail_wording() {
+        for detail in [
+            "The contact stepped away",
+            "Completely different presentation text",
+        ] {
+            let wire = adventuresim_core::reducer_error::coded_reducer_error(
+                ReducerErrorCode::DialogueContactUnavailable,
+                detail,
+            );
+            assert!(matches!(
+                classify_public_dialogue_start_reducer_error(SpacetimeError::Spacetime(wire)),
+                Ok(PublicDialogueStartOutcome::ContactUnavailable)
+            ));
+        }
+        assert!(matches!(
+            classify_public_dialogue_start_reducer_error(SpacetimeError::Spacetime(
+                "uncoded reducer failure".into()
+            )),
+            Err(PublicDialogueStartError::Reducer(_))
+        ));
     }
 }

@@ -1,7 +1,8 @@
 use super::{
-    DeveloperCaseAnalysis, EVAL_FORMAT_VERSION, EvalCaseConfig, InvestigationEnvironment,
-    PolicyClassification, PolicyDecision, PolicyRunMetadata, PublicQuestTrace, QuestPolicy,
-    Termination, TerminationErrorCode, semantic_digest,
+    ChoiceId, ChoiceKind, DeveloperCaseAnalysis, EVAL_FORMAT_VERSION, EvalCaseConfig,
+    InvestigationEnvironment, PolicyClassification, PolicyDecision, PolicyRunMetadata,
+    PublicQuestTrace, QuestPolicy, SemanticDigestPurpose, Termination, TerminationErrorCode,
+    semantic_digest,
 };
 use adventuresim_core::quest_generation::{RouteClass, TemplateFamily};
 use serde::{Deserialize, Serialize};
@@ -353,7 +354,7 @@ pub fn evaluate_cases(
             let decision = match policy.decide_before(environment.frame(), deadline) {
                 Ok(decision) => decision,
                 Err(error) => {
-                    termination = if error.contains("wall-time budget") {
+                    termination = if error.is_deadline_exceeded() {
                         Termination::BudgetExceeded
                     } else {
                         Termination::PolicyError
@@ -377,7 +378,9 @@ pub fn evaluate_cases(
             }
             if environment.frame().step == 1 {
                 initial_observation_digest = observable_state_digest(environment.frame())?;
-                initial_classification = policy.classify(environment.frame())?;
+                initial_classification = policy
+                    .classify(environment.frame())
+                    .map_err(|error| error.to_string())?;
                 initial_classification.validate()?;
             }
             if Instant::now() >= deadline {
@@ -413,7 +416,8 @@ pub fn evaluate_cases(
         metrics,
         semantic_digest: String::new(),
     };
-    public.semantic_digest = semantic_digest(&public)?;
+    public.semantic_digest =
+        semantic_digest(SemanticDigestPurpose::PublicEvaluationReport, &public)?;
     let public_json = serde_json::to_vec_pretty(&public).map_err(|error| error.to_string())?;
     let privacy_audit = privacy_audit(&public_json, &private)?;
     let developer = DeveloperEvaluationReport {
@@ -557,16 +561,19 @@ pub fn promote_replay_candidate(
 }
 
 fn observable_state_digest(frame: &super::PlayerFrame) -> Result<String, String> {
-    semantic_digest(&(
-        &frame.journal,
-        &frame.discovery,
-        &frame.party,
-        frame
-            .legal_choices
-            .iter()
-            .map(|choice| (choice.kind, &choice.label))
-            .collect::<Vec<_>>(),
-    ))
+    semantic_digest(
+        SemanticDigestPurpose::ObservableState,
+        &(
+            &frame.journal,
+            &frame.discovery,
+            &frame.party,
+            frame
+                .legal_choices
+                .iter()
+                .map(|choice| (&choice.choice_id, choice.kind, &choice.typed_arguments))
+                .collect::<Vec<_>>(),
+        ),
+    )
 }
 
 fn validate_artifact_sizes(
@@ -610,7 +617,9 @@ fn metrics(traces: &[PublicQuestTrace]) -> QuestEvalMetrics {
         .sum::<u64>();
     let mut route_counts = BTreeMap::new();
     for route in traces.iter().filter_map(|trace| trace.route) {
-        *route_counts.entry(format!("{route:?}")).or_default() += 1;
+        *route_counts
+            .entry(route_class_metric_key(route).to_owned())
+            .or_default() += 1;
     }
     let dominant = route_counts.values().copied().max().unwrap_or(0);
     let mut path_fingerprint_counts = BTreeMap::new();
@@ -621,16 +630,17 @@ fn metrics(traces: &[PublicQuestTrace]) -> QuestEvalMetrics {
             .events
             .iter()
             .map(observer_safe_action_identity)
-            .collect::<Vec<_>>()
-            .join(">");
-        let fingerprint = blake3::hash(path.as_bytes()).to_hex()[..16].to_string();
+            .collect::<Vec<_>>();
+        let fingerprint = semantic_digest(SemanticDigestPurpose::ActionPath, &path)
+            .expect("observer-safe action identities are serializable")[..16]
+            .to_owned();
         *path_fingerprint_counts.entry(fingerprint).or_default() += 1;
         for event in &trace.events {
             *action_kind_counts
-                .entry(format!("{:?}", event.choice_kind))
+                .entry(event.choice_kind.metric_key().to_owned())
                 .or_default() += 1;
             *action_fingerprint_counts
-                .entry(observer_safe_action_identity(event))
+                .entry(observer_safe_action_identity(event).metric_key())
                 .or_default() += 1;
         }
     }
@@ -671,13 +681,13 @@ fn metrics(traces: &[PublicQuestTrace]) -> QuestEvalMetrics {
             trace
                 .events
                 .iter()
-                .any(|event| event.choice_kind == super::ChoiceKind::Prepare)
+                .any(|event| event.preparation_outcome.is_prepared())
         })
         .count() as u32;
     let mut termination_counts = BTreeMap::new();
     for trace in traces {
         *termination_counts
-            .entry(format!("{:?}", trace.termination))
+            .entry(trace.termination.metric_key().to_owned())
             .or_default() += 1;
     }
     QuestEvalMetrics {
@@ -767,7 +777,7 @@ fn subgroup_solve_rate(traces: &[PublicQuestTrace], prepared: bool) -> Measureme
             trace
                 .events
                 .iter()
-                .any(|event| !event.preparation_tags.is_empty())
+                .any(|event| event.preparation_outcome.is_prepared())
                 == prepared
         })
         .collect::<Vec<_>>();
@@ -810,9 +820,24 @@ fn correction_persistence(traces: &[PublicQuestTrace]) -> Measurement<f64> {
     }
 }
 
-fn observer_safe_action_identity(event: &super::PublicTraceEvent) -> String {
-    let label_digest = blake3::hash(event.action_label.as_bytes()).to_hex();
-    format!("{:?}:{}", event.choice_kind, &label_digest[..16])
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+struct ObserverSafeActionIdentity {
+    choice_kind: ChoiceKind,
+    choice_id: ChoiceId,
+}
+
+impl ObserverSafeActionIdentity {
+    fn metric_key(&self) -> String {
+        format!("{}:{}", self.choice_kind.metric_key(), self.choice_id)
+    }
+}
+
+fn observer_safe_action_identity(event: &super::PublicTraceEvent) -> ObserverSafeActionIdentity {
+    ObserverSafeActionIdentity {
+        choice_kind: event.choice_kind,
+        choice_id: event.choice_id.clone(),
+    }
 }
 
 fn marginal_audit(cases: &[DeveloperCaseAnalysis]) -> MarginalAudit {
@@ -823,7 +848,7 @@ fn marginal_audit(cases: &[DeveloperCaseAnalysis]) -> MarginalAudit {
     let mut bridge_id_counts = BTreeMap::new();
     for case in cases {
         *family_counts
-            .entry(format!("{:?}", case.family))
+            .entry(template_family_metric_key(case.family).to_owned())
             .or_default() += 1;
         *cause_counts
             .entry(case.canonical_cause.clone())
@@ -876,9 +901,7 @@ fn classification_audit(
     for (trace, case) in traces.iter().zip(cases) {
         if let Some(guess) = &trace.initial_classification.template_guess {
             guesses += 1;
-            let truth = format!("{:?}", case.family).to_ascii_lowercase();
-            let normalized_guess = guess.replace('_', "").to_ascii_lowercase();
-            if truth == normalized_guess {
+            if parse_template_family(guess) == Some(case.family) {
                 correct += 1;
             }
         }
@@ -895,6 +918,31 @@ fn classification_audit(
         threat_accuracy: Measurement::NotMeasured(
             "generated player frame exposes no stable player-facing threat taxonomy".into(),
         ),
+    }
+}
+
+fn route_class_metric_key(route: RouteClass) -> &'static str {
+    match route {
+        RouteClass::PhysicalTrail => "PhysicalTrail",
+        RouteClass::PatternSurveillance => "PatternSurveillance",
+        RouteClass::SocialInquiry => "SocialInquiry",
+    }
+}
+
+fn template_family_metric_key(family: TemplateFamily) -> &'static str {
+    match family {
+        TemplateFamily::RecurringDepredation => "RecurringDepredation",
+        TemplateFamily::DisappearanceOrLoss => "DisappearanceOrLoss",
+        TemplateFamily::Outbreak => "Outbreak",
+    }
+}
+
+fn parse_template_family(value: &str) -> Option<TemplateFamily> {
+    match value.replace(['_', '-'], "").to_ascii_lowercase().as_str() {
+        "recurringdepredation" => Some(TemplateFamily::RecurringDepredation),
+        "disappearanceorloss" => Some(TemplateFamily::DisappearanceOrLoss),
+        "outbreak" => Some(TemplateFamily::Outbreak),
+        _ => None,
     }
 }
 
@@ -1033,6 +1081,7 @@ pub fn golden_suite(seed: u64, cases_per_family: u32) -> Vec<EvalCaseConfig> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::PolicyError;
     use super::*;
     use crate::investigation_eval::{MockLlmPolicy, ScriptedPolicy};
     use adventuresim_core::quest_generation::RouteClass;
@@ -1224,8 +1273,24 @@ mod tests {
             .unwrap();
         let public = serde_json::to_string(environment.frame()).unwrap();
         assert!(public.contains("witness:observed-"));
-        for factor in &environment.developer_analysis().factor_trace {
-            assert!(!public.contains(&factor.candidate_id));
+        let generator_witness_ids = environment
+            .developer_analysis()
+            .factor_trace
+            .iter()
+            .filter_map(|factor| {
+                let candidate = factor.candidate_id.split(':').next()?;
+                candidate
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit())
+                    .then_some(candidate)
+            })
+            .collect::<BTreeSet<_>>();
+        assert!(!generator_witness_ids.is_empty());
+        for candidate_id in generator_witness_ids {
+            assert!(
+                !public.contains(candidate_id),
+                "private generator witness ID leaked into the player frame: {candidate_id}",
+            );
         }
     }
 
@@ -1246,7 +1311,7 @@ mod tests {
                 observation_provenance: "offline_projection/player_frame".into(),
                 pre_observation_digest: "pre".into(),
                 post_observation_digest: "post".into(),
-                choice_id: "choice:fixture".into(),
+                choice_id: ChoiceId::parse("choice:000000000000000000000000").unwrap(),
                 choice_kind: super::super::ChoiceKind::InterviewWitness,
                 action_label: "Speak with Marta.".into(),
                 dialogue: vec![super::super::PublicDialogueLine {
@@ -1257,7 +1322,7 @@ mod tests {
                 learned: vec!["no correction wording here".into()],
                 learned_claim_ids: vec!["claim:wrong".into()],
                 corrected_proposition_ids: vec!["claim:wrong".into()],
-                preparation_tags: Vec::new(),
+                preparation_outcome: super::super::PreparationOutcome::NotAttempted,
                 game_minutes: 1,
                 resource_cost: 0,
             }],
@@ -1277,7 +1342,35 @@ mod tests {
     }
 
     #[test]
-    fn fingerprints_distinguish_same_kind_actions_by_visible_identity() {
+    fn preparation_metrics_use_the_typed_outcome_only() {
+        let bundle = evaluate_cases(
+            &[EvalCaseConfig::fixture(
+                41,
+                TemplateFamily::RecurringDepredation,
+            )],
+            &mut ScriptedPolicy::default(),
+            &EvalLimits::default(),
+        )
+        .unwrap();
+        let mut trace = bundle.public.traces[0].clone();
+        assert!(!trace.events.is_empty());
+        for event in &mut trace.events {
+            event.preparation_outcome = super::super::PreparationOutcome::NotAttempted;
+        }
+        trace.events[0].choice_kind = super::super::ChoiceKind::Prepare;
+        trace.events[0].result = "Prepared mutable display wording".into();
+        assert_eq!(metrics(std::slice::from_ref(&trace)).prepared_cases, 0);
+
+        trace.events[0].choice_kind = super::super::ChoiceKind::InterviewWitness;
+        trace.events[0].result = "No preparation mentioned".into();
+        trace.events[0].preparation_outcome = super::super::PreparationOutcome::Prepared {
+            tag: "cold_weather_gear".into(),
+        };
+        assert_eq!(metrics(std::slice::from_ref(&trace)).prepared_cases, 1);
+    }
+
+    #[test]
+    fn fingerprints_use_typed_choice_identity_not_display_labels() {
         let bundle = evaluate_cases(
             &golden_suite(5, 1),
             &mut ScriptedPolicy::default(),
@@ -1290,9 +1383,18 @@ mod tests {
         right.events[0].choice_kind = super::super::ChoiceKind::Investigate;
         left.events[0].action_label = "Inspect the eastern tracks.".into();
         right.events[0].action_label = "Inspect the western tracks.".into();
+        assert_eq!(
+            observer_safe_action_identity(&left.events[0]),
+            observer_safe_action_identity(&right.events[0])
+        );
+        assert_eq!(
+            metrics(&[left.clone(), right.clone()]).unique_path_fingerprints,
+            1
+        );
+
+        right.events[0].choice_id = ChoiceId::parse("choice:000000000000000000000001").unwrap();
         let measured = metrics(&[left, right]);
         assert_eq!(measured.unique_path_fingerprints, 2);
-        assert!(measured.action_fingerprint_counts.len() >= 2);
     }
 
     #[test]
@@ -1331,7 +1433,7 @@ mod tests {
             decisions: vec![
                 PolicyDecision {
                     version: EVAL_FORMAT_VERSION,
-                    choice_id: "choice:fixture".into(),
+                    choice_id: ChoiceId::parse("choice:000000000000000000000000").unwrap(),
                     arguments: Default::default(),
                 };
                 MAX_REPLAY_DECISIONS + 1
@@ -1384,7 +1486,7 @@ mod tests {
     #[test]
     fn checked_in_failure_fixture_replays_deterministically() {
         let fixture: ReplayCase = serde_json::from_str(include_str!(
-            "../../fixtures/quest-analysis-failure-v3.json"
+            "../../fixtures/quest-analysis-failure-v4.json"
         ))
         .unwrap();
         let first = replay_case(&fixture).unwrap();
@@ -1407,6 +1509,7 @@ mod tests {
         for (index, trace) in traces.iter_mut().enumerate() {
             trace.initial_observation_digest = "shared-visible-prefix".into();
             trace.events[0].action_label = format!("Visible action {index}");
+            trace.events[0].choice_id = ChoiceId::parse(format!("choice:{index:024x}")).unwrap();
             cases[index].canonical_cause = format!("private-cause-{index}");
         }
         let forward = counterfactual_audit(&traces, &cases);
@@ -1471,8 +1574,13 @@ mod tests {
             "secret-error-fixture"
         }
 
-        fn decide(&mut self, _frame: &super::super::PlayerFrame) -> Result<PolicyDecision, String> {
-            Err("provider failed at https://secret.internal.example/v1?token=CANARY".into())
+        fn decide(
+            &mut self,
+            _frame: &super::super::PlayerFrame,
+        ) -> Result<PolicyDecision, PolicyError> {
+            Err(PolicyError::Failure(
+                "provider failed at https://secret.internal.example/v1?token=CANARY".into(),
+            ))
         }
     }
 
@@ -1500,14 +1608,17 @@ mod tests {
             "invalid-classification-fixture"
         }
 
-        fn decide(&mut self, frame: &super::super::PlayerFrame) -> Result<PolicyDecision, String> {
+        fn decide(
+            &mut self,
+            frame: &super::super::PlayerFrame,
+        ) -> Result<PolicyDecision, PolicyError> {
             ScriptedPolicy::default().decide(frame)
         }
 
         fn classify(
             &mut self,
             _frame: &super::super::PlayerFrame,
-        ) -> Result<PolicyClassification, String> {
+        ) -> Result<PolicyClassification, PolicyError> {
             Ok(PolicyClassification {
                 template_guess: Some("X".repeat(65)),
                 threat_guess: None,

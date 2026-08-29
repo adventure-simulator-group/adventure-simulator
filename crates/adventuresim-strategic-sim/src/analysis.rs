@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum Objective {
+pub enum OptimizationDirection {
     Maximize,
     Minimize,
 }
@@ -29,7 +29,7 @@ pub enum ParetoError {
 /// Return all nondominated IDs in input order. Exact ties remain on the frontier.
 pub fn nondominated(
     points: &[ParetoPoint],
-    objectives: &[Objective],
+    objectives: &[OptimizationDirection],
 ) -> Result<Vec<u32>, ParetoError> {
     for point in points {
         if point.values.len() != objectives.len() {
@@ -56,18 +56,18 @@ pub fn nondominated(
         .collect())
 }
 
-fn dominates(a: &ParetoPoint, b: &ParetoPoint, objectives: &[Objective]) -> bool {
+fn dominates(a: &ParetoPoint, b: &ParetoPoint, objectives: &[OptimizationDirection]) -> bool {
     let mut strict = false;
     a.values
         .iter()
         .zip(&b.values)
         .zip(objectives)
         .all(|((av, bv), objective)| match objective {
-            Objective::Maximize => {
+            OptimizationDirection::Maximize => {
                 strict |= av > bv;
                 av >= bv
             }
-            Objective::Minimize => {
+            OptimizationDirection::Minimize => {
                 strict |= av < bv;
                 av <= bv
             }
@@ -95,7 +95,14 @@ mod tests {
             },
         ];
         assert_eq!(
-            nondominated(&points, &[Objective::Maximize, Objective::Minimize]).unwrap(),
+            nondominated(
+                &points,
+                &[
+                    OptimizationDirection::Maximize,
+                    OptimizationDirection::Minimize,
+                ],
+            )
+            .unwrap(),
             vec![1, 2]
         );
     }
@@ -112,7 +119,14 @@ mod tests {
             },
         ];
         assert_eq!(
-            nondominated(&points, &[Objective::Maximize, Objective::Minimize]).unwrap(),
+            nondominated(
+                &points,
+                &[
+                    OptimizationDirection::Maximize,
+                    OptimizationDirection::Minimize,
+                ],
+            )
+            .unwrap(),
             vec![1, 2]
         );
     }
@@ -124,9 +138,21 @@ mod tests {
                     id: 7,
                     values: vec![f64::NAN]
                 }],
-                &[Objective::Maximize]
+                &[OptimizationDirection::Maximize]
             ),
             Err(ParetoError::Nonfinite { id: 7 })
+        );
+    }
+
+    #[test]
+    fn optimization_direction_keeps_its_explicit_wire_values() {
+        assert_eq!(
+            serde_json::to_value(OptimizationDirection::Maximize).unwrap(),
+            serde_json::json!("maximize")
+        );
+        assert_eq!(
+            serde_json::from_value::<OptimizationDirection>(serde_json::json!("minimize")).unwrap(),
+            OptimizationDirection::Minimize
         );
     }
 }

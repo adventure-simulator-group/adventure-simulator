@@ -4,6 +4,7 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::case_site_id_type::CaseSiteId;
 use super::chivalric_virtue_type::ChivalricVirtue;
 use super::narrative_encounter_trigger_type::NarrativeEncounterTrigger;
 
@@ -14,7 +15,7 @@ pub struct RoadChallengeAuthority {
     pub gateway_bucket: u8,
     pub party_id: String,
     pub case_id: String,
-    pub finale_case_site_id: String,
+    pub finale_case_site_id: Option<CaseSiteId>,
     pub finale_hostile_group_id: String,
     pub journey_departure_minute: u64,
     pub camp_movement_minute: u64,
@@ -46,7 +47,8 @@ pub struct RoadChallengeAuthorityCols {
     pub gateway_bucket: __sdk::__query_builder::Col<RoadChallengeAuthority, u8>,
     pub party_id: __sdk::__query_builder::Col<RoadChallengeAuthority, String>,
     pub case_id: __sdk::__query_builder::Col<RoadChallengeAuthority, String>,
-    pub finale_case_site_id: __sdk::__query_builder::Col<RoadChallengeAuthority, String>,
+    pub finale_case_site_id:
+        __sdk::__query_builder::Col<RoadChallengeAuthority, Option<CaseSiteId>>,
     pub finale_hostile_group_id: __sdk::__query_builder::Col<RoadChallengeAuthority, String>,
     pub journey_departure_minute: __sdk::__query_builder::Col<RoadChallengeAuthority, u64>,
     pub camp_movement_minute: __sdk::__query_builder::Col<RoadChallengeAuthority, u64>,

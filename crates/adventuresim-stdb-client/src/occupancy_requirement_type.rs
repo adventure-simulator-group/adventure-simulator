@@ -9,12 +9,12 @@ use super::equipment_location_type::EquipmentLocation;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct EquipmentOccupancyRequirement {
+pub struct OccupancyRequirement {
     pub location: EquipmentLocation,
     pub channel: EquipmentChannel,
     pub order: u16,
 }
 
-impl __sdk::InModule for EquipmentOccupancyRequirement {
+impl __sdk::InModule for OccupancyRequirement {
     type Module = super::RemoteModule;
 }
