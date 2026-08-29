@@ -94,6 +94,20 @@ pub fn weapon_carry(id: &str) -> Option<WeaponCarry> {
     }
 }
 
+pub fn weapon_handling(id: &str) -> Option<WeaponHandling> {
+    match &definition(id)?.kind {
+        ItemKind::Weapon { handling, .. } => Some(*handling),
+        _ => None,
+    }
+}
+
+pub fn weapon_animation_pack(id: &str) -> Option<&'static str> {
+    match &definition(id)?.kind {
+        ItemKind::Weapon { animation_pack, .. } => animation_pack.as_deref(),
+        _ => None,
+    }
+}
+
 pub fn is_sheathable_weapon(id: &str) -> bool {
     weapon_carry(id) == Some(WeaponCarry::Sheathable)
 }

@@ -107,10 +107,13 @@ pub(super) fn evaluate_semantic_route_paths(
     mut commands: Commands,
     mut telemetry: ResMut<SemanticRouteTelemetry>,
     runtime: Res<AnimationRuntime>,
-    players: Query<(Entity, &PresentedSkeleton), With<Player>>,
+    players: Query<(Entity, &PresentedSkeleton, Option<&InventoryItems>), With<Player>>,
+    items: Query<&ItemProperties, With<WeaponItem>>,
 ) {
-    for (entity, skeleton) in &players {
+    for (entity, skeleton, inventory) in &players {
         let mut resolved = skeleton.clone();
+        resolved.state.animation_pack =
+            super::equipped_animation_pack(inventory, &items).to_owned();
         resolved.state.attack_animations = runtime
             .library
             .attack_animations(&resolved.state.animation_pack);

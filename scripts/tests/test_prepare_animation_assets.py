@@ -66,6 +66,31 @@ class PrepareAnimationAssetsTests(unittest.TestCase):
                     bare_knuckle_overlay=pathlib.Path(temporary) / "missing.glb",
                 )
 
+    def test_publishes_two_handed_close_as_a_specialized_attack_pack(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            runtime = pathlib.Path(temporary) / "2h_close"
+            report = MODULE.publish_attack_pack(
+                MODULE.TWO_HANDED_CLOSE_SOURCE_DIR,
+                runtime,
+                MODULE.RUNTIME_BASE,
+            )
+
+            self.assertEqual(set(report.published), {"offhand", "swing", "thrust"})
+            self.assertEqual(report.skipped, ())
+            for motion in report.published:
+                document, _ = MODULE.read_glb(runtime / f"{motion}.glb")
+                self.assertNotIn("meshes", document, motion)
+                self.assertNotIn("skins", document, motion)
+                self.assertEqual(len(document["animations"]), 1)
+
+            checked = MODULE.publish_attack_pack(
+                MODULE.TWO_HANDED_CLOSE_SOURCE_DIR,
+                runtime,
+                MODULE.RUNTIME_BASE,
+                check=True,
+            )
+            self.assertEqual(checked, report)
+
     def test_publishes_every_available_source_and_generated_counterpart_mesh_free(self):
         with tempfile.TemporaryDirectory() as temporary:
             runtime_root = pathlib.Path(temporary)

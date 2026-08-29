@@ -30,6 +30,7 @@ pub(crate) use procedural::{
     locomotion_support_weights,
 };
 const HUMANOID_UNARMED_PACK: &str = "humanoid_unarmed";
+const HUMANOID_2H_CLOSE_PACK: &str = "humanoid_2h_close";
 const BIPED_BASE_GLB: &str = "animations/biped/unarmed/base.glb";
 const BIPED_GRIP_HILT_GLB: &str = "animations/biped/grip_hilt.glb";
 const BIPED_GRIP_POLEARM_GLB: &str = "animations/biped/grip_polearm.glb";
@@ -413,7 +414,7 @@ fn evaluate_skeletons(
         let sample_resolver = PoseSampleResolver {
             runtime: &runtime,
             catalog: &catalog,
-            pack: &skeleton.animation_pack,
+            pack: &route_trace.inputs.pack,
             locomotion_strides: &locomotion_strides,
         };
         for sample in samples {
@@ -523,6 +524,29 @@ fn equipped_weapon_grip(
         .and_then(InventoryItems::holding_weapon)
         .and_then(|entity| weapons.get(entity).ok())
         .map(|weapon| weapon_grip(&weapon.skill_weights))
+}
+
+fn equipped_animation_pack(
+    inventory: Option<&InventoryItems>,
+    items: &Query<&ItemProperties, With<WeaponItem>>,
+) -> &'static str {
+    let Some(properties) = inventory
+        .and_then(InventoryItems::holding_weapon)
+        .and_then(|entity| items.get(entity).ok())
+    else {
+        return HUMANOID_UNARMED_PACK;
+    };
+    animation_pack_for_weapon(&properties.id)
+}
+
+fn animation_pack_for_weapon(item_id: &str) -> &'static str {
+    if let Some(pack) = item_catalog::weapon_animation_pack(item_id) {
+        return pack;
+    }
+    match item_catalog::weapon_handling(item_id) {
+        Some(item_catalog::WeaponHandling::TwoHanded) => HUMANOID_2H_CLOSE_PACK,
+        _ => HUMANOID_UNARMED_PACK,
+    }
 }
 
 fn ordinary_locomotion_candidate(skeleton: &SkeletonState) -> bool {
