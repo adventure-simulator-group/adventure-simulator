@@ -346,3 +346,79 @@ fn bounded_failure_trace(
         total_event_count > MAX_FAILURE_TRACE_EVENTS as u64,
     )
 }
+
+const MAX_FAILURE_TRACE_EVENTS: usize = 64;
+const CORE_LOOP_FAILURE_SCHEMA_VERSION: u32 = 9;
+const MAX_PROJECTED_INVESTIGATION_WAIT_MINUTES: u32 = MINUTES_PER_DAY as u32;
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CoreLoopFailureAgent {
+    pub agent_id: u32,
+    pub character_id: u64,
+    pub alive: bool,
+    pub condition_status: DomainIncapacitationStatus,
+    pub thermal: f32,
+    pub wetness_bps: u16,
+    pub thermal_strain: i32,
+    pub ammunition: u32,
+    pub carried_load_kg: f32,
+    pub carry_capacity_kg: f32,
+    pub encumbrance_remaining_bps: u32,
+    pub equipment_ready: bool,
+    pub party_tent_quantity: u32,
+    pub hunger: f32,
+    pub thirst: f32,
+    pub food_days: f32,
+    pub water_days: f32,
+    pub visible_food_kcal: f32,
+    pub visible_water_ml: f32,
+    pub personal_gold_coin: u64,
+    pub settlement_id: Option<String>,
+    pub current_case_site_id: Option<String>,
+    pub journey_destination: Option<String>,
+    pub symptomatic: bool,
+    pub critical: bool,
+    pub settlement_services: Vec<String>,
+    pub visible_herbalist_quote: Option<u64>,
+    pub visible_inn_full_board_cost: Option<u64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CoreLoopFailureArtifact {
+    pub schema_version: u32,
+    pub category: String,
+    pub message: String,
+    pub operation: Option<String>,
+    pub reason_code: String,
+    pub fixture_disease: String,
+    pub metrics: CoreLoopMetrics,
+    pub quest_coverage: Option<QuestCoverageEvidence>,
+    pub total_event_count: u64,
+    pub trace_truncated: bool,
+    pub trace: Vec<CoreLoopEvent>,
+    pub final_agents: Vec<CoreLoopFailureAgent>,
+}
+
+#[derive(Clone, Debug, Default)]
+struct FailureDraft {
+    metrics: CoreLoopMetrics,
+    total_event_count: u64,
+    trace_truncated: bool,
+    trace: Vec<CoreLoopEvent>,
+    final_agents: Vec<CoreLoopFailureAgent>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct PublicSurvivalObservation {
+    thermal: f32,
+    wetness_bps: u16,
+    thermal_strain: i32,
+    ammunition: u32,
+    carried_load_kg: f32,
+    carry_capacity_kg: f32,
+    encumbrance_remaining_bps: u32,
+    equipment_ready: bool,
+    party_tent_quantity: u32,
+}

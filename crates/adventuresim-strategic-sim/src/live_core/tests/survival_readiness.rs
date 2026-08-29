@@ -469,11 +469,14 @@ fn on_site_reserve_requires_a_ready_actor_but_allows_survivable_stagger() {
     assert!(on_site.contains("calories_after_strenuous_action("));
     assert!(on_site.contains("DomainIncapacitationStatus::Ready"));
     assert!(on_site.contains("let action_survivable = projected_action_survivable("));
-    let model = include_str!("../model.rs");
-    let action_cost = model
-        .split("fn calories_after_strenuous_action")
+    let investigation_policy = include_str!("../investigation_policy.rs");
+    let action_cost = investigation_policy
+        .split("pub(super) fn calories_after_strenuous_action")
         .nth(1)
-        .and_then(|tail| tail.split("fn round_trip_walking_window_minutes").next())
+        .and_then(|tail| {
+            tail.split("pub(super) fn round_trip_walking_window_minutes")
+                .next()
+        })
         .expect("shared strenuous action cost");
     assert!(action_cost.contains("action_minutes as f32 / MINUTES_PER_DAY as f32"));
     assert!(action_cost.contains("STRATEGIC_TRAVEL_KCAL_PER_DAY"));
@@ -626,11 +629,14 @@ fn route_plan_persists_the_same_selected_schedule_used_for_both_legs() {
 
 #[test]
 fn route_survivability_uses_per_member_peak_and_critical_illness_can_return_now() {
-    let model = include_str!("../model.rs");
-    let peak_survivability = model
-        .split("fn projected_itinerary_survivable")
+    let investigation_policy = include_str!("../investigation_policy.rs");
+    let peak_survivability = investigation_policy
+        .split("pub(super) fn projected_itinerary_survivable")
         .nth(1)
-        .and_then(|tail| tail.split("fn round_trip_walking_window_minutes").next())
+        .and_then(|tail| {
+            tail.split("pub(super) fn round_trip_walking_window_minutes")
+                .next()
+        })
         .expect("per-member peak-fatigue survivability helper");
     assert!(peak_survivability.contains(".member_maximum_fatigue"));
     assert!(peak_survivability.contains(".get(member_index)"));
