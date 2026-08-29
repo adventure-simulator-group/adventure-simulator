@@ -4629,12 +4629,9 @@ mod tests {
         assert!(daily.contains("next_discovery_day"));
         assert!(daily.contains("CourtshipStatus::Active"));
         assert!(daily.contains("settle_secret_courtship_discovery_for_pair"));
-        let lifecycle = include_str!("time.rs")
-            .split("settle_lifecycle_after_character_time_write")
+        let lifecycle = crate::production_source(crate::time::TIME_SOURCE)
+            .split("pub(crate) fn settle_lifecycle_after_character_time_write")
             .nth(1)
-            .unwrap()
-            .split("pub fn advance_character_time")
-            .next()
             .unwrap();
         assert!(lifecycle.contains("settle_secret_courtship_discovery_for_character"));
         let socializing = source

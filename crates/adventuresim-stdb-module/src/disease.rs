@@ -2923,7 +2923,7 @@ mod herbalist_purchase_source_tests {
         assert!(plan.contains("horizons"));
         assert!(plan.contains("resolve_acquisition_timeline"));
 
-        let time = crate::production_source(include_str!("time.rs"));
+        let time = crate::production_source(crate::time::TIME_SOURCE);
         let rest = time.split("pub fn rest_at_camp").nth(1).unwrap();
         assert!(rest.contains("plan_party_disease_interval"));
         assert!(rest.contains("preview_elapsed_for_disease_in_plan"));
