@@ -554,7 +554,7 @@ fn recovery_direction_is_delegated_only_to_a_ready_member_for_an_unready_leader(
     assert!(direction.contains("party.current_settlement_id.is_none()"));
     assert!(direction.contains("ready_companion_may_direct_recovery"));
 
-    let time = crate::production_source(include_str!("../../time.rs"));
+    let time = crate::production_source(crate::time::TIME_SOURCE);
     let camp = time
         .split("pub fn rest_at_camp")
         .nth(1)
@@ -844,7 +844,7 @@ fn all_dead_party_teardown_clears_only_strategic_ghost_state() {
         assert!(!teardown.contains(preserved), "must preserve {preserved}");
     }
 
-    let time = crate::production_source(include_str!("../../time.rs"));
+    let time = crate::production_source(crate::time::TIME_SOURCE);
     let camp = time
         .split("pub fn rest_at_camp")
         .nth(1)
