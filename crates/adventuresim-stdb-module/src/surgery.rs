@@ -1409,7 +1409,7 @@ mod tests {
         assert!(settlement.contains("recovery: InjuryRecoveryMinutes"));
         assert!(!settlement.contains("allow_healing"));
 
-        let preparation = include_str!("food.rs")
+        let preparation = crate::food::FOOD_SOURCE
             .split("fn preparation_terminal_minute")
             .nth(1)
             .and_then(|tail| tail.split("fn next_preparation_attempt_generation").next())
