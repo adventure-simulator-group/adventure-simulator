@@ -92,7 +92,7 @@ pub(super) fn on_scene_vista_bundle(
     let visible_lods = bundle
         .lods
         .iter()
-        .take(settings.max_vista_lods)
+        .take(settings.config.rendering.vista.maximum_lods)
         .collect::<Vec<_>>();
     let playable_scene = playable_scenes
         .iter()
@@ -180,6 +180,7 @@ pub(super) fn on_scene_vista_bundle(
             &mut foliage_materials,
             &mut standard_materials,
             &mut images,
+            &settings.config.grass,
         );
     }
     info!(
@@ -206,6 +207,7 @@ fn spawn_near_vista_scatter(
     foliage_materials: &mut Assets<TacticalFoliageMaterial>,
     standard_materials: &mut Assets<StandardMaterial>,
     images: &mut Assets<Image>,
+    grass: &crate::presentation::config::GrassConfig,
 ) {
     let scene_seed = stable_text_seed(&environment.scene_digest);
     let (grass_color, grass_dryness) = grass_pigment(environment);
@@ -225,23 +227,65 @@ fn spawn_near_vista_scatter(
     // representation. The same globally aligned lattice and distance ranges
     // continue across it, so crossing the boundary cannot introduce an LOD
     // edge or replace blank space with a close representation.
-    for grass_lod in [GrassMeshLod::Near, GrassMeshLod::Far] {
-        let community_meshes = GrassCommunity::ALL.map(|community| {
+    if grass.enabled {
+        for grass_lod in [GrassMeshLod::Near, GrassMeshLod::Far] {
+            let community_meshes = GrassCommunity::ALL.map(|community| {
+                GrassTopology::ALL.map(|topology| {
+                    meshes.add(configured_grass_patch_mesh(
+                        grass_color,
+                        grass_lod,
+                        topology.density() * grass.density_scale,
+                        community,
+                        grass,
+                    ))
+                })
+            });
+            let material = foliage_materials.add(configured_vista_grass_material(
+                wind_scale,
+                grass_dryness,
+                coverage_mask.clone(),
+                coverage_transform,
+                grass_lod,
+                grass.density_scale,
+                grass,
+            ));
+            spawn_vista_grass_lattice(
+                commands,
+                lod,
+                coarser_lod,
+                playable_half_extent,
+                playable_terrain,
+                playable_ground,
+                grass_seed,
+                grass_seed,
+                grass.placement.playable_patch_spacing_m,
+                80.0,
+                &community_meshes,
+                grass_profile,
+                &material,
+                configured_grass_lod_visibility(grass_lod, grass),
+            );
+        }
+
+        let vista_meshes = GrassCommunity::ALL.map(|community| {
             GrassTopology::ALL.map(|topology| {
-                meshes.add(grass_patch_mesh(
+                meshes.add(configured_grass_patch_mesh(
                     grass_color,
-                    grass_lod,
-                    topology.density(),
+                    GrassMeshLod::Vista,
+                    topology.density() * grass.density_scale,
                     community,
+                    grass,
                 ))
             })
         });
-        let material = foliage_materials.add(vista_grass_material(
+        let vista_material = foliage_materials.add(configured_vista_grass_material(
             wind_scale,
             grass_dryness,
-            coverage_mask.clone(),
+            coverage_mask,
             coverage_transform,
-            grass_lod,
+            GrassMeshLod::Vista,
+            grass.density_scale,
+            grass,
         ));
         spawn_vista_grass_lattice(
             commands,
@@ -250,50 +294,16 @@ fn spawn_near_vista_scatter(
             playable_half_extent,
             playable_terrain,
             playable_ground,
+            grass_seed ^ 0x7669_7374_615f_6c6f,
             grass_seed,
-            grass_seed,
-            GRASS_PATCH_SPACING,
-            80.0,
-            &community_meshes,
+            grass.placement.vista_patch_spacing_m,
+            150.0,
+            &vista_meshes,
             grass_profile,
-            &material,
-            grass_lod_visibility(grass_lod),
+            &vista_material,
+            configured_grass_lod_visibility(GrassMeshLod::Vista, grass),
         );
     }
-
-    let vista_meshes = GrassCommunity::ALL.map(|community| {
-        GrassTopology::ALL.map(|topology| {
-            meshes.add(grass_patch_mesh(
-                grass_color,
-                GrassMeshLod::Vista,
-                topology.density(),
-                community,
-            ))
-        })
-    });
-    let vista_material = foliage_materials.add(vista_grass_material(
-        wind_scale,
-        grass_dryness,
-        coverage_mask,
-        coverage_transform,
-        GrassMeshLod::Vista,
-    ));
-    spawn_vista_grass_lattice(
-        commands,
-        lod,
-        coarser_lod,
-        playable_half_extent,
-        playable_terrain,
-        playable_ground,
-        grass_seed ^ 0x7669_7374_615f_6c6f,
-        grass_seed,
-        VISTA_GRASS_PATCH_SPACING,
-        150.0,
-        &vista_meshes,
-        grass_profile,
-        &vista_material,
-        grass_lod_visibility(GrassMeshLod::Vista),
-    );
 
     spawn_vista_rocks(
         commands,

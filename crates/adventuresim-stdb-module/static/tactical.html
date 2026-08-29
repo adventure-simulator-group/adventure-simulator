@@ -128,11 +128,15 @@
 
                 const module = await import('./wasm/adventuresim-tactical-client.js');
                 await module.default();
+                const graphics = await fetch('./assets/config/tactical-graphics.yaml');
+                if (!graphics.ok) {
+                    throw new Error(`Tactical graphics config: HTTP ${graphics.status}`);
+                }
                 await module.wasm_run([
                     'adventuresim-tactical-client',
                     '--server-addr', server,
                     '--id', playerId,
-                ]);
+                ], await graphics.text());
                 setStatus(`Running.\nServer: ${server}\nPlayer: ${playerId}`);
             } catch (error) {
                 started = false;

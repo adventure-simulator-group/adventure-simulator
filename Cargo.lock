@@ -214,6 +214,7 @@ dependencies = [
  "console_error_panic_hook",
  "fabelgeist-determinism",
  "serde",
+ "serde-saphyr",
  "serde_json",
  "todo-or-die",
  "tracing",

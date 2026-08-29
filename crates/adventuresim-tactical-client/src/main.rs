@@ -17,18 +17,37 @@ use bevy::asset::AssetPlugin;
 use bevy::asset::io::AssetSourceBuilder;
 use bevy::diagnostic::FrameTimeDiagnosticsPlugin;
 use bevy::prelude::*;
-use bevy::window::PresentMode;
 use bevy::{
     ecs::schedule::common_conditions::any_with_component,
     input::common_conditions::input_just_pressed,
     window::{CursorGrabMode, CursorOptions},
 };
-use clap::{Parser, ValueEnum};
-#[cfg(target_family = "wasm")]
-use console_error_panic_hook;
+use clap::Parser;
 #[cfg(target_family = "wasm")]
 use wasm_bindgen::prelude::*;
 use web_time::Instant;
+
+fn present_mode(value: presentation::PresentModeConfig) -> bevy::window::PresentMode {
+    use presentation::PresentModeConfig;
+    match value {
+        PresentModeConfig::AutoVsync => bevy::window::PresentMode::AutoVsync,
+        PresentModeConfig::AutoNoVsync => bevy::window::PresentMode::AutoNoVsync,
+        PresentModeConfig::Fifo => bevy::window::PresentMode::Fifo,
+        PresentModeConfig::FifoRelaxed => bevy::window::PresentMode::FifoRelaxed,
+        PresentModeConfig::Mailbox => bevy::window::PresentMode::Mailbox,
+        PresentModeConfig::Immediate => bevy::window::PresentMode::Immediate,
+    }
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn window_mode(value: presentation::WindowModeConfig) -> bevy::window::WindowMode {
+    match value {
+        presentation::WindowModeConfig::Windowed => bevy::window::WindowMode::Windowed,
+        presentation::WindowModeConfig::BorderlessFullscreen => {
+            bevy::window::WindowMode::BorderlessFullscreen(bevy::window::MonitorSelection::Current)
+        }
+    }
+}
 
 #[expect(
     dead_code,
@@ -87,30 +106,9 @@ struct Args {
     /// Close the native client shortly after the final scripted command.
     #[arg(long, requires = "input_script")]
     exit_after_script: bool,
-    /// Rendering cost preset for diagnostics and low-power GPUs.
-    #[arg(long, value_enum, default_value_t)]
-    graphics_preset: GraphicsPreset,
-    /// Override the preset's grass shoot density (0.0 = bare, 1.0 = full).
-    #[arg(long, value_parser = clap::value_parser!(f32))]
-    grass_density: Option<f32>,
-    /// Override the preset's grass LOD reach (0.35 = shortest, 1.0 = legacy).
-    /// Near-field vertex cost scales with the square of this value.
-    #[arg(long, value_parser = clap::value_parser!(f32))]
-    grass_range: Option<f32>,
-    /// Override the preset's cloud ray-march quality (0.35 = cheapest,
-    /// 1.0 = full-fidelity reference march).
-    #[arg(long, value_parser = clap::value_parser!(f32))]
-    cloud_quality: Option<f32>,
-    /// Override the preset's offscreen cloud resolution fraction (0.25 =
-    /// cheapest, 1.0 = legacy full-resolution in-view clouds).
-    #[arg(long, value_parser = clap::value_parser!(f32))]
-    cloud_resolution: Option<f32>,
-    /// Override the preset's MSAA sample count (1, 2, or 4).
-    #[arg(long, value_parser = clap::value_parser!(u8))]
-    msaa: Option<u8>,
-    /// Swapchain presentation strategy for frame-pacing diagnostics.
-    #[arg(long, value_enum, default_value_t)]
-    present_mode: ClientPresentMode,
+    /// Tactical graphics YAML. Defaults to assets/config/tactical-graphics.yaml.
+    #[arg(long)]
+    graphics_config: Option<std::path::PathBuf>,
     /// Run without opening an OS window, for CLI-driven automated testing.
     #[cfg(feature = "debug")]
     #[arg(long)]
@@ -122,98 +120,17 @@ struct Args {
     brp_port: Option<u16>,
 }
 
-#[derive(Debug, Clone, Copy, Default, ValueEnum)]
-enum ClientPresentMode {
-    #[default]
-    AutoVsync,
-    AutoNoVsync,
-    Fifo,
-    FifoRelaxed,
-    Mailbox,
-    Immediate,
-}
-
-impl From<ClientPresentMode> for PresentMode {
-    fn from(value: ClientPresentMode) -> Self {
-        match value {
-            ClientPresentMode::AutoVsync => Self::AutoVsync,
-            ClientPresentMode::AutoNoVsync => Self::AutoNoVsync,
-            ClientPresentMode::Fifo => Self::Fifo,
-            ClientPresentMode::FifoRelaxed => Self::FifoRelaxed,
-            ClientPresentMode::Mailbox => Self::Mailbox,
-            ClientPresentMode::Immediate => Self::Immediate,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, Default, ValueEnum)]
-enum GraphicsPreset {
-    #[default]
-    Default,
-    NoShadows,
-    NoBloom,
-    NoAtmosphere,
-    NoEnvironmentLight,
-    Minimal,
-}
-
-impl GraphicsPreset {
-    fn presentation(self) -> presentation::TacticalPresentationPlugin {
-        presentation::TacticalPresentationPlugin {
-            shadows_enabled: !matches!(self, Self::NoShadows | Self::Minimal),
-            atmosphere_enabled: !matches!(self, Self::NoAtmosphere | Self::Minimal),
-            celestial_enabled: !matches!(self, Self::Minimal),
-            environment_light_enabled: !matches!(
-                self,
-                Self::NoAtmosphere | Self::NoEnvironmentLight | Self::Minimal
-            ),
-            environment_map_size: 64,
-            bloom_enabled: !matches!(self, Self::NoBloom | Self::Minimal),
-            max_vista_lods: if matches!(self, Self::Minimal) { 1 } else { 3 },
-            grass_density_scale: if matches!(self, Self::Minimal) {
-                0.45
-            } else {
-                1.0
-            },
-            // The gameplay client trades a shorter geometric sward for frame
-            // rate by default; capture/benchmark tooling keeps the plugin's
-            // 1.0 legacy reach so goldens stay comparable.
-            grass_range_scale: if matches!(self, Self::Minimal) {
-                0.5
-            } else {
-                0.75
-            },
-            // The reference 40-step cloud march costs ~20 ms/frame at QHD, a
-            // near-constant floor regardless of scene content; gameplay
-            // presets shorten it, capture tooling keeps full fidelity.
-            cloud_quality_scale: if matches!(self, Self::Minimal) {
-                0.45
-            } else {
-                0.65
-            },
-            // Clouds are baked into the frozen sky cubemap now, so the offscreen
-            // march runs once rather than every frame; the half-area downscale it
-            // used to justify no longer buys anything, so render it full-res.
-            cloud_resolution_scale: 1.0,
-            // Two-sample coverage halves MSAA bandwidth at QHD; foliage
-            // AlphaToCoverage still resolves, just with coarser edge dither.
-            msaa_samples: if matches!(self, Self::Minimal) { 1 } else { 2 },
-            // Two dense cascades to 72 m cover every vegetation band; the
-            // engine default spends four cascades on reach the tactical
-            // camera rarely benefits from.
-            shadow_cascade_count: if matches!(self, Self::Minimal) { 1 } else { 2 },
-            shadow_maximum_distance: if matches!(self, Self::Minimal) {
-                40.0
-            } else {
-                72.0
-            },
-        }
-    }
-}
-
 #[cfg(not(target_family = "wasm"))]
 fn main() {
-    run(Args::parse(), true);
+    let args = Args::parse();
+    let asset_root = native_asset_root();
+    let path = args
+        .graphics_config
+        .clone()
+        .unwrap_or_else(|| asset_root.join("config/tactical-graphics.yaml"));
+    let config = presentation::TacticalGraphicsConfig::load(&path)
+        .unwrap_or_else(|error| panic!("invalid tactical graphics configuration: {error}"));
+    run(args, true, config);
 }
 
 #[cfg(target_family = "wasm")]
@@ -224,8 +141,10 @@ fn main() {
 
 #[cfg(target_family = "wasm")]
 #[wasm_bindgen]
-pub fn wasm_run(args: Vec<String>) {
-    run(Args::parse_from(args), true);
+pub fn wasm_run(args: Vec<String>, graphics_yaml: String) {
+    let config = presentation::TacticalGraphicsConfig::parse(&graphics_yaml)
+        .unwrap_or_else(|error| panic!("invalid tactical graphics configuration: {error}"));
+    run(Args::parse_from(args), true, config);
 }
 
 /// Start the persistent browser renderer without joining a tactical server.
@@ -233,7 +152,9 @@ pub fn wasm_run(args: Vec<String>) {
 /// through `wasm_command`; Bevy and its WebGPU device remain alive throughout.
 #[cfg(target_family = "wasm")]
 #[wasm_bindgen]
-pub fn wasm_boot() {
+pub fn wasm_boot(graphics_yaml: String) {
+    let config = presentation::TacticalGraphicsConfig::parse(&graphics_yaml)
+        .unwrap_or_else(|error| panic!("invalid tactical graphics configuration: {error}"));
     run(
         Args {
             id: 0,
@@ -244,19 +165,14 @@ pub fn wasm_boot() {
             frame_timing_seconds: None,
             frame_timing_warmup_seconds: 5.0,
             exit_after_script: false,
-            graphics_preset: GraphicsPreset::Default,
-            grass_density: None,
-            grass_range: None,
-            cloud_quality: None,
-            cloud_resolution: None,
-            msaa: None,
-            present_mode: ClientPresentMode::AutoVsync,
+            graphics_config: None,
             #[cfg(feature = "debug")]
             headless: false,
             #[cfg(feature = "debug")]
             brp_port: None,
         },
         false,
+        config,
     );
 }
 
@@ -297,7 +213,11 @@ pub fn wasm_quote_weapon_design(design_json: String) -> Result<String, JsValue> 
     browser_runtime::quote_design_json(&design_json).map_err(|error| JsValue::from_str(&error))
 }
 
-fn run(args: Args, initial_tactical: bool) {
+fn run(
+    args: Args,
+    initial_tactical: bool,
+    mut graphics_config: presentation::TacticalGraphicsConfig,
+) {
     let startup_started_at = Instant::now();
     #[cfg(not(target_family = "wasm"))]
     eprintln!("[startup] native client process entry");
@@ -316,6 +236,16 @@ fn run(args: Args, initial_tactical: bool) {
     let headless = args.headless;
     #[cfg(not(feature = "debug"))]
     let headless = false;
+    if headless {
+        graphics_config.rendering.shadows.enabled = false;
+        graphics_config.rendering.bloom.enabled = false;
+        graphics_config.rendering.atmosphere.enabled = false;
+        graphics_config.rendering.atmosphere.environment_light = false;
+        graphics_config.rendering.clouds.enabled = false;
+        graphics_config.rendering.vista.maximum_lods = 1;
+        graphics_config.rendering.anti_aliasing = presentation::AntiAliasingConfig::Off;
+        graphics_config.grass.enabled = false;
+    }
     #[cfg(not(target_family = "wasm"))]
     let default_plugins = {
         let with_asset_plugin = DefaultPlugins.set(AssetPlugin {
@@ -331,14 +261,15 @@ fn run(args: Args, initial_tactical: bool) {
                 })
                 .disable::<bevy::winit::WinitPlugin>()
         } else {
+            let desktop = &graphics_config.desktop;
             with_asset_plugin.set(WindowPlugin {
                 primary_window: Some(Window {
                     title: "Fabelgeist - Tactical".into(),
-                    canvas: Some("#game-canvas".into()),
-                    fit_canvas_to_parent: true,
-                    prevent_default_event_handling: true,
-                    present_mode: args.present_mode.into(),
-                    decorations: false,
+                    mode: window_mode(desktop.window.mode),
+                    resolution: (desktop.window.width, desktop.window.height).into(),
+                    resizable: desktop.window.resizable,
+                    decorations: desktop.window.decorations,
+                    present_mode: present_mode(desktop.present_mode),
                     ..default()
                 }),
                 ..default()
@@ -358,7 +289,7 @@ fn run(args: Args, initial_tactical: bool) {
                 canvas: Some("#game-canvas".into()),
                 fit_canvas_to_parent: true,
                 prevent_default_event_handling: true,
-                present_mode: args.present_mode.into(),
+                present_mode: present_mode(graphics_config.desktop.present_mode),
                 decorations: false,
                 ..default()
             }),
@@ -385,32 +316,8 @@ fn run(args: Args, initial_tactical: bool) {
         equipment::TacticalEquipmentPlugin,
         animation::TacticalAnimationPlugin,
         camera::TacticalCameraPlugin,
-        // Headless runs have no window/swapchain, and some render features
-        // (e.g. the atmosphere environment probe) crash without one, so
-        // force every optional GPU effect off regardless of the requested
-        // preset - there's nothing to present them to anyway.
-        {
-            let mut presentation = if headless {
-                GraphicsPreset::Minimal.presentation()
-            } else {
-                args.graphics_preset.presentation()
-            };
-            if let Some(density) = args.grass_density {
-                presentation.grass_density_scale = density.clamp(0.0, 1.0);
-            }
-            if let Some(range) = args.grass_range {
-                presentation.grass_range_scale = range.clamp(0.35, 1.0);
-            }
-            if let Some(quality) = args.cloud_quality {
-                presentation.cloud_quality_scale = quality.clamp(0.35, 1.0);
-            }
-            if let Some(resolution) = args.cloud_resolution {
-                presentation.cloud_resolution_scale = resolution.clamp(0.25, 1.0);
-            }
-            if let Some(msaa) = args.msaa {
-                presentation.msaa_samples = msaa.clamp(1, 4);
-            }
-            presentation
+        presentation::TacticalPresentationPlugin {
+            config: graphics_config,
         },
     ))
     .insert_resource(ClearColor(Color::srgb(0.1, 0.1, 0.15)))
@@ -597,7 +504,7 @@ fn release_cursor(
 }
 
 #[cfg(test)]
-mod graphics_preset_tests {
+mod graphics_config_tests {
     use super::*;
 
     #[cfg(not(target_family = "wasm"))]
@@ -607,74 +514,33 @@ mod graphics_preset_tests {
     }
 
     #[test]
-    fn no_shadows_disables_only_shadows() {
-        let preset = GraphicsPreset::NoShadows.presentation();
-        assert!(!preset.shadows_enabled);
-        assert!(preset.celestial_enabled);
-        assert_eq!(preset.max_vista_lods, 3);
+    fn shipped_config_launches_in_a_resizable_decorated_window() {
+        let config = presentation::TacticalPresentationPlugin::default().config;
+        assert_eq!(
+            config.desktop.window.mode,
+            presentation::WindowModeConfig::Windowed
+        );
+        assert!(config.desktop.window.resizable);
+        assert!(config.desktop.window.decorations);
     }
 
     #[test]
-    fn minimal_reduces_non_atmosphere_presentation() {
-        let minimal = GraphicsPreset::Minimal.presentation();
-        assert!(!minimal.shadows_enabled);
-        assert!(!minimal.atmosphere_enabled);
-        assert!(!minimal.environment_light_enabled);
-        assert!(!minimal.bloom_enabled);
-        assert!(!minimal.celestial_enabled);
-        assert_eq!(minimal.max_vista_lods, 1);
-        assert!(minimal.grass_density_scale < 1.0);
+    fn configured_present_modes_map_without_fallback_guessing() {
         assert_eq!(
-            GraphicsPreset::Default.presentation().grass_density_scale,
-            1.0
-        );
-        // Gameplay presets shorten the cloud march; capture tooling relies on
-        // the plugin default staying at full reference quality.
-        let default = GraphicsPreset::Default.presentation();
-        assert!(minimal.cloud_quality_scale < default.cloud_quality_scale);
-        assert!(default.cloud_quality_scale < 1.0);
-        assert_eq!(
-            presentation::TacticalPresentationPlugin::default().cloud_quality_scale,
-            1.0
-        );
-        // Clouds bake into the frozen sky cubemap, so the offscreen march runs
-        // full-resolution once instead of downscaling every frame.
-        assert_eq!(default.cloud_resolution_scale, 1.0);
-        assert_eq!(
-            presentation::TacticalPresentationPlugin::default().cloud_resolution_scale,
-            1.0
-        );
-    }
-
-    #[test]
-    fn environment_presets_preserve_the_atmosphere_sky() {
-        let disabled = GraphicsPreset::NoEnvironmentLight.presentation();
-        assert!(disabled.atmosphere_enabled);
-        assert!(!disabled.environment_light_enabled);
-
-        let normal = GraphicsPreset::Default.presentation();
-        assert!(normal.atmosphere_enabled);
-        assert!(normal.environment_light_enabled);
-        assert_eq!(normal.environment_map_size, 64);
-    }
-
-    #[test]
-    fn diagnostic_present_modes_map_without_fallback_guessing() {
-        assert_eq!(
-            PresentMode::from(ClientPresentMode::AutoVsync),
-            PresentMode::AutoVsync
+            present_mode(presentation::PresentModeConfig::AutoVsync),
+            bevy::window::PresentMode::AutoVsync
         );
         assert_eq!(
-            PresentMode::from(ClientPresentMode::AutoNoVsync),
-            PresentMode::AutoNoVsync
+            present_mode(presentation::PresentModeConfig::AutoNoVsync),
+            bevy::window::PresentMode::AutoNoVsync
         );
         assert_eq!(
-            PresentMode::from(ClientPresentMode::Mailbox),
-            PresentMode::Mailbox
+            present_mode(presentation::PresentModeConfig::Mailbox),
+            bevy::window::PresentMode::Mailbox
         );
         assert_eq!(
-            PresentMode::from(ClientPresentMode::Immediate),
-            PresentMode::Immediate
+            present_mode(presentation::PresentModeConfig::Immediate),
+            bevy::window::PresentMode::Immediate
         );
     }
 }

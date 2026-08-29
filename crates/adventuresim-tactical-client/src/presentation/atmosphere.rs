@@ -116,6 +116,7 @@ pub(in crate::presentation) fn freeze_initialized_atmosphere(
     mut commands: Commands,
     celestial: Res<PresentedCelestialLighting>,
     mut status: ResMut<FrozenAtmosphereStatus>,
+    settings: Option<Res<TacticalGraphicsSettings>>,
     camera: Single<(Entity, &GlobalTransform), With<TacticalGameplayCamera>>,
     probe: Query<
         (
@@ -126,6 +127,20 @@ pub(in crate::presentation) fn freeze_initialized_atmosphere(
         With<AtmosphereBakeProbe>,
     >,
 ) {
+    if settings
+        .as_ref()
+        .is_some_and(|settings| !settings.config.rendering.atmosphere.enabled)
+    {
+        return;
+    }
+    let environment_map_size = settings
+        .as_ref()
+        .map_or(FROZEN_SKY_CUBEMAP_SIZE, |settings| {
+            settings.config.rendering.atmosphere.environment_map_size
+        });
+    let environment_light_enabled = settings
+        .as_ref()
+        .is_none_or(|settings| settings.config.rendering.atmosphere.environment_light);
     let Some(snapshot) = celestial.snapshot.as_ref() else {
         return;
     };
@@ -161,7 +176,11 @@ pub(in crate::presentation) fn freeze_initialized_atmosphere(
             .entity(camera_entity)
             .remove::<(Skybox, EnvironmentMapLight)>()
             .insert(AtmosphereSettings::default());
-        spawn_bake_probe(&mut commands, camera_transform.translation());
+        spawn_bake_probe(
+            &mut commands,
+            camera_transform.translation(),
+            environment_map_size,
+        );
         status.phase = FrozenAtmospherePhase::Baking {
             scene: snapshot.scene,
             ready_frames: 0,
@@ -174,7 +193,11 @@ pub(in crate::presentation) fn freeze_initialized_atmosphere(
         ref mut ready_frames,
     } = status.phase
     else {
-        spawn_bake_probe(&mut commands, camera_transform.translation());
+        spawn_bake_probe(
+            &mut commands,
+            camera_transform.translation(),
+            environment_map_size,
+        );
         status.phase = FrozenAtmospherePhase::Baking {
             scene: snapshot.scene,
             ready_frames: 0,
@@ -198,16 +221,18 @@ pub(in crate::presentation) fn freeze_initialized_atmosphere(
     }
 
     let mut camera_commands = commands.entity(camera_entity);
-    camera_commands.remove::<AtmosphereSettings>().insert((
-        Skybox {
+    camera_commands
+        .remove::<AtmosphereSettings>()
+        .insert(Skybox {
             image: Some(generated.environment_map.clone()),
             // Skybox extraction multiplies this by view exposure; the
             // environment compute stores unexposed physical radiance.
             brightness: 1.0,
             ..default()
-        },
-        filtered.clone(),
-    ));
+        });
+    if environment_light_enabled {
+        camera_commands.insert(filtered.clone());
+    }
     commands
         .entity(probe_entity)
         .insert(FrozenAtmosphereProbeAssets {
@@ -221,14 +246,14 @@ pub(in crate::presentation) fn freeze_initialized_atmosphere(
     };
 }
 
-fn spawn_bake_probe(commands: &mut Commands, observer_translation: Vec3) {
+fn spawn_bake_probe(commands: &mut Commands, observer_translation: Vec3, size: u32) {
     commands.spawn((
         Name::new("One-shot atmosphere cubemap probe"),
         AtmosphereBakeProbe,
         LightProbe::default(),
         Transform::from_translation(observer_translation),
         AtmosphereEnvironmentMapLight {
-            size: UVec2::splat(FROZEN_SKY_CUBEMAP_SIZE),
+            size: UVec2::splat(size),
             ..default()
         },
     ));

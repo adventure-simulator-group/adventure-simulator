@@ -171,7 +171,9 @@ if (surface && canvas) {
   runtimePromise = import("/tactical/wasm/adventuresim-tactical-client.js")
     .then(async (runtime) => {
       await runtime.default();
-      runtime.wasm_boot();
+      const graphics = await fetch("/tactical/assets/config/tactical-graphics.yaml");
+      if (!graphics.ok) throw new Error(`tactical graphics config: HTTP ${graphics.status}`);
+      runtime.wasm_boot(await graphics.text());
       return runtime;
     })
     .catch((error) => {

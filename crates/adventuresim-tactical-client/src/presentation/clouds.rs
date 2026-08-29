@@ -413,12 +413,17 @@ pub(in crate::presentation) fn setup_tactical_clouds(
     settings: Res<TacticalGraphicsSettings>,
     cameras: Query<(Entity, &Projection, &Camera), With<Camera3d>>,
 ) {
+    commands.insert_resource(CloudBakeState::default());
+    commands.insert_resource(TacticalCloudAnimationStatus::default());
+    if !settings.config.rendering.clouds.enabled {
+        return;
+    }
     // The baked shell can render at a reduced offscreen resolution and
     // composite through one dome; clouds are soft enough that the bilinear
     // upsample is close to invisible while the fragment cost drops with the
     // resolution squared. The full-resolution in-view path (1.0) stays
     // authoritative for capture tooling.
-    let offscreen = if settings.cloud_resolution_scale < 0.999 {
+    let offscreen = if settings.config.rendering.clouds.resolution_scale < 0.999 {
         cameras.iter().next().map(|(camera, projection, main)| {
             (camera, projection.clone(), main.physical_target_size())
         })
@@ -436,8 +441,6 @@ pub(in crate::presentation) fn setup_tactical_clouds(
     };
     let baked_texture_a = images.add(cloud_bake_image(&empty_request));
     let baked_texture_b = images.add(cloud_bake_image(&empty_request));
-    commands.insert_resource(CloudBakeState::default());
-    commands.insert_resource(TacticalCloudAnimationStatus::default());
     let mut shell = commands.spawn((
         Name::new("Baked tactical cloud shell"),
         TacticalCloudLayer { active: false },
@@ -462,7 +465,12 @@ pub(in crate::presentation) fn setup_tactical_clouds(
     let Some((camera, projection, target_size)) = offscreen else {
         return;
     };
-    let resolution_scale = settings.cloud_resolution_scale.clamp(0.25, 1.0);
+    let resolution_scale = settings
+        .config
+        .rendering
+        .clouds
+        .resolution_scale
+        .clamp(0.25, 1.0);
     // The camera's computed target size is often not known yet during
     // startup; the per-frame update system re-sizes the image on the first
     // frame where it is.
@@ -885,6 +893,7 @@ pub(in crate::presentation) fn update_tactical_clouds(
     mut bake_state: ResMut<CloudBakeState>,
     mut animation_status: ResMut<TacticalCloudAnimationStatus>,
 ) {
+    let _ = &time;
     for mut transform in &mut composites {
         transform.translation = camera.translation();
     }
@@ -1002,7 +1011,14 @@ pub(in crate::presentation) fn update_tactical_clouds(
             daylight,
             celestial.weather_transmission,
         );
-        material.spectral = solar_color.extend(settings.cloud_quality_scale.clamp(0.35, 1.0));
+        material.spectral = solar_color.extend(
+            settings
+                .config
+                .rendering
+                .clouds
+                .quality_scale
+                .clamp(0.35, 1.0),
+        );
         material.geometry = cloud_shell_geometry();
         #[cfg(not(target_family = "wasm"))]
         {

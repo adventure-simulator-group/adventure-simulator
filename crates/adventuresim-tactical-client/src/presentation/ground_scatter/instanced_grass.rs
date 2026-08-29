@@ -18,6 +18,7 @@ use adventuresim_tactical_core::prelude::{SceneEnvironment, SceneGround, SceneId
 use bevy::{
     camera::{primitives::Aabb, visibility::NoFrustumCulling},
     color::{Color, LinearRgba},
+    light::NotShadowCaster,
     prelude::*,
     render::render_resource::{
         AsBindGroup, RenderPipelineDescriptor, ShaderType, SpecializedMeshPipelineError,
@@ -32,16 +33,13 @@ use super::{
     GrassInteractor, GroundScatterLayer,
     grass::{
         GRASS_PATCH_SPACING, GrassCommunityProfile, GrassMeshLod, GrassSpecies,
-        VISTA_GRASS_PATCH_SPACING, cell_allows_grass, grass_community_at, grass_species,
-        grass_tuft_mesh, tuft_footprint_metres,
+        VISTA_GRASS_PATCH_SPACING, cell_allows_grass, configured_tuft_footprint_metres,
+        grass_community_at, grass_species, grass_tuft_mesh, tuft_footprint_metres,
     },
     grass_pigment, grass_scatter_density,
 };
 
 const GRASS_INSTANCED_SHADER: &str = "shaders/tactical_grass_instanced.wgsl";
-
-/// Interaction envelope radius in metres, matching the legacy material.
-const INTERACTION_RADIUS: f32 = 1.35;
 
 pub(crate) struct InstancedGrassPlugin;
 
@@ -93,6 +91,10 @@ fn present_instanced_grass(
     settings: Res<crate::presentation::TacticalGraphicsSettings>,
 ) {
     for (entity, _scene_id, terrain, ground, environment) in &scenes {
+        if !settings.config.grass.enabled {
+            commands.entity(entity).insert(InstancedGrassPresented);
+            continue;
+        }
         let started = web_time::Instant::now();
         let (grass_color, grass_dryness) = grass_pigment(environment);
         let grass_density = grass_scatter_density(
@@ -100,7 +102,7 @@ fn present_instanced_grass(
             bps(environment.water_bps),
             bps(environment.cultivation_bps),
             bps(environment.weather.snow_cover_bps),
-        ) * settings.grass_density_scale.clamp(0.0, 1.0);
+        ) * settings.config.grass.density_scale;
         let wind_scale = 0.16 + bps(environment.weather.wind_speed_bps) * 0.36;
         spawn(
             &mut commands,
@@ -115,7 +117,7 @@ fn present_instanced_grass(
             grass_density,
             grass_dryness,
             wind_scale,
-            settings.grass_range_scale,
+            &settings.config.grass,
         );
         tracing::info!(
             elapsed_ms = started.elapsed().as_millis(),
@@ -234,6 +236,7 @@ fn update_instanced_grass_interaction(
     interactors: Query<&GlobalTransform, With<GrassInteractor>>,
     mut state: ResMut<InstancedGrassInteractionState>,
     mut materials: ResMut<Assets<TacticalGrassInstancedMaterial>>,
+    settings: Res<crate::presentation::TacticalGraphicsSettings>,
 ) {
     let Some(position) = interactors.iter().next().map(GlobalTransform::translation) else {
         if state.written.take().is_some() {
@@ -269,12 +272,14 @@ fn update_instanced_grass_interaction(
 
     let speed = state.smoothed_velocity.length();
     for (_, material) in materials.iter_mut() {
-        material.interaction = position.extend(INTERACTION_RADIUS);
+        let interaction = &settings.config.grass.interaction;
+        material.interaction = position.extend(interaction.radius_m);
         material.interaction_motion = Vec4::new(
             state.smoothed_velocity.x,
             state.smoothed_velocity.y,
             state.smoothed_velocity.z,
-            (0.7 + speed * 0.11).clamp(0.7, 1.35),
+            (interaction.minimum_push + speed * 0.11)
+                .clamp(interaction.minimum_push, interaction.maximum_push),
         );
     }
     state.written = Some((position, state.smoothed_velocity));
@@ -312,6 +317,24 @@ fn tier_visibility_range(lod: GrassMeshLod, range_scale: f32) -> Vec4 {
         // complementary crossfade partition hands off exactly.
         GrassMeshLod::Vista => Vec4::new(34.0, 42.0, 42.0, 50.0),
     }) * scale
+}
+
+fn configured_tier_visibility_range(
+    lod: GrassMeshLod,
+    grass: &crate::presentation::config::GrassConfig,
+) -> Vec4 {
+    let tier = match lod {
+        GrassMeshLod::Near => &grass.lod.near,
+        GrassMeshLod::NearEdge => &grass.lod.near_edge,
+        GrassMeshLod::Far => &grass.lod.far,
+        GrassMeshLod::Vista => &grass.lod.vista,
+    };
+    Vec4::new(
+        tier.fade_in_m[0],
+        tier.fade_in_m[1],
+        tier.fade_out_m[0],
+        tier.fade_out_m[1],
+    )
 }
 
 const TIERS: [GrassMeshLod; 4] = [
@@ -400,7 +423,7 @@ pub(super) fn spawn(
     grass_density: f32,
     grass_dryness: f32,
     wind_scale: f32,
-    range_scale: f32,
+    grass: &crate::presentation::config::GrassConfig,
 ) {
     let mask = CoverageMask::new(ground, stable_text_seed(&environment.scene_digest));
 
@@ -418,7 +441,8 @@ pub(super) fn spawn(
             base_seed,
             profile,
             lod,
-            GRASS_PATCH_SPACING,
+            grass.placement.playable_patch_spacing_m,
+            grass,
         );
     }
     // The near-edge ring reuses the exact near-field placements so the
@@ -435,7 +459,8 @@ pub(super) fn spawn(
         base_seed ^ 0x7669_7374_615f_6c6f,
         profile,
         GrassMeshLod::Vista,
-        VISTA_GRASS_PATCH_SPACING,
+        grass.placement.vista_patch_spacing_m,
+        grass,
     );
 
     for lod in TIERS {
@@ -444,7 +469,7 @@ pub(super) fn spawn(
             interaction: Vec4::ZERO,
             interaction_motion: Vec4::ZERO,
             params: Vec4::new(
-                0.52,
+                grass.lighting.root_occlusion,
                 grass_dryness,
                 0.09,
                 lod.width_compensation(grass_density),
@@ -453,7 +478,7 @@ pub(super) fn spawn(
             // field already crossfaded seamlessly into this model at 8-10 m,
             // so its former full PBR was pure per-fragment cost. y=0.72 scales
             // the flat ambient to stand in for the skipped sky IBL.
-            shading: Vec4::new(1.0, 0.72, 0.0, 0.0),
+            shading: Vec4::new(1.0, grass.lighting.ambient_scale, 0.0, 0.0),
         });
         for species in GrassSpecies::ALL {
             let instances = std::mem::take(&mut batches[tier_index(lod)][species.index()]);
@@ -466,8 +491,9 @@ pub(super) fn spawn(
                 grass_density,
                 species,
                 splitmix64(base_seed ^ ((species.index() as u64) << 8 | tier_index(lod) as u64)),
+                grass,
             ));
-            commands.spawn((
+            let mut entity = commands.spawn((
                 Name::new(format!(
                     "Instanced grass {species:?} {lod:?} tufts ({})",
                     instances.len()
@@ -483,15 +509,24 @@ pub(super) fn spawn(
                 NoFrustumCulling,
                 Mesh3d(mesh),
                 InstancedMeshMaterial(material.clone()),
-                fitted_batch_aabb(&instances, tuft_footprint_metres(lod)),
+                fitted_batch_aabb(&instances, configured_tuft_footprint_metres(lod, grass)),
                 InstanceMaterialData {
                     instances: Arc::new(instances),
                     color: LinearRgba::WHITE,
-                    visibility_range: tier_visibility_range(lod, range_scale),
+                    visibility_range: configured_tier_visibility_range(lod, grass),
                 },
                 Transform::default(),
                 Visibility::Inherited,
             ));
+            let casts_shadows = match lod {
+                GrassMeshLod::Near => grass.lighting.casts_shadows.near,
+                GrassMeshLod::NearEdge => grass.lighting.casts_shadows.near_edge,
+                GrassMeshLod::Far => grass.lighting.casts_shadows.far,
+                GrassMeshLod::Vista => grass.lighting.casts_shadows.vista,
+            };
+            if !casts_shadows {
+                entity.insert(NotShadowCaster);
+            }
         }
     }
 }
@@ -511,6 +546,7 @@ fn scatter_cell_tufts(
     profile: GrassCommunityProfile,
     lod: GrassMeshLod,
     cell_spacing: f32,
+    grass: &crate::presentation::config::GrassConfig,
 ) -> u32 {
     let half_x = terrain.width() * 0.5;
     let half_z = terrain.depth() * 0.5;
@@ -518,14 +554,27 @@ fn scatter_cell_tufts(
     let maximum_x = (half_x / cell_spacing).ceil() as i32;
     let minimum_z = (-half_z / cell_spacing).floor() as i32;
     let maximum_z = (half_z / cell_spacing).ceil() as i32;
-    let side = tufts_per_cell_side(lod);
-    let footprint = tuft_footprint_metres(lod);
+    let side = match lod {
+        GrassMeshLod::Near => grass.lod.near.native_tufts_per_cell_side,
+        GrassMeshLod::NearEdge => grass.lod.near_edge.native_tufts_per_cell_side,
+        GrassMeshLod::Far => grass.lod.far.native_tufts_per_cell_side,
+        GrassMeshLod::Vista => grass.lod.vista.native_tufts_per_cell_side,
+    } as i32;
+    let footprint = configured_tuft_footprint_metres(lod, grass);
     let mut emitted = 0_u32;
     for z in minimum_z..=maximum_z {
         for x in minimum_x..=maximum_x {
             let cell = ((x as u32 as u64) << 32) | z as u32 as u64;
             let cell_hash = splitmix64(base_seed ^ cell);
-            if !cell_allows_grass(terrain, ground, cell_hash, x, z, cell_spacing) {
+            if !cell_allows_grass(
+                terrain,
+                ground,
+                cell_hash,
+                x,
+                z,
+                cell_spacing,
+                grass.placement.jitter_fraction,
+            ) {
                 continue;
             }
             let cell_origin = Vec2::new(x as f32, z as f32) * cell_spacing

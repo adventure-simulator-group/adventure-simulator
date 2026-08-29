@@ -29,6 +29,7 @@ fabelgeist-determinism.workspace = true
 clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+serde-saphyr.workspace = true
 tracing.workspace = true
 web-time.workspace = true
 todo-or-die = { version = "0.1.2", features = ["crate"] }
@@ -51,12 +52,14 @@ bevy = { workspace = true, default-features = false, features = [
     "webgpu",
     "2d_bevy_render",
     "3d_bevy_render",
+    "bevy_anti_alias",
     "ui_bevy_render",
     "scene",
     "picking",
     "audio",
     "jpeg",
     "png",
+    "smaa_luts",
     "tonemapping_luts",
     "zstd_rust",
 ] }

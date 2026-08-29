@@ -185,15 +185,20 @@ fn smoothstep(edge0: f32, edge1: f32, value: f32) -> f32 {
     t * t * (3.0 - 2.0 * t)
 }
 
-fn tactical_msaa(samples: u8) -> Msaa {
-    // Fixed-function hardware resolve is supported by the WebGPU path and
-    // is particularly valuable for thin grass and branch silhouettes; the
-    // sample count is a preset lever because coverage bandwidth at QHD
-    // scales with it.
-    match samples {
-        0 | 1 => Msaa::Off,
-        2 => Msaa::Sample2,
-        _ => Msaa::Sample4,
+fn tactical_msaa(anti_aliasing: AntiAliasingConfig) -> Msaa {
+    match anti_aliasing {
+        AntiAliasingConfig::Msaa { samples: 2 } => Msaa::Sample2,
+        AntiAliasingConfig::Msaa { .. } => Msaa::Sample4,
+        _ => Msaa::Off,
+    }
+}
+
+fn tactical_tonemapping(tonemapping: TonemappingConfig) -> Tonemapping {
+    match tonemapping {
+        TonemappingConfig::None => Tonemapping::None,
+        TonemappingConfig::AcesFitted => Tonemapping::AcesFitted,
+        TonemappingConfig::AgX => Tonemapping::AgX,
+        TonemappingConfig::TonyMcMapface => Tonemapping::TonyMcMapface,
     }
 }
 
@@ -225,7 +230,7 @@ pub(in crate::presentation) fn setup_tactical_presentation(
     settings: Res<TacticalGraphicsSettings>,
     camera_setup: Res<TacticalCameraSetup>,
 ) {
-    if settings.atmosphere_enabled {
+    if settings.config.rendering.atmosphere.enabled {
         commands.spawn(Atmosphere::earth(
             scattering_mediums.add(ScatteringMedium::default()),
         ));
@@ -243,7 +248,7 @@ pub(in crate::presentation) fn setup_tactical_presentation(
         Transform::from_translation(camera_setup.translation)
             .looking_to(camera_setup.direction, Vec3::Y),
         Exposure::SUNLIGHT,
-        Tonemapping::AcesFitted,
+        tactical_tonemapping(settings.config.rendering.tonemapping),
         DistanceFog {
             color: Color::srgb_u8(188, 201, 207),
             falloff: FogFalloff::Linear {
@@ -252,9 +257,30 @@ pub(in crate::presentation) fn setup_tactical_presentation(
             },
             ..default()
         },
-        tactical_msaa(settings.msaa_samples),
+        tactical_msaa(settings.config.rendering.anti_aliasing),
     ));
-    if settings.atmosphere_enabled {
+    match settings.config.rendering.anti_aliasing {
+        AntiAliasingConfig::Fxaa => {
+            camera.insert(bevy::anti_alias::fxaa::Fxaa::default());
+        }
+        AntiAliasingConfig::Smaa { quality } => {
+            use bevy::anti_alias::smaa::{Smaa, SmaaPreset};
+            camera.insert(Smaa {
+                preset: match quality {
+                    SmaaQuality::Low => SmaaPreset::Low,
+                    SmaaQuality::Medium => SmaaPreset::Medium,
+                    SmaaQuality::High => SmaaPreset::High,
+                    SmaaQuality::Ultra => SmaaPreset::Ultra,
+                },
+            });
+        }
+        AntiAliasingConfig::Off | AntiAliasingConfig::Msaa { .. } => {}
+    }
+    camera.insert(match settings.config.rendering.shadows.filtering {
+        ShadowFiltering::Hardware2x2 => bevy::light::ShadowFilteringMethod::Hardware2x2,
+        ShadowFiltering::Gaussian => bevy::light::ShadowFilteringMethod::Gaussian,
+    });
+    if settings.config.rendering.atmosphere.enabled {
         // Only declare the atmosphere here. The generated environment map is
         // baked once and frozen into a static Skybox + EnvironmentMapLight by
         // the atmosphere bake system (`presentation::atmosphere`), which owns
@@ -265,7 +291,7 @@ pub(in crate::presentation) fn setup_tactical_presentation(
         // DrawIndirect bind-group validation error.
         camera.insert(AtmosphereSettings::default());
     }
-    if settings.bloom_enabled {
+    if settings.config.rendering.bloom.enabled {
         camera.insert(Bloom::NATURAL);
     }
 }
@@ -296,21 +322,10 @@ mod tests {
     fn tactical_camera_does_not_install_bloom() {
         let mut app = App::new();
         app.init_resource::<Assets<ScatteringMedium>>()
-            .insert_resource(TacticalGraphicsSettings {
-                shadows_enabled: true,
-                atmosphere_enabled: true,
-                celestial_enabled: true,
-                environment_light_enabled: true,
-                environment_map_size: 64,
-                bloom_enabled: false,
-                max_vista_lods: 3,
-                grass_density_scale: 1.0,
-                grass_range_scale: 1.0,
-                cloud_quality_scale: 1.0,
-                cloud_resolution_scale: 1.0,
-                msaa_samples: 4,
-                shadow_cascade_count: 0,
-                shadow_maximum_distance: 0.0,
+            .insert_resource({
+                let mut settings = TacticalGraphicsSettings::default();
+                settings.config.rendering.bloom.enabled = false;
+                settings
             })
             .init_resource::<TacticalCameraSetup>()
             .add_systems(Startup, setup_tactical_presentation);
@@ -367,9 +382,15 @@ mod tests {
     #[test]
     fn gameplay_uses_four_sample_webgpu_hardware_msaa() {
         // Capture tooling keeps the 4x reference; presets may lower it.
-        assert_eq!(tactical_msaa(4), Msaa::Sample4);
-        assert_eq!(tactical_msaa(2), Msaa::Sample2);
-        assert_eq!(tactical_msaa(1), Msaa::Off);
+        assert_eq!(
+            tactical_msaa(AntiAliasingConfig::Msaa { samples: 4 }),
+            Msaa::Sample4
+        );
+        assert_eq!(
+            tactical_msaa(AntiAliasingConfig::Msaa { samples: 2 }),
+            Msaa::Sample2
+        );
+        assert_eq!(tactical_msaa(AntiAliasingConfig::Off), Msaa::Off);
     }
 
     #[test]

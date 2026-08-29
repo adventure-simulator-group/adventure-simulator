@@ -1988,8 +1988,7 @@ def tactical_session_config(
     enemy_count: int,
     session_id: str,
     scene_input: str | None = None,
-    graphics_preset: str = "default",
-    present_mode: str = "auto-vsync",
+    graphics_config: str = "assets/config/tactical-graphics.yaml",
     window_capture: str = "auto",
     capture_source: str = "window",
     render_backend: str = "auto",
@@ -2014,8 +2013,7 @@ def tactical_session_config(
         "browser_client": False,
         "session_id": session_id,
         "scene_input": scene_input,
-        "graphics_preset": graphics_preset,
-        "present_mode": present_mode,
+        "graphics_config": graphics_config,
         "window_capture": window_capture,
         "capture_source": capture_source,
         "render_backend": render_backend,
@@ -2052,8 +2050,9 @@ def launch_recorded_tactical_client(
     command = [
         str(executable), "--id", str(config["character_id"]),
         "--server-addr", str(client_config["server_addr"]),
-        "--graphics-preset", str(config.get("graphics_preset", "default")),
-        "--present-mode", str(config.get("present_mode", "auto-vsync")),
+        "--graphics-config", str(
+            config.get("graphics_config", "assets/config/tactical-graphics.yaml")
+        ),
     ]
     suffix = str(config["session_id"])[:12]
     if config.get("frame_timing_seconds") is not None:
@@ -2613,9 +2612,8 @@ def effective_presentation_trace(
 def tactical_play(
     mode: TacticalPlayMode,
     base_port: int,
-    graphics_preset: str = "default",
+    graphics_config: str = "assets/config/tactical-graphics.yaml",
     presentation_trace: str = "auto",
-    present_mode: str = "auto-vsync",
     window_capture: str = "auto",
     capture_source: str = "window",
     render_backend: str = "auto",
@@ -2664,8 +2662,8 @@ def tactical_play(
     enemy_count = 4 if mode is TacticalPlayMode.ANIMATION else 1
     config = tactical_session_config(
         values, mode, mission_id, character_id, enemy_count, session_id, scene_input,
-        graphics_preset,
-        present_mode, window_capture, capture_source, render_backend,
+        graphics_config,
+        window_capture, capture_source, render_backend,
         input_script, client_profile, frame_timing_seconds,
         frame_timing_warmup_seconds,
     )
@@ -3101,20 +3099,10 @@ def create_parser() -> argparse.ArgumentParser:
     )
     tactical_play_parser.add_argument("base_port", type=int, nargs="?", default=24920)
     tactical_play_parser.add_argument(
-        "--graphics-preset",
-        choices=("default", "no-shadows", "minimal"),
-        default="default",
+        "--graphics-config", default="assets/config/tactical-graphics.yaml"
     )
     tactical_play_parser.add_argument(
         "--presentation-trace", choices=("off", "auto", "required"), default="auto"
-    )
-    tactical_play_parser.add_argument(
-        "--present-mode",
-        choices=(
-            "auto-vsync", "auto-no-vsync", "fifo", "fifo-relaxed", "mailbox",
-            "immediate",
-        ),
-        default="auto-vsync",
     )
     tactical_play_parser.add_argument(
         "--window-capture", choices=("off", "auto", "required"), default="auto"
@@ -3198,8 +3186,8 @@ def main() -> int:
             return canonical_spawner(args.action)
         if args.command == "tactical-play":
             return tactical_play(
-                TacticalPlayMode(args.mode), args.base_port, args.graphics_preset,
-                args.presentation_trace, args.present_mode, args.window_capture,
+                TacticalPlayMode(args.mode), args.base_port, args.graphics_config,
+                args.presentation_trace, args.window_capture,
                 args.capture_source, args.render_backend, args.scene_input,
                 args.input_script, args.client_profile, args.frame_timing_seconds,
                 args.frame_timing_warmup_seconds,

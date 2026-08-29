@@ -11,6 +11,7 @@ fn local_interactor_position_reaches_only_ground_foliage_materials() {
     app.init_resource::<Time>();
     app.init_resource::<Assets<TacticalFoliageMaterial>>();
     app.init_resource::<GrassInteractionState>();
+    app.insert_resource(TacticalGraphicsSettings::default());
     app.add_systems(Update, update_grass_interaction);
     let (grass, crown) = {
         let mut materials = app
