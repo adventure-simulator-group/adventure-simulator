@@ -5,7 +5,7 @@ const test = require("node:test");
 const { readRustModuleSource } = require("./rust-module-source.cjs");
 
 const root = path.join(__dirname, "../..");
-const food = fs.readFileSync(path.join(root, "adventuresim-stdb-module/src/food.rs"), "utf8");
+const food = readRustModuleSource(path.join(root, "adventuresim-stdb-module/src/food/mod.rs"));
 const item = fs.readFileSync(path.join(root, "adventuresim-stdb-module/src/item.rs"), "utf8");
 const strategic = readRustModuleSource(path.join(root, "adventuresim-stdb-module/src/strategic/mod.rs"));
 const capability = fs.readFileSync(path.join(root, "adventuresim-stdb-module/src/capability.rs"), "utf8");
