@@ -1132,49 +1132,46 @@ fn redirect_performance_camera_offscreen(
 fn capture_presentation_plugin() -> TacticalPresentationPlugin {
     let mut plugin = TacticalPresentationPlugin::default();
     if std::env::var_os("TACTICAL_BENCH_DISABLE_SHADOWS").is_some() {
-        plugin.shadows_enabled = false;
+        plugin.config.rendering.shadows.enabled = false;
     }
     if std::env::var_os("TACTICAL_BENCH_DISABLE_POST_PROCESSING").is_some() {
-        plugin.bloom_enabled = false;
+        plugin.config.rendering.bloom.enabled = false;
     }
     // Cost-scaling overrides so the performance benchmark can measure the
     // gameplay-preset configuration instead of only the 1.0 reference.
     let scale_override = |name: &str| std::env::var(name).ok()?.parse::<f32>().ok();
     if let Some(scale) = scale_override("TACTICAL_BENCH_GRASS_DENSITY_SCALE") {
-        plugin.grass_density_scale = scale;
-    }
-    if let Some(scale) = scale_override("TACTICAL_BENCH_GRASS_RANGE_SCALE") {
-        plugin.grass_range_scale = scale;
+        plugin.config.grass.density_scale = scale;
     }
     if let Some(scale) = scale_override("TACTICAL_BENCH_CLOUD_QUALITY_SCALE") {
-        plugin.cloud_quality_scale = scale;
+        plugin.config.rendering.clouds.quality_scale = scale;
     }
     if let Some(scale) = scale_override("TACTICAL_BENCH_CLOUD_RESOLUTION_SCALE") {
-        plugin.cloud_resolution_scale = scale;
+        plugin.config.rendering.clouds.resolution_scale = scale;
     }
     plugin
 }
 
 fn feature_state(settings: &TacticalGraphicsSettings) -> PresentationFeatureState {
     PresentationFeatureState {
-        shadows: settings.shadows_enabled,
+        shadows: settings.config.rendering.shadows.enabled,
         atmosphere: true,
-        celestial: settings.celestial_enabled,
+        celestial: settings.config.rendering.atmosphere.celestial,
         environment_light: true,
         environment_map_size: 64,
-        max_vista_lods: settings.max_vista_lods,
+        max_vista_lods: settings.config.rendering.vista.maximum_lods,
     }
 }
 
 fn requested_feature_state() -> PresentationFeatureState {
     let requested = TacticalPresentationPlugin::default();
     PresentationFeatureState {
-        shadows: requested.shadows_enabled,
+        shadows: requested.config.rendering.shadows.enabled,
         atmosphere: true,
-        celestial: requested.celestial_enabled,
+        celestial: requested.config.rendering.atmosphere.celestial,
         environment_light: true,
         environment_map_size: 64,
-        max_vista_lods: requested.max_vista_lods,
+        max_vista_lods: requested.config.rendering.vista.maximum_lods,
     }
 }
 

@@ -26,7 +26,8 @@ use super::obstacles::tree::{
     procedural_woody_plant_skeleton, procedural_woody_sparse_leaf_card_mesh,
 };
 use super::{
-    PresentedCelestialLighting, ProceduralEnvironmentAssets, bps, stable_text_seed, unit_hash,
+    PresentedCelestialLighting, ProceduralEnvironmentAssets, TacticalGraphicsSettings, bps,
+    stable_text_seed, unit_hash,
 };
 
 // Ground-scatter orchestration and shared presentation contracts.
@@ -51,11 +52,12 @@ pub(in crate::presentation) use grass::{
     FAR_LOD_GAP_FILL_FRACTION, GRASS_PATCH_SPACING, GrassCommunity, GrassCommunityProfile,
     GrassMeshLod, GrassTopology, NEAR_TO_FAR_SWARD_FADE_END_METRES,
     NEAR_TO_FAR_SWARD_FADE_START_METRES, TERMINAL_SWARD_FADE_END_METRES,
-    TERMINAL_SWARD_FADE_START_METRES, VISTA_GRASS_PATCH_SPACING, grass_community_at,
+    TERMINAL_SWARD_FADE_START_METRES, VISTA_GRASS_PATCH_SPACING, configured_grass_lod_visibility,
+    configured_grass_patch_mesh, configured_vista_grass_material, grass_community_at,
     grass_lod_visibility, grass_patch_mesh, vista_grass_material,
 };
 #[cfg(any(not(feature = "instanced-grass"), target_family = "wasm"))]
-use grass::{GrassGroundMaskMode, GrassMaterialHandles, grass_material};
+use grass::{GrassGroundMaskMode, GrassMaterialHandles, configured_grass_material, grass_material};
 use litter::{
     DRY_LEAF_MESH_VARIANTS, TWIG_MESH_VARIANTS, dry_leaf_patch_mesh, forest_floor_leaf_material,
     twig_patch_mesh,
@@ -160,6 +162,7 @@ pub(super) fn update_grass_interaction(
     interactors: Query<&GlobalTransform, With<GrassInteractor>>,
     mut state: ResMut<GrassInteractionState>,
     mut materials: ResMut<Assets<TacticalFoliageMaterial>>,
+    settings: Res<TacticalGraphicsSettings>,
 ) {
     // `Assets::iter_mut` flags every yielded asset as modified, so mutable
     // walks are reserved for frames that actually change values, and writes
@@ -210,12 +213,14 @@ pub(super) fn update_grass_interaction(
         let Some(mut material) = materials.get_mut(id) else {
             continue;
         };
-        material.interaction = position.extend(1.35);
+        let interaction = &settings.config.grass.interaction;
+        material.interaction = position.extend(interaction.radius_m);
         material.interaction_motion = Vec4::new(
             state.smoothed_velocity.x,
             state.smoothed_velocity.y,
             state.smoothed_velocity.z,
-            (0.7 + speed * 0.11).clamp(0.7, 1.35),
+            (interaction.minimum_push + speed * 0.11)
+                .clamp(interaction.minimum_push, interaction.maximum_push),
         );
     }
     state.written = Some((position, state.smoothed_velocity));
@@ -298,11 +303,14 @@ pub(super) fn spawn_ground_foliage(
     terrain: &SceneTerrain,
     ground: &SceneGround,
     environment: &SceneEnvironment,
+    graphics: &TacticalGraphicsSettings,
     #[cfg(all(feature = "instanced-grass", not(target_family = "wasm")))]
     shrub_bark_materials: &mut Assets<TacticalShrubBarkInstancedMaterial>,
     #[cfg(all(feature = "instanced-grass", not(target_family = "wasm")))]
     shrub_leaf_materials: &mut Assets<TacticalShrubLeafInstancedMaterial>,
 ) {
+    #[cfg(all(feature = "instanced-grass", not(target_family = "wasm")))]
+    let _ = graphics;
     let canopy = bps(environment.canopy_bps);
     let water = bps(environment.water_bps);
     let wetland = bps(environment.wetland_bps);
@@ -313,7 +321,8 @@ pub(super) fn spawn_ground_foliage(
     // understory. Keep the expensive new density in open terrain instead of
     // charging every woodland for meadow-level geometry beneath deep shade.
     #[cfg(any(not(feature = "instanced-grass"), target_family = "wasm"))]
-    let grass_density = grass_scatter_density(canopy, water, cultivation, snow);
+    let grass_density = grass_scatter_density(canopy, water, cultivation, snow)
+        * graphics.config.grass.density_scale;
     #[cfg(all(feature = "instanced-grass", not(target_family = "wasm")))]
     let _ = (water, snow, &images);
     // Equal-area QHD benchmarks show that the full woody hazel/reed-like
@@ -331,11 +340,12 @@ pub(super) fn spawn_ground_foliage(
     #[cfg(any(not(feature = "instanced-grass"), target_family = "wasm"))]
     let grass_community_meshes = GrassCommunity::ALL.map(|community| {
         grass::CommunityMeshes::new(|lod, topology| {
-            meshes.add(grass_patch_mesh(
+            meshes.add(configured_grass_patch_mesh(
                 grass_color,
                 lod,
                 grass_density * topology.density(),
                 community,
+                &graphics.config.grass,
             ))
         })
     });
@@ -355,7 +365,7 @@ pub(super) fn spawn_ground_foliage(
     ));
     #[cfg(any(not(feature = "instanced-grass"), target_family = "wasm"))]
     let grass_near_materials = GrassMaterialHandles {
-        boundary: materials.add(grass_material(
+        boundary: materials.add(configured_grass_material(
             grass_wind_scale,
             GrassMeshLod::Near,
             grass_density,
@@ -363,8 +373,9 @@ pub(super) fn spawn_ground_foliage(
             grass_mask.clone(),
             ground,
             GrassGroundMaskMode::Boundary,
+            &graphics.config.grass,
         )),
-        interior: materials.add(grass_material(
+        interior: materials.add(configured_grass_material(
             grass_wind_scale,
             GrassMeshLod::Near,
             grass_density,
@@ -372,11 +383,12 @@ pub(super) fn spawn_ground_foliage(
             grass_mask.clone(),
             ground,
             GrassGroundMaskMode::Interior,
+            &graphics.config.grass,
         )),
     };
     #[cfg(any(not(feature = "instanced-grass"), target_family = "wasm"))]
     let grass_far_materials = GrassMaterialHandles {
-        boundary: materials.add(grass_material(
+        boundary: materials.add(configured_grass_material(
             grass_wind_scale,
             GrassMeshLod::Far,
             grass_density,
@@ -384,8 +396,9 @@ pub(super) fn spawn_ground_foliage(
             grass_mask.clone(),
             ground,
             GrassGroundMaskMode::Boundary,
+            &graphics.config.grass,
         )),
-        interior: materials.add(grass_material(
+        interior: materials.add(configured_grass_material(
             grass_wind_scale,
             GrassMeshLod::Far,
             grass_density,
@@ -393,11 +406,12 @@ pub(super) fn spawn_ground_foliage(
             grass_mask.clone(),
             ground,
             GrassGroundMaskMode::Interior,
+            &graphics.config.grass,
         )),
     };
     #[cfg(any(not(feature = "instanced-grass"), target_family = "wasm"))]
     let grass_vista_materials = GrassMaterialHandles {
-        boundary: materials.add(grass_material(
+        boundary: materials.add(configured_grass_material(
             grass_wind_scale,
             GrassMeshLod::Vista,
             grass_density,
@@ -405,8 +419,9 @@ pub(super) fn spawn_ground_foliage(
             grass_mask.clone(),
             ground,
             GrassGroundMaskMode::Boundary,
+            &graphics.config.grass,
         )),
-        interior: materials.add(grass_material(
+        interior: materials.add(configured_grass_material(
             grass_wind_scale,
             GrassMeshLod::Vista,
             grass_density,
@@ -414,6 +429,7 @@ pub(super) fn spawn_ground_foliage(
             grass_mask,
             ground,
             GrassGroundMaskMode::Interior,
+            &graphics.config.grass,
         )),
     };
     let dry_leaf_meshes = ground_foliage_cache
@@ -461,19 +477,22 @@ pub(super) fn spawn_ground_foliage(
     // Aligning each patch to the sampled terrain normal keeps the shared plane
     // seated on slopes while its blades retain deterministic local variation.
     #[cfg(any(not(feature = "instanced-grass"), target_family = "wasm"))]
-    grass::spawn(
-        commands,
-        terrain,
-        ground,
-        stable_text_seed(&environment.scene_digest) ^ 0x6772_6173_735f_6c6f,
-        GrassCommunityProfile::from_environment(environment),
-        &grass::Assets {
-            community_meshes: grass_community_meshes,
-            near_materials: grass_near_materials,
-            far_materials: grass_far_materials,
-            vista_materials: grass_vista_materials,
-        },
-    );
+    if graphics.config.grass.enabled {
+        grass::spawn(
+            commands,
+            terrain,
+            ground,
+            stable_text_seed(&environment.scene_digest) ^ 0x6772_6173_735f_6c6f,
+            GrassCommunityProfile::from_environment(environment),
+            &grass::Assets {
+                community_meshes: grass_community_meshes,
+                near_materials: grass_near_materials,
+                far_materials: grass_far_materials,
+                vista_materials: grass_vista_materials,
+            },
+            &graphics.config.grass,
+        );
+    }
 
     let understory_habitat = understory::UnderstoryHabitat {
         canopy,
@@ -635,6 +654,7 @@ pub(super) fn present_ground_scatter(
     mut understory_cache: ResMut<WoodyUnderstoryPresentationCache>,
     mut ground_foliage_cache: ResMut<GroundFoliagePresentationCache>,
     procedural_assets: Res<ProceduralEnvironmentAssets>,
+    graphics: Res<TacticalGraphicsSettings>,
     #[cfg(all(feature = "instanced-grass", not(target_family = "wasm")))]
     mut shrub_bark_materials: ResMut<Assets<TacticalShrubBarkInstancedMaterial>>,
     #[cfg(all(feature = "instanced-grass", not(target_family = "wasm")))]
@@ -659,6 +679,7 @@ pub(super) fn present_ground_scatter(
             terrain,
             ground,
             environment,
+            &graphics,
             #[cfg(all(feature = "instanced-grass", not(target_family = "wasm")))]
             &mut shrub_bark_materials,
             #[cfg(all(feature = "instanced-grass", not(target_family = "wasm")))]

@@ -11,6 +11,7 @@
 
 mod atmosphere;
 mod clouds;
+mod config;
 mod environment;
 mod ground_scatter;
 mod obstacles;
@@ -38,6 +39,11 @@ use terrain::*;
 use vista::*;
 use volumetric::*;
 use weather::*;
+
+pub use config::{
+    AntiAliasingConfig, PresentModeConfig, ShadowFiltering, SmaaQuality, TacticalGraphicsConfig,
+    TonemappingConfig, WindowModeConfig,
+};
 
 #[derive(Component, Debug, Clone, Copy)]
 pub(crate) struct TerrainTriangleCount(pub(crate) usize);
@@ -141,61 +147,18 @@ impl ClientStartupTiming {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct TacticalPresentationPlugin {
-    pub shadows_enabled: bool,
-    pub atmosphere_enabled: bool,
-    pub celestial_enabled: bool,
-    pub environment_light_enabled: bool,
-    pub environment_map_size: u32,
-    pub bloom_enabled: bool,
-    pub max_vista_lods: usize,
-    /// Scales the per-tuft shoot density of the instanced sward; presets use
-    /// it to trade meadow fullness against vertex throughput on weak GPUs.
-    pub grass_density_scale: f32,
-    /// Uniformly contracts the instanced grass LOD fade bands. Near-tier
-    /// vertex cost scales with the band radius squared, so this is the
-    /// primary grass frame-rate lever; 1.0 reproduces the legacy reach.
-    pub grass_range_scale: f32,
-    /// Scales the volumetric cloud ray-march sample budget (clamped to
-    /// 0.35..=1.0 in the shader). The march burns a near-constant ~20 ms per
-    /// frame at QHD reference quality, so gameplay presets lower it; 1.0
-    /// keeps the full-fidelity march for capture tooling.
-    pub cloud_quality_scale: f32,
-    /// Resolution fraction for the offscreen volumetric cloud pass (clamped
-    /// to 0.25..=1.0). Below 1.0 the shells render into a reduced target and
-    /// composite through one dome, cutting march cost with the square of the
-    /// scale; 1.0 keeps the legacy full-resolution in-view path.
-    pub cloud_resolution_scale: f32,
-    /// MSAA sample count for the gameplay camera (1, 2, or 4). Coverage
-    /// bandwidth at QHD scales with it; AlphaToCoverage foliage keeps
-    /// working at 2, and at 1 the cutout falls back to hard discards.
-    pub msaa_samples: u8,
-    /// Directional shadow cascade count; 0 keeps the engine default (4).
-    pub shadow_cascade_count: usize,
-    /// Directional shadow reach in metres; 0.0 keeps the engine default.
-    /// Cascade texel density rises as this shrinks, so gameplay presets can
-    /// trade distant contact shadows for cheaper, sharper near ones.
-    pub shadow_maximum_distance: f32,
+    pub config: TacticalGraphicsConfig,
 }
 
 impl Default for TacticalPresentationPlugin {
     fn default() -> Self {
         Self {
-            shadows_enabled: true,
-            atmosphere_enabled: true,
-            celestial_enabled: true,
-            environment_light_enabled: true,
-            environment_map_size: 64,
-            bloom_enabled: true,
-            max_vista_lods: 3,
-            grass_density_scale: 1.0,
-            grass_range_scale: 1.0,
-            cloud_quality_scale: 1.0,
-            cloud_resolution_scale: 1.0,
-            msaa_samples: 4,
-            shadow_cascade_count: 0,
-            shadow_maximum_distance: 0.0,
+            config: TacticalGraphicsConfig::parse(include_str!(
+                "../../../../assets/config/tactical-graphics.yaml"
+            ))
+            .expect("shipped tactical graphics configuration must be valid"),
         }
     }
 }
@@ -231,23 +194,10 @@ impl Plugin for TacticalPresentationPlugin {
         // celestial light is active. Keep the map allocation identical in the
         // game and all tactical review viewers.
         .insert_resource(DirectionalLightShadowMap {
-            size: sky::TACTICAL_DIRECTIONAL_SHADOW_MAP_SIZE,
+            size: self.config.rendering.shadows.map_size,
         })
         .insert_resource(TacticalGraphicsSettings {
-            shadows_enabled: self.shadows_enabled,
-            atmosphere_enabled: self.atmosphere_enabled,
-            celestial_enabled: self.celestial_enabled,
-            environment_light_enabled: self.environment_light_enabled,
-            environment_map_size: self.environment_map_size,
-            bloom_enabled: self.bloom_enabled,
-            max_vista_lods: self.max_vista_lods,
-            grass_density_scale: self.grass_density_scale,
-            grass_range_scale: self.grass_range_scale,
-            cloud_quality_scale: self.cloud_quality_scale,
-            cloud_resolution_scale: self.cloud_resolution_scale,
-            msaa_samples: self.msaa_samples,
-            shadow_cascade_count: self.shadow_cascade_count,
-            shadow_maximum_distance: self.shadow_maximum_distance,
+            config: self.config.clone(),
         })
         .init_resource::<TacticalCameraSetup>()
         // The sky observer preserves this low, cool floor at night and restores
@@ -339,20 +289,15 @@ impl Plugin for TacticalPresentationPlugin {
     }
 }
 
-#[derive(Resource, Debug, Clone, Copy)]
+#[derive(Resource, Debug, Clone)]
 pub(crate) struct TacticalGraphicsSettings {
-    pub(crate) shadows_enabled: bool,
-    pub(crate) atmosphere_enabled: bool,
-    pub(crate) celestial_enabled: bool,
-    pub(crate) environment_light_enabled: bool,
-    pub(crate) environment_map_size: u32,
-    pub(crate) bloom_enabled: bool,
-    pub(crate) max_vista_lods: usize,
-    pub(crate) grass_density_scale: f32,
-    pub(crate) grass_range_scale: f32,
-    pub(crate) cloud_quality_scale: f32,
-    pub(crate) cloud_resolution_scale: f32,
-    pub(crate) msaa_samples: u8,
-    pub(crate) shadow_cascade_count: usize,
-    pub(crate) shadow_maximum_distance: f32,
+    pub(crate) config: TacticalGraphicsConfig,
+}
+
+impl Default for TacticalGraphicsSettings {
+    fn default() -> Self {
+        Self {
+            config: TacticalPresentationPlugin::default().config,
+        }
+    }
 }

@@ -1,0 +1,96 @@
+rendering:
+  anti_aliasing:
+    mode: msaa
+    samples: 2
+  shadows:
+    enabled: true
+    map_size: 1024
+    filtering: gaussian
+    cascades: 2
+    maximum_distance_m: 72.0
+  bloom:
+    enabled: true
+  atmosphere:
+    enabled: true
+    celestial: true
+    environment_light: true
+    environment_map_size: 64
+  clouds:
+    enabled: true
+    quality_scale: 0.65
+    resolution_scale: 1.0
+  vista:
+    maximum_lods: 3
+  tonemapping: aces_fitted
+
+grass:
+  enabled: true
+  density_scale: 1.0
+  placement:
+    playable_patch_spacing_m: 1.81
+    vista_patch_spacing_m: 3.62
+    jitter_fraction: 0.09
+  blade:
+    width_m: 0.076
+  lod:
+    near:
+      fade_in_m: [0.0, 0.001]
+      fade_out_m: [6.0, 8.0]
+      ribbon_rows: [0.0, 0.22, 0.45, 0.68, 0.9]
+      native_tufts_per_cell_side: 12
+      native_blades_per_tuft_side: 8
+      root_stratum_side: null
+      width_compensation: 1.0
+      width_compensation_limit: null
+    near_edge:
+      fade_in_m: [6.0, 8.0]
+      fade_out_m: [10.0, 20.0]
+      ribbon_rows: [0.0, 0.30, 0.58, 0.83]
+      native_tufts_per_cell_side: 12
+      native_blades_per_tuft_side: 6
+      root_stratum_side: null
+      width_compensation: 1.3333334
+      width_compensation_limit: null
+    far:
+      fade_in_m: [10.0, 20.0]
+      fade_out_m: [48.0, 60.0]
+      ribbon_rows: [0.0, 0.45, 0.82]
+      native_tufts_per_cell_side: 4
+      native_blades_per_tuft_side: 10
+      root_stratum_side: 4
+      width_compensation: null
+      width_compensation_limit: 1.65
+    vista:
+      fade_in_m: [46.0, 56.0]
+      fade_out_m: [60.0, 72.0]
+      ribbon_rows: [0.0, 0.62]
+      native_tufts_per_cell_side: 2
+      native_blades_per_tuft_side: 12
+      root_stratum_side: 8
+      width_compensation: 1.8
+      width_compensation_limit: null
+  transition:
+    terrain_gap_fill_fraction: 0.75
+    cover_mask_feather_m: 4.8
+  lighting:
+    reduced_lighting_scale: 0.58
+    root_occlusion: 0.52
+    ambient_scale: 0.72
+    casts_shadows:
+      near: true
+      near_edge: true
+      far: true
+      vista: false
+  interaction:
+    radius_m: 1.35
+    minimum_push: 0.7
+    maximum_push: 1.35
+
+desktop:
+  window:
+    mode: windowed
+    width: 1280
+    height: 720
+    resizable: true
+    decorations: true
+  present_mode: auto_vsync

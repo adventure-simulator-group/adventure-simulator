@@ -210,6 +210,7 @@ pub(in crate::presentation) fn present_pending_terrain(
     mut materials: ResMut<Assets<TacticalTerrainMaterial>>,
     mut images: ResMut<Assets<Image>>,
     procedural_assets: Res<ProceduralEnvironmentAssets>,
+    graphics: Res<TacticalGraphicsSettings>,
     vista: Res<ActiveVistaSurface>,
     mut startup: Option<ResMut<crate::presentation::ClientStartupTiming>>,
 ) {
@@ -231,6 +232,7 @@ pub(in crate::presentation) fn present_pending_terrain(
                     ground,
                     &procedural_assets,
                     &mut images,
+                    &graphics.config.grass,
                 );
                 *materials
                     .get_mut(&handle.0)
@@ -260,6 +262,7 @@ pub(in crate::presentation) fn present_pending_terrain(
                 ground,
                 &procedural_assets,
                 &mut images,
+                &graphics.config.grass,
             );
             let mut detail_material = material.clone();
             detail_material.base.depth_bias = DETAIL_PATCH_DEPTH_BIAS;
@@ -774,6 +777,7 @@ pub(in crate::presentation) fn terrain_material(
     ground: Option<&SceneGround>,
     procedural_assets: &ProceduralEnvironmentAssets,
     images: &mut Assets<Image>,
+    grass: &crate::presentation::config::GrassConfig,
 ) -> TacticalTerrainMaterial {
     TacticalTerrainMaterial {
         base: StandardMaterial {
@@ -803,8 +807,8 @@ pub(in crate::presentation) fn terrain_material(
             // instead of paying for sub-pixel grass. x/y are its distance
             // interval; z is environment-dependent coverage and w is reserved.
             far_sward: Vec4::new(
-                TERMINAL_SWARD_FADE_START_METRES,
-                TERMINAL_SWARD_FADE_END_METRES,
+                grass.lod.vista.fade_out_m[0],
+                grass.lod.vista.fade_out_m[1],
                 (1.0 - bps(environment.water_bps) * 0.9
                     - bps(environment.weather.snow_cover_bps) * 0.8)
                     .clamp(0.0, 1.0),
@@ -814,9 +818,9 @@ pub(in crate::presentation) fn terrain_material(
             // crossfade. x/y are the shared blade-LOD interval; z is the
             // stable Far subset's missing projected coverage; w is reserved.
             lod_sward: Vec4::new(
-                NEAR_TO_FAR_SWARD_FADE_START_METRES,
-                NEAR_TO_FAR_SWARD_FADE_END_METRES,
-                FAR_LOD_GAP_FILL_FRACTION,
+                grass.lod.far.fade_in_m[0],
+                grass.lod.far.fade_in_m[1],
+                grass.transition.terrain_gap_fill_fraction,
                 0.0,
             ),
             // x/y are the authoritative playable half extents. The detail
@@ -1234,6 +1238,7 @@ mod tests {
         app.init_asset::<Mesh>();
         app.init_asset::<TacticalTerrainMaterial>();
         app.init_resource::<ActiveVistaSurface>();
+        app.insert_resource(TacticalGraphicsSettings::default());
         let procedural_assets = {
             let mut images = app.world_mut().resource_mut::<Assets<Image>>();
             generate_procedural_environment_assets(&mut images)

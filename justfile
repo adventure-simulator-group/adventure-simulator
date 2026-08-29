@@ -326,7 +326,7 @@ tactical mission_id=env_var_or_default("TACTICAL_MISSION_ID", "test-mission") sc
 # from `.env.tactical` when present, same as `tactical` above. Set brp_port
 # to expose the Bevy Remote Protocol endpoint for CLI-driven inspection/testing.
 client id=env_var_or_default("TACTICAL_CHARACTER_ID", "0") port=env_var_or_default("TACTICAL_PORT", tactical_port) features="" brp_port=env_var_or_default("TACTICAL_BRP_PORT", ""):
-    @cargo run --package adventuresim-tactical-client --bin adventuresim-tactical-client --features "debug,{{ features }}" -- --id {{ quote(id) }} --server-addr "127.0.0.1:{{ port }}" {{ if brp_port != "" { "--brp-port " + brp_port } else { "" } }} --grass-range 0.5
+    @cargo run --package adventuresim-tactical-client --bin adventuresim-tactical-client --features "debug,{{ features }}" -- --id {{ quote(id) }} --server-addr "127.0.0.1:{{ port }}" {{ if brp_port != "" { "--brp-port " + brp_port } else { "" } }}
 
 # Optimized native client for performance playtesting. The plain `client`
 # recipe uses the dev profile, whose opt-level 1 workspace code and debug
@@ -359,21 +359,21 @@ tactical-reseed profile="tactical-dev" base_port="23200" mission_id_prefix="miss
 # animation disables combat, diagnostic runs scripted real-client input and
 # records every animation frame, combat uses normal enemies, and networking
 # omits the client while retaining the validated database/server fixture.
-tactical-play mode="animation" base_port="24920" graphics_preset="default" presentation_trace="auto" present_mode="auto-vsync" window_capture="auto" capture_source="window" render_backend="auto" scene_input="assets/tactical-scenes/dense-woodland.json" input_script="" client_profile="dev" frame_timing_seconds="" frame_timing_warmup_seconds="5": preflight verify-db-client
-    @{{ python_bin }} scripts/dev_stack.py tactical-play {{ quote(mode) }} {{ quote(base_port) }} --graphics-preset {{ quote(graphics_preset) }} --presentation-trace {{ quote(presentation_trace) }} --present-mode {{ quote(present_mode) }} --window-capture {{ quote(window_capture) }} --capture-source {{ quote(capture_source) }} --render-backend {{ quote(render_backend) }} --scene-input {{ quote(scene_input) }} --client-profile {{ quote(client_profile) }} --frame-timing-warmup-seconds {{ quote(frame_timing_warmup_seconds) }} {{ if input_script != "" { "--input-script " + quote(input_script) } else { "" } }} {{ if frame_timing_seconds != "" { "--frame-timing-seconds " + quote(frame_timing_seconds) } else { "" } }}
+tactical-play mode="animation" base_port="24920" graphics_config="assets/config/tactical-graphics.yaml" presentation_trace="auto" window_capture="auto" capture_source="window" render_backend="auto" scene_input="assets/tactical-scenes/dense-woodland.json" input_script="" client_profile="dev" frame_timing_seconds="" frame_timing_warmup_seconds="5": preflight verify-db-client
+    @{{ python_bin }} scripts/dev_stack.py tactical-play {{ quote(mode) }} {{ quote(base_port) }} --graphics-config {{ quote(graphics_config) }} --presentation-trace {{ quote(presentation_trace) }} --window-capture {{ quote(window_capture) }} --capture-source {{ quote(capture_source) }} --render-backend {{ quote(render_backend) }} --scene-input {{ quote(scene_input) }} --client-profile {{ quote(client_profile) }} --frame-timing-warmup-seconds {{ quote(frame_timing_warmup_seconds) }} {{ if input_script != "" { "--input-script " + quote(input_script) } else { "" } }} {{ if frame_timing_seconds != "" { "--frame-timing-seconds " + quote(frame_timing_seconds) } else { "" } }}
 
 # Benchmark steady raised-guard locomotion in all four cardinal directions.
 # It records transforms only: OBS and PresentMon are deliberately disabled.
-animation-direction-benchmark base_port="24920" graphics_preset="default" present_mode="auto-vsync" render_backend="auto" scene_input="assets/tactical-scenes/dense-woodland.json":
-    @just tactical-play diagnostic {{ quote(base_port) }} {{ quote(graphics_preset) }} off {{ quote(present_mode) }} off window {{ quote(render_backend) }} {{ quote(scene_input) }} scripts/animation_direction_benchmark.json
+animation-direction-benchmark base_port="24920" graphics_config="assets/config/tactical-graphics.yaml" render_backend="auto" scene_input="assets/tactical-scenes/dense-woodland.json":
+    @just tactical-play mode=diagnostic base_port={{ quote(base_port) }} graphics_config={{ quote(graphics_config) }} presentation_trace=off window_capture=off render_backend={{ quote(render_backend) }} scene_input={{ quote(scene_input) }} input_script=scripts/animation_direction_benchmark.json
 
 # Exercise authored quickstep playback while guard is released during flight.
-animation-quickstep-guard-release base_port="24920" graphics_preset="default" present_mode="auto-vsync" render_backend="auto" scene_input="assets/tactical-scenes/dense-woodland.json":
-    @just tactical-play diagnostic {{ quote(base_port) }} {{ quote(graphics_preset) }} off {{ quote(present_mode) }} off window {{ quote(render_backend) }} {{ quote(scene_input) }} scripts/animation_quickstep_guard_release.json
+animation-quickstep-guard-release base_port="24920" graphics_config="assets/config/tactical-graphics.yaml" render_backend="auto" scene_input="assets/tactical-scenes/dense-woodland.json":
+    @just tactical-play mode=diagnostic base_port={{ quote(base_port) }} graphics_config={{ quote(graphics_config) }} presentation_trace=off window_capture=off render_backend={{ quote(render_backend) }} scene_input={{ quote(scene_input) }} input_script=scripts/animation_quickstep_guard_release.json
 
 # Capture the real flat-terrain quickstep used by authored-motion parity analysis.
-animation-quickstep-parity-capture base_port="24920" graphics_preset="default" present_mode="auto-vsync" render_backend="auto":
-    @just tactical-play diagnostic {{ quote(base_port) }} {{ quote(graphics_preset) }} off {{ quote(present_mode) }} off window {{ quote(render_backend) }} assets/tactical-scenes/flat-dry-grassland.json scripts/animation_quickstep_parity.json
+animation-quickstep-parity-capture base_port="24920" graphics_config="assets/config/tactical-graphics.yaml" render_backend="auto":
+    @just tactical-play mode=diagnostic base_port={{ quote(base_port) }} graphics_config={{ quote(graphics_config) }} presentation_trace=off window_capture=off render_backend={{ quote(render_backend) }} scene_input=assets/tactical-scenes/flat-dry-grassland.json input_script=scripts/animation_quickstep_parity.json
 
 # Compare a captured real-client quickstep against the original five-key motion.
 animation-quickstep-parity-analyze trace report="target/dodge-investigation/quickstep-parity.json":

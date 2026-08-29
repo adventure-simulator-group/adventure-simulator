@@ -144,16 +144,12 @@ impl Material for TacticalStarMaterial {
 fn preset_cascade_config(
     settings: &TacticalGraphicsSettings,
 ) -> Option<bevy::light::CascadeShadowConfig> {
-    if settings.shadow_cascade_count == 0 && settings.shadow_maximum_distance <= 0.0 {
-        return None;
-    }
-    let mut builder = bevy::light::CascadeShadowConfigBuilder::default();
-    if settings.shadow_cascade_count > 0 {
-        builder.num_cascades = settings.shadow_cascade_count;
-    }
-    if settings.shadow_maximum_distance > 0.0 {
-        builder.maximum_distance = settings.shadow_maximum_distance;
-    }
+    let shadows = &settings.config.rendering.shadows;
+    let builder = bevy::light::CascadeShadowConfigBuilder {
+        num_cascades: shadows.cascades,
+        maximum_distance: shadows.maximum_distance_m,
+        ..default()
+    };
     Some(builder.build())
 }
 
@@ -199,7 +195,7 @@ pub(in crate::presentation) fn setup_tactical_sky(
         moonlight.insert(cascades);
     }
 
-    if !settings.celestial_enabled {
+    if !settings.config.rendering.atmosphere.celestial {
         return;
     }
 
@@ -420,7 +416,8 @@ pub(in crate::presentation) fn apply_presented_celestial_lighting(
 
     let (mut sun, mut sun_transform) = sunlight.into_inner();
     sun.illuminance = scene_atmosphere_solar_illuminance(environment);
-    sun.shadow_maps_enabled = settings.shadows_enabled && celestial.sun_altitude_degrees > 0.0;
+    sun.shadow_maps_enabled =
+        settings.config.rendering.shadows.enabled && celestial.sun_altitude_degrees > 0.0;
     *sun_transform = light_transform(celestial.sun_direction);
 
     let (mut moon_light, mut moon_transform) = moonlight.into_inner();
@@ -428,7 +425,7 @@ pub(in crate::presentation) fn apply_presented_celestial_lighting(
         * celestial.lunar_illumination
         * smoothstep(-2.0, 4.0, celestial.moon_altitude_degrees)
         * celestial.weather_transmission;
-    moon_light.shadow_maps_enabled = settings.shadows_enabled
+    moon_light.shadow_maps_enabled = settings.config.rendering.shadows.enabled
         && celestial.sun_altitude_degrees <= -2.0
         && celestial.moon_altitude_degrees > 0.0
         && celestial.lunar_illumination > 0.15;
@@ -529,22 +526,7 @@ mod ambient_handoff_tests {
             .init_resource::<Assets<TacticalStarMaterial>>()
             .init_resource::<ActiveTacticalScene>()
             .init_resource::<PresentedCelestialLighting>()
-            .insert_resource(TacticalGraphicsSettings {
-                shadows_enabled: true,
-                atmosphere_enabled: true,
-                celestial_enabled: true,
-                environment_light_enabled: true,
-                environment_map_size: 64,
-                bloom_enabled: true,
-                max_vista_lods: 3,
-                grass_density_scale: 1.0,
-                grass_range_scale: 1.0,
-                cloud_quality_scale: 1.0,
-                cloud_resolution_scale: 1.0,
-                msaa_samples: 4,
-                shadow_cascade_count: 0,
-                shadow_maximum_distance: 0.0,
-            })
+            .insert_resource(TacticalGraphicsSettings::default())
             .insert_resource(GlobalAmbientLight {
                 brightness: 42.0,
                 ..default()

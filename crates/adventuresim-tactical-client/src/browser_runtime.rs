@@ -145,6 +145,11 @@ pub(crate) fn queue_json(json: &str) -> Result<(), String> {
     Ok(())
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    reason = "the browser command bridge coordinates the complete renderer state in one exclusive drain"
+)]
 fn drain_browser_commands(
     mut commands: Commands,
     mut mode: ResMut<BrowserMode>,

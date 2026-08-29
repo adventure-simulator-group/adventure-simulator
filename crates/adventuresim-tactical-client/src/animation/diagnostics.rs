@@ -1,4 +1,3 @@
-#[cfg(not(target_family = "wasm"))]
 use super::*;
 #[cfg(not(target_family = "wasm"))]
 use std::io::{BufWriter, Write};
