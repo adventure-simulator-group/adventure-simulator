@@ -6,9 +6,9 @@ use super::*;
 // target near extension. Derive the release cap from that conservative bound
 // and retain two percent of numerical margin below the viewer's 0.10 m
 // contract at 64 Hz.
-/// Measured vertical distance from the Cascadeur ankle bone to its sole.
-/// Maximum rendered ankle-to-terrain residual that still represents sole
-/// contact after the complete analytic and scene-hierarchy solve.
+// Measured vertical distance from the Cascadeur ankle bone to its sole.
+// Maximum rendered ankle-to-terrain residual that still represents sole
+// contact after the complete analytic and scene-hierarchy solve.
 // A late-created plan must not compress a full stride into the few samples
 // left before support entry. Keep target motion relative to the advancing body
 // below the measured knee-singularity budget; ordinary full-swing plans retain
