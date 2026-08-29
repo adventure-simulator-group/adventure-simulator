@@ -1,3 +1,5 @@
+//! Bounded locomotion body response applied after authored pose evaluation.
+
 use super::*;
 
 const MAX_PRESENTATION_SAMPLE_GAP: u64 = 32;

@@ -1,5 +1,17 @@
 use super::*;
 
+const MAX_PLANT_DISCONTINUITY: f32 = 2.0;
+// Preserve a little margin below the viewer's 2 cm pelvis-step contract.
+const PELVIS_CORRECTION_SPEED: f32 = 1.2;
+pub(in crate::animation::procedural) const MAX_PELVIS_CORRECTION_STEP: f32 = 0.05;
+const MIN_KNEE_FLEXION: f32 = 20.0_f32.to_radians();
+// Keep the normal knee reserve while a landing visibly carries weight, then
+// release it before the pelvis reaches the authored height. The released reach
+// remains capped at the authored leg extension, preventing a final
+// recovery-frame foot lift or snap without introducing a straight-leg target.
+const LANDING_KNEE_RESERVE_RELEASE_COMPRESSION: f32 = 0.012;
+const LANDING_KNEE_RESERVE_FULL_COMPRESSION: f32 = 0.04;
+
 pub(in crate::animation::procedural) fn plant_is_continuous(
     plant: Vec3,
     current_foot: Vec3,
@@ -316,5 +328,197 @@ pub(in crate::animation::procedural) fn apply_two_bone_solution(
         && let Ok(mut transform) = transforms.p1().get_mut(end)
     {
         transform.rotation = local.normalize();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn apply_test_two_bone(
+        In((upper, lower, end, solution)): In<(Entity, Entity, Entity, TwoBoneSolution)>,
+        parents: Query<&ChildOf>,
+        mut transforms: ParamSet<(TransformHelper, Query<&mut Transform>)>,
+    ) {
+        apply_two_bone_solution(upper, lower, end, solution, &parents, &mut transforms);
+    }
+
+    fn test_joint_pose(
+        In((lower, end)): In<(Entity, Entity)>,
+        helper: TransformHelper,
+    ) -> (Vec3, Vec3, Quat) {
+        (
+            helper
+                .compute_global_transform(lower)
+                .unwrap()
+                .translation(),
+            helper.compute_global_transform(end).unwrap().translation(),
+            helper.compute_global_transform(end).unwrap().rotation(),
+        )
+    }
+
+    #[test]
+    fn two_bone_solver_preserves_segment_lengths_and_reaches_target() {
+        let root = Vec3::ZERO;
+        let knee = Vec3::new(0.0, -1.0, 0.15);
+        let end = Vec3::new(0.0, -2.0, 0.0);
+        let target = Vec3::new(0.3, -1.85, 0.0);
+        let solved = solve_two_bone(
+            TwoBoneChain::new(root, knee, end, 1.0, 1.0, Vec3::NEG_Z),
+            target,
+        )
+        .unwrap();
+        assert!((root.distance(solved.knee) - 1.0).abs() < 0.0001);
+        assert!((solved.knee.distance(solved.end) - 1.0).abs() < 0.0001);
+        assert!(solved.end.abs_diff_eq(target, 0.0001));
+    }
+
+    #[test]
+    fn two_bone_solver_clamps_unreachable_target_without_nan() {
+        let solved = solve_two_bone(
+            TwoBoneChain::new(
+                Vec3::ZERO,
+                Vec3::new(0.0, -1.0, 0.1),
+                Vec3::new(0.0, -2.0, 0.0),
+                1.0,
+                1.0,
+                Vec3::NEG_Z,
+            ),
+            Vec3::new(0.0, -20.0, 0.0),
+        )
+        .unwrap();
+        assert!(solved.knee.is_finite() && solved.end.is_finite());
+        assert!(solved.end.length() < 2.0);
+    }
+
+    #[test]
+    fn straight_chain_uses_rig_bind_space_knee_pole() {
+        let solved = solve_two_bone(
+            TwoBoneChain::new(
+                Vec3::ZERO,
+                Vec3::NEG_Y,
+                Vec3::NEG_Y * 2.0,
+                1.0,
+                1.0,
+                Vec3::Z,
+            ),
+            Vec3::new(0.0, -1.8, 0.0),
+        )
+        .unwrap();
+        assert!(solved.knee.z > 0.0);
+        assert!(solved.knee.is_finite());
+    }
+
+    #[test]
+    fn stable_pole_overrides_an_authored_knee_in_the_opposite_hemisphere() {
+        let solved = solve_two_bone(
+            TwoBoneChain::new(
+                Vec3::ZERO,
+                Vec3::new(0.0, -1.0, 0.1),
+                Vec3::NEG_Y * 2.0,
+                1.0,
+                1.0,
+                Vec3::NEG_Z,
+            ),
+            Vec3::new(0.0, -1.8, 0.0),
+        )
+        .unwrap();
+        assert!(solved.knee.z < 0.0);
+    }
+
+    #[test]
+    fn authored_knee_bend_is_preserved_within_the_stable_pole_hemisphere() {
+        let solved = solve_two_bone(
+            TwoBoneChain::new(
+                Vec3::ZERO,
+                Vec3::new(0.1, -1.0, 0.1),
+                Vec3::NEG_Y * 2.0,
+                1.0,
+                1.0,
+                Vec3::Z,
+            ),
+            Vec3::new(0.0, -1.8, 0.0),
+        )
+        .unwrap();
+        assert!(solved.knee.x > 0.0);
+        assert!(solved.knee.z > 0.0);
+    }
+
+    #[test]
+    fn lower_joint_solves_through_twist_intermediate_parent() {
+        let mut world = World::new();
+        let upper = world.spawn(Transform::default()).id();
+        let upper_twist = world.spawn(Transform::from_xyz(0.0, -0.5, 0.0)).id();
+        let lower = world.spawn(Transform::from_xyz(0.0, -0.5, 0.0)).id();
+        let lower_twist = world.spawn(Transform::from_xyz(0.0, -0.5, 0.0)).id();
+        let authored_foot_rotation = Quat::from_euler(EulerRot::YXZ, 0.35, -0.45, 0.2).normalize();
+        let end = world
+            .spawn(Transform::from_xyz(0.0, -0.5, 0.0).with_rotation(authored_foot_rotation))
+            .id();
+        world.entity_mut(upper).add_child(upper_twist);
+        world.entity_mut(upper_twist).add_child(lower);
+        world.entity_mut(lower).add_child(lower_twist);
+        world.entity_mut(lower_twist).add_child(end);
+        let upper_twist_bind = *world.get::<Transform>(upper_twist).unwrap();
+        let lower_twist_bind = *world.get::<Transform>(lower_twist).unwrap();
+        let (_, _, authored_foot_world_rotation) = world
+            .run_system_cached_with(test_joint_pose, (lower, end))
+            .unwrap();
+        let solution = solve_two_bone(
+            TwoBoneChain::new(
+                Vec3::ZERO,
+                Vec3::NEG_Y,
+                Vec3::NEG_Y * 2.0,
+                1.0,
+                1.0,
+                Vec3::NEG_Z,
+            ),
+            Vec3::new(0.45, -1.75, 0.0),
+        )
+        .unwrap();
+        world
+            .run_system_cached_with(apply_test_two_bone, (upper, lower, end, solution))
+            .unwrap();
+        let (knee, ankle, solved_foot_world_rotation) = world
+            .run_system_cached_with(test_joint_pose, (lower, end))
+            .unwrap();
+        assert!(knee.abs_diff_eq(solution.knee, 0.0002));
+        assert!(ankle.abs_diff_eq(solution.end, 0.0002));
+        assert!(
+            authored_foot_world_rotation
+                .angle_between(solved_foot_world_rotation)
+                .to_degrees()
+                < 0.0001
+        );
+        assert_eq!(
+            *world.get::<Transform>(upper_twist).unwrap(),
+            upper_twist_bind
+        );
+        assert_eq!(
+            *world.get::<Transform>(lower_twist).unwrap(),
+            lower_twist_bind
+        );
+    }
+
+    #[test]
+    fn leg_solver_keeps_minimum_flexion_and_anatomical_hemisphere() {
+        let pole = canonical_knee_pole(-1.0);
+        let solved = solve_two_bone(
+            TwoBoneChain::new(
+                Vec3::ZERO,
+                Vec3::new(0.0, -1.0, -0.1),
+                Vec3::NEG_Y * 2.0,
+                1.0,
+                1.0,
+                pole,
+            ),
+            Vec3::NEG_Y * 20.0,
+        )
+        .unwrap();
+        assert!(solved.end.length() <= maximum_reach(1.0, 1.0) + 0.0001);
+        let bend = (solved.knee)
+            .reject_from_normalized(solved.end_direction)
+            .normalize();
+        assert!(bend.dot(pole) > 0.0);
     }
 }
