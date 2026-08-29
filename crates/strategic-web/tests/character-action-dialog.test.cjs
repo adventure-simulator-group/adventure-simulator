@@ -9,7 +9,9 @@ const {
 } = require("../static/character-action-dialog.js");
 const socialTemplate = fs.readFileSync(path.join(__dirname, "../src/templates/settlement/social.rs"), "utf8");
 const healthTemplate = fs.readFileSync(path.join(__dirname, "../src/templates/settlement/character_health.rs"), "utf8");
-const tradeTemplate = fs.readFileSync(path.join(__dirname, "../src/templates/settlement/trade.rs"), "utf8");
+const tradeTemplate = readRustModuleSource(
+  path.join(__dirname, "../src/templates/settlement/mod.rs"),
+);
 const chromeTemplate = fs.readFileSync(path.join(__dirname, "../src/templates/settlement/chrome.rs"), "utf8");
 const template = [socialTemplate, healthTemplate, tradeTemplate, chromeTemplate].join("\n");
 const styles = fs.readFileSync(path.join(__dirname, "../static/css/strategic.css"), "utf8");

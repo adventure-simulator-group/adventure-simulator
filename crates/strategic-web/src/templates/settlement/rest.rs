@@ -2,7 +2,7 @@ use adventuresim_core::strategic_time::{DAYS_PER_YEAR, MINUTES_PER_DAY};
 use adventuresim_world_schema::SettlementActionService;
 use maud::{Markup, html};
 
-use super::trade::service_page;
+use super::service::service_page;
 use crate::spacetimedb::{
     CharacterCondition, CharacterLimbs, CharacterStats, CharacterView, FoodLot, InventoryItem,
     SettlementView,

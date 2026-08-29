@@ -2,10 +2,11 @@ const fs = require("node:fs");
 const path = require("node:path");
 const assert = require("node:assert/strict");
 const test = require("node:test");
+const { readRustModuleSource } = require("./rust-module-source.cjs");
 
 const source = fs.readFileSync(path.join(__dirname, "../static/cooking.js"), "utf8");
 const inventoryBrowserSource = fs.readFileSync(path.join(__dirname, "../static/inventory-browser.js"), "utf8");
-const template = fs.readFileSync(path.join(__dirname, "../src/templates/settlement/trade.rs"), "utf8");
+const template = readRustModuleSource(path.join(__dirname, "../src/templates/settlement/mod.rs"));
 const dialogue = fs.readFileSync(path.join(__dirname, "../static/dialogue-client.js"), "utf8");
 
 test("cooking stages inventory rows into a bounded pot draft", () => {

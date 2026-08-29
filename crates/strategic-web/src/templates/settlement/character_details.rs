@@ -15,8 +15,8 @@ use super::{
     },
     chrome::{VisualStageKind, party_portrait_overlay, visual_stage},
     context::LocationView,
+    religion::religious_demand_rail,
     social::player_chat_area,
-    trade::religious_demand_rail,
 };
 use crate::medical::MedicalPresentation;
 use crate::spacetimedb::{

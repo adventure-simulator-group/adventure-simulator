@@ -4,6 +4,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const vm = require("node:vm");
 const strategicCalendar = require("./strategic-calendar-fixture.cjs");
+const { readRustModuleSource } = require("./rust-module-source.cjs");
 
 const root = path.join(__dirname, "..");
 
@@ -99,9 +100,8 @@ test("live reconciliation preserves keyed client-owned regions", () => {
   assert.match(source, /preserveClientRegions\(current, next\)/);
   assert.match(source, /replacement\.replaceWith\(region\)/);
 
-  const trade = fs.readFileSync(
-    path.join(root, "src", "templates", "settlement", "trade.rs"),
-    "utf8",
+  const trade = readRustModuleSource(
+    path.join(root, "src", "templates", "settlement", "mod.rs"),
   );
   assert.match(trade, /data-live-preserve="forge-customization"/);
 });
