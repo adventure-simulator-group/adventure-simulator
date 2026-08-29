@@ -1,10 +1,10 @@
-#[derive(Debug, Serialize)]
+#[derive(Serialize)]
 pub(super) struct ContainerSnapshot {
-    objects: Vec<InventoryObject>,
-    edges: Vec<InventoryContainment>,
-    liquids: Vec<ContainerLiquid>,
+    objects: Vec<spacetimedb_sats::serde::SerdeWrapper<InventoryObject>>,
+    edges: Vec<spacetimedb_sats::serde::SerdeWrapper<InventoryContainment>>,
+    liquids: Vec<spacetimedb_sats::serde::SerdeWrapper<ContainerLiquid>>,
     presentations: Vec<ContainerItemPresentation>,
-    tinctures: Vec<BackendTinctureStatus>,
+    tinctures: Vec<spacetimedb_sats::serde::SerdeWrapper<BackendTinctureStatus>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -25,12 +25,12 @@ pub(super) struct ContainerMoveForm {
 }
 
 #[derive(Clone, Copy)]
-struct CarriedInventoryRow {
+struct CarriedInventoryView {
     scope: CarriedInventoryScope,
     row_id: u64,
 }
 
-impl CarriedInventoryRow {
+impl CarriedInventoryView {
     fn from_location(location: &InventoryLocation) -> Option<Self> {
         match location {
             InventoryLocation::Personal(location) => Some(Self {
@@ -78,7 +78,7 @@ pub(super) async fn inventory_containers(
     };
     let fireplace_roots = state
         .db
-        .query::<BackendFireplaceStation>(&format!(
+        .query_sats::<BackendFireplaceStation>(&format!(
             "SELECT * FROM backend_fireplace_stations WHERE character_id = {}",
             actor.id
         ))
@@ -89,7 +89,7 @@ pub(super) async fn inventory_containers(
         .collect::<HashSet<_>>();
     let objects = state
         .db
-        .query::<InventoryObject>("SELECT * FROM inventory_object")
+        .query_sats::<InventoryObject>("SELECT * FROM inventory_object")
         .await
         .unwrap_or_default()
         .into_iter()
@@ -105,15 +105,15 @@ pub(super) async fn inventory_containers(
     let ids = objects.iter().map(|row| row.id).collect::<HashSet<_>>();
     let edges = state
         .db
-        .query::<InventoryContainment>("SELECT * FROM inventory_containment")
+        .query_sats::<InventoryContainment>("SELECT * FROM inventory_containment")
         .await
         .unwrap_or_default()
         .into_iter()
         .filter(|row| ids.contains(&row.child_object_id) && ids.contains(&row.parent_object_id))
         .collect::<Vec<_>>();
-    let liquids = state
+    let liquids: Vec<ContainerLiquid> = state
         .db
-        .query::<ContainerLiquid>("SELECT * FROM container_liquid")
+        .query_sats::<ContainerLiquid>("SELECT * FROM container_liquid")
         .await
         .unwrap_or_default()
         .into_iter()
@@ -121,17 +121,17 @@ pub(super) async fn inventory_containers(
         .collect();
     let definitions = state
         .db
-        .query::<ItemDefinition>("SELECT * FROM item")
+        .query_sats_into::<adventuresim_stdb_client::Item, CatalogItemView>("SELECT * FROM item")
         .await
         .unwrap_or_default();
     let lots = state
         .db
-        .query::<FoodLot>("SELECT * FROM food_lot")
+        .query_sats::<FoodLot>("SELECT * FROM food_lot")
         .await
         .unwrap_or_default();
     let personal = state
         .db
-        .query::<InventoryItem>(&format!(
+        .query_sats::<InventoryItem>(&format!(
             "SELECT * FROM inventory_item WHERE character_id = {}",
             actor.id
         ))
@@ -140,7 +140,7 @@ pub(super) async fn inventory_containers(
     let party = if let Some(party_id) = actor.party_id.as_deref() {
         state
             .db
-            .query::<PartyInventoryItem>(&format!(
+            .query_sats::<PartyInventoryItem>(&format!(
                 "SELECT * FROM party_inventory_item WHERE party_id = {}",
                 sql_string_literal(party_id)
             ))
@@ -152,7 +152,7 @@ pub(super) async fn inventory_containers(
     let presentations = objects
         .iter()
         .filter_map(|object| {
-            let carried = CarriedInventoryRow::from_location(&object.location)?;
+            let carried = CarriedInventoryView::from_location(&object.location)?;
             let quantity = match carried.scope {
                 CarriedInventoryScope::Personal => personal
                     .iter()
@@ -194,7 +194,7 @@ pub(super) async fn inventory_containers(
         .collect();
     let existing = state
         .db
-        .query::<BackendTinctureStatus>("SELECT * FROM backend_tincture_statuses")
+        .query_sats::<BackendTinctureStatus>("SELECT * FROM backend_tincture_statuses")
         .await
         .unwrap_or_default()
         .into_iter()
@@ -209,32 +209,44 @@ pub(super) async fn inventory_containers(
             )
             .await;
     }
-    let tinctures = state
+    let tinctures: Vec<BackendTinctureStatus> = state
         .db
-        .query::<BackendTinctureStatus>("SELECT * FROM backend_tincture_statuses")
+        .query_sats::<BackendTinctureStatus>("SELECT * FROM backend_tincture_statuses")
         .await
         .unwrap_or_default()
         .into_iter()
         .filter(|row| ids.contains(&row.container_object_id))
         .collect();
     Json(ContainerSnapshot {
-        objects,
-        edges,
-        liquids,
+        objects: objects
+            .into_iter()
+            .map(spacetimedb_sats::serde::SerdeWrapper::new)
+            .collect(),
+        edges: edges
+            .into_iter()
+            .map(spacetimedb_sats::serde::SerdeWrapper::new)
+            .collect(),
+        liquids: liquids
+            .into_iter()
+            .map(spacetimedb_sats::serde::SerdeWrapper::new)
+            .collect(),
         presentations,
-        tinctures,
+        tinctures: tinctures
+            .into_iter()
+            .map(spacetimedb_sats::serde::SerdeWrapper::new)
+            .collect(),
     })
     .into_response()
 }
 
 async fn owned_container_object(
     state: &AppState,
-    actor: &Character,
+    actor: &CharacterView,
     id: u64,
 ) -> Option<InventoryObject> {
     let row = state
         .db
-        .query_one::<InventoryObject>(&format!("SELECT * FROM inventory_object WHERE id = {id}"))
+        .query_one_sats::<InventoryObject>(&crate::spacetimedb::inventory_object_by_id(id))
         .await
         .ok()
         .flatten()?;
@@ -271,8 +283,8 @@ pub(super) async fn move_inventory_container_item(
         return (StatusCode::BAD_REQUEST, "Item is not in your inventory").into_response();
     };
     let (Some(child), Some(parent)) = (
-        CarriedInventoryRow::from_location(&child.location),
-        CarriedInventoryRow::from_location(&parent.location),
+        CarriedInventoryView::from_location(&child.location),
+        CarriedInventoryView::from_location(&parent.location),
     ) else {
         return (StatusCode::BAD_REQUEST, "Item is not in carried inventory").into_response();
     };
@@ -351,7 +363,7 @@ pub(super) async fn pour_inventory_container_tincture_spirit(
     };
     let spirit = state
         .db
-        .query::<InventoryItem>(&format!(
+        .query_sats::<InventoryItem>(&format!(
             "SELECT * FROM inventory_item WHERE character_id = {}",
             actor.id
         ))
@@ -467,4 +479,5 @@ mod preparation_ui_tests {
         assert!(script.contains("data-container-tincture"));
     }
 }
-use adventuresim_core::physical_object::{CarriedInventoryScope, InventoryLocation};
+use adventuresim_core::physical_object::CarriedInventoryScope;
+use crate::spacetimedb::InventoryLocation;

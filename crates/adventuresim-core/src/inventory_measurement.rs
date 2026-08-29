@@ -7,7 +7,10 @@
 use std::num::NonZeroU32;
 
 /// A non-zero count of fungible inventory items.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(
+    Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, serde::Deserialize, serde::Serialize,
+)]
+#[serde(transparent)]
 pub struct ItemQuantity(NonZeroU32);
 
 impl ItemQuantity {
@@ -370,6 +373,14 @@ const fn greatest_common_divisor(mut left: u128, mut right: u128) -> u128 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn item_quantity_serializes_as_a_validated_nonzero_number() {
+        let quantity = ItemQuantity::new(7).unwrap();
+        assert_eq!(serde_json::to_string(&quantity).unwrap(), "7");
+        assert_eq!(serde_json::from_str::<ItemQuantity>("7").unwrap(), quantity);
+        assert!(serde_json::from_str::<ItemQuantity>("0").is_err());
+    }
 
     fn soap() -> MeasurementProfile {
         MeasurementProfile {

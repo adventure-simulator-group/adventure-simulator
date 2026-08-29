@@ -7,6 +7,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::OnceLock;
 
 mod authoring_schema;
+#[cfg(test)]
+mod catalog_revision;
 pub use authoring_schema::{
     Condition, FactKey, FactValue, PromptMode, ResolutionPolicy, TopicCategory,
 };

@@ -10,6 +10,28 @@ use adventuresim_core::{
     physiology::{BodyRegion, DoseMilliunits, Humour},
 };
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum CorpseActionKind {
+    Open,
+    Exhume,
+    Bury,
+    Burn,
+    Examine,
+}
+
+impl CorpseActionKind {
+    pub(crate) const fn tag(self) -> &'static str {
+        match self {
+            Self::Open => "open",
+            Self::Exhume => "exhume",
+            Self::Bury => "bury",
+            Self::Burn => "burn",
+            Self::Examine => "examine",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct MedicalPresentation {
     pub unavailable: bool,
@@ -169,10 +191,10 @@ pub fn sanitize(
                     |definition| definition.display_name.clone(),
                 ),
             profile_version: row.profile_version,
-            route: row.route,
+            route: crate::spacetimedb::core_intervention_route(row.route),
             dose: DoseMilliunits::try_new(row.dose_milliunits)
                 .expect("backend administration dose must satisfy the physiology invariant"),
-            region: row.region,
+            region: row.region.map(crate::spacetimedb::core_body_region),
             administered_at: row.administered_at,
             stopped_at: row.stopped_at,
         })
@@ -301,6 +323,26 @@ mod tests {
     use super::*;
 
     #[test]
+    fn corpse_action_tags_are_closed_fixed_vectors() {
+        assert_eq!(
+            [
+                CorpseActionKind::Open,
+                CorpseActionKind::Exhume,
+                CorpseActionKind::Bury,
+                CorpseActionKind::Burn,
+                CorpseActionKind::Examine,
+            ]
+            .map(CorpseActionKind::tag),
+            ["open", "exhume", "bury", "burn", "examine"]
+        );
+        assert_eq!(
+            serde_json::from_str::<CorpseActionKind>("\"burn\"").unwrap(),
+            CorpseActionKind::Burn
+        );
+        assert!(serde_json::from_str::<CorpseActionKind>("\"inspect\"").is_err());
+    }
+
+    #[test]
     fn chart_contains_only_quantized_observations_and_explicit_gaps() {
         let rows = vec![
             BackendPhysiologyChart {
@@ -370,7 +412,7 @@ mod tests {
                 patient_id: 2,
                 preparation_id: "first_course".into(),
                 profile_version: 1,
-                route: adventuresim_core::physiology::InterventionRoute::Oral,
+                route: adventuresim_stdb_client::InterventionRoute::Oral,
                 dose_milliunits: DoseMilliunits::try_new(750).unwrap().get(),
                 region: None,
                 administered_at: 100,
@@ -381,7 +423,7 @@ mod tests {
                 patient_id: 2,
                 preparation_id: "oral_rehydration_draught".into(),
                 profile_version: 1,
-                route: adventuresim_core::physiology::InterventionRoute::Oral,
+                route: adventuresim_stdb_client::InterventionRoute::Oral,
                 dose_milliunits: DoseMilliunits::STANDARD.get(),
                 region: None,
                 administered_at: 300,
@@ -392,7 +434,7 @@ mod tests {
                 patient_id: 2,
                 preparation_id: "cooling_willow_draught".into(),
                 profile_version: 1,
-                route: adventuresim_core::physiology::InterventionRoute::Oral,
+                route: adventuresim_stdb_client::InterventionRoute::Oral,
                 dose_milliunits: DoseMilliunits::STANDARD.get(),
                 region: None,
                 administered_at: 100,

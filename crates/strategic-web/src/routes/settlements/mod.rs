@@ -80,8 +80,8 @@ mod encumbrance {
 mod rest_preview {
     use super::AppState;
     use crate::spacetimedb::{
-        Character, CharacterFilth, CharacterPersonality, InventoryItem, InventoryItemAmount,
-        ItemDefinition, PartyInventoryItem, PartyItemAmount,
+        CatalogItemView, CharacterFilth, CharacterView, InventoryItem, InventoryItemAmount,
+        PartyInventoryItem, PartyItemAmount, Personality,
     };
     use crate::templates::settlement::SoapRestPreview;
     use adventuresim_core::item_references::SOFT_SOAP_ID;

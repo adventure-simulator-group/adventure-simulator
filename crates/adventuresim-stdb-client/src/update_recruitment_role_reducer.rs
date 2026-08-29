@@ -4,7 +4,7 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::recruitment_requirements_type::RecruitmentRequirements;
+use super::role_requirements_type::RoleRequirements;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -13,7 +13,7 @@ pub(super) struct UpdateRecruitmentRoleArgs {
     pub role_id: u64,
     pub name: String,
     pub quantity: u32,
-    pub requirements: RecruitmentRequirements,
+    pub requirements: RoleRequirements,
 }
 
 impl From<UpdateRecruitmentRoleArgs> for super::Reducer {
@@ -49,7 +49,7 @@ pub trait update_recruitment_role {
         role_id: u64,
         name: String,
         quantity: u32,
-        requirements: RecruitmentRequirements,
+        requirements: RoleRequirements,
     ) -> __sdk::Result<()> {
         self.update_recruitment_role_then(
             leader_id,
@@ -73,7 +73,7 @@ pub trait update_recruitment_role {
         role_id: u64,
         name: String,
         quantity: u32,
-        requirements: RecruitmentRequirements,
+        requirements: RoleRequirements,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -90,7 +90,7 @@ impl update_recruitment_role for super::RemoteReducers {
         role_id: u64,
         name: String,
         quantity: u32,
-        requirements: RecruitmentRequirements,
+        requirements: RoleRequirements,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,

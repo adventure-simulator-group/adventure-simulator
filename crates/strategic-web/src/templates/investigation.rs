@@ -2,7 +2,7 @@
 use crate::spacetimedb::DestinationKnowledgeStage;
 use crate::spacetimedb::{
     BackendBestiaryDeduction, BackendInvestigationCaseSummary, BackendInvestigationJournalEntry,
-    BackendInvestigationLead,
+    BackendInvestigationLead, BestiaryDeductionExt,
 };
 use maud::{Markup, html};
 use std::{
@@ -220,8 +220,8 @@ mod tests {
             destination_stage: DestinationKnowledgeStage::Textual,
             directions: "beyond the mill".into(),
             exact_location_id: String::new(),
-            latitude_e7: 0,
-            longitude_e7: 0,
+            latitude_e_7: 0,
+            longitude_e_7: 0,
             witness_name: "Marta".into(),
             witness_description: "tall, red-haired cooper".into(),
             witness_occupation_or_relationship: "cooper".into(),

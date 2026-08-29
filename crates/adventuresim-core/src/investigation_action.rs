@@ -11,10 +11,10 @@ use serde::{Deserialize, Serialize};
 use crate::{
     physical_object::CustodyCharacterId,
     rights::{
-        DecisionProvenance, DomainJurisdiction, DomainRightsOperation, DomainRightsResource,
-        DomainRightsSubject, PrivateRightsDecision, RightsDecisionKind, RightsJurisdiction,
-        RightsOperation, RightsQuestion, RightsQuestionError, RightsResource, RightsRevision,
-        RightsSubject,
+        CanonicalRightsQuestionDigest, DecisionProvenance, DomainJurisdiction,
+        DomainRightsOperation, DomainRightsResource, DomainRightsSubject, PrivateRightsDecision,
+        RightsDecisionKind, RightsJurisdiction, RightsOperation, RightsQuestion,
+        RightsQuestionError, RightsResource, RightsRevision, RightsSubject,
     },
     strategic_action::{
         ActionCoordinates, ActionEffect, ActionRequirement, AuthoritativeSnapshot,
@@ -41,6 +41,140 @@ pub enum InvestigationActionKind {
     Patrol,
     LayAmbush,
     ApproachLead,
+}
+
+/// Stable observer-facing result of evaluating whether an investigation action
+/// can begin now.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+#[serde(rename_all = "snake_case")]
+pub enum InvestigationActionUnavailableReason {
+    PartyNotReady,
+    TravelRequired,
+    NightWindow,
+    TargetChanged,
+    ContactScheduleWindow,
+    ContactNotPresent,
+    CharacterUnavailable,
+    PartyRequired,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InvestigationActionAvailability {
+    Available,
+    Unavailable {
+        reason: InvestigationActionUnavailableReason,
+        can_travel_to_required_site: bool,
+        wait_minutes: u32,
+    },
+}
+
+#[cfg(feature = "spacetimedb")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, spacetimedb::SpacetimeType)]
+#[sats(name = "InvestigationActionUnavailableFields")]
+struct InvestigationActionUnavailableFieldsSats {
+    reason: InvestigationActionUnavailableReason,
+    can_travel_to_required_site: bool,
+    wait_minutes: u32,
+}
+
+#[cfg(feature = "spacetimedb")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, spacetimedb::SpacetimeType)]
+#[sats(name = "InvestigationActionAvailability")]
+enum InvestigationActionAvailabilitySats {
+    Available,
+    Unavailable(InvestigationActionUnavailableFieldsSats),
+}
+
+#[cfg(feature = "spacetimedb")]
+impl From<InvestigationActionAvailability> for InvestigationActionAvailabilitySats {
+    fn from(availability: InvestigationActionAvailability) -> Self {
+        match availability {
+            InvestigationActionAvailability::Available => Self::Available,
+            InvestigationActionAvailability::Unavailable {
+                reason,
+                can_travel_to_required_site,
+                wait_minutes,
+            } => Self::Unavailable(InvestigationActionUnavailableFieldsSats {
+                reason,
+                can_travel_to_required_site,
+                wait_minutes,
+            }),
+        }
+    }
+}
+
+#[cfg(feature = "spacetimedb")]
+impl From<InvestigationActionAvailabilitySats> for InvestigationActionAvailability {
+    fn from(availability: InvestigationActionAvailabilitySats) -> Self {
+        match availability {
+            InvestigationActionAvailabilitySats::Available => Self::Available,
+            InvestigationActionAvailabilitySats::Unavailable(
+                InvestigationActionUnavailableFieldsSats {
+                    reason,
+                    can_travel_to_required_site,
+                    wait_minutes,
+                },
+            ) => Self::Unavailable {
+                reason,
+                can_travel_to_required_site,
+                wait_minutes,
+            },
+        }
+    }
+}
+
+#[cfg(feature = "spacetimedb")]
+impl spacetimedb::SpacetimeType for InvestigationActionAvailability {
+    fn make_type<S: spacetimedb::sats::typespace::TypespaceBuilder>(
+        typespace: &mut S,
+    ) -> spacetimedb::spacetimedb_lib::AlgebraicType {
+        InvestigationActionAvailabilitySats::make_type(typespace)
+    }
+}
+
+#[cfg(feature = "spacetimedb")]
+impl spacetimedb::Serialize for InvestigationActionAvailability {
+    fn serialize<S: spacetimedb::spacetimedb_lib::ser::Serializer>(
+        &self,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        spacetimedb::Serialize::serialize(
+            &InvestigationActionAvailabilitySats::from(*self),
+            serializer,
+        )
+    }
+}
+
+#[cfg(feature = "spacetimedb")]
+impl<'de> spacetimedb::Deserialize<'de> for InvestigationActionAvailability {
+    fn deserialize<D: spacetimedb::spacetimedb_lib::de::Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Self, D::Error> {
+        <InvestigationActionAvailabilitySats as spacetimedb::Deserialize<'de>>::deserialize(
+            deserializer,
+        )
+        .map(Self::from)
+    }
+}
+
+impl InvestigationActionAvailability {
+    pub const fn is_available(self) -> bool {
+        matches!(self, Self::Available)
+    }
+
+    pub const fn unavailable(
+        reason: InvestigationActionUnavailableReason,
+        can_travel_to_required_site: bool,
+        wait_minutes: u32,
+    ) -> Self {
+        Self::Unavailable {
+            reason,
+            can_travel_to_required_site,
+            wait_minutes,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -130,6 +264,21 @@ pub enum Terrain {
     Marsh,
     Ruins,
     Underground,
+}
+
+impl Terrain {
+    pub const fn stable_id(self) -> &'static str {
+        match self {
+            Self::Road => "road",
+            Self::Settlement => "settlement",
+            Self::Plains => "plains",
+            Self::Forest => "forest",
+            Self::Hills => "hills",
+            Self::Marsh => "marsh",
+            Self::Ruins => "ruins",
+            Self::Underground => "underground",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -355,6 +504,13 @@ mod planning_adapter_tests {
                 .provenance()
                 .question_digest
         );
+        assert_eq!(
+            investigation_rights_question_digest(&first)
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>(),
+            "a887f5a8e7ed99122bd0464481bfd8f0769fc9c561744c54dbde692b89326594"
+        );
     }
 }
 
@@ -450,41 +606,22 @@ pub fn investigation_rights_question(
 }
 
 pub fn investigation_rights_question_digest(question: &InvestigationRightsQuestion) -> [u8; 32] {
-    use sha2::Digest as _;
-
-    let mut hasher = sha2::Sha256::new();
-    let mut frame = |bytes: &[u8]| {
-        hasher.update((bytes.len() as u64).to_le_bytes());
-        hasher.update(bytes);
-    };
-    frame(b"investigation-rights-question-v1");
-    match question.subject() {
-        RightsSubject::Character(actor) => {
-            frame(b"character");
-            frame(&actor.get().to_le_bytes());
-        }
-        RightsSubject::Party(_) | RightsSubject::Domain(_) => frame(b"invalid-subject"),
-    }
-    match question.resource() {
-        RightsResource::Domain(InvestigationRightsResource::PartyAction) => frame(b"party-action"),
-        RightsResource::Domain(InvestigationRightsResource::CaseAction) => frame(b"case-action"),
-        RightsResource::Object(_) | RightsResource::Place(_) | RightsResource::Fixture(_) => {
-            frame(b"invalid-resource")
-        }
-    }
-    match question.operation() {
-        RightsOperation::Domain(InvestigationRightsOperation::Perform) => frame(b"perform"),
-        _ => frame(b"invalid-operation"),
-    }
-    match question.jurisdiction() {
-        RightsJurisdiction::Global => frame(b"global"),
-        RightsJurisdiction::Place(place) => {
-            frame(b"place");
-            frame(place.to_string().as_bytes());
-        }
-        RightsJurisdiction::Domain(_) => frame(b"invalid-jurisdiction"),
-    }
-    hasher.finalize().into()
+    let mut digest = CanonicalRightsQuestionDigest::new(b"investigation");
+    digest.frame_subject(question.subject(), |_, subject| match *subject {});
+    digest.frame_resource(question.resource(), |digest, resource| {
+        digest.frame(match resource {
+            InvestigationRightsResource::PartyAction => b"party-action",
+            InvestigationRightsResource::CaseAction => b"case-action",
+        });
+    });
+    digest.frame_operation(question.operation(), |digest, operation| match operation {
+        InvestigationRightsOperation::Perform => digest.frame(b"perform"),
+    });
+    digest.frame_jurisdiction(
+        question.jurisdiction(),
+        |_, jurisdiction| match *jurisdiction {},
+    );
+    digest.finish()
 }
 
 pub fn decide_investigation_rights(
@@ -1161,5 +1298,36 @@ mod tests {
             "\"tracks\""
         );
         assert!(serde_json::from_str::<InvestigationTargetKind>("\"corpse\"").is_err());
+    }
+
+    #[test]
+    fn action_availability_serialization_is_typed_and_canonical() {
+        let unavailable = InvestigationActionAvailability::unavailable(
+            InvestigationActionUnavailableReason::TravelRequired,
+            true,
+            0,
+        );
+        assert_eq!(
+            serde_json::to_value(unavailable).unwrap(),
+            serde_json::json!({
+                "unavailable": {
+                    "reason": "travel_required",
+                    "can_travel_to_required_site": true,
+                    "wait_minutes": 0
+                }
+            })
+        );
+        assert!(InvestigationActionAvailability::Available.is_available());
+        assert!(!unavailable.is_available());
+        assert_eq!(
+            serde_json::from_value::<InvestigationActionAvailability>(
+                serde_json::to_value(unavailable).unwrap()
+            )
+            .unwrap(),
+            unavailable
+        );
+        assert!(
+            serde_json::from_str::<InvestigationActionAvailability>("\"wording_changed\"").is_err()
+        );
     }
 }

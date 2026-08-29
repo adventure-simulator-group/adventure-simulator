@@ -33,7 +33,7 @@ use crate::animation::{
     LocomotionPresentationEvent, LocomotionPresentationEventKind,
     MEASURED_ANKLE_SOLE_OFFSET_METRES, PresentedSkeleton, ProceduralAnimationClock,
     RaisedFootworkState, SOLE_CONTACT_TOLERANCE_METRES, TacticalAnimationPlugin, TerrainIkEnabled,
-    locomotion_support_weights,
+    capture_animation_target_id, capture_entity_id, locomotion_support_weights,
     secondary_physics::SecondaryPhysicsTelemetry,
     semantic_route::{SemanticRoutePath, SemanticRouteTrace},
 };
@@ -511,14 +511,14 @@ fn repeated_leg_ik_matches(expected: LegIkDiagnostics, actual: LegIkDiagnostics)
 }
 
 #[derive(Debug, Serialize)]
-struct CaptureManifest {
+struct AnimationCaptureManifest {
     sample_hz: f32,
     playback_backend: &'static str,
     global_bone_trace: &'static str,
     pose_buffer: PoseBufferMetrics,
     pipeline: &'static str,
     views: [CaptureView; 3],
-    validation: CaptureValidation,
+    validation: AnimationCaptureValidation,
     quality_score: QualityScore,
     scenarios: Vec<ScenarioMetrics>,
     frames: Vec<FrameSample>,
@@ -557,7 +557,7 @@ struct PresentationEventSample {
 }
 
 #[derive(Debug, Serialize)]
-struct CaptureValidation {
+struct AnimationCaptureValidation {
     finite_transforms: bool,
     all_scenarios_complete: bool,
     all_artifacts_written: bool,
@@ -2512,12 +2512,12 @@ fn collect_locomotion_presentation_events(
         .extend(events.read().map(move |event| PresentationEventSample {
             scenario: scenario.clone(),
             scenario_frame,
-            owner: format!("{:?}", event.owner),
+            owner: capture_entity_id(event.owner),
             sequence: event.sequence,
             sample_tick: event.sample_tick,
             kind: match event.kind {
                 LocomotionPresentationEventKind::Contact(foot) => {
-                    format!("contact_{foot:?}").to_lowercase()
+                    format!("contact_{}", foot.id())
                 }
                 LocomotionPresentationEventKind::Landing => "landing".to_owned(),
             },
@@ -2923,18 +2923,20 @@ fn collect_global_bone_transforms(
         .filter(|(_, bind, _, _)| bind.owner == subject)
         .map(|(target, _, name, transform)| {
             let (scale, rotation, translation) = transform.to_scale_rotation_translation();
-            GlobalBoneTransformSample {
+            let sample = GlobalBoneTransformSample {
                 name: name.map_or_else(|| "<unnamed>".to_owned(), |name| name.as_str().to_owned()),
-                target_id: format!("{target:?}"),
+                target_id: capture_animation_target_id(*target),
                 translation: translation.to_array(),
                 rotation_xyzw: rotation.to_array(),
                 scale: scale.to_array(),
-            }
+            };
+            (*target, sample)
         })
         .collect::<Vec<_>>();
-    samples
-        .sort_by(|left, right| (&left.name, &left.target_id).cmp(&(&right.name, &right.target_id)));
-    samples
+    samples.sort_by(|(left_target, left), (right_target, right)| {
+        (&left.name, left_target).cmp(&(&right.name, right_target))
+    });
+    samples.into_iter().map(|(_, sample)| sample).collect()
 }
 
 fn tracked_bone(role: BoneRole) -> Option<&'static str> {
@@ -3749,7 +3751,7 @@ fn finish_capture(
             frame.secondary_upper_body_mean_blend_weight >= 0.18
                 && frame.secondary_upper_body_maximum_pose_lag_degrees >= 0.25
         }) && inertial_response_valid);
-    let validation = CaptureValidation {
+    let validation = AnimationCaptureValidation {
         finite_transforms,
         all_scenarios_complete,
         all_artifacts_written,
@@ -3786,7 +3788,7 @@ fn finish_capture(
     };
     let quality_score = quality_score(&frames, &scenarios, &validation);
     let acceptance_passed = validation_passed(&validation);
-    let manifest = CaptureManifest {
+    let manifest = AnimationCaptureManifest {
         sample_hz: SAMPLE_HZ,
         playback_backend,
         global_bone_trace: "global-bone-transforms.jsonl",
@@ -3838,7 +3840,7 @@ fn finish_capture(
     }
 }
 
-fn validation_passed(validation: &CaptureValidation) -> bool {
+fn validation_passed(validation: &AnimationCaptureValidation) -> bool {
     validation.finite_transforms
         && validation.all_scenarios_complete
         && validation.all_artifacts_written
@@ -3878,7 +3880,7 @@ fn validation_passed(validation: &CaptureValidation) -> bool {
 fn quality_score(
     frames: &[FrameSample],
     scenarios: &[ScenarioMetrics],
-    validation: &CaptureValidation,
+    validation: &AnimationCaptureValidation,
 ) -> QualityScore {
     let catastrophic_foot_displacement_failed = catastrophic_foot_displacement(frames);
     let anatomical_invalid_joints_failed = scenarios.iter().any(|metrics| {
@@ -5386,7 +5388,7 @@ fn minimum_foot_clearance(frames: &[&FrameSample]) -> f32 {
     if minimum.is_finite() { minimum } else { -1.0 }
 }
 
-fn review_html(manifest: &CaptureManifest) -> String {
+fn review_html(manifest: &AnimationCaptureManifest) -> String {
     let frame_json = serde_json::to_string(&manifest.frames).expect("review frames must serialize");
     let scenario_names_json = serde_json::to_string(
         &manifest
@@ -5568,7 +5570,7 @@ mod tests {
 
     #[test]
     fn quality_score_is_zero_for_an_incomplete_capture() {
-        let validation = CaptureValidation {
+        let validation = AnimationCaptureValidation {
             finite_transforms: true,
             all_scenarios_complete: false,
             all_artifacts_written: true,

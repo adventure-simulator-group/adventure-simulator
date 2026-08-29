@@ -223,7 +223,7 @@ fn generated_case_site_presentation_is_validated_and_action_only() {
     for required in [
         "validate_quest_generation_authority",
         "canonical_case_site_place(&generated_site.id.0)",
-        ".zip(site.id.to_place())",
+        ".map(|generated| (generated, site.id.to_place()))",
         "generated == persisted",
         "generated_site.safe_label != site.name",
         "generated_case_site_combat_eligible",
@@ -242,9 +242,7 @@ fn generated_case_site_presentation_is_validated_and_action_only() {
 fn exact_witness_belief_projects_a_pin_without_route_completion() {
     let site = CaseSiteAuthority {
         id_key: "site:opaque".into(),
-        id: CaseSiteId {
-            value: "site:opaque".into(),
-        },
+        id: CaseSiteId::try_new("site:opaque").unwrap(),
         case_id: "canonical-case".into(),
         origin_settlement_id: "settlement".into(),
         name: "The abandoned croft".into(),
@@ -265,7 +263,7 @@ fn exact_witness_belief_projects_a_pin_without_route_completion() {
         confidence_bps: 5_000,
         destination_stage: DestinationKnowledgeStage::ExactBelieved,
         directions: String::new(),
-        exact_location_id: site.id.value.clone(),
+        exact_location_id: site.id.as_str().to_owned(),
         latitude_e7: site.latitude_e7,
         longitude_e7: site.longitude_e7,
         witness_name: "Marta".into(),
@@ -345,9 +343,11 @@ fn action_projection_and_reducer_keep_hidden_authority_server_side() {
     }
     assert!(projected_type.contains("case_id"));
     assert!(projected_type.contains("required_case_site_id"));
-    assert!(projected_type.contains("available"));
-    assert!(projected_type.contains("unavailable_reason_code"));
-    assert!(projected_type.contains("wait_minutes"));
+    assert!(projected_type.contains("availability"));
+    assert!(projected_type.contains("InvestigationActionAvailability"));
+    assert!(!projected_type.contains("unavailable_reason_code"));
+    assert!(!projected_type.contains("can_travel_to_required_site"));
+    assert!(!projected_type.contains("wait_minutes"));
     assert!(projection.contains("capability_has_successful_attempt_view"));
     assert!(projection.contains("capability_has_live_support_view"));
     assert!(projection.contains("action_unavailable_reason_view"));
@@ -456,7 +456,7 @@ fn corrected_exact_site_knowledge_is_not_live_action_support() {
     assert!(legacy_site_lookup.contains("case_site_id: &str"));
     assert!(legacy_site_lookup.contains("Option<(CaseSiteAuthority, InvestigationLead)>"));
     assert!(legacy_site_lookup.contains("canonical_case_site_place(case_site_id)"));
-    assert!(legacy_site_lookup.contains("site.id.to_place()? != requested_place"));
+    assert!(legacy_site_lookup.contains("site.id.to_place() != requested_place"));
     assert!(!legacy_site_lookup.contains("InvestigationActionCapability"));
 }
 
@@ -639,30 +639,59 @@ fn generated_live_support_uses_the_observer_safe_case_alias_at_every_boundary() 
 
 #[test]
 fn inspect_site_travel_requires_ready_off_site_party() {
-    let ready_off_site = projected_action_availability(true, "site", false, 0);
+    let site = CaseSiteId::from("site".to_owned());
+    let ready_off_site = projected_action_availability(true, Some(&site), false, 0);
     assert!(ready_off_site.unavailable_reason.is_some());
-    assert!(ready_off_site.can_travel_to_required_site);
-    assert_eq!(ready_off_site.unavailable_reason_code, "travel_required");
+    assert_eq!(
+        ready_off_site.availability,
+        action::InvestigationActionAvailability::Unavailable {
+            reason: action::InvestigationActionUnavailableReason::TravelRequired,
+            can_travel_to_required_site: true,
+            wait_minutes: 0,
+        }
+    );
 
-    let incapacitated_off_site = projected_action_availability(false, "site", false, 0);
+    let incapacitated_off_site = projected_action_availability(false, Some(&site), false, 0);
     assert!(incapacitated_off_site.unavailable_reason.is_some());
-    assert!(!incapacitated_off_site.can_travel_to_required_site);
+    assert!(matches!(
+        incapacitated_off_site.availability,
+        action::InvestigationActionAvailability::Unavailable {
+            reason: action::InvestigationActionUnavailableReason::PartyNotReady,
+            can_travel_to_required_site: false,
+            wait_minutes: 0,
+        }
+    ));
 
-    let incapacitated_on_site = projected_action_availability(false, "site", true, 0);
+    let incapacitated_on_site = projected_action_availability(false, Some(&site), true, 0);
     assert!(incapacitated_on_site.unavailable_reason.is_some());
-    assert!(!incapacitated_on_site.can_travel_to_required_site);
+    assert!(matches!(
+        incapacitated_on_site.availability,
+        action::InvestigationActionAvailability::Unavailable {
+            reason: action::InvestigationActionUnavailableReason::PartyNotReady,
+            can_travel_to_required_site: false,
+            wait_minutes: 0,
+        }
+    ));
 
-    let ready_on_site = projected_action_availability(true, "site", true, 0);
+    let ready_on_site = projected_action_availability(true, Some(&site), true, 0);
     assert!(ready_on_site.unavailable_reason.is_none());
-    assert!(!ready_on_site.can_travel_to_required_site);
+    assert_eq!(
+        ready_on_site.availability,
+        action::InvestigationActionAvailability::Available
+    );
 }
 
 #[test]
 fn changed_victim_cohort_projects_one_generic_observer_safe_reason() {
     let unavailable = projected_target_changed_availability();
-    assert_eq!(unavailable.unavailable_reason_code, "target_changed");
-    assert_eq!(unavailable.wait_minutes, 0);
-    assert!(!unavailable.can_travel_to_required_site);
+    assert_eq!(
+        unavailable.availability,
+        action::InvestigationActionAvailability::Unavailable {
+            reason: action::InvestigationActionUnavailableReason::TargetChanged,
+            can_travel_to_required_site: false,
+            wait_minutes: 0,
+        }
+    );
     let wording = unavailable.unavailable_reason.unwrap();
     for private_detail in [
         "victim",
@@ -721,10 +750,15 @@ fn nighttime_projection_wait_is_exact_and_bounded() {
     assert_eq!(night_window_wait_minutes(1_200), 0);
     assert_eq!(night_window_wait_minutes(1_440 + 600), 600);
 
-    let blocked = projected_action_availability(true, "", false, 37);
-    assert_eq!(blocked.unavailable_reason_code, "night_window");
-    assert_eq!(blocked.wait_minutes, 37);
-    assert!(!blocked.can_travel_to_required_site);
+    let blocked = projected_action_availability(true, None, false, 37);
+    assert_eq!(
+        blocked.availability,
+        action::InvestigationActionAvailability::Unavailable {
+            reason: action::InvestigationActionUnavailableReason::NightWindow,
+            can_travel_to_required_site: false,
+            wait_minutes: 37,
+        }
+    );
     assert!(blocked.unavailable_reason.is_some());
 
     let source = INVESTIGATION_SOURCE;
@@ -771,8 +805,8 @@ fn locate_contact_projection_mirrors_public_scheduled_presence() {
         .expect("public contact presence projection");
     assert!(projection.contains("InvestigationActionKind::LocateContact"));
     assert!(projection.contains("settlement_resident_presence()"));
-    assert!(projection.contains("contact_schedule_window"));
-    assert!(projection.contains("contact_not_present"));
+    assert!(projection.contains("InvestigationActionUnavailableReason::ContactScheduleWindow"));
+    assert!(projection.contains("InvestigationActionUnavailableReason::ContactNotPresent"));
 
     let reducer = source
         .split("fn validate_action_position")
@@ -821,7 +855,7 @@ fn locate_contact_stale_target_beats_off_hours_schedule_wait() {
         .expect("locate-contact projection");
     let validates_target = projection.find("referred_contact_is_current_view").unwrap();
     let computes_wait = projection
-        .find("public_contact_schedule_wait_minutes")
+        .find("projected_contact_schedule_wait_minutes")
         .unwrap();
     assert!(validates_target < computes_wait);
 }
@@ -978,4 +1012,29 @@ fn complete_generated_graph_reissue_preserves_progressed_frontier() {
         .find("set_action_active")
         .expect("fresh graph activation");
     assert!(complete < blueprint && blueprint < evolved && evolved < activation);
+}
+#[test]
+fn case_site_disclosure_ids_reject_prefix_spoofs_and_malformed_revisions() {
+    let base = "case-site-disclosure:7:site:ford";
+    assert_eq!(
+        CaseSiteDisclosureLeadId::parse(base, base),
+        Some(CaseSiteDisclosureLeadId::Base)
+    );
+    assert_eq!(
+        CaseSiteDisclosureLeadId::parse(
+            "case-site-disclosure:7:site:ford:revision:00000042",
+            base,
+        ),
+        Some(CaseSiteDisclosureLeadId::Revision(42))
+    );
+    for spoof in [
+        "case-site-disclosure:7:site:ford-spoof",
+        "case-site-disclosure:7:site:ford:revision:",
+        "case-site-disclosure:7:site:ford:revision:42",
+        "case-site-disclosure:7:site:ford:revision:00000000",
+        "case-site-disclosure:7:site:ford:revision:0000004x",
+        "case-site-disclosure:7:site:ford:revision:00000042:extra",
+    ] {
+        assert_eq!(CaseSiteDisclosureLeadId::parse(spoof, base), None, "{spoof}");
+    }
 }

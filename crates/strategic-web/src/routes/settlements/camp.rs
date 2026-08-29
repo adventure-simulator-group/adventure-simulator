@@ -1,6 +1,4 @@
-use adventuresim_core::strategic_time::{
-    HOURS_PER_DAY, MINUTES_PER_HOUR, StrategicMinuteOfDay,
-};
+use adventuresim_core::strategic_time::{HOURS_PER_DAY, MINUTES_PER_HOUR, StrategicMinuteOfDay};
 
 #[derive(Deserialize)]
 pub(super) struct TravelConfigurationForm {
@@ -35,9 +33,7 @@ pub(super) async fn save_travel_configuration(
     let Some(character_id) = session.character_id_u64() else {
         return Redirect::to("/characters").into_response();
     };
-    let walking_minutes = (form
-        .walking_hours
-        .clamp(0.0, f32::from(HOURS_PER_DAY))
+    let walking_minutes = (form.walking_hours.clamp(0.0, f32::from(HOURS_PER_DAY))
         * f32::from(MINUTES_PER_HOUR))
     .round() as u16;
     let Some((hours, minutes)) = form.journey_start_time.split_once(':') else {
@@ -50,7 +46,11 @@ pub(super) async fn save_travel_configuration(
         return (StatusCode::BAD_REQUEST, "Journey start time must use HH:MM").into_response();
     };
     let Some(journey_start) = StrategicMinuteOfDay::from_hour_minute(hours, minutes) else {
-        return (StatusCode::BAD_REQUEST, "Journey start time is outside one day").into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            "Journey start time is outside one day",
+        )
+            .into_response();
     };
     match state
         .db
@@ -78,6 +78,54 @@ pub(super) struct CampQuery {
     road_occurrence: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct DirectDemoContractId {
+    character_id: u64,
+    ordinal: u64,
+}
+
+impl DirectDemoContractId {
+    fn parse(value: &str) -> Option<Self> {
+        let mut segments = value.split(':');
+        if segments.next()? != "contract"
+            || segments.next()? != "errantry-puzzle"
+            || segments.next()? != "demo"
+        {
+            return None;
+        }
+        let character_id = segments.next()?.parse().ok()?;
+        let ordinal = segments.next()?.parse().ok()?;
+        segments.next().is_none().then_some(Self {
+            character_id,
+            ordinal,
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct DirectDemoChallengeId {
+    character_id: u64,
+    ordinal: u64,
+}
+
+impl DirectDemoChallengeId {
+    fn parse(value: &str) -> Option<Self> {
+        let mut segments = value.split(':');
+        if segments.next()? != "challenge" || segments.next()?.is_empty() {
+            return None;
+        }
+        if segments.next()? != "demo" {
+            return None;
+        }
+        let character_id = segments.next()?.parse().ok()?;
+        let ordinal = segments.next()?.parse().ok()?;
+        segments.next().is_none().then_some(Self {
+            character_id,
+            ordinal,
+        })
+    }
+}
+
 pub(super) async fn camp(
     State(state): State<AppState>,
     Query(query): Query<CampQuery>,
@@ -99,7 +147,7 @@ pub(super) async fn camp(
         let query = party_by_id(party_id);
         party = state
             .db
-            .query_one::<Party>(query.as_str())
+            .query_one_sats_into::<adventuresim_stdb_client::Party, PartyView>(query.as_str())
             .await
             .ok()
             .flatten();
@@ -130,10 +178,7 @@ pub(super) async fn camp(
     for attempt in 0..4 {
         journey = state
             .db
-            .query_one::<PartyJourney>(&format!(
-                "SELECT * FROM party_journey WHERE party_id = {}",
-                sql_string_literal(&party.id)
-            ))
+            .query_one_sats::<PartyJourney>(&crate::spacetimedb::party_journey_by_party_id(&party.id))
             .await
             .ok()
             .flatten();
@@ -145,7 +190,7 @@ pub(super) async fn camp(
     let party_members = get_active_party_members(&state, Some(&character)).await;
     let member_times: Vec<CharacterTime> = state
         .db
-        .query("SELECT * FROM backend_character_times")
+        .query_sats("SELECT * FROM backend_character_times")
         .await
         .unwrap_or_default();
     let current_party_minute = party_members
@@ -158,16 +203,16 @@ pub(super) async fn camp(
         .map(|time| time.minutes)
         .max()
         .unwrap_or(0);
-    let direct_demo_contract_prefix = format!("contract:errantry-puzzle:demo:{}:", character.id);
     let expects_direct_demo = party
         .active_contract_id
         .as_deref()
-        .is_some_and(|id| id.starts_with(&direct_demo_contract_prefix));
+        .and_then(DirectDemoContractId::parse)
+        .is_some_and(|id| id.character_id == character.id);
     let mut challenges = Vec::new();
     for attempt in 0..4 {
         match state
             .db
-            .query::<BackendChallenge>(&format!(
+            .query_sats::<BackendChallenge>(&format!(
                 "SELECT * FROM backend_challenges WHERE owner_character_id = {}",
                 character.id
             ))
@@ -192,7 +237,7 @@ pub(super) async fn camp(
     }
     let road_challenges = match state
         .db
-        .query::<BackendRoadChallenge>(&format!(
+        .query_sats::<BackendRoadChallenge>(&format!(
             "SELECT * FROM backend_road_challenges WHERE owner_character_id = {}",
             character.id
         ))
@@ -214,18 +259,16 @@ pub(super) async fn camp(
     }
     let terrain_route = state
         .db
-        .query_one::<PartyJourneyRoute>(&format!(
-            "SELECT * FROM party_journey_route WHERE party_id = {}",
-            sql_string_literal(&party.id)
+        .query_one_sats_into::<adventuresim_stdb_client::PartyJourneyRoute, PartyJourneyRouteView>(&crate::spacetimedb::party_journey_route_by_party_id(
+            &party.id,
         ))
         .await
         .ok()
         .flatten();
     let encounter = match state
         .db
-        .query_one::<StrategicEncounter>(&format!(
-            "SELECT * FROM strategic_encounter WHERE party_id = {}",
-            sql_string_literal(&party.id)
+        .query_one_sats::<StrategicEncounter>(&crate::spacetimedb::strategic_encounter_by_party_id(
+            &party.id,
         ))
         .await
     {
@@ -250,7 +293,7 @@ pub(super) async fn camp(
     {
         let memberships: Vec<BackendContextCharacter> = state
             .db
-            .query(&format!(
+            .query_sats(&format!(
                 "SELECT * FROM backend_context_characters WHERE contact_ref = {} AND party_id = {}",
                 sql_string_literal(&encounter.encounter_id),
                 sql_string_literal(&party.id)
@@ -260,9 +303,8 @@ pub(super) async fn camp(
         for membership in memberships.into_iter().filter(|row| row.alive) {
             if let Ok(Some(character)) = state
                 .db
-                .query_one::<Character>(&format!(
-                    "SELECT * FROM backend_characters WHERE id = {}",
-                    membership.character_id
+                .query_one_sats_into::<adventuresim_stdb_client::Character, CharacterView>(&crate::spacetimedb::character_by_id(
+                    membership.character_id,
                 ))
                 .await
             {
@@ -272,7 +314,7 @@ pub(super) async fn camp(
     }
     let stats: Vec<CharacterStats> = state
         .db
-        .query("SELECT * FROM backend_character_stats")
+        .query_sats("SELECT * FROM backend_character_stats")
         .await
         .unwrap_or_default();
     let fatigue_rest_minutes = party_members
@@ -489,8 +531,8 @@ fn direct_demo_challenge_redirect(
 }
 
 fn is_direct_demo_challenge_id(challenge_id: &str, character_id: u64) -> bool {
-    challenge_id.starts_with("challenge:")
-        && challenge_id.contains(&format!(":demo:{character_id}:"))
+    DirectDemoChallengeId::parse(challenge_id)
+        .is_some_and(|challenge| challenge.character_id == character_id)
 }
 
 pub(super) fn camp_continue_block_reason(
@@ -508,7 +550,10 @@ pub(super) fn camp_continue_block_reason(
 
 #[cfg(test)]
 mod direct_demo_redirect_tests {
-    use super::direct_demo_challenge_redirect;
+    use super::{
+        DirectDemoChallengeId, DirectDemoContractId, direct_demo_challenge_redirect,
+        is_direct_demo_challenge_id,
+    };
     use crate::spacetimedb::{BackendChallenge, BackendRoadChallenge, ChallengePresenterCatalogId};
 
     fn challenge(id: &str, active: bool, open: bool, solved: bool) -> BackendChallenge {
@@ -517,7 +562,9 @@ mod direct_demo_redirect_tests {
             case_id: "case:errantry-puzzle:demo:7:0".into(),
             party_id: "party:7".into(),
             owner_character_id: 7,
-            finale_case_site_id: "site:finale".into(),
+            finale_case_site_id: adventuresim_stdb_client::CaseSiteId {
+                value: "site:finale".into(),
+            },
             puzzle_projection_json: "{}".into(),
             presenter_catalog_id: ChallengePresenterCatalogId::LadyBeneathThornV1,
             revision: 0,
@@ -574,6 +621,40 @@ mod direct_demo_redirect_tests {
                 "/quests/case:errantry-puzzle:demo:7:0/challenges/challenge:truthful-witnesses:demo:7:2"
             )
         );
+    }
+
+    #[test]
+    fn direct_demo_ids_parse_exact_authority_tags() {
+        assert_eq!(
+            DirectDemoContractId::parse("contract:errantry-puzzle:demo:7:12"),
+            Some(DirectDemoContractId {
+                character_id: 7,
+                ordinal: 12,
+            })
+        );
+        assert_eq!(
+            DirectDemoChallengeId::parse("challenge:ordered-sigils:demo:7:12"),
+            Some(DirectDemoChallengeId {
+                character_id: 7,
+                ordinal: 12,
+            })
+        );
+        assert!(!is_direct_demo_challenge_id(
+            "challenge:ordered-sigils:demo:70:12",
+            7
+        ));
+        for spoofed in [
+            "contract:errantry-puzzle:demo:7:12:extra",
+            "challenge:ordered-sigils:other:demo:7:12",
+            "challenge:ordered-sigils:demo:7:12:extra",
+            "challenge::demo:7:12",
+        ] {
+            assert!(
+                DirectDemoContractId::parse(spoofed).is_none()
+                    && DirectDemoChallengeId::parse(spoofed).is_none(),
+                "{spoofed}"
+            );
+        }
     }
 
     #[test]
@@ -733,7 +814,7 @@ pub(super) async fn bandage_camp_counterparty(
 
 pub(super) async fn camp_settlement_destinations(
     state: &AppState,
-    party: &Party,
+    party: &PartyView,
     journey: Option<&PartyJourney>,
 ) -> Vec<CampTravelDestination> {
     let Some(journey) = journey else {
@@ -765,7 +846,7 @@ pub(super) async fn camp_settlement_destinations(
         let query = settlement_by_id(id);
         let settlement = state
             .db
-            .query_one::<Settlement>(query.as_str())
+            .query_one_sats_into::<adventuresim_stdb_client::Settlement, SettlementView>(query.as_str())
             .await
             .ok()
             .flatten();
@@ -857,8 +938,8 @@ pub(super) async fn change_camp_destination(
 
 pub(crate) async fn travel_provision_forecast(
     state: &AppState,
-    party: Option<&Party>,
-    travelers: &[Character],
+    party: Option<&PartyView>,
+    travelers: &[CharacterView],
     destination: &TravelDestination,
     departing_settlement: bool,
 ) -> Result<Option<TravelProvisionForecast>, String> {
@@ -890,17 +971,17 @@ pub(crate) async fn travel_provision_forecast(
 
 pub(super) async fn travel_provision_forecast_for_minutes(
     state: &AppState,
-    party: Option<&Party>,
-    travelers: &[Character],
+    party: Option<&PartyView>,
+    travelers: &[CharacterView],
     planning_minutes: u64,
     rest_intervals: &[(u64, u64)],
     departing_settlement: bool,
 ) -> Result<Option<TravelProvisionForecast>, String> {
     let mut travelers: Vec<_> = travelers.iter().filter(|traveler| traveler.alive).collect();
     travelers.sort_by_key(|traveler| traveler.id);
-    let items: Vec<ItemDefinition> = state
+    let items: Vec<CatalogItemView> = state
         .db
-        .query("SELECT * FROM item")
+        .query_sats_into::<adventuresim_stdb_client::Item, CatalogItemView>("SELECT * FROM item")
         .await
         .map_err(|error| error.to_string())?;
     let Some(ration) = items
@@ -914,19 +995,19 @@ pub(super) async fn travel_provision_forecast_for_minutes(
     };
     let food_lots: Vec<FoodLot> = state
         .db
-        .query("SELECT * FROM food_lot")
+        .query_sats("SELECT * FROM food_lot")
         .await
         .map_err(|error| error.to_string())?;
     let (objects, containment, liquids) = tokio::join!(
         state
             .db
-            .query::<InventoryObject>("SELECT * FROM inventory_object"),
+            .query_sats::<InventoryObject>("SELECT * FROM inventory_object"),
         state
             .db
-            .query::<InventoryContainment>("SELECT * FROM inventory_containment"),
+            .query_sats::<InventoryContainment>("SELECT * FROM inventory_containment"),
         state
             .db
-            .query::<ContainerLiquid>("SELECT * FROM container_liquid"),
+            .query_sats::<ContainerLiquid>("SELECT * FROM container_liquid"),
     );
     let objects = objects.map_err(|error| error.to_string())?;
     let containment = containment.map_err(|error| error.to_string())?;
@@ -941,9 +1022,8 @@ pub(super) async fn travel_provision_forecast_for_minutes(
     for traveler in &travelers {
         let Some(needs) = state
             .db
-            .query_one::<CharacterNeeds>(&format!(
-                "SELECT * FROM backend_character_needs WHERE character_id = {}",
-                traveler.id
+            .query_one_sats::<CharacterNeeds>(&crate::spacetimedb::character_needs_by_character_id(
+                traveler.id,
             ))
             .await
             .map_err(|error| error.to_string())?
@@ -952,7 +1032,7 @@ pub(super) async fn travel_provision_forecast_for_minutes(
         };
         let inventory: Vec<InventoryItem> = state
             .db
-            .query(&format!(
+            .query_sats(&format!(
                 "SELECT * FROM inventory_item WHERE character_id = {}",
                 traveler.id
             ))
@@ -976,18 +1056,21 @@ pub(super) async fn travel_provision_forecast_for_minutes(
                 });
             }
         }
-        let time =
-            query_single::<CharacterTime>(state, "backend_character_times", traveler.id).await;
-        let personality = query_single::<CharacterPersonality>(
+        let time = query_single::<CharacterTime>(
             state,
-            "backend_character_personalities",
-            traveler.id,
+            crate::spacetimedb::character_time_by_character_id(traveler.id),
         )
         .await;
+        let personality = query_single::<adventuresim_stdb_client::CharacterPersonality>(
+            state,
+            crate::spacetimedb::character_personality_by_character_id(traveler.id),
+        )
+        .await
+        .map(|row| crate::spacetimedb::core_personality(&row));
         if time.is_some() {
             let history = state
                 .db
-                .query::<AlcoholConsumption>(&format!(
+                .query_sats::<AlcoholConsumption>(&format!(
                     "SELECT * FROM alcohol_consumption WHERE character_id = {}",
                     traveler.id
                 ))
@@ -1078,7 +1161,7 @@ pub(super) async fn travel_provision_forecast_for_minutes(
     if let Some(party) = party {
         let pooled: Vec<PartyInventoryItem> = state
             .db
-            .query(&format!(
+            .query_sats(&format!(
                 "SELECT * FROM party_inventory_item WHERE party_id = {}",
                 sql_string_literal(&party.id)
             ))

@@ -8,8 +8,8 @@ use super::{
 };
 use crate::medical::{ChartGapPresentation, ChartReadingPresentation, MedicalPresentation};
 use crate::spacetimedb::{
-    BackendCorpse, BodyRegion, Character, CharacterAttributes, CharacterLimbs,
-    CharacterStrategicCondition, LimbInjury, ProjectileKind, RetainedProjectile,
+    BackendCorpse, BodyRegion, CharacterAttributes, CharacterLimbs, CharacterStrategicCondition,
+    CharacterView, LimbInjury, ProjectileKind, RetainedProjectile,
 };
 use crate::templates::{
     decorative_game_icon, game_icon, item_display_name, sidebar_section, stat_icon_path,
@@ -204,8 +204,8 @@ fn surgery_procedure_row(
 )]
 pub fn surgery_dialog(
     location: &LocationView,
-    active_character: &Character,
-    patient: &Character,
+    active_character: &CharacterView,
+    patient: &CharacterView,
     injuries: &[LimbInjury],
     projectiles: &[RetainedProjectile],
     selected_limb: BodyRegion,
@@ -223,7 +223,9 @@ pub fn surgery_dialog(
         patient.id,
         surgery_limb_slug(selected_limb)
     ));
-    let selected = injuries.iter().find(|injury| injury.limb == selected_limb);
+    let selected = injuries
+        .iter()
+        .find(|injury| crate::spacetimedb::core_body_region(injury.limb) == selected_limb);
     let cut = selected.map_or(0.0, |injury| injury.cut_damage.max(0.0));
     let bruise = selected.map_or(0.0, |injury| injury.bruise_damage.max(0.0));
     let fracture = selected.map_or(0.0, |injury| injury.fracture_damage.max(0.0));
@@ -259,7 +261,7 @@ pub fn surgery_dialog(
                     (surgery_supply("Disinfecting alcohol", "beer-stein", alcohol_units))
                 }
                 div class="surgery-procedures" {
-                    @for projectile in projectiles.iter().filter(|projectile| projectile.limb == selected_limb) {
+                    @for projectile in projectiles.iter().filter(|projectile| crate::spacetimedb::core_body_region(projectile.limb) == selected_limb) {
                         @let requires_kit = adventuresim_core::surgery::extraction_requires_surgery_kit(projectile.extraction_dc);
                         (surgery_procedure_row(&action, match projectile.kind { ProjectileKind::Arrowhead => "Remove arrowhead", ProjectileKind::Ball => "Remove ball" }, match projectile.kind { ProjectileKind::Arrowhead => "plain-arrow", ProjectileKind::Ball => "bullet-visual" }, SurgeryProcedure::Extract, if requires_kit { &[SurgeryItemRequirement::SurgeryKitReusable] } else { &[] }, surgery_duration(SurgeryProcedure::Extract, extraction_skill, projectile.extraction_dc), projectile.extraction_dc,
                             extraction_skill, None, if extraction_skill < projectile.extraction_dc { Some("Insufficient Surgery skill") } else if requires_kit && !has_kit { Some("No surgery kit") } else { None }, Some(projectile.id), soaps > 0, true, selected_alcohol))
@@ -308,19 +310,22 @@ fn corpse_action_form(
     corpse: &BackendCorpse,
     location_base: &str,
     window: &str,
-    action_kind: &str,
+    action_kind: crate::medical::CorpseActionKind,
     discipline: &str,
     stage: &str,
     label: &str,
     disabled: Option<&str>,
 ) -> Markup {
+    use crate::medical::CorpseActionKind;
+
     let unauthorized = match action_kind {
-        "burn" => !corpse.penalty_free_burning,
-        "bury" => false,
-        "exhume" => !corpse.exhumation_permission,
-        _ => corpse.permission == "none",
+        CorpseActionKind::Burn => !corpse.penalty_free_burning,
+        CorpseActionKind::Bury => false,
+        CorpseActionKind::Exhume => !corpse.exhumation_permission,
+        CorpseActionKind::Open | CorpseActionKind::Examine => corpse.permission == "none",
     };
-    let destructive = action_kind == "burn";
+    let destructive = action_kind == CorpseActionKind::Burn;
+    let action_tag = action_kind.tag();
     let warning = if destructive && unauthorized {
         "Burning a victim cannot be authorized. It permanently destroys the body and evidence, severely harms family affinity, and brings severe settlement infamy."
     } else if destructive {
@@ -342,16 +347,16 @@ fn corpse_action_form(
             data-strategic-tooltip=[(unauthorized || destructive).then_some(warning)]
             tabindex=[(unauthorized || destructive).then_some("0")]
             onsubmit=[(unauthorized || destructive).then_some(format!("return confirm('{confirmation}')"))] {
-            input type="hidden" name="action_kind" value=(action_kind);
+            input type="hidden" name="action_kind" value=(action_tag);
             input type="hidden" name="discipline" value=(discipline);
             input type="hidden" name="stage" value=(stage);
             input type="hidden" name="expected_revision" value=(corpse.revision);
             input type="hidden" name="confirm_unauthorized" value=(if unauthorized { "true" } else { "false" });
-            input type="hidden" name="action_id" value=(format!("autopsy:{action_kind}:{discipline}:{stage}:{}", corpse.revision));
+            input type="hidden" name="action_id" value=(format!("autopsy:{action_tag}:{discipline}:{stage}:{}", corpse.revision));
             input type="hidden" name="return_to" value=(format!("{location_base}?corpse={}&medical={window}", corpse.corpse_id));
             (game_icon(label, match action_kind {
-                "open" => "scalpel",
-                "burn" => "campfire",
+                CorpseActionKind::Open => "scalpel",
+                CorpseActionKind::Burn => "campfire",
                 _ => "magnifying-glass",
             }))
             div class="surgery-procedure-copy" {
@@ -375,6 +380,8 @@ fn corpse_action_form(
 /// Corpse examinations deliberately reuse the existing Physiology notebook and
 /// Surgery procedure-window idioms; there is no third autopsy dialogue.
 pub fn corpse_medical_dialog(corpse: &BackendCorpse, location_base: &str, window: &str) -> Markup {
+    use crate::medical::CorpseActionKind;
+
     let close_href = location_base;
     let internal_disabled = (!corpse.opened).then_some("Open the body in Surgery first");
     let title = if window == "surgery" {
@@ -406,26 +413,26 @@ pub fn corpse_medical_dialog(corpse: &BackendCorpse, location_base: &str, window
                 }
                 div class="surgery-procedures" {
                     @if corpse.location == "interred" {
-                        (corpse_action_form(corpse, location_base, window, "exhume", "surgery", "handling", "Exhume the body", None))
+                        (corpse_action_form(corpse, location_base, window, CorpseActionKind::Exhume, "surgery", "handling", "Exhume the body", None))
                     } @else {
-                        (corpse_action_form(corpse, location_base, window, "bury", "surgery", "handling", "Bury the body", None))
-                        (corpse_action_form(corpse, location_base, window, "burn", "surgery", "handling", "Burn the body", None))
-                        (corpse_action_form(corpse, location_base, window, "examine", window, "external", "External examination", None))
-                        (corpse_action_form(corpse, location_base, window, "examine", "bestiary", "external", "Interpret external creature signs", None))
+                        (corpse_action_form(corpse, location_base, window, CorpseActionKind::Bury, "surgery", "handling", "Bury the body", None))
+                        (corpse_action_form(corpse, location_base, window, CorpseActionKind::Burn, "surgery", "handling", "Burn the body", None))
+                        (corpse_action_form(corpse, location_base, window, CorpseActionKind::Examine, window, "external", "External examination", None))
+                        (corpse_action_form(corpse, location_base, window, CorpseActionKind::Examine, "bestiary", "external", "Interpret external creature signs", None))
                         @if window == "surgery" {
                             (corpse_action_form(
                                 corpse,
                                 location_base,
                                 window,
-                                "open",
+                                CorpseActionKind::Open,
                                 "surgery",
                                 "opening",
                                 "Open the body",
                                 corpse.opened.then_some("The body is already open"),
                             ))
                         }
-                        (corpse_action_form(corpse, location_base, window, "examine", window, "internal", "Internal examination", internal_disabled))
-                        (corpse_action_form(corpse, location_base, window, "examine", "bestiary", "internal", "Interpret internal creature signs", internal_disabled))
+                        (corpse_action_form(corpse, location_base, window, CorpseActionKind::Examine, window, "internal", "Internal examination", internal_disabled))
+                        (corpse_action_form(corpse, location_base, window, CorpseActionKind::Examine, "bestiary", "internal", "Interpret internal creature signs", internal_disabled))
                     }
                 }
                 @if corpse.location != "interred" && !corpse.findings.is_empty() {
@@ -452,6 +459,7 @@ pub(super) fn strategic_condition_rail(
         return html! {};
     };
     let percent = |value: f32| format!("{:.0}%", value.max(0.0) * 100.0);
+    let status = crate::spacetimedb::core_incapacitation_status(condition.status);
     let fear_fill = (condition.fear.clamp(0.0, 1.0) * 100.0).round();
     let bonus_fill = if condition.morale_bonus_cap > 0.0 {
         (condition.morale_bonus / condition.morale_bonus_cap * 100.0).clamp(0.0, 100.0)
@@ -459,11 +467,13 @@ pub(super) fn strategic_condition_rail(
         0.0
     }
     .round();
-    let resolved_morale = adventuresim_core::social::resolved_social_morale(
-        morale_sources
-            .iter()
-            .map(|source| (source.kind.as_str(), source.magnitude)),
-    );
+    let resolved_morale =
+        adventuresim_core::social::resolved_social_morale(morale_sources.iter().map(|source| {
+            (
+                crate::spacetimedb::core_morale_source_kind(source.kind),
+                source.magnitude,
+            )
+        }));
     let resolved_fill = resolved_morale.clamp(0.0, 100.0).round();
     let meter_style = format!(
         "--morale-fear: {fear_fill}%; --morale-resolved: {resolved_fill}%; --morale-bonus: {bonus_fill}%"
@@ -517,10 +527,10 @@ pub(super) fn strategic_condition_rail(
             div class="incapacitation-overview" tabindex="0" title=(format!("{} incapacitation", percent(condition.incapacitation))) {
                 div class="incapacitation-heading" {
                     strong class="metric-label" { (decorative_game_icon("coma")) span { "Incapacitation" } }
-                    span class="incapacitation-status" { (&condition.status) }
+                    span class="incapacitation-status" { (status) }
                 }
                 div class="incapacitation-total-track" role="meter"
-                    aria-label=(format!("Incapacitation {}; {}", percent(condition.incapacitation), condition.status))
+                    aria-label=(format!("Incapacitation {}; {status}", percent(condition.incapacitation)))
                     aria-valuemin="0" aria-valuemax="100"
                     aria-valuenow=(condition.incapacitation.clamp(0.0, 1.0) * 100.0) {
                     @for (_, _, color, value) in incapacitation_segments {
@@ -1368,7 +1378,9 @@ fn regional_health_bar(
         BodyRegion::Abdomen,
         BodyRegion::Head,
     ][region];
-    let injury = injuries.iter().find(|injury| injury.limb == limb);
+    let injury = injuries
+        .iter()
+        .find(|injury| crate::spacetimedb::core_body_region(injury.limb) == limb);
     let cut = injury
         .map_or(0.0, |row| row.cut_damage)
         .min(physical_damage);
@@ -1489,7 +1501,7 @@ fn regional_health_bar(
                         style=(format!("width:{:.1}%", amount * 100.0)) {}
                 }
             }
-            @for (projectile_index, projectile) in projectiles.iter().filter(|projectile| projectile.limb == limb).enumerate() {
+            @for (projectile_index, projectile) in projectiles.iter().filter(|projectile| crate::spacetimedb::core_body_region(projectile.limb) == limb).enumerate() {
                 span class=(match projectile.kind { ProjectileKind::Arrowhead => "surgery-projectile-icon projectile-arrowhead", ProjectileKind::Ball => "surgery-projectile-icon projectile-ball" })
                     style=(format!("right:{:.2}rem", 0.2 + projectile_index as f32 * 0.75))
                     title=(match projectile.kind { ProjectileKind::Arrowhead => "Retained arrowhead", ProjectileKind::Ball => "Retained ball" }) aria-hidden="true" {}
@@ -1546,7 +1558,9 @@ mod tests {
             source_id: "battle:1".into(),
             location: "scene".into(),
             decomposition: "fresh".into(),
-            case_site_id: "site:1".into(),
+            case_site_id: Some(adventuresim_stdb_client::CaseSiteId {
+                value: "site:1".into(),
+            }),
             settlement_id: "town".into(),
             opened,
             permission: permission.into(),
@@ -1636,11 +1650,13 @@ mod tests {
             amount: 2,
             deposited_at: 10,
         };
-        let serialized = serde_json::to_value(&deposit).unwrap();
+        let serialized =
+            serde_json::to_value(spacetimedb_sats::serde::SerdeWrapper::from_ref(&deposit))
+                .unwrap();
         assert!(serialized.get("source_character_id").is_none());
         assert_eq!(
-            serialized.get("origin").and_then(|value| value.as_str()),
-            Some("Foreign")
+            serialized.get("origin"),
+            Some(&serde_json::json!({ "Foreign": [] }))
         );
         let markup = filth_status_bar(&[deposit], 0).into_string();
         assert!(markup.contains("2 foreign"));
@@ -1673,7 +1689,7 @@ mod tests {
             water_capacity_ml: 2_000,
             incapacitation: 0.0,
             check_multiplier: 1.0,
-            status: adventuresim_core::morale::IncapacitationStatus::Ready,
+            status: adventuresim_stdb_client::IncapacitationStatus::Ready,
         };
         let markup =
             strategic_condition_rail(Some(&condition), &[], &[], "/social", false).into_string();
@@ -1733,20 +1749,20 @@ mod tests {
             water_capacity_ml: 2_000,
             incapacitation: 0.03,
             check_multiplier: 1.0,
-            status: adventuresim_core::morale::IncapacitationStatus::Ready,
+            status: adventuresim_stdb_client::IncapacitationStatus::Ready,
         };
         let sources = [
             CharacterMoraleSource {
                 id: "loss".into(),
                 character_id: 7,
-                kind: "defeat".into(),
+                kind: adventuresim_stdb_client::MoraleSourceKind::Defeat,
                 label: "Recent defeat".into(),
                 magnitude: -5.0,
             },
             CharacterMoraleSource {
                 id: "support".into(),
                 character_id: 7,
-                kind: "social_interaction".into(),
+                kind: adventuresim_stdb_client::MoraleSourceKind::SocialInteraction,
                 label: "social interaction".into(),
                 magnitude: 8.0,
             },
@@ -2145,7 +2161,7 @@ mod tests {
         let injury = LimbInjury {
             id: "1:chest".into(),
             character_id: 1,
-            limb: BodyRegion::Chest,
+            limb: adventuresim_stdb_client::BodyRegion::Chest,
             cut_damage: 0.2,
             bruise_damage: 0.2,
             frostbite_damage: 0.0,

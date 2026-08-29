@@ -13,7 +13,10 @@ pub(super) fn leader_is_actionable(
 
 pub(super) fn equipment_utility(profile: &AgentProfile, item: &Item) -> Option<f32> {
     let preference = &profile.equipment;
-    let armor = matches!(item.kind, ItemKind::Armor | ItemKind::Clothing);
+    let armor = matches!(
+        item.kind,
+        PersistedItemKind::Armor | PersistedItemKind::Clothing
+    );
     let compatible = match preference.style {
         EquipmentStyle::Unarmored => !armor && item.melee && item.weight <= 2.5,
         EquipmentStyle::Ranged => !armor && item.ranged,
@@ -35,7 +38,7 @@ pub(super) fn equipment_utility(profile: &AgentProfile, item: &Item) -> Option<f
 }
 
 pub(super) fn root_requirement_matches_slot(
-    requirement: &EquipmentOccupancyRequirement,
+    requirement: &OccupancyRequirement,
     slot: Slot,
 ) -> bool {
     match slot {
@@ -269,6 +272,7 @@ fn run_core_loop_inner(
         character_ids,
         metrics: CoreLoopMetrics::default(),
         trace: Vec::new(),
+        semantic_event_keys: Vec::new(),
         sequence: 0,
         dialogue_nonce: 0,
         last_semantic_event: None,
@@ -322,7 +326,7 @@ fn run_core_loop_inner(
     } else if world_import.is_some() || runner.connection.db.settlement().iter().next().is_some() {
         return Err("fixture mode refuses imported or pre-existing settlement state".into());
     }
-    let result = reducer_call!(runner, "claim_simulation_run", |cb| runner
+    let result = reducer_call!(runner, ReducerOperation::ClaimSimulationRun, |cb| runner
         .connection
         .reducers
         .claim_simulation_run_then(
@@ -348,7 +352,7 @@ fn run_core_loop_inner(
     };
     // The disposable simulation owns this otherwise-empty database, so its
     // authenticated connection is also the trusted strategic gateway.
-    let result = reducer_call!(runner, "register_strategic_gateway", |cb| runner
+    let result = reducer_call!(runner, ReducerOperation::RegisterStrategicGateway, |cb| runner
         .connection
         .reducers
         .register_strategic_gateway_then(None, 0, cb));
@@ -395,7 +399,7 @@ fn run_core_loop_inner(
         .recv_timeout(ACTION_TIMEOUT)
         .map_err(|_| "gateway subscription timed out".to_string())??;
     if !config.use_imported_world {
-        let result = reducer_call!(runner, "seed_simulation_world", |cb| runner
+        let result = reducer_call!(runner, ReducerOperation::SeedSimulationWorld, |cb| runner
             .connection
             .reducers
             .seed_simulation_world_then(config.run_nonce.clone(), cb));
@@ -411,7 +415,7 @@ fn run_core_loop_inner(
         .ok_or("simulation world has no starting settlement")?;
     for (agent, character_id) in runner.character_ids.clone().into_iter().enumerate() {
         let name = format!("sim-{}-{agent}", config.seed);
-        let result = reducer_call!(runner, "create_named_character_with_id", |cb| runner
+        let result = reducer_call!(runner, ReducerOperation::CreateNamedCharacterWithId, |cb| runner
             .connection
             .reducers
             .create_named_character_with_id_then(character_id, name.clone(), cb));
@@ -422,7 +426,7 @@ fn run_core_loop_inner(
         let skills = live_skills(character_id, &profile);
         let downtime = live_schedule(&profile);
         let personality = live_personality(character_id, &profile.personality);
-        let result = reducer_call!(runner, "configure_simulation_character", |cb| runner
+        let result = reducer_call!(runner, ReducerOperation::ConfigureSimulationCharacter, |cb| runner
             .connection
             .reducers
             .configure_simulation_character_then(
@@ -453,12 +457,14 @@ fn run_core_loop_inner(
                         .is_some_and(|item| {
                             matches!(
                                 item.kind,
-                                ItemKind::Weapon | ItemKind::Armor | ItemKind::Shield
+                                PersistedItemKind::Weapon
+                                    | PersistedItemKind::Armor
+                                    | PersistedItemKind::Shield
                             )
                         })
             })
             .ok_or("simulation character has no durable fixture item")?;
-        let result = reducer_call!(runner, "seed_simulation_equipment_damage", |cb| runner
+        let result = reducer_call!(runner, ReducerOperation::SeedSimulationEquipmentDamage, |cb| runner
             .connection
             .reducers
             .seed_simulation_equipment_damage_then(
@@ -469,7 +475,7 @@ fn run_core_loop_inner(
             ));
         runner.call(result)?;
         if agent == 0 {
-            let result = reducer_call!(runner, "seed_simulation_disease", |cb| runner
+            let result = reducer_call!(runner, ReducerOperation::SeedSimulationDisease, |cb| runner
                 .connection
                 .reducers
                 .seed_simulation_disease_then(
@@ -481,7 +487,12 @@ fn run_core_loop_inner(
             runner.call(result)?;
         }
         runner.metrics.parties_formed += 1;
-        runner.event(agent as u32, CoreLoopEventKind::FormParty, name);
+        runner.character_event(
+            agent as u32,
+            CoreLoopEventKind::FormParty,
+            character_id,
+            name,
+        );
     }
 
     // Joining is demonstrated with the same ordinary request/accept reducers as players.
@@ -501,7 +512,7 @@ fn run_core_loop_inner(
         party_ids.push(leader_party.id.clone());
         for agent in group.into_iter().skip(1) {
             let member = runner.character_ids[agent];
-            let result = reducer_call!(runner, "request_general_party_join", |cb| runner
+            let result = reducer_call!(runner, ReducerOperation::RequestGeneralPartyJoin, |cb| runner
                 .connection
                 .reducers
                 .request_general_party_join_then(member, leader_party.id.clone(), cb));
@@ -519,7 +530,7 @@ fn run_core_loop_inner(
                 .iter()
                 .find(|row| row.character_id == member && row.party_id == leader_party.id)
                 .ok_or("join reducer completed without a coherent request row")?;
-            let result = reducer_call!(runner, "accept_party_join_request", |cb| runner
+            let result = reducer_call!(runner, ReducerOperation::AcceptPartyJoinRequest, |cb| runner
                 .connection
                 .reducers
                 .accept_party_join_request_then(leader, request.id, cb));
@@ -554,7 +565,7 @@ fn run_core_loop_inner(
                 .map(|(leader, _)| leader)
                 .ok_or("quest coverage party has no leader")?;
             let assessment =
-                runner.public_party_matchup_assessment(party_id, 1, "one", fixture_enemy_power);
+                runner.public_party_matchup_assessment(party_id, 1, 1, fixture_enemy_power);
             candidates.push(FixturePartyCandidate {
                 identity: FixturePartyIdentity {
                     leader_id: leader,
@@ -587,7 +598,7 @@ fn run_core_loop_inner(
             .current_settlement_id
             .clone()
             .ok_or("quest coverage direct party is not in a settlement")?;
-        let result = reducer_call!(runner, "seed_simulation_quest_fixture", |cb| runner
+        let result = reducer_call!(runner, ReducerOperation::SeedSimulationQuestFixture, |cb| runner
             .connection
             .reducers
             .seed_simulation_quest_fixture_then(
@@ -623,7 +634,7 @@ fn run_core_loop_inner(
                 .clone(),
         });
     }
-    let result = reducer_call!(runner, "ensure_settlement_activity", |cb| runner
+    let result = reducer_call!(runner, ReducerOperation::EnsureSettlementActivity, |cb| runner
         .connection
         .reducers
         .ensure_settlement_activity_then(settlement.clone(), cb));
@@ -702,9 +713,7 @@ fn run_core_loop_inner(
                 ExpeditionRecoveryOutcome::None | ExpeditionRecoveryOutcome::Resumed => {}
                 ExpeditionRecoveryOutcome::Returned => {
                     active = true;
-                    let result = reducer_call!(
-                        runner,
-                        "ensure_settlement_activity_after_idle_site_return",
+                    let result = reducer_call!(runner, ReducerOperation::EnsureSettlementActivityAfterIdleSiteReturn,
                         |cb| {
                             runner
                                 .connection
@@ -717,9 +726,7 @@ fn run_core_loop_inner(
                 }
                 ExpeditionRecoveryOutcome::Evacuated => {
                     active = true;
-                    let result = reducer_call!(
-                        runner,
-                        "ensure_settlement_activity_after_evacuation",
+                    let result = reducer_call!(runner, ReducerOperation::EnsureSettlementActivityAfterEvacuation,
                         |cb| {
                             runner
                                 .connection
@@ -764,7 +771,8 @@ fn run_core_loop_inner(
             match runner.continue_public_active_journey(party_id)? {
                 None | Some(JourneyTravelOutcome::Completed) => {}
                 Some(
-                    JourneyTravelOutcome::HeldNoActionableActor
+                    JourneyTravelOutcome::DeferredForDaylightWindow
+                    | JourneyTravelOutcome::HeldNoActionableActor
                     | JourneyTravelOutcome::HeldForRecovery,
                 ) => {
                     held = true;
@@ -833,7 +841,7 @@ fn run_core_loop_inner(
                     leader,
                     case_id,
                     title,
-                    "owner_projection_continuation",
+                    GeneratedCaseIntakeSource::OwnerProjectionContinuation,
                 );
             }
             let projected_investigation_actions = runner
@@ -1008,14 +1016,14 @@ fn run_core_loop_inner(
                 }
                 _ => runner.settlement_activity_day(leader_agent)?,
             }
-            let result = reducer_call!(runner, "ensure_settlement_activity", |cb| runner
+            let result = reducer_call!(runner, ReducerOperation::EnsureSettlementActivity, |cb| runner
                 .connection
                 .reducers
                 .ensure_settlement_activity_then(settlement.clone(), cb));
             runner.call(result)?;
         }
         if active {
-            let result = reducer_call!(runner, "advance_simulation_world_time", |cb| runner
+            let result = reducer_call!(runner, ReducerOperation::AdvanceSimulationWorldTime, |cb| runner
                 .connection
                 .reducers
                 .advance_simulation_world_time_then(
@@ -1024,7 +1032,7 @@ fn run_core_loop_inner(
                     cb,
                 ));
             runner.call(result)?;
-            let result = reducer_call!(runner, "ensure_settlement_activity", |cb| runner
+            let result = reducer_call!(runner, ReducerOperation::EnsureSettlementActivity, |cb| runner
                 .connection
                 .reducers
                 .ensure_settlement_activity_then(settlement.clone(), cb));
@@ -1246,23 +1254,33 @@ fn run_core_loop_inner(
             .iter()
             .position(|id| *id == fixture.generated_leader_id)
             .map(|agent| agent as u32);
-        let direct_event = |kind: CoreLoopEventKind, token: &str| {
+        let direct_event = |kind: CoreLoopEventKind| {
             direct_agent.is_some_and(|agent| {
-                runner.trace.iter().any(|event| {
-                    event.agent_id == agent
-                        && event.kind == kind
-                        && event.detail.contains(token)
-                        && event.detail.contains(&fixture.direct_party_id)
+                runner.semantic_event_keys.iter().any(|key| {
+                    key.agent_id == agent
+                        && key.kind == kind
+                        && matches!(
+                            &key.subject,
+                            CoreLoopEventSubject::DirectContract {
+                                party_id,
+                                contract_id,
+                            } if party_id == &fixture.direct_party_id
+                                && contract_id == &fixture.direct_contract_id
+                        )
                 })
             })
         };
         let generated_event = |kind: CoreLoopEventKind| {
             generated_agent.is_some_and(|agent| {
-                runner.trace.iter().any(|event| {
-                    event.agent_id == agent
-                        && event.kind == kind
-                        && event.detail.contains(&fixture.generated_case_id)
-                        && event.detail.contains(&fixture.generated_party_id)
+                runner.semantic_event_keys.iter().any(|key| {
+                    key.agent_id == agent
+                        && key.kind == kind
+                        && matches!(
+                            &key.subject,
+                            CoreLoopEventSubject::GeneratedCase { party_id, case_id }
+                                if party_id == &fixture.generated_party_id
+                                    && case_id == &fixture.generated_case_id
+                        )
                 })
             })
         };
@@ -1273,23 +1291,12 @@ fn run_core_loop_inner(
             generated_leader_id: fixture.generated_leader_id,
             direct_party_id: fixture.direct_party_id.clone(),
             generated_party_id: fixture.generated_party_id.clone(),
-            direct_accepted: direct_event(
-                CoreLoopEventKind::AcceptContract,
-                &fixture.direct_contract_id,
-            ),
-            direct_traveled: direct_event(CoreLoopEventKind::Travel, &fixture.direct_contract_id),
-            direct_encountered: direct_event(
-                CoreLoopEventKind::AutoresolveVictory,
-                &fixture.direct_contract_id,
-            ) || direct_event(
-                CoreLoopEventKind::AutoresolveDefeat,
-                &fixture.direct_contract_id,
-            ),
-            direct_reported: direct_event(CoreLoopEventKind::TurnIn, &fixture.direct_contract_id),
-            direct_safely_abandoned: direct_event(
-                CoreLoopEventKind::AbandonQuest,
-                &fixture.direct_contract_id,
-            ),
+            direct_accepted: direct_event(CoreLoopEventKind::AcceptContract),
+            direct_traveled: direct_event(CoreLoopEventKind::Travel),
+            direct_encountered: direct_event(CoreLoopEventKind::AutoresolveVictory)
+                || direct_event(CoreLoopEventKind::AutoresolveDefeat),
+            direct_reported: direct_event(CoreLoopEventKind::TurnIn),
+            direct_safely_abandoned: direct_event(CoreLoopEventKind::AbandonQuest),
             generated_intake: generated_event(CoreLoopEventKind::GeneratedCaseIntake),
             generated_discovered: generated_event(CoreLoopEventKind::GeneratedQuestDiscovered),
             generated_completed: generated_event(CoreLoopEventKind::GeneratedQuestCompleted),

@@ -1,13 +1,93 @@
 use super::{
-    ChoiceKind, DecisionArguments, EVAL_FORMAT_VERSION, MAX_PROVIDER_RESPONSE_BYTES, PlayerFrame,
-    PolicyClassification, PolicyDecision, PolicyRunMetadata,
+    ChoiceId, ChoiceKind, DecisionArguments, EVAL_FORMAT_VERSION, MAX_PROVIDER_RESPONSE_BYTES,
+    PlayerFrame, PolicyClassification, PolicyDecision, PolicyRunMetadata,
 };
+use serde::Deserialize;
 use std::time::Instant;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ProviderDecisionError {
+    ResponseTooLarge,
+    MalformedJson(String),
+    UnsupportedVersion,
+    MalformedChoiceId,
+    MalformedEnvelope,
+    MissingChoice,
+}
+
+impl std::fmt::Display for ProviderDecisionError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ResponseTooLarge => formatter.write_str("provider response exceeds byte budget"),
+            Self::MalformedJson(error) => write!(formatter, "invalid provider JSON: {error}"),
+            Self::UnsupportedVersion => {
+                formatter.write_str("provider selected unsupported schema version")
+            }
+            Self::MalformedChoiceId => formatter.write_str("provider choice ID is malformed"),
+            Self::MalformedEnvelope => {
+                formatter.write_str("provider returned malformed response envelope")
+            }
+            Self::MissingChoice => formatter.write_str("provider response contained no choice"),
+        }
+    }
+}
+
+impl std::error::Error for ProviderDecisionError {}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PolicyError {
+    DeadlineExceeded,
+    InvalidResponse(ProviderDecisionError),
+    Failure(String),
+    RepairFailed {
+        initial: ProviderDecisionError,
+        repair: Box<PolicyError>,
+    },
+}
+
+impl std::fmt::Display for PolicyError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::DeadlineExceeded => {
+                formatter.write_str("quest evaluator wall-time budget exceeded")
+            }
+            Self::InvalidResponse(error) => error.fmt(formatter),
+            Self::Failure(error) => formatter.write_str(error),
+            Self::RepairFailed { initial, repair } => {
+                write!(formatter, "{initial}; bounded repair failed: {repair}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for PolicyError {}
+
+impl PolicyError {
+    pub(crate) fn is_deadline_exceeded(&self) -> bool {
+        match self {
+            Self::DeadlineExceeded => true,
+            Self::RepairFailed { repair, .. } => repair.is_deadline_exceeded(),
+            Self::InvalidResponse(_) | Self::Failure(_) => false,
+        }
+    }
+}
+
+impl From<String> for PolicyError {
+    fn from(error: String) -> Self {
+        Self::Failure(error)
+    }
+}
+
+impl From<&str> for PolicyError {
+    fn from(error: &str) -> Self {
+        Self::Failure(error.to_owned())
+    }
+}
 
 pub trait QuestPolicy {
     fn name(&self) -> &str;
-    fn decide(&mut self, frame: &PlayerFrame) -> Result<PolicyDecision, String>;
-    fn classify(&mut self, _frame: &PlayerFrame) -> Result<PolicyClassification, String> {
+    fn decide(&mut self, frame: &PlayerFrame) -> Result<PolicyDecision, PolicyError>;
+    fn classify(&mut self, _frame: &PlayerFrame) -> Result<PolicyClassification, PolicyError> {
         Ok(PolicyClassification::default())
     }
     fn run_metadata(&self) -> PolicyRunMetadata {
@@ -16,7 +96,7 @@ pub trait QuestPolicy {
             policy_kind: "local".into(),
             provider: None,
             model: None,
-            prompt_revision: "investigation-policy-v3".into(),
+            prompt_revision: "investigation-policy-v4".into(),
             requests: 0,
             estimated_prompt_tokens: 0,
             estimated_completion_tokens: 0,
@@ -29,13 +109,13 @@ pub trait QuestPolicy {
         &mut self,
         frame: &PlayerFrame,
         deadline: Instant,
-    ) -> Result<PolicyDecision, String> {
+    ) -> Result<PolicyDecision, PolicyError> {
         if Instant::now() >= deadline {
-            return Err("quest evaluator wall-time budget exceeded".into());
+            return Err(PolicyError::DeadlineExceeded);
         }
         let decision = self.decide(frame)?;
         if Instant::now() >= deadline {
-            return Err("quest evaluator wall-time budget exceeded".into());
+            return Err(PolicyError::DeadlineExceeded);
         }
         Ok(decision)
     }
@@ -51,7 +131,7 @@ impl QuestPolicy for ScriptedPolicy {
         "scripted-evidence-seeking-v1"
     }
 
-    fn decide(&mut self, frame: &PlayerFrame) -> Result<PolicyDecision, String> {
+    fn decide(&mut self, frame: &PlayerFrame) -> Result<PolicyDecision, PolicyError> {
         // Evidence and travel are preferred over a finale; this keeps the
         // baseline from succeeding merely because it was offered a conclusion.
         let priorities = [
@@ -76,7 +156,7 @@ impl QuestPolicy for ScriptedPolicy {
                     matching.next()
                 }
             })
-            .ok_or("no legal action")?;
+            .ok_or_else(|| PolicyError::Failure("no legal action".into()))?;
         Ok(PolicyDecision {
             version: EVAL_FORMAT_VERSION,
             choice_id: choice.choice_id.clone(),
@@ -84,7 +164,7 @@ impl QuestPolicy for ScriptedPolicy {
         })
     }
 
-    fn classify(&mut self, frame: &PlayerFrame) -> Result<PolicyClassification, String> {
+    fn classify(&mut self, frame: &PlayerFrame) -> Result<PolicyClassification, PolicyError> {
         let summary = frame.discovery.problem_summary.to_ascii_lowercase();
         let template_guess = if summary.contains("missing") || summary.contains("disappear") {
             Some("disappearance_or_loss".into())
@@ -111,14 +191,15 @@ impl QuestPolicy for MockLlmPolicy {
         "mock-llm-json-v1"
     }
 
-    fn decide(&mut self, frame: &PlayerFrame) -> Result<PolicyDecision, String> {
+    fn decide(&mut self, frame: &PlayerFrame) -> Result<PolicyDecision, PolicyError> {
         let mut baseline = ScriptedPolicy::default();
         let intended = baseline.decide(frame)?;
-        let fixture_reply = serde_json::to_vec(&intended).map_err(|error| error.to_string())?;
-        parse_provider_decision(&fixture_reply)
+        let fixture_reply = serde_json::to_vec(&intended)
+            .map_err(|error| PolicyError::Failure(error.to_string()))?;
+        parse_provider_decision(&fixture_reply).map_err(PolicyError::InvalidResponse)
     }
 
-    fn classify(&mut self, frame: &PlayerFrame) -> Result<PolicyClassification, String> {
+    fn classify(&mut self, frame: &PlayerFrame) -> Result<PolicyClassification, PolicyError> {
         ScriptedPolicy::default().classify(frame)
     }
 
@@ -128,7 +209,7 @@ impl QuestPolicy for MockLlmPolicy {
             policy_kind: "mock_provider".into(),
             provider: Some("strict-json-fixture".into()),
             model: Some("deterministic-mock".into()),
-            prompt_revision: "investigation-policy-v3".into(),
+            prompt_revision: "investigation-policy-v4".into(),
             requests: 0,
             estimated_prompt_tokens: 0,
             estimated_completion_tokens: 0,
@@ -137,29 +218,41 @@ impl QuestPolicy for MockLlmPolicy {
     }
 }
 
-pub fn parse_provider_decision(bytes: &[u8]) -> Result<PolicyDecision, String> {
+pub fn parse_provider_decision(bytes: &[u8]) -> Result<PolicyDecision, ProviderDecisionError> {
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct ProviderDecisionWire {
+        version: u32,
+        choice_id: String,
+        #[serde(default)]
+        arguments: DecisionArguments,
+    }
+
     if bytes.len() > MAX_PROVIDER_RESPONSE_BYTES {
-        return Err("provider response exceeds byte budget".into());
+        return Err(ProviderDecisionError::ResponseTooLarge);
     }
-    let decision: PolicyDecision =
-        serde_json::from_slice(bytes).map_err(|error| format!("invalid provider JSON: {error}"))?;
+    let decision: ProviderDecisionWire = serde_json::from_slice(bytes)
+        .map_err(|error| ProviderDecisionError::MalformedJson(error.to_string()))?;
     if decision.version != EVAL_FORMAT_VERSION {
-        return Err("provider selected unsupported schema version".into());
+        return Err(ProviderDecisionError::UnsupportedVersion);
     }
-    if decision.choice_id.len() > 128 || !decision.choice_id.starts_with("choice:") {
-        return Err("provider choice ID is malformed".into());
-    }
-    Ok(decision)
+    let choice_id = ChoiceId::parse(decision.choice_id)
+        .map_err(|_| ProviderDecisionError::MalformedChoiceId)?;
+    Ok(PolicyDecision {
+        version: decision.version,
+        choice_id,
+        arguments: decision.arguments,
+    })
 }
 
-pub fn policy_prompt(frame: &PlayerFrame) -> Result<String, String> {
+pub fn policy_prompt(frame: &PlayerFrame) -> Result<String, PolicyError> {
     let payload = serde_json::json!({
         "instruction": format!(
-            "Select exactly one currently legal opaque choice_id. Return only strict JSON {{\"version\":{EVAL_FORMAT_VERSION},\"choice_id\":\"choice:...\",\"arguments\":{{\"selection\":null}}}}."
+            "Select exactly one currently legal opaque choice_id. Return only strict JSON {{\"version\":{EVAL_FORMAT_VERSION},\"choice_id\":\"choice:<24 lowercase hex digits>\",\"arguments\":{{\"selection\":null}}}}."
         ),
         "untrusted_player_frame": frame,
     });
-    serde_json::to_string(&payload).map_err(|error| error.to_string())
+    serde_json::to_string(&payload).map_err(|error| PolicyError::Failure(error.to_string()))
 }
 
 #[cfg(test)]
@@ -168,23 +261,40 @@ mod tests {
 
     #[test]
     fn parser_rejects_unknown_fields_and_oversized_data() {
-        assert!(
+        assert!(matches!(
             parse_provider_decision(
-                br#"{"version":1,"choice_id":"choice:x","arguments":{},"reducer":"admin"}"#
-            )
-            .is_err()
+                br#"{"version":4,"choice_id":"choice:x","arguments":{},"reducer":"admin"}"#
+            ),
+            Err(ProviderDecisionError::MalformedJson(_))
+        ));
+        assert_eq!(
+            parse_provider_decision(&vec![b'x'; MAX_PROVIDER_RESPONSE_BYTES + 1]),
+            Err(ProviderDecisionError::ResponseTooLarge)
         );
-        assert!(parse_provider_decision(&vec![b'x'; MAX_PROVIDER_RESPONSE_BYTES + 1]).is_err());
     }
 
     #[test]
     fn parser_rejects_arbitrary_object_ids() {
-        assert!(
+        assert_eq!(
             parse_provider_decision(
-                br#"{"version":1,"choice_id":"case:canonical-secret","arguments":{}}"#
-            )
-            .is_err()
+                br#"{"version":4,"choice_id":"case:canonical-secret","arguments":{}}"#
+            ),
+            Err(ProviderDecisionError::MalformedChoiceId)
         );
+        assert_eq!(
+            parse_provider_decision(br#"{"version":3,"choice_id":"choice:legacy","arguments":{}}"#),
+            Err(ProviderDecisionError::UnsupportedVersion)
+        );
+    }
+
+    #[test]
+    fn repair_deadlines_remain_typed_budget_outcomes() {
+        let error = PolicyError::RepairFailed {
+            initial: ProviderDecisionError::MalformedChoiceId,
+            repair: Box::new(PolicyError::DeadlineExceeded),
+        };
+        assert!(error.is_deadline_exceeded());
+        assert!(!PolicyError::Failure("deadline wording".into()).is_deadline_exceeded());
     }
 
     #[test]

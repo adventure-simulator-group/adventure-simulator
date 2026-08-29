@@ -1,5 +1,5 @@
 fn sampler_fixture() -> (MissionAuthority, Vec<MissionOutcomeCandidate>) {
-    let site = crate::investigation::CaseSiteId::from("case-site:test".to_string());
+    let site = CaseSiteId::from("case-site:test".to_string());
     let mission = MissionAuthority {
         id: "mission:test".into(),
         party_id: "party:test".into(),
@@ -611,7 +611,7 @@ fn quest_autoresolve_routes_consequences_through_shared_commit() {
 fn contract_schema_has_no_destination_or_tracking_authority() {
     let source = crate::production_source(include_str!("../authority_model.rs"));
     let schema = source
-        .split("pub struct Contract {")
+        .split("pub struct ContractAuthority {")
         .nth(1)
         .and_then(|tail| tail.split("pub struct BackendContract").next())
         .expect("contract schema");
@@ -626,7 +626,7 @@ fn contract_schema_has_no_destination_or_tracking_authority() {
     ] {
         assert!(
             !schema.contains(forbidden),
-            "Contract still owns {forbidden}"
+            "ContractAuthority still owns {forbidden}"
         );
     }
 }
@@ -886,6 +886,30 @@ fn join_entry_points_reject_an_all_dead_target_before_creating_state() {
             < general.find(".insert(PartyRecruitmentRole").unwrap()
     );
 }
+
+#[test]
+fn general_join_role_selection_is_independent_of_presentation_name() {
+    let renamed_general_role = PartyRecruitmentRole {
+        id: 1,
+        party_id: "target-party".into(),
+        purpose: RecruitmentRolePurpose::GeneralJoin,
+        name: "Open company place".into(),
+        requirements: RoleRequirements::default(),
+        quantity: 0,
+    };
+    let specialized_role_using_the_old_label = PartyRecruitmentRole {
+        id: 2,
+        party_id: "target-party".into(),
+        purpose: RecruitmentRolePurpose::Specialized,
+        name: "Unassigned".into(),
+        requirements: RoleRequirements::default(),
+        quantity: 0,
+    };
+
+    assert!(is_general_join_role(&renamed_general_role));
+    assert!(!is_general_join_role(&specialized_role_using_the_old_label));
+}
+
 #[test]
 fn authoritative_combat_power_tracks_enemy_difficulty() {
     let novice = autoresolve_enemy(1, "cultist", 1, 10_000).unwrap();

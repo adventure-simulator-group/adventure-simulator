@@ -163,23 +163,23 @@ pub(super) fn log_animation_diagnostics(
                 let terrain_clearance_metres = terrain
                     .and_then(|terrain| terrain.height_at(translation.xz()))
                     .map(|height| translation.y - height);
-                serde_json::json!({
-                    "name": name.map_or("<unnamed>", Name::as_str),
-                    "target_id": format!("{target:?}"),
+                let name = name.map_or("<unnamed>", Name::as_str);
+                let value = serde_json::json!({
+                    "name": name,
+                    "target_id": capture_animation_target_id(*target),
                     "translation": translation.to_array(),
                     "rotation_xyzw": rotation.to_array(),
                     "scale": scale.to_array(),
                     "terrain_clearance_metres": terrain_clearance_metres,
-                })
+                });
+                (name, *target, value)
             })
             .collect::<Vec<_>>();
-        bone_transforms.sort_by(|left, right| {
-            let left_name = left["name"].as_str().unwrap_or_default();
-            let right_name = right["name"].as_str().unwrap_or_default();
-            let left_target = left["target_id"].as_str().unwrap_or_default();
-            let right_target = right["target_id"].as_str().unwrap_or_default();
-            (left_name, left_target).cmp(&(right_name, right_target))
-        });
+        bone_transforms.sort_by_key(|(name, target, _)| (*name, *target));
+        let bone_transforms = bone_transforms
+            .into_iter()
+            .map(|(_, _, value)| value)
+            .collect::<Vec<_>>();
         log.write(serde_json::json!({
             "trace_format": "real-client-animation-v1",
             "scenario": "real-client-script",

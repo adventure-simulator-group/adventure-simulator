@@ -11,12 +11,42 @@ pub enum AgeBand {
     Elder,
 }
 
+impl AgeBand {
+    pub const fn stable_id(self) -> &'static str {
+        match self {
+            Self::Child => "child",
+            Self::Adolescent => "adolescent",
+            Self::Adult => "adult",
+            Self::Elder => "elder",
+        }
+    }
+
+    const fn decision_context(self) -> &'static str {
+        match self {
+            Self::Child => "Child",
+            Self::Adolescent => "Adolescent",
+            Self::Adult => "Adult",
+            Self::Elder => "Elder",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PresenceBridge {
     NearbyHome,
     HouseholdErrand,
     RetainerErrand,
+}
+
+impl PresenceBridge {
+    pub const fn stable_id(self) -> &'static str {
+        match self {
+            Self::NearbyHome => "nearby_home",
+            Self::HouseholdErrand => "household_errand",
+            Self::RetainerErrand => "retainer_errand",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -29,6 +59,28 @@ pub enum Profession {
     ServiceProvider,
 }
 
+impl Profession {
+    pub const fn stable_id(self) -> &'static str {
+        match self {
+            Self::Artisan => "artisan",
+            Self::Householder => "householder",
+            Self::Laborer => "laborer",
+            Self::Retainer => "retainer",
+            Self::ServiceProvider => "serviceprovider",
+        }
+    }
+
+    const fn decision_context(self) -> &'static str {
+        match self {
+            Self::Artisan => "Artisan",
+            Self::Householder => "Householder",
+            Self::Laborer => "Laborer",
+            Self::Retainer => "Retainer",
+            Self::ServiceProvider => "ServiceProvider",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Schedule {
@@ -36,6 +88,17 @@ pub enum Schedule {
     Day,
     Evening,
     Early,
+}
+
+impl Schedule {
+    pub const fn stable_id(self) -> &'static str {
+        match self {
+            Self::Provider => "provider",
+            Self::Day => "day",
+            Self::Evening => "evening",
+            Self::Early => "early",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -53,6 +116,25 @@ pub enum LocationContext {
     Keep,
     Organization,
     AdultVenue,
+}
+
+impl LocationContext {
+    pub const fn stable_id(self) -> &'static str {
+        match self {
+            Self::Overview => "overview",
+            Self::Market => "market",
+            Self::Forge => "forge",
+            Self::Armoury => "armoury",
+            Self::Tailor => "tailor",
+            Self::Herbalist => "herbalist",
+            Self::Inn => "inn",
+            Self::Church => "church",
+            Self::Residences => "residences",
+            Self::Keep => "keep",
+            Self::Organization => "organization",
+            Self::AdultVenue => "adultvenue",
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -105,13 +187,85 @@ pub fn stable_hash(value: &str) -> u64 {
     })
 }
 
-pub fn choose<T: Copy + std::fmt::Debug>(
+#[derive(Clone, Copy)]
+enum PopulationRelation {
+    AgeAtLocation,
+    ProfessionAtLocation,
+    ScheduleAtLocation,
+    Height,
+    BuildForProfession,
+    HairForAge,
+    HouseholdForAgeProfession,
+}
+
+impl PopulationRelation {
+    const fn stable_id(self) -> &'static str {
+        match self {
+            Self::AgeAtLocation => "age_at_location",
+            Self::ProfessionAtLocation => "profession_at_location",
+            Self::ScheduleAtLocation => "schedule_at_location",
+            Self::Height => "height",
+            Self::BuildForProfession => "build_for_profession",
+            Self::HairForAge => "hair_for_age",
+            Self::HouseholdForAgeProfession => "household_for_age_profession",
+        }
+    }
+}
+
+trait StableDecision: Copy {
+    fn stable_decision(self) -> &'static str;
+}
+
+impl StableDecision for AgeBand {
+    fn stable_decision(self) -> &'static str {
+        self.stable_id()
+    }
+}
+
+impl StableDecision for Profession {
+    fn stable_decision(self) -> &'static str {
+        self.stable_id()
+    }
+}
+
+impl StableDecision for Schedule {
+    fn stable_decision(self) -> &'static str {
+        self.stable_id()
+    }
+}
+
+impl StableDecision for &'static str {
+    fn stable_decision(self) -> &'static str {
+        self
+    }
+}
+
+fn population_relation_hash(seed: &str, relation: PopulationRelation) -> u64 {
+    let mut hash = 1_469_598_103_934_665_603_u64;
+    for value in [
+        b"adventuresim.settlement-population-choice.v1".as_slice(),
+        seed.as_bytes(),
+        relation.stable_id().as_bytes(),
+    ] {
+        for byte in (value.len() as u64)
+            .to_le_bytes()
+            .into_iter()
+            .chain(value.iter().copied())
+        {
+            hash = (hash ^ u64::from(byte)).wrapping_mul(1_099_511_628_211);
+        }
+    }
+    hash
+}
+
+fn choose<T: StableDecision>(
     seed: &str,
-    relation: &str,
+    relation: PopulationRelation,
     context: &str,
     available_bridges: &BTreeSet<PresenceBridge>,
     candidates: &[RelationCandidate<T>],
 ) -> Result<(T, RelationDecision), String> {
+    let relation_id = relation.stable_id();
     let valid: Vec<_> = candidates
         .iter()
         .copied()
@@ -130,19 +284,19 @@ pub fn choose<T: Copy + std::fmt::Debug>(
         .sum();
     if total == 0 {
         return Err(format!(
-            "No valid choice for relation {relation} in {context}"
+            "No valid choice for relation {relation_id} in {context}"
         ));
     }
-    let mut draw = stable_hash(&format!("{seed}:{relation}")) % total;
+    let mut draw = population_relation_hash(seed, relation) % total;
     for candidate in valid {
         let weight = u64::from(candidate.plausibility) * u64::from(candidate.curation);
         if draw < weight {
             return Ok((
                 candidate.value,
                 RelationDecision {
-                    relation: relation.into(),
+                    relation: relation_id.into(),
                     context: context.into(),
-                    decision: format!("{:?}", candidate.value).to_ascii_lowercase(),
+                    decision: candidate.value.stable_decision().into(),
                     plausibility: candidate.plausibility,
                     curation: candidate.curation,
                     bridge: candidate.bridge,
@@ -151,7 +305,9 @@ pub fn choose<T: Copy + std::fmt::Debug>(
         }
         draw -= weight;
     }
-    Err(format!("Weighted choice exhausted for relation {relation}"))
+    Err(format!(
+        "Weighted choice exhausted for relation {relation_id}"
+    ))
 }
 
 fn candidate<T>(value: T, plausibility: u32) -> RelationCandidate<T> {
@@ -174,7 +330,7 @@ fn bridged<T>(value: T, plausibility: u32, bridge: PresenceBridge) -> RelationCa
 }
 
 pub fn generate(input: &GenerationInput) -> Result<GeneratedPopulationProfile, String> {
-    let context = format!("{:?}", input.location).to_ascii_lowercase();
+    let context = input.location.stable_id();
     let adult_only = input.is_service_provider || input.location == LocationContext::AdultVenue;
     let age_candidates = [
         candidate(AgeBand::Adult, if adult_only { 85 } else { 62 }),
@@ -250,15 +406,15 @@ pub fn generate(input: &GenerationInput) -> Result<GeneratedPopulationProfile, S
     ];
     let (age, age_decision) = choose(
         &input.seed,
-        "age_at_location",
-        &context,
+        PopulationRelation::AgeAtLocation,
+        context,
         &input.available_bridges,
         &age_candidates,
     )?;
     let (profession, mut profession_decision) = choose(
         &input.seed,
-        "profession_at_location",
-        &context,
+        PopulationRelation::ProfessionAtLocation,
+        context,
         &input.available_bridges,
         &profession_candidates,
     )?;
@@ -312,14 +468,14 @@ pub fn generate(input: &GenerationInput) -> Result<GeneratedPopulationProfile, S
     };
     let (schedule, schedule_decision) = choose(
         &input.seed,
-        "schedule_at_location",
-        &context,
+        PopulationRelation::ScheduleAtLocation,
+        context,
         &input.available_bridges,
         &schedule_candidates,
     )?;
     let (height, height_decision) = choose(
         &input.seed,
-        "height",
+        PopulationRelation::Height,
         "demographic",
         &input.available_bridges,
         &[
@@ -330,8 +486,8 @@ pub fn generate(input: &GenerationInput) -> Result<GeneratedPopulationProfile, S
     )?;
     let (build, build_decision) = choose(
         &input.seed,
-        "build_for_profession",
-        &format!("{profession:?}"),
+        PopulationRelation::BuildForProfession,
+        profession.decision_context(),
         &input.available_bridges,
         &[
             candidate("slender", 30),
@@ -351,8 +507,8 @@ pub fn generate(input: &GenerationInput) -> Result<GeneratedPopulationProfile, S
     )?;
     let (hair, hair_decision) = choose(
         &input.seed,
-        "hair_for_age",
-        &format!("{age:?}"),
+        PopulationRelation::HairForAge,
+        age.decision_context(),
         &input.available_bridges,
         &[
             candidate("brown hair", 45),
@@ -364,8 +520,12 @@ pub fn generate(input: &GenerationInput) -> Result<GeneratedPopulationProfile, S
     )?;
     let (household_kind, household_decision) = choose(
         &input.seed,
-        "household_for_age_profession",
-        &format!("{age:?}:{profession:?}"),
+        PopulationRelation::HouseholdForAgeProfession,
+        &format!(
+            "{}:{}",
+            age.decision_context(),
+            profession.decision_context()
+        ),
         &input.available_bridges,
         &[
             candidate(
@@ -491,6 +651,18 @@ mod tests {
                 .unwrap()
                 .bridge,
             Some(PresenceBridge::RetainerErrand)
+        );
+    }
+
+    #[test]
+    fn population_relation_hash_has_fixed_versioned_vectors() {
+        assert_eq!(
+            population_relation_hash("same", PopulationRelation::AgeAtLocation),
+            2_278_414_030_378_973_202
+        );
+        assert_eq!(
+            population_relation_hash("x", PopulationRelation::ProfessionAtLocation),
+            11_895_146_399_370_311_533
         );
     }
 }

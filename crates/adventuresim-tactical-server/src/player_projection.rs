@@ -1,6 +1,8 @@
-use std::{collections::BTreeMap, num::NonZeroU32};
+use std::collections::BTreeMap;
 
-use adventuresim_core::tactical_fixture::AnimationLabEnemyRole;
+use adventuresim_core::{
+    attribute::PlayerAttributeValues, tactical_fixture::AnimationLabEnemyRole,
+};
 use adventuresim_stdb_client::*;
 use adventuresim_tactical_core::animation::dive_launch_root_rotation;
 use adventuresim_tactical_core::{inventory::ItemProperties, prelude::*};
@@ -125,7 +127,7 @@ type ProjectedPlayerCoreQuery<'world, 'state> = Query<
         &'static BestiaryCategories,
         &'static Skills,
         &'static Limbs,
-        &'static Attributes,
+        &'static TacticalAttributes,
         &'static Stats,
         &'static TacticalCombatState,
         &'static EquipmentActionState,
@@ -358,7 +360,7 @@ pub(crate) struct ProjectedPlayerSnapshot {
     bestiary_categories: BestiaryCategories,
     skills: Skills,
     limbs: Limbs,
-    attributes: Attributes,
+    attributes: TacticalAttributes,
     stats: Stats,
     combat_state: TacticalCombatState,
     equipment_action_state: EquipmentActionState,
@@ -628,7 +630,7 @@ fn spawn_connected_player(
         stomach: player.limbs.stomach_health,
         head: player.limbs.head_health,
     };
-    let mut attributes = Attributes {
+    let mut attributes = TacticalAttributes(PlayerAttributeValues {
         endurance: player.attrs.endurance,
         immunity: player.attrs.immunity,
         gut: player.attrs.gut,
@@ -644,7 +646,7 @@ fn spawn_connected_player(
         right_arm_agility: player.attrs.right_arm_agility,
         left_leg_agility: player.attrs.left_leg_agility,
         right_leg_agility: player.attrs.right_leg_agility,
-    };
+    });
     if player.mission_side == TacticalMissionSide::Enemy {
         let scale = mission_enemy_scale(
             player.enemy_difficulty,
@@ -666,6 +668,7 @@ fn spawn_connected_player(
         ] {
             *hours *= scale;
         }
+        let attributes = &mut attributes.0;
         for attribute in [
             &mut attributes.endurance,
             &mut attributes.gut,
@@ -777,7 +780,7 @@ fn spawn_connected_player(
         .map(|item| (item.inventory_item_id, cmd.spawn_empty().id()))
         .collect();
     for item in &player.items {
-        let Some(quantity) = NonZeroU32::new(item.quantity) else {
+        let Some(quantity) = TacticalItemQuantity::new(item.quantity) else {
             warn!(
                 "Got item '{}' with zero quantity for Player#{}; skipped",
                 item.item.id, player.character.id
@@ -810,7 +813,7 @@ fn spawn_connected_player(
             Replicated,
             TacticalInventoryItemId(item.inventory_item_id),
             ItemOf(entity),
-            ItemQuantity(quantity),
+            quantity,
             ItemProperties {
                 weight: item.item.weight,
                 id: item.item.id.clone(),
@@ -821,7 +824,7 @@ fn spawn_connected_player(
             && let Some(equipment) = &definition.equipment
         {
             let physical = equipment.physical;
-            item_cmd.insert(EquipmentPhysical {
+            item_cmd.insert(TacticalEquipmentPhysical {
                 dimensions_m: Vec3::from_array(physical.dimensions_m),
                 grip_to_tip_m: physical.grip_to_tip_m,
                 anchor_offset_m: Vec3::from_array(physical.anchor_offset_m),
@@ -867,13 +870,13 @@ fn spawn_connected_player(
                 .collect(),
         });
         match item.item.kind {
-            ItemKind::Simple
-            | ItemKind::Container
-            | ItemKind::Currency
-            | ItemKind::Ingredient
-            | ItemKind::Medication
-            | ItemKind::Food => {}
-            ItemKind::Weapon => {
+            PersistedItemKind::Simple
+            | PersistedItemKind::Container
+            | PersistedItemKind::Currency
+            | PersistedItemKind::Ingredient
+            | PersistedItemKind::Medication
+            | PersistedItemKind::Food => {}
+            PersistedItemKind::Weapon => {
                 let grip_to_tip_m = adventuresim_core::item_catalog::definition(&item.item.id)
                     .and_then(|definition| definition.equipment.as_ref())
                     .map_or(0.0, |equipment| equipment.physical.grip_to_tip_m);
@@ -887,7 +890,7 @@ fn spawn_connected_player(
                         item.item.weapon_skills.bow,
                         item.item.weapon_skills.crossbow,
                         item.item.weapon_skills.firearm,
-                        item.item.weapon_skills.throw_skill,
+                        item.item.weapon_skills.throw,
                     ],
                     accuracy: item.item.accuracy,
                     swing_precision: item.item.swing_precision,
@@ -908,8 +911,8 @@ fn spawn_connected_player(
                     pierce: item.item.pierce,
                 });
             }
-            ItemKind::Armor | ItemKind::Clothing => {}
-            ItemKind::Shield => {
+            PersistedItemKind::Armor | PersistedItemKind::Clothing => {}
+            PersistedItemKind::Shield => {
                 item_cmd.insert(ShieldItem {
                     block: item.item.block,
                 });
@@ -2146,7 +2149,7 @@ fn player_spawn_offset(collider: &Collider) -> f32 {
 /// physics/controller bundle (colliders aren't reflectable - see
 /// `avian3d::Collider`), and the replication marker. This is what lets both
 /// SpacetimeDB rows and world dumps carry only "core" reflectable character
-/// data (`Player`, `CharacterId`, `Skills`, `Limbs`, `Attributes`, `Stats`,
+/// data (`Player`, `CharacterId`, `Skills`, `Limbs`, `TacticalAttributes`, `Stats`,
 /// `TacticalCombatState`, `TacticalCombatSide`, `Transform`) instead of a
 /// full component-for-component bundle.
 pub(crate) fn on_player_added(
@@ -2344,7 +2347,7 @@ mod standalone_join_tests {
         let sword = world
             .spawn((
                 ItemOf(template),
-                ItemQuantity::default(),
+                TacticalItemQuantity::default(),
                 ItemProperties {
                     id: "sword".to_string(),
                     weight: 1.2,
@@ -2457,13 +2460,14 @@ mod tests {
     };
     use adventuresim_tactical_core::physics::tactical_character_controller;
     use adventuresim_tactical_core::prelude::{
-        Attributes, BestiaryCategories, BodyState, CharacterControllerState, CharacterId,
-        CharacterLook, CharacterMotionSnapshot, CollisionMargin, DiveDirection, DiveTrajectory,
-        DodgeSpec, EquipSlot, EquipmentActionState, GroundedPosture, InventoryItems, ItemOf, Limbs,
+        BestiaryCategories, BodyState, CharacterControllerState, CharacterId, CharacterLook,
+        CharacterMotionSnapshot, CollisionMargin, DiveDirection, DiveTrajectory, DodgeSpec,
+        EquipSlot, EquipmentActionState, GroundedPosture, InventoryItems, ItemOf, Limbs,
         LinearVelocity, MeleePreparationInput, MovementPace, PostureTransitionKind, QuickstepPush,
         RollDirection, Rotation, ShieldItem, SkeletonAction, SkeletonState, Skills, Stats,
-        TACTICAL_PRONE_LATERAL_SPEED_SCALE, TacticalCombatConfig, TacticalCombatSide,
-        TacticalCombatState, advance_body_facing, controller_yaw, downed_camera_roll_target,
+        TACTICAL_PRONE_LATERAL_SPEED_SCALE, TacticalAttributes, TacticalCombatConfig,
+        TacticalCombatSide, TacticalCombatState, advance_body_facing, controller_yaw,
+        downed_camera_roll_target,
     };
     use adventuresim_tactical_netcode::aeronet::io::connection::{DisconnectReason, Disconnected};
     use adventuresim_tactical_netcode::bevy_replicon::prelude::Replicated;
@@ -2518,7 +2522,7 @@ mod tests {
                 BestiaryCategories::default(),
                 Skills::default(),
                 limbs,
-                Attributes::default(),
+                TacticalAttributes::default(),
                 Stats::default(),
                 TacticalCombatState::default(),
                 EquipmentActionState::default(),

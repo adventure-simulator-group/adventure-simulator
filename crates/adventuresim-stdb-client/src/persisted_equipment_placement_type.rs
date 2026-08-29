@@ -5,18 +5,18 @@
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::equipment_body_part_type::EquipmentBodyPart;
-use super::equipment_occupancy_requirement_type::EquipmentOccupancyRequirement;
-use super::equipment_parent_requirement_type::EquipmentParentRequirement;
+use super::occupancy_requirement_type::OccupancyRequirement;
+use super::parent_requirement_type::ParentRequirement;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct EquipmentPlacement {
+pub struct PersistedEquipmentPlacement {
     pub id: String,
-    pub occupancy: Vec<EquipmentOccupancyRequirement>,
-    pub parents: Vec<EquipmentParentRequirement>,
+    pub occupancy: Vec<OccupancyRequirement>,
+    pub parents: Vec<ParentRequirement>,
     pub protection: Vec<EquipmentBodyPart>,
 }
 
-impl __sdk::InModule for EquipmentPlacement {
+impl __sdk::InModule for PersistedEquipmentPlacement {
     type Module = super::RemoteModule;
 }

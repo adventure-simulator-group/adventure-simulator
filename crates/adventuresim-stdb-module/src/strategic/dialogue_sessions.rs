@@ -75,12 +75,20 @@ pub fn start_dialogue(
         character_id,
         minute,
     )
-    .ok_or("Dialogue actor is not present at this time")?;
+    .ok_or_else(|| {
+        adventuresim_core::reducer_error::coded_reducer_error(
+            adventuresim_core::reducer_error::ReducerErrorCode::DialogueContactUnavailable,
+            "Dialogue actor is not present at this time",
+        )
+    })?;
     if !adventuresim_core::strategic_presence::are_co_present(
         &actor_presence,
         npc_presence.presence(),
     ) {
-        return Err("Dialogue actor is not present at this time".into());
+        return Err(adventuresim_core::reducer_error::coded_reducer_error(
+            adventuresim_core::reducer_error::ReducerErrorCode::DialogueContactUnavailable,
+            "Dialogue actor is not present at this time",
+        ));
     }
     if conversation_id != npc.conversation_id {
         return Err("Dialogue conversation is not valid for this NPC".into());
@@ -102,12 +110,11 @@ pub fn start_dialogue(
     {
         return Err("Conversation has no NPC role".into());
     }
-    if !session_id.starts_with(&format!("dialogue:{character_id}:"))
-        || session_id.len() > 160
-        || session_id.chars().any(char::is_control)
-    {
+    let parsed_session_id = ParsedDialogueSessionId::parse(&session_id)?;
+    if parsed_session_id.owner_character_id != character_id {
         return Err("Invalid dialogue session ID".into());
     }
+    let _session_nonce = parsed_session_id.nonce;
     if let Some(existing) = ctx.db.dialogue_session().id().find(&session_id) {
         return if existing.conversation_id == conversation_id
             && existing.settlement_id == settlement_id
@@ -129,7 +136,7 @@ pub fn start_dialogue(
         location_id: location_id.clone(),
         owner_character_id: character_id,
         owner_party_id,
-        state: "active".into(),
+        state: DialogueSessionState::Active.stable_id().into(),
         revision: 0,
         created_micros: ctx.timestamp.to_micros_since_unix_epoch(),
     });

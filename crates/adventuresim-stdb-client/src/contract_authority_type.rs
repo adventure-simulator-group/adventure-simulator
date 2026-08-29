@@ -8,7 +8,7 @@ use super::contract_status_type::ContractStatus;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct Contract {
+pub struct ContractAuthority {
     pub id: String,
     pub gateway_bucket: u8,
     pub case_id: String,
@@ -28,37 +28,37 @@ pub struct Contract {
     pub paid_at_minute: Option<u64>,
 }
 
-impl __sdk::InModule for Contract {
+impl __sdk::InModule for ContractAuthority {
     type Module = super::RemoteModule;
 }
 
-/// Column accessor struct for the table `Contract`.
+/// Column accessor struct for the table `ContractAuthority`.
 ///
 /// Provides typed access to columns for query building.
-pub struct ContractCols {
-    pub id: __sdk::__query_builder::Col<Contract, String>,
-    pub gateway_bucket: __sdk::__query_builder::Col<Contract, u8>,
-    pub case_id: __sdk::__query_builder::Col<Contract, String>,
-    pub title: __sdk::__query_builder::Col<Contract, String>,
-    pub description: __sdk::__query_builder::Col<Contract, String>,
-    pub difficulty: __sdk::__query_builder::Col<Contract, i32>,
-    pub gold_reward: __sdk::__query_builder::Col<Contract, i32>,
-    pub xp_reward: __sdk::__query_builder::Col<Contract, i32>,
-    pub settlement_id: __sdk::__query_builder::Col<Contract, String>,
-    pub service_id: __sdk::__query_builder::Col<Contract, String>,
-    pub issuer_resident_character_id: __sdk::__query_builder::Col<Contract, u64>,
-    pub status: __sdk::__query_builder::Col<Contract, ContractStatus>,
-    pub accepted_by: __sdk::__query_builder::Col<Contract, Option<String>>,
-    pub opposition_wording: __sdk::__query_builder::Col<Contract, String>,
-    pub opposition_count_wording: __sdk::__query_builder::Col<Contract, String>,
-    pub accepted_at_minute: __sdk::__query_builder::Col<Contract, Option<u64>>,
-    pub paid_at_minute: __sdk::__query_builder::Col<Contract, Option<u64>>,
+pub struct ContractAuthorityCols {
+    pub id: __sdk::__query_builder::Col<ContractAuthority, String>,
+    pub gateway_bucket: __sdk::__query_builder::Col<ContractAuthority, u8>,
+    pub case_id: __sdk::__query_builder::Col<ContractAuthority, String>,
+    pub title: __sdk::__query_builder::Col<ContractAuthority, String>,
+    pub description: __sdk::__query_builder::Col<ContractAuthority, String>,
+    pub difficulty: __sdk::__query_builder::Col<ContractAuthority, i32>,
+    pub gold_reward: __sdk::__query_builder::Col<ContractAuthority, i32>,
+    pub xp_reward: __sdk::__query_builder::Col<ContractAuthority, i32>,
+    pub settlement_id: __sdk::__query_builder::Col<ContractAuthority, String>,
+    pub service_id: __sdk::__query_builder::Col<ContractAuthority, String>,
+    pub issuer_resident_character_id: __sdk::__query_builder::Col<ContractAuthority, u64>,
+    pub status: __sdk::__query_builder::Col<ContractAuthority, ContractStatus>,
+    pub accepted_by: __sdk::__query_builder::Col<ContractAuthority, Option<String>>,
+    pub opposition_wording: __sdk::__query_builder::Col<ContractAuthority, String>,
+    pub opposition_count_wording: __sdk::__query_builder::Col<ContractAuthority, String>,
+    pub accepted_at_minute: __sdk::__query_builder::Col<ContractAuthority, Option<u64>>,
+    pub paid_at_minute: __sdk::__query_builder::Col<ContractAuthority, Option<u64>>,
 }
 
-impl __sdk::__query_builder::HasCols for Contract {
-    type Cols = ContractCols;
+impl __sdk::__query_builder::HasCols for ContractAuthority {
+    type Cols = ContractAuthorityCols;
     fn cols(table_name: &'static str) -> Self::Cols {
-        ContractCols {
+        ContractAuthorityCols {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
             gateway_bucket: __sdk::__query_builder::Col::new(table_name, "gateway_bucket"),
             case_id: __sdk::__query_builder::Col::new(table_name, "case_id"),
@@ -86,21 +86,21 @@ impl __sdk::__query_builder::HasCols for Contract {
     }
 }
 
-/// Indexed column accessor struct for the table `Contract`.
+/// Indexed column accessor struct for the table `ContractAuthority`.
 ///
 /// Provides typed access to indexed columns for query building.
-pub struct ContractIxCols {
-    pub case_id: __sdk::__query_builder::IxCol<Contract, String>,
-    pub gateway_bucket: __sdk::__query_builder::IxCol<Contract, u8>,
-    pub id: __sdk::__query_builder::IxCol<Contract, String>,
-    pub service_id: __sdk::__query_builder::IxCol<Contract, String>,
-    pub settlement_id: __sdk::__query_builder::IxCol<Contract, String>,
+pub struct ContractAuthorityIxCols {
+    pub case_id: __sdk::__query_builder::IxCol<ContractAuthority, String>,
+    pub gateway_bucket: __sdk::__query_builder::IxCol<ContractAuthority, u8>,
+    pub id: __sdk::__query_builder::IxCol<ContractAuthority, String>,
+    pub service_id: __sdk::__query_builder::IxCol<ContractAuthority, String>,
+    pub settlement_id: __sdk::__query_builder::IxCol<ContractAuthority, String>,
 }
 
-impl __sdk::__query_builder::HasIxCols for Contract {
-    type IxCols = ContractIxCols;
+impl __sdk::__query_builder::HasIxCols for ContractAuthority {
+    type IxCols = ContractAuthorityIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
-        ContractIxCols {
+        ContractAuthorityIxCols {
             case_id: __sdk::__query_builder::IxCol::new(table_name, "case_id"),
             gateway_bucket: __sdk::__query_builder::IxCol::new(table_name, "gateway_bucket"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
@@ -110,4 +110,4 @@ impl __sdk::__query_builder::HasIxCols for Contract {
     }
 }
 
-impl __sdk::__query_builder::CanBeLookupTable for Contract {}
+impl __sdk::__query_builder::CanBeLookupTable for ContractAuthority {}

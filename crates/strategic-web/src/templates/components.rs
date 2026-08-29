@@ -361,20 +361,91 @@ pub fn panel(title: &str, content: Markup) -> Markup {
     }
 }
 
-/// Status badge
-pub fn status_badge(status: &str) -> Markup {
-    let class = match status.to_lowercase().as_str() {
-        "available" => "badge badge-success",
-        "accepted" => "badge badge-warning",
-        "completed" => "badge badge-info",
-        "ready" => "badge badge-success",
-        "pending" | "searching" | "deploying" => "badge badge-warning",
-        "failed" => "badge badge-danger",
-        "ended" => "badge badge-info",
-        _ => "badge",
-    };
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum StatusBadgeTone {
+    #[default]
+    Neutral,
+    Success,
+    Warning,
+    Info,
+    Danger,
+}
+
+impl StatusBadgeTone {
+    const fn class(self) -> &'static str {
+        match self {
+            Self::Neutral => "badge",
+            Self::Success => "badge badge-success",
+            Self::Warning => "badge badge-warning",
+            Self::Info => "badge badge-info",
+            Self::Danger => "badge badge-danger",
+        }
+    }
+}
+
+/// Status badge with presentation chosen by the caller's typed status.
+pub fn status_badge(status: &str, tone: StatusBadgeTone) -> Markup {
     html! {
-        span class=(class) { (status) }
+        span class=(tone.class()) { (status) }
+    }
+}
+
+pub(crate) const fn prosperity_tier_label(
+    tier: adventuresim_world_schema::ProsperityTier,
+) -> &'static str {
+    use adventuresim_world_schema::ProsperityTier;
+
+    match tier {
+        ProsperityTier::Subsistence => "Subsistence",
+        ProsperityTier::Modest => "Modest",
+        ProsperityTier::Comfortable => "Comfortable",
+        ProsperityTier::Prosperous => "Prosperous",
+        ProsperityTier::Wealthy => "Wealthy",
+    }
+}
+
+pub(crate) const fn settlement_service_label(
+    service: adventuresim_world_schema::SettlementService,
+) -> &'static str {
+    use adventuresim_world_schema::SettlementService;
+
+    match service {
+        SettlementService::GeneralStore => "GeneralStore",
+        SettlementService::Inn => "Inn",
+        SettlementService::GeneralBlacksmith => "GeneralBlacksmith",
+        SettlementService::Market => "Market",
+        SettlementService::Weaponsmith => "Weaponsmith",
+        SettlementService::Armorer => "Armorer",
+        SettlementService::Tailor => "Tailor",
+        SettlementService::Herbalist => "Herbalist",
+        SettlementService::Temple => "Temple",
+        SettlementService::Bookstore => "Bookstore",
+    }
+}
+
+pub(crate) const fn stock_category_label(
+    category: adventuresim_world_schema::StockCategory,
+) -> &'static str {
+    use adventuresim_world_schema::StockCategory;
+
+    match category {
+        StockCategory::Grain => "Grain",
+        StockCategory::Dairy => "Dairy",
+        StockCategory::Meat => "Meat",
+        StockCategory::Fish => "Fish",
+        StockCategory::Cloth => "Cloth",
+        StockCategory::Hides => "Hides",
+        StockCategory::Timber => "Timber",
+        StockCategory::Fuel => "Fuel",
+        StockCategory::Stone => "Stone",
+        StockCategory::Pottery => "Pottery",
+        StockCategory::Salt => "Salt",
+        StockCategory::Metalwares => "Metalwares",
+        StockCategory::Weapons => "Weapons",
+        StockCategory::Armor => "Armor",
+        StockCategory::Herbs => "Herbs",
+        StockCategory::GeneralGoods => "GeneralGoods",
+        StockCategory::Books => "Books",
     }
 }
 
@@ -407,6 +478,107 @@ pub fn population_description(level: i32) -> &'static str {
 #[cfg(test)]
 mod icon_tests {
     use super::*;
+
+    #[test]
+    fn economy_boundary_labels_are_fixed_vectors() {
+        use adventuresim_world_schema::{
+            ProsperityTier as P, SettlementService as S, StockCategory as C,
+        };
+
+        assert_eq!(
+            [
+                P::Subsistence,
+                P::Modest,
+                P::Comfortable,
+                P::Prosperous,
+                P::Wealthy
+            ]
+            .map(prosperity_tier_label),
+            [
+                "Subsistence",
+                "Modest",
+                "Comfortable",
+                "Prosperous",
+                "Wealthy"
+            ]
+        );
+        assert_eq!(
+            [
+                S::GeneralStore,
+                S::Inn,
+                S::GeneralBlacksmith,
+                S::Market,
+                S::Weaponsmith,
+                S::Armorer,
+                S::Tailor,
+                S::Herbalist,
+                S::Temple,
+                S::Bookstore,
+            ]
+            .map(settlement_service_label),
+            [
+                "GeneralStore",
+                "Inn",
+                "GeneralBlacksmith",
+                "Market",
+                "Weaponsmith",
+                "Armorer",
+                "Tailor",
+                "Herbalist",
+                "Temple",
+                "Bookstore",
+            ]
+        );
+        assert_eq!(
+            [
+                C::Grain,
+                C::Dairy,
+                C::Meat,
+                C::Fish,
+                C::Cloth,
+                C::Hides,
+                C::Timber,
+                C::Fuel,
+                C::Stone,
+                C::Pottery,
+                C::Salt,
+                C::Metalwares,
+                C::Weapons,
+                C::Armor,
+                C::Herbs,
+                C::GeneralGoods,
+                C::Books,
+            ]
+            .map(stock_category_label),
+            [
+                "Grain",
+                "Dairy",
+                "Meat",
+                "Fish",
+                "Cloth",
+                "Hides",
+                "Timber",
+                "Fuel",
+                "Stone",
+                "Pottery",
+                "Salt",
+                "Metalwares",
+                "Weapons",
+                "Armor",
+                "Herbs",
+                "GeneralGoods",
+                "Books",
+            ]
+        );
+    }
+
+    #[test]
+    fn status_badge_class_depends_on_tone_not_display_text() {
+        assert_eq!(
+            status_badge("wording may change", StatusBadgeTone::Danger).into_string(),
+            "<span class=\"badge badge-danger\">wording may change</span>"
+        );
+    }
 
     #[test]
     fn limb_and_immunity_stats_use_the_original_artwork() {

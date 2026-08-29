@@ -11,7 +11,8 @@ use super::{AppState, character_case_site_id};
 use crate::{
     session::Session,
     spacetimedb::{
-        BackendLocalChatMessage, Character, CharacterTime, Settlement, SettlementCategory,
+        BackendLocalChatMessage, BackendSettlementResident, CharacterTime, CharacterView,
+        PartyMember, SettlementCategory, SettlementResidentPresence, SettlementView,
         sql_string_literal,
     },
 };
@@ -30,11 +31,11 @@ pub fn routes() -> Router<AppState> {
 
 #[derive(Serialize)]
 struct LocalChatResponse {
-    messages: Vec<LocalChatMessage>,
+    messages: Vec<LocalChatMessageView>,
 }
 
 #[derive(Serialize)]
-struct LocalChatMessage {
+struct LocalChatMessageView {
     id: u64,
     sender_id: u64,
     sender_name: String,
@@ -42,14 +43,25 @@ struct LocalChatMessage {
     created_micros: i64,
 }
 
-impl From<BackendLocalChatMessage> for LocalChatMessage {
+impl From<BackendLocalChatMessage> for LocalChatMessageView {
     fn from(message: BackendLocalChatMessage) -> Self {
+        let BackendLocalChatMessage {
+            id,
+            owner_character_id: _,
+            conversation_kind: _,
+            subject_party_id: _,
+            subject_resident_character_id: _,
+            sender_id,
+            sender_name,
+            body,
+            created_micros,
+        } = message;
         Self {
-            id: message.id,
-            sender_id: message.sender_id,
-            sender_name: message.sender_name,
-            body: message.body,
-            created_micros: message.created_micros,
+            id,
+            sender_id,
+            sender_name,
+            body,
+            created_micros,
         }
     }
 }
@@ -67,25 +79,10 @@ struct LocationQuery {
     location_id: String,
 }
 
-#[derive(Deserialize)]
-struct LocalNpcRow {
-    character_id: u64,
-    home_settlement_id: String,
-}
-
-#[derive(Deserialize)]
-struct LocalNpcPresenceRow {
-    character_id: u64,
-    settlement_id: String,
-    location_id: String,
-    start_minute: u16,
-    end_minute: u16,
-}
-
 fn npc_authority_matches(
     settlement_id: &str,
-    npc: &LocalNpcRow,
-    presence: &LocalNpcPresenceRow,
+    npc: &BackendSettlementResident,
+    presence: &SettlementResidentPresence,
     requested_location_id: &str,
     minute: u64,
 ) -> bool {
@@ -128,12 +125,12 @@ async fn actor_and_selector(
     kind: &str,
     subject_id: &str,
     location_id: &str,
-) -> Result<(Character, ConversationSelector), String> {
+) -> Result<(CharacterView, ConversationSelector), String> {
     let actor = state
         .db
-        .query::<Character>(&format!(
-            "SELECT * FROM backend_characters WHERE id = {actor_id}"
-        ))
+        .query_sats_into::<adventuresim_stdb_client::Character, CharacterView>(
+            &crate::spacetimedb::character_by_id(actor_id),
+        )
         .await
         .map_err(|e| e.to_string())?
         .into_iter()
@@ -148,7 +145,9 @@ async fn actor_and_selector(
                 .ok_or("NPC is not local")?;
             let settlement_authority = state
                 .db
-                .query_one::<Settlement>(&crate::spacetimedb::settlement_by_id(settlement))
+                .query_one_sats_into::<adventuresim_stdb_client::Settlement, SettlementView>(
+                    &crate::spacetimedb::settlement_by_id(settlement),
+                )
                 .await
                 .map_err(|error| error.to_string())?
                 .ok_or("NPC is not local")?;
@@ -164,26 +163,27 @@ async fn actor_and_selector(
                 subject_id.parse::<u64>().map_err(|_| "NPC is not local")?;
             let npc = state
                 .db
-                .query_one::<LocalNpcRow>(&format!(
-                    "SELECT * FROM backend_settlement_residents WHERE character_id = {resident_character_id}"
-                ))
+                .query_one_sats::<BackendSettlementResident>(
+                    &crate::spacetimedb::settlement_resident_by_character_id(resident_character_id),
+                )
                 .await
                 .map_err(|error| error.to_string())?
                 .ok_or("NPC is not local")?;
             let presence = state
                 .db
-                .query_one::<LocalNpcPresenceRow>(&format!(
-                    "SELECT * FROM settlement_resident_presence WHERE character_id = {resident_character_id}"
-                ))
+                .query_one_sats::<SettlementResidentPresence>(
+                    &crate::spacetimedb::settlement_resident_presence_by_character_id(
+                        resident_character_id,
+                    ),
+                )
                 .await
                 .map_err(|error| error.to_string())?
                 .ok_or("NPC is not local")?;
             let minute = state
                 .db
-                .query_one::<CharacterTime>(&format!(
-                    "SELECT * FROM backend_character_times WHERE character_id = {}",
-                    actor.id
-                ))
+                .query_one_sats::<CharacterTime>(
+                    &crate::spacetimedb::character_time_by_character_id(actor.id),
+                )
                 .await
                 .map_err(|error| error.to_string())?
                 .map_or(720, |time| time.minutes);
@@ -248,7 +248,7 @@ async fn messages(
     };
     let mut messages = state
         .db
-        .query::<BackendLocalChatMessage>(&format!(
+        .query_sats::<BackendLocalChatMessage>(&format!(
             "SELECT * FROM backend_local_chat_messages WHERE owner_character_id = {actor_id} AND {selector_filter}"
         ))
         .await
@@ -310,9 +310,9 @@ async fn incoming(State(state): State<AppState>, session: Session) -> Json<Vec<I
     };
     let Some(actor) = state
         .db
-        .query::<Character>(&format!(
-            "SELECT * FROM backend_characters WHERE id = {actor_id}"
-        ))
+        .query_sats_into::<adventuresim_stdb_client::Character, CharacterView>(
+            &crate::spacetimedb::character_by_id(actor_id),
+        )
         .await
         .ok()
         .and_then(|characters| characters.into_iter().next())
@@ -324,7 +324,7 @@ async fn incoming(State(state): State<AppState>, session: Session) -> Json<Vec<I
     };
     let memberships = state
         .db
-        .query::<crate::spacetimedb::PartyMember>(&format!(
+        .query_sats::<PartyMember>(&format!(
             "SELECT * FROM party_member WHERE party_id = {}",
             sql_string_literal(party_id)
         ))
@@ -334,7 +334,7 @@ async fn incoming(State(state): State<AppState>, session: Session) -> Json<Vec<I
         memberships.into_iter().map(|m| m.character_id).collect();
     let all_messages = state
         .db
-        .query::<BackendLocalChatMessage>(&format!(
+        .query_sats::<BackendLocalChatMessage>(&format!(
             "SELECT * FROM backend_local_chat_messages WHERE owner_character_id = {actor_id} AND conversation_kind = 'player'"
         ))
         .await
@@ -381,11 +381,33 @@ async fn incoming(State(state): State<AppState>, session: Session) -> Json<Vec<I
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        LocalNpcPresenceRow, LocalNpcRow, npc_authority_matches, npc_history_location_is_navigable,
+    use super::{LocalChatMessageView, npc_authority_matches, npc_history_location_is_navigable};
+
+    use crate::spacetimedb::{
+        BackendLocalChatMessage, BackendSettlementResident, NpcAgeBand, NpcPresentation,
+        SettlementCategory, SettlementResidentPresence,
     };
 
-    use crate::spacetimedb::SettlementCategory;
+    #[test]
+    fn local_chat_row_projection_explicitly_omits_authority_columns() {
+        let view = LocalChatMessageView::from(BackendLocalChatMessage {
+            id: 17,
+            owner_character_id: 7,
+            conversation_kind: "npc".into(),
+            subject_party_id: String::new(),
+            subject_resident_character_id: "11".into(),
+            sender_id: 11,
+            sender_name: "Marta".into(),
+            body: "Good morrow".into(),
+            created_micros: 123_456,
+        });
+        assert_eq!((view.id, view.sender_id), (17, 11));
+        assert_eq!(
+            (view.sender_name.as_str(), view.body.as_str()),
+            ("Marta", "Good morrow")
+        );
+        assert_eq!(view.created_micros, 123_456);
+    }
 
     #[test]
     fn player_chat_co_location_requires_equal_personal_frontiers() {
@@ -463,16 +485,35 @@ mod tests {
 
     #[test]
     fn riverdale_inn_npc_chain_uses_authority_not_encoded_id_shape() {
-        let npc = LocalNpcRow {
+        let npc = BackendSettlementResident {
             character_id: 41,
             home_settlement_id: "riverdale".into(),
+            name: "Innkeeper".into(),
+            age_band: NpcAgeBand::Adult,
+            presentation: NpcPresentation::Ambiguous,
+            height: String::new(),
+            build: String::new(),
+            hair: String::new(),
+            facial_hair: String::new(),
+            complexion: String::new(),
+            visible_features: String::new(),
+            clothing: String::new(),
+            profession: String::new(),
+            household: String::new(),
+            local_role: String::new(),
+            service_id: "inn".into(),
+            organization_id: String::new(),
+            conversation_id: "service-professions".into(),
         };
-        let mut presence = LocalNpcPresenceRow {
+        let mut presence = SettlementResidentPresence {
             character_id: npc.character_id,
             settlement_id: "riverdale".into(),
             location_id: "inn".into(),
             start_minute: 0,
             end_minute: adventuresim_core::strategic_time::MINUTES_PER_DAY as u16,
+            is_default: true,
+            context_suppressed: false,
+            health_suppressed: false,
         };
         assert!(npc_authority_matches(
             "riverdale",
@@ -521,12 +562,8 @@ mod tests {
             .nth(1)
             .and_then(|tail| tail.split("async fn messages").next())
             .expect("local chat authority handler");
-        assert!(local_route.contains(
-            "SELECT * FROM backend_settlement_residents WHERE character_id = {resident_character_id}"
-        ));
-        assert!(local_route.contains(
-            "SELECT * FROM settlement_resident_presence WHERE character_id = {resident_character_id}"
-        ));
+        assert!(local_route.contains("settlement_resident_by_character_id"));
+        assert!(local_route.contains("settlement_resident_presence_by_character_id"));
         assert!(
             include_str!("local_chat.rs").contains("presence.location_id == requested_location_id")
         );

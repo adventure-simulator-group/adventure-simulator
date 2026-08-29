@@ -35,6 +35,24 @@ enum SkyView {
 }
 
 #[cfg(not(target_family = "wasm"))]
+impl SkyView {
+    const fn id(self) -> &'static str {
+        match self {
+            Self::Sun => "Sun",
+            Self::SunDetail => "SunDetail",
+            Self::Twilight => "Twilight",
+            Self::Moon => "Moon",
+            Self::Stars => "Stars",
+            Self::CloudCumulus => "CloudCumulus",
+            Self::CloudStratocumulus => "CloudStratocumulus",
+            Self::CloudCirrus => "CloudCirrus",
+            Self::CloudOvercast => "CloudOvercast",
+            Self::CloudStorm => "CloudStorm",
+        }
+    }
+}
+
+#[cfg(not(target_family = "wasm"))]
 #[derive(Debug, Parser)]
 #[command(version, about = "Capture one deterministic tactical sky view")]
 struct Args {
@@ -65,6 +83,20 @@ fn main() {
 #[cfg(all(test, not(target_family = "wasm")))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sky_view_ids_have_explicit_stable_values() {
+        assert_eq!(SkyView::Sun.id(), "Sun");
+        assert_eq!(SkyView::SunDetail.id(), "SunDetail");
+        assert_eq!(SkyView::Twilight.id(), "Twilight");
+        assert_eq!(SkyView::Moon.id(), "Moon");
+        assert_eq!(SkyView::Stars.id(), "Stars");
+        assert_eq!(SkyView::CloudCumulus.id(), "CloudCumulus");
+        assert_eq!(SkyView::CloudStratocumulus.id(), "CloudStratocumulus");
+        assert_eq!(SkyView::CloudCirrus.id(), "CloudCirrus");
+        assert_eq!(SkyView::CloudOvercast.id(), "CloudOvercast");
+        assert_eq!(SkyView::CloudStorm.id(), "CloudStorm");
+    }
 
     #[test]
     fn capture_arguments_select_a_view_and_output() {

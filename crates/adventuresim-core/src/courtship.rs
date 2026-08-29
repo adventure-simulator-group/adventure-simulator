@@ -31,7 +31,7 @@ const COURTSHIP_REJECTION_PREFIX: &str = "[courtship_rejection:";
 
 /// Stable, machine-readable reasons returned across the reducer boundary.
 /// Human prose may change without breaking gateway behavior.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum CourtshipRejectionCode {
     Affinity,
     FatherApproval,
@@ -94,14 +94,38 @@ impl FromStr for CourtshipRejectionCode {
     }
 }
 
-pub fn coded_courtship_rejection(code: CourtshipRejectionCode, detail: &str) -> String {
-    format!("{COURTSHIP_REJECTION_PREFIX}{code}] {detail}")
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct CourtshipRejection {
+    pub code: CourtshipRejectionCode,
+    pub detail: String,
 }
 
-pub fn parse_courtship_rejection(value: &str) -> Option<CourtshipRejectionCode> {
+impl CourtshipRejection {
+    pub fn new(code: CourtshipRejectionCode, detail: impl Into<String>) -> Self {
+        Self {
+            code,
+            detail: detail.into(),
+        }
+    }
+}
+
+/// Encode the stable reducer transport envelope. Domain code should carry
+/// [`CourtshipRejection`] directly and call this only at a string ABI.
+pub fn encode_courtship_rejection(rejection: &CourtshipRejection) -> String {
+    format!(
+        "{COURTSHIP_REJECTION_PREFIX}{}] {}",
+        rejection.code, rejection.detail
+    )
+}
+
+/// Parse the reducer transport envelope once at a string ABI.
+pub fn parse_courtship_rejection(value: &str) -> Option<CourtshipRejection> {
     let start = value.find(COURTSHIP_REJECTION_PREFIX)? + COURTSHIP_REJECTION_PREFIX.len();
-    let code = value[start..].split_once(']')?.0;
-    code.parse().ok()
+    let (code, detail) = value[start..].split_once(']')?;
+    Some(CourtshipRejection {
+        code: code.parse().ok()?,
+        detail: detail.strip_prefix(' ').unwrap_or(detail).to_owned(),
+    })
 }
 
 /// Residence Leisure is one refreshable source which lasts for one week.
@@ -716,17 +740,33 @@ mod tests {
 
     #[test]
     fn courtship_rejection_codes_round_trip_without_parsing_human_prose() {
-        let rejection = coded_courtship_rejection(
+        let rejection = CourtshipRejection::new(
             CourtshipRejectionCode::FatherApproval,
             "The family does not approve",
         );
+        let encoded = encode_courtship_rejection(&rejection);
         assert_eq!(
-            parse_courtship_rejection(&format!("Reducer failed: {rejection}")),
-            Some(CourtshipRejectionCode::FatherApproval)
+            parse_courtship_rejection(&format!("Reducer failed: {encoded}")),
+            Some(rejection.clone())
         );
         assert_eq!(
             parse_courtship_rejection("The family does not approve"),
             None
+        );
+        let changed = CourtshipRejection::new(
+            CourtshipRejectionCode::FatherApproval,
+            "Entirely different wording",
+        );
+        assert_eq!(
+            parse_courtship_rejection(&encode_courtship_rejection(&changed))
+                .unwrap()
+                .code,
+            rejection.code
+        );
+        assert_eq!(
+            serde_json::from_value::<CourtshipRejection>(serde_json::to_value(&rejection).unwrap())
+                .unwrap(),
+            rejection
         );
     }
 

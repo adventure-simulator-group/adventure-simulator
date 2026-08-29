@@ -3,7 +3,10 @@ fn contract_interaction_receipt_id(
     party_id: &str,
     stage: ContractInteractionStage,
 ) -> String {
-    format!("interaction:{contract_id}:{party_id}:{stage:?}").to_lowercase()
+    format!(
+        "interaction:{contract_id}:{party_id}:{}",
+        stage.stable_id()
+    )
 }
 
 #[expect(
@@ -181,7 +184,7 @@ pub fn simulate_contract_issuer_interaction(
         contract_id,
         stage,
         format!("simulation:{character_id}"),
-        format!("simulation:{stage:?}").to_lowercase(),
+        format!("simulation:{}", stage.stable_id()),
         0,
         presence.location_id,
     )
@@ -297,9 +300,6 @@ pub fn track_case_site(
     case_site_id: CaseSiteId,
 ) -> Result<(), String> {
     require_strategic_gateway(ctx)?;
-    case_site_id
-        .to_place()
-        .ok_or("Case-site identity is malformed")?;
     let character = crate::character::require_living_character(ctx, character_id)?;
     let party_id = character
         .party_id

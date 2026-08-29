@@ -6,6 +6,8 @@
 
 use std::fmt;
 
+use crate::strategic_place::CaseSiteId;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ContractState {
     Offered,
@@ -92,7 +94,7 @@ impl ContractState {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MissionBinding {
-    pub case_site_id: String,
+    pub case_site_id: CaseSiteId,
     pub hostile_group_id: String,
 }
 
@@ -155,7 +157,7 @@ pub enum FlatResolution {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FlatMissionState {
     pub status: FlatMissionStatus,
-    pub case_site_id: Option<String>,
+    pub case_site_id: Option<CaseSiteId>,
     pub hostile_group_id: Option<String>,
     pub resolution: Option<FlatResolution>,
     pub subject_id: Option<String>,
@@ -507,7 +509,7 @@ mod tests {
         assert!(
             MissionAttemptState::parse(FlatMissionState {
                 status: FlatMissionStatus::Bound,
-                case_site_id: Some("s".into()),
+                case_site_id: Some(CaseSiteId::from("s".to_owned())),
                 hostile_group_id: None,
                 resolution: None,
                 subject_id: None,
@@ -518,7 +520,7 @@ mod tests {
         assert!(
             MissionAttemptState::parse(FlatMissionState {
                 status: FlatMissionStatus::Committed,
-                case_site_id: Some("s".into()),
+                case_site_id: Some(CaseSiteId::from("s".to_owned())),
                 hostile_group_id: Some("h".into()),
                 resolution: Some(FlatResolution::Captured),
                 subject_id: Some("target".into()),
@@ -529,7 +531,7 @@ mod tests {
         assert!(
             MissionAttemptState::parse(FlatMissionState {
                 status: FlatMissionStatus::Committed,
-                case_site_id: Some("s".into()),
+                case_site_id: Some(CaseSiteId::from("s".to_owned())),
                 hostile_group_id: Some("h".into()),
                 resolution: Some(FlatResolution::Captured),
                 subject_id: Some("target".into()),

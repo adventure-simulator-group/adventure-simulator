@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 
 use super::AppState;
 use crate::session::{Session, clear_character_cookie, redirect_with_session_cookie};
-use crate::spacetimedb::{BackendDevelopmentScenario, Character, CharacterStrategicCondition};
+use crate::spacetimedb::{BackendDevelopmentScenario, CharacterStrategicCondition, CharacterView};
 use crate::templates::character::{
     character_candidates_bootstrap_page, character_candidates_page, character_switcher_options,
     characters_list_page,
@@ -75,17 +75,15 @@ async fn character_condition(
     if !synchronized || !same_party || !colocated {
         return StatusCode::FORBIDDEN.into_response();
     }
-    Json(
-        state
-            .db
-            .query_one::<CharacterStrategicCondition>(&format!(
-                "SELECT * FROM backend_character_strategic_conditions WHERE character_id = {id}"
-            ))
-            .await
-            .ok()
-            .flatten(),
-    )
-    .into_response()
+    let condition = state
+        .db
+        .query_one_sats::<CharacterStrategicCondition>(
+            &crate::spacetimedb::character_strategic_condition_by_character_id(id),
+        )
+        .await
+        .ok()
+        .flatten();
+    Json(condition.map(spacetimedb_sats::serde::SerdeWrapper)).into_response()
 }
 
 #[derive(Deserialize)]
@@ -160,7 +158,7 @@ async fn list_characters(State(state): State<AppState>, session: Session) -> Res
 async fn development_scenarios(state: &AppState) -> Vec<BackendDevelopmentScenario> {
     state
         .db
-        .query("SELECT * FROM backend_development_scenarios")
+        .query_sats("SELECT * FROM backend_development_scenarios")
         .await
         .unwrap_or_default()
 }
@@ -171,17 +169,19 @@ async fn character_menu(State(state): State<AppState>, session: Session) -> Resp
         .into_response()
 }
 
-async fn remembered_characters(state: &AppState, session: &Session) -> Vec<Character> {
+async fn remembered_characters(state: &AppState, session: &Session) -> Vec<CharacterView> {
     let ids = session.character_ids();
     if ids.is_empty() {
         return Vec::new();
     }
-    let characters: Vec<Character> = if let Some(characters) = state.live.cached_characters() {
+    let characters: Vec<CharacterView> = if let Some(characters) = state.live.cached_characters() {
         characters
     } else {
         match state
             .db
-            .query::<Character>("SELECT * FROM backend_characters")
+            .query_sats_into::<adventuresim_stdb_client::Character, CharacterView>(
+                "SELECT * FROM backend_characters",
+            )
             .await
         {
             Ok(characters) => characters,

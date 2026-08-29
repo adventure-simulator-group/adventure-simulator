@@ -4,6 +4,7 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::case_site_id_type::CaseSiteId;
 use super::challenge_presenter_catalog_id_type::ChallengePresenterCatalogId;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
@@ -13,7 +14,7 @@ pub struct ChallengeAuthority {
     pub gateway_bucket: u8,
     pub case_id: String,
     pub party_id: String,
-    pub finale_case_site_id: String,
+    pub finale_case_site_id: CaseSiteId,
     pub finale_hostile_group_id: String,
     pub journey_departure_minute: u64,
     pub camp_movement_minute: u64,
@@ -38,7 +39,7 @@ pub struct ChallengeAuthorityCols {
     pub gateway_bucket: __sdk::__query_builder::Col<ChallengeAuthority, u8>,
     pub case_id: __sdk::__query_builder::Col<ChallengeAuthority, String>,
     pub party_id: __sdk::__query_builder::Col<ChallengeAuthority, String>,
-    pub finale_case_site_id: __sdk::__query_builder::Col<ChallengeAuthority, String>,
+    pub finale_case_site_id: __sdk::__query_builder::Col<ChallengeAuthority, CaseSiteId>,
     pub finale_hostile_group_id: __sdk::__query_builder::Col<ChallengeAuthority, String>,
     pub journey_departure_minute: __sdk::__query_builder::Col<ChallengeAuthority, u64>,
     pub camp_movement_minute: __sdk::__query_builder::Col<ChallengeAuthority, u64>,

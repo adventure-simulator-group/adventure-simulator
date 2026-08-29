@@ -6,9 +6,10 @@ use crate::{
     material::MaterialLotId,
     physical_object::{CustodyCharacterId, PhysicalObjectId},
     rights::{
-        DecisionProvenance, DomainJurisdiction, DomainRightsOperation, DomainRightsResource,
-        DomainRightsSubject, PrivateRightsDecision, RightsJurisdiction, RightsOperation,
-        RightsQuestion, RightsResource, RightsRevision, RightsSubject,
+        CanonicalRightsQuestionDigest, DecisionProvenance, DomainJurisdiction,
+        DomainRightsOperation, DomainRightsResource, DomainRightsSubject, PrivateRightsDecision,
+        RightsJurisdiction, RightsOperation, RightsQuestion, RightsResource, RightsRevision,
+        RightsSubject,
     },
     strategic_action::{
         ActionCoordinates, ActionEffect, ActionRequirement, CalculatedAction, DomainCapability,
@@ -171,7 +172,16 @@ impl OutbreakWaterFlow {
 }
 
 fn flow_digest(amount_ml: u64, load_microunits: u64) -> String {
-    let digest = Sha256::digest([amount_ml.to_le_bytes(), load_microunits.to_le_bytes()].concat());
+    let mut hasher = Sha256::new();
+    for value in [
+        b"adventuresim.outbreak-water-flow-contribution.v1".as_slice(),
+        amount_ml.to_le_bytes().as_slice(),
+        load_microunits.to_le_bytes().as_slice(),
+    ] {
+        hasher.update((value.len() as u64).to_le_bytes());
+        hasher.update(value);
+    }
+    let digest = hasher.finalize();
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
@@ -227,18 +237,31 @@ pub fn decide_public_water_collection(
     source_open: bool,
     revision: u64,
 ) -> PrivateRightsDecision<()> {
-    let mut hash = Sha256::new();
-    hash.update(b"water-collection-rights-v1");
-    hash.update(format!("{question:?}").as_bytes());
     let provenance = DecisionProvenance {
         evidence_revision: RightsRevision(revision),
-        question_digest: hash.finalize().into(),
+        question_digest: water_rights_question_digest(question),
     };
     if source_open {
         PrivateRightsDecision::allowed(Vec::new(), None, provenance)
     } else {
         PrivateRightsDecision::denied(Vec::new(), provenance)
     }
+}
+
+/// Canonical, versioned fingerprint of the complete typed water-rights
+/// question. Enum names and their `Debug` output are not persistence inputs.
+pub fn water_rights_question_digest(question: &WaterRightsQuestion) -> [u8; 32] {
+    let mut digest = CanonicalRightsQuestionDigest::new(b"water");
+    digest.frame_subject(question.subject(), |_, subject| match *subject {});
+    digest.frame_resource(question.resource(), |_, resource| match *resource {});
+    digest.frame_operation(question.operation(), |digest, operation| match operation {
+        WaterRightsOperation::Collect => digest.frame(b"collect"),
+    });
+    digest.frame_jurisdiction(
+        question.jurisdiction(),
+        |_, jurisdiction| match *jurisdiction {},
+    );
+    digest.finish()
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -409,9 +432,16 @@ pub fn proportional_material_transfer(
 
 #[cfg(test)]
 mod tests {
-    use crate::material::Microliters;
+    use crate::{
+        material::Microliters,
+        physical_object::{CustodyCharacterId, PhysicalObjectId},
+        strategic_place::StrategicPlaceId,
+    };
 
-    use super::{conserved_collection, proportional_material_transfer};
+    use super::{
+        conserved_collection, proportional_material_transfer, water_container_alter_question,
+        water_rights_question_digest,
+    };
 
     #[test]
     fn collection_conserves_exact_integer_volume() {
@@ -439,6 +469,32 @@ mod tests {
                 1_200_000
             ),
             Some((Microliters::new(10_000), 1_200_000))
+        );
+    }
+
+    #[test]
+    fn water_rights_digest_has_a_fixed_versioned_vector() {
+        let question = water_container_alter_question(
+            CustodyCharacterId::try_new(7).unwrap(),
+            PhysicalObjectId::try_new(11).unwrap(),
+            StrategicPlaceId::settlement("lubeck").unwrap(),
+        )
+        .unwrap();
+        let digest = water_rights_question_digest(&question)
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        assert_eq!(
+            digest,
+            "12bdacc5650eaf77109891c8ab8fe3fecf1643a3866da891f7627eff103b8fd0"
+        );
+    }
+
+    #[test]
+    fn outbreak_flow_digest_has_a_fixed_versioned_vector() {
+        assert_eq!(
+            super::flow_digest(900_000, 1_200_000),
+            "3149002933f0d602f576286b65664dbc59526101ef46bd891c41aa5d4f17e666"
         );
     }
 }

@@ -16,7 +16,7 @@ pub(super) fn resolve_ranged_attack(
     q_bestiary_categories: Query<&BestiaryCategories>,
     q_pending: Query<&PendingDefenderResponse>,
     q_scene_items: Query<Entity, With<TacticalSceneItem>>,
-    q_ammo: Query<(Entity, &ItemOf, &ItemProperties, &ItemQuantity)>,
+    q_ammo: Query<(Entity, &ItemOf, &ItemProperties, &TacticalItemQuantity)>,
     q_ids: Query<&CharacterId>,
     mut consequences: ResMut<TacticalConsequenceAccumulator>,
     time: Res<Time<()>>,
@@ -124,7 +124,8 @@ pub(super) fn resolve_ranged_attack(
         return;
     };
     if let Some(remaining) = remaining_ammo_after_shot(quantity.0) {
-        cmd.entity(ammo_entity).insert(ItemQuantity(remaining));
+        cmd.entity(ammo_entity)
+            .insert(TacticalItemQuantity(remaining));
     } else {
         cmd.entity(ammo_entity).despawn();
     }

@@ -23,6 +23,7 @@ pub struct BackendContract {
     pub accepted_by: Option<String>,
     pub opposition_wording: String,
     pub opposition_count_wording: String,
+    pub opposition_count: u32,
     pub opposition_combat_power: u64,
     pub accepted_at_minute: Option<u64>,
     pub paid_at_minute: Option<u64>,
@@ -51,6 +52,7 @@ pub struct BackendContractCols {
     pub accepted_by: __sdk::__query_builder::Col<BackendContract, Option<String>>,
     pub opposition_wording: __sdk::__query_builder::Col<BackendContract, String>,
     pub opposition_count_wording: __sdk::__query_builder::Col<BackendContract, String>,
+    pub opposition_count: __sdk::__query_builder::Col<BackendContract, u32>,
     pub opposition_combat_power: __sdk::__query_builder::Col<BackendContract, u64>,
     pub accepted_at_minute: __sdk::__query_builder::Col<BackendContract, Option<u64>>,
     pub paid_at_minute: __sdk::__query_builder::Col<BackendContract, Option<u64>>,
@@ -81,6 +83,7 @@ impl __sdk::__query_builder::HasCols for BackendContract {
                 table_name,
                 "opposition_count_wording",
             ),
+            opposition_count: __sdk::__query_builder::Col::new(table_name, "opposition_count"),
             opposition_combat_power: __sdk::__query_builder::Col::new(
                 table_name,
                 "opposition_combat_power",

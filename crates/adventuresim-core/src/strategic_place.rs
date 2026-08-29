@@ -44,6 +44,84 @@ impl StrategicIdentityComponent {
     }
 }
 
+/// Validated opaque identity for one investigation case site.
+///
+/// This component is intentionally narrower than [`StrategicPlaceId`]: table
+/// fields that require a case site cannot accidentally accept a settlement or
+/// journey camp.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct CaseSiteId {
+    value: String,
+}
+
+impl CaseSiteId {
+    pub fn try_new(value: impl Into<String>) -> Result<Self, PlaceIdentityError> {
+        let component = StrategicIdentityComponent::try_new(value)?;
+        Ok(Self { value: component.0 })
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.value
+    }
+
+    pub fn into_string(self) -> String {
+        self.value
+    }
+
+    pub fn to_place(&self) -> StrategicPlaceId {
+        StrategicPlaceId::CaseSite {
+            site_id: self.clone(),
+        }
+    }
+}
+
+impl From<String> for CaseSiteId {
+    fn from(value: String) -> Self {
+        Self::try_new(value).expect("server-authored case-site component must be canonical")
+    }
+}
+
+impl std::ops::Deref for CaseSiteId {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        self.as_str()
+    }
+}
+
+impl fmt::Display for CaseSiteId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.value.fmt(formatter)
+    }
+}
+
+impl Serialize for CaseSiteId {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Wire<'a> {
+            value: &'a str,
+        }
+
+        Wire {
+            value: self.as_str(),
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for CaseSiteId {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Wire {
+            value: String,
+        }
+
+        CaseSiteId::try_new(Wire::deserialize(deserializer)?.value).map_err(de::Error::custom)
+    }
+}
+
 /// Closed physical vocabulary for existing settlement venues.
 ///
 /// This is deliberately not another settlement-service taxonomy. Authority
@@ -155,10 +233,7 @@ pub enum StrategicPlaceId {
         holding_id: StrategicIdentityComponent,
     },
     CaseSite {
-        /// The pure-core counterpart of the current schema-owned `CaseSiteId`.
-        /// The schema adapter stack must validate/replace that wrapper with
-        /// this referent; their coexistence is not a final dual-ID design.
-        site_id: StrategicIdentityComponent,
+        site_id: CaseSiteId,
     },
     JourneyCamp {
         party_id: StrategicIdentityComponent,
@@ -208,7 +283,7 @@ impl StrategicPlaceId {
 
     pub fn case_site(site_id: impl Into<String>) -> Result<Self, PlaceIdentityError> {
         Ok(Self::CaseSite {
-            site_id: StrategicIdentityComponent::try_new(site_id)?,
+            site_id: CaseSiteId::try_new(site_id)?,
         })
     }
 
@@ -651,6 +726,30 @@ fn parse_canonical_u64(value: &str) -> Result<u64, PlaceIdentityError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn case_site_id_validates_and_round_trips_as_a_named_boundary_value() {
+        let id = CaseSiteId::try_new("case:outbreak:site:source").unwrap();
+        assert_eq!(id.as_str(), "case:outbreak:site:source");
+        assert_eq!(
+            serde_json::to_value(&id).unwrap(),
+            serde_json::json!({"value": "case:outbreak:site:source"})
+        );
+        assert_eq!(
+            serde_json::from_value::<CaseSiteId>(serde_json::json!({
+                "value": "case:outbreak:site:source"
+            }))
+            .unwrap(),
+            id
+        );
+        assert!(CaseSiteId::try_new("malformed case site").is_err());
+        assert!(
+            serde_json::from_value::<CaseSiteId>(serde_json::json!({
+                "value": "malformed case site"
+            }))
+            .is_err()
+        );
+    }
 
     fn round_trip_place(place: StrategicPlaceId) {
         let encoded = place.to_string();

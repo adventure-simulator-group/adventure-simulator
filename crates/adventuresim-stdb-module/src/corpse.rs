@@ -10,6 +10,7 @@ use adventuresim_core::{
     },
     autoresolve::BattleOutcome,
     prelude::{BodyPart, Skill},
+    strategic_place::CaseSiteId,
 };
 use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view};
 
@@ -67,7 +68,7 @@ pub struct StrategicCorpse {
     pub display_name: String,
     pub creature_kind: String,
     pub settlement_id: String,
-    pub case_site_id: String,
+    pub case_site_id: Option<CaseSiteId>,
     pub death_minute: u64,
     pub discovered_minute: u64,
     pub buried: bool,
@@ -182,7 +183,7 @@ pub struct BackendCorpse {
     pub source_id: String,
     pub location: String,
     pub decomposition: String,
-    pub case_site_id: String,
+    pub case_site_id: Option<CaseSiteId>,
     pub settlement_id: String,
     pub opened: bool,
     pub permission: String,
@@ -282,9 +283,12 @@ fn require_corpse_access(
         corpse.exhumed,
     );
     let actor_site = crate::investigation::current_character_case_site_occupancy(ctx, actor_id)
-        .map(|row| row.case_site_id.value);
+        .map(|row| row.case_site_id);
     let together = match location {
-        CorpseLocation::Scene => actor_site.as_deref() == Some(corpse.case_site_id.as_str()),
+        CorpseLocation::Scene => actor_site
+            .as_ref()
+            .zip(corpse.case_site_id.as_ref())
+            .is_some_and(|(actor_site, corpse_site)| actor_site == corpse_site),
         CorpseLocation::LocalCustody | CorpseLocation::Interred | CorpseLocation::Exhumed => {
             actor.current_settlement_id.as_deref() == Some(corpse.settlement_id.as_str())
         }
@@ -389,24 +393,19 @@ fn skill_check(ctx: &ReducerContext, actor_id: u64, discipline: &str) -> Result<
     })
 }
 
-fn summarize_external(
-    ctx: &ReducerContext,
-    corpse: &StrategicCorpse,
-    discipline: &str,
-    check: f32,
-    minute: u64,
-) -> String {
-    realized_finding(ctx, corpse, discipline, check, minute, false)
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AutopsyFindingKind {
+    Other,
+    SystemicPathology,
 }
 
-fn summarize_internal(
-    ctx: &ReducerContext,
-    corpse: &StrategicCorpse,
-    discipline: &str,
-    check: f32,
-    minute: u64,
-) -> String {
-    realized_finding(ctx, corpse, discipline, check, minute, true)
+struct RealizedAutopsyFinding {
+    kind: AutopsyFindingKind,
+    wording: String,
+}
+
+fn grants_systemic_pathology_evidence(discipline: &str, finding: &RealizedAutopsyFinding) -> bool {
+    discipline == "physiology" && finding.kind == AutopsyFindingKind::SystemicPathology
 }
 
 fn realized_finding(
@@ -416,7 +415,7 @@ fn realized_finding(
     check: f32,
     minute: u64,
     internal: bool,
-) -> String {
+) -> RealizedAutopsyFinding {
     use adventuresim_core::autopsy::{
         AutopsyEvidenceContext, BodyInjury, PostCombatBody, SystemicPathologySnapshot,
         bestiary_finding, physiology_finding, physiology_pathology_finding, surgery_finding,
@@ -475,25 +474,39 @@ fn realized_finding(
         at_scene: location == CorpseLocation::Scene,
         opening_obscuration_bps: corpse.opening_obscuration_bps,
     };
-    let finding = match discipline {
-        "surgery" => surgery_finding(&injuries, check, context, internal),
-        "physiology" => ctx
-            .db
-            .corpse_pathology()
-            .corpse_id()
-            .find(&corpse.id)
-            .and_then(|row| {
-                serde_json::from_str::<SystemicPathologySnapshot>(&row.snapshot_json).ok()
-            })
-            .and_then(|snapshot| physiology_pathology_finding(&snapshot, check, context, internal))
-            .or_else(|| {
-                body.as_ref()
-                    .and_then(|body| physiology_finding(body, check, context, internal))
-            }),
-        "bestiary" => bestiary_finding(&injuries, check, context, internal),
-        _ => None,
+    let (finding, kind) = match discipline {
+        "surgery" => (
+            surgery_finding(&injuries, check, context, internal),
+            AutopsyFindingKind::Other,
+        ),
+        "physiology" => {
+            let pathology_finding = ctx
+                .db
+                .corpse_pathology()
+                .corpse_id()
+                .find(&corpse.id)
+                .and_then(|row| {
+                    serde_json::from_str::<SystemicPathologySnapshot>(&row.snapshot_json).ok()
+                })
+                .and_then(|snapshot| {
+                    physiology_pathology_finding(&snapshot, check, context, internal)
+                });
+            match pathology_finding {
+                Some(finding) => (Some(finding), AutopsyFindingKind::SystemicPathology),
+                None => (
+                    body.as_ref()
+                        .and_then(|body| physiology_finding(body, check, context, internal)),
+                    AutopsyFindingKind::Other,
+                ),
+            }
+        }
+        "bestiary" => (
+            bestiary_finding(&injuries, check, context, internal),
+            AutopsyFindingKind::Other,
+        ),
+        _ => (None, AutopsyFindingKind::Other),
     };
-    finding.unwrap_or_else(|| match discipline {
+    let wording = finding.unwrap_or_else(|| match discipline {
         "surgery" => {
             "Decomposition, handling, or limited precision prevents a defensible wound description."
                 .into()
@@ -506,7 +519,8 @@ fn realized_finding(
                 .into()
         }
         _ => "No defensible finding was recorded.".into(),
-    })
+    });
+    RealizedAutopsyFinding { kind, wording }
 }
 
 #[view(accessor = backend_corpses, public)]
@@ -610,11 +624,7 @@ pub fn backend_corpses(ctx: &ViewContext) -> Vec<BackendCorpse> {
                     ))
                     .into()
                 },
-                case_site_id: if buried {
-                    String::new()
-                } else {
-                    corpse.case_site_id.clone()
-                },
+                case_site_id: (!buried).then(|| corpse.case_site_id.clone()).flatten(),
                 settlement_id: corpse.settlement_id.clone(),
                 opened: !buried && corpse.opened,
                 permission: if buried {
@@ -639,7 +649,7 @@ pub(crate) fn persist_autoresolve_enemy_corpses(
     source_id: &str,
     party_id: &str,
     settlement_id: &str,
-    case_site_id: &str,
+    case_site_id: Option<&CaseSiteId>,
     creature_kind: &str,
     outcome: &BattleOutcome,
 ) -> Result<usize, String> {
@@ -675,7 +685,7 @@ pub(crate) fn persist_autoresolve_enemy_corpses(
         corpse.display_name = format!("Fallen {creature_kind}");
         corpse.creature_kind = creature_kind.into();
         corpse.settlement_id = settlement_id.into();
-        corpse.case_site_id = case_site_id.into();
+        corpse.case_site_id = case_site_id.cloned();
         corpse.party_killed_enemy = true;
         ctx.db.strategic_corpse().id().update(corpse);
         let body = post_combat_body(enemy, &outcome.log);
@@ -790,7 +800,7 @@ fn persist_autopsy_demo_body(
                 display_name: display_name.into(),
                 creature_kind: creature_kind.into(),
                 settlement_id: settlement_id.into(),
-                case_site_id: String::new(),
+                case_site_id: None,
                 death_minute,
                 discovered_minute,
                 buried,
@@ -1035,7 +1045,8 @@ pub(crate) fn persist_character_death_corpse(
         .find(character_id)
         .ok_or("Dead character anatomy not found")?;
     let case_site_id =
-        crate::investigation::character_case_site_id(ctx, character_id).unwrap_or_default();
+        crate::investigation::current_character_case_site_occupancy(ctx, character_id)
+            .map(|row| row.case_site_id);
     let settlement_id = subject.current_settlement_id.clone().unwrap_or_default();
     ctx.db.strategic_corpse().insert(StrategicCorpse {
         id: corpse_id.clone(),
@@ -1221,13 +1232,15 @@ pub fn examine_corpse(
     )?;
     let completed_minute = now(ctx, actor_id)?;
     let check = skill_check(ctx, actor_id, &discipline)?;
-    let finding = if stage == "external" {
-        summarize_external(ctx, &corpse, &discipline, check, completed_minute)
-    } else {
-        summarize_internal(ctx, &corpse, &discipline, check, completed_minute)
-    };
-    if discipline == "physiology"
-        && finding.starts_with("Systemic examination finds")
+    let finding = realized_finding(
+        ctx,
+        &corpse,
+        &discipline,
+        check,
+        completed_minute,
+        stage == "internal",
+    );
+    if grants_systemic_pathology_evidence(&discipline, &finding)
         && let Some(patient) = ctx
             .db
             .outbreak_patient_authority()
@@ -1251,7 +1264,7 @@ pub fn examine_corpse(
             observer_id: actor_id,
             action_kind: discipline,
             stage,
-            finding,
+            finding: finding.wording,
             performed_minute: completed_minute,
         });
     Ok(())
@@ -1837,7 +1850,12 @@ fn titled_permission_kind(
         Some(CorpsePermissionKind::Priest)
     } else if matches!(local_role, "reeve" | "local lord" | "magistrate") {
         Some(CorpsePermissionKind::SecularAuthority)
-    } else if !organization_id.is_empty() && local_role.starts_with("master ") {
+    } else if adventuresim_core::organization::organization(organization_id).is_some_and(
+        |organization| {
+            organization.kind
+                == adventuresim_core::organization::OrganizationKind::ProfessionalAssociation
+        },
+    ) {
         Some(CorpsePermissionKind::GuildAuthority)
     } else {
         None
@@ -1973,6 +1991,29 @@ mod tests {
     use super::*;
 
     #[test]
+    fn systemic_evidence_control_is_invariant_to_wording_and_rejects_prefix_spoofs() {
+        for wording in [
+            "Systemic examination finds a pronounced failure pattern.",
+            "Reworded observer-safe pathology finding.",
+        ] {
+            assert!(grants_systemic_pathology_evidence(
+                "physiology",
+                &RealizedAutopsyFinding {
+                    kind: AutopsyFindingKind::SystemicPathology,
+                    wording: wording.into(),
+                },
+            ));
+        }
+        assert!(!grants_systemic_pathology_evidence(
+            "physiology",
+            &RealizedAutopsyFinding {
+                kind: AutopsyFindingKind::Other,
+                wording: "Systemic examination finds spoofed ordinary prose.".into(),
+            },
+        ));
+    }
+
+    #[test]
     fn authority_tables_are_private_and_gateway_projection_is_observer_scoped() {
         let source = crate::production_source(include_str!("corpse.rs"));
         for table in [
@@ -2003,7 +2044,7 @@ mod tests {
         assert!(source.contains("apply_unauthorized_consequences"));
         assert!(source.contains("CorpsePermissionScope::Examination"));
         assert!(source.contains("CorpsePermissionScope::Exhumation"));
-        assert!(source.contains("actor_site.as_deref() == Some(corpse.case_site_id.as_str())"));
+        assert!(source.contains(".zip(corpse.case_site_id.as_ref())"));
         assert!(source.contains(
             "actor.current_settlement_id.as_deref() == Some(corpse.settlement_id.as_str())"
         ));
@@ -2041,6 +2082,7 @@ mod tests {
         assert!(source.matches("permission_kind_for_npc(ctx,").count() >= 2);
         assert!(!source.contains("service_id == \"keep\""));
         assert!(!source.contains("local_role.contains"));
+        assert!(!source.contains("local_role.starts_with"));
     }
 
     #[test]

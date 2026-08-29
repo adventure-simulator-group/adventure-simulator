@@ -4,6 +4,7 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::case_site_id_type::CaseSiteId;
 use super::challenge_presenter_catalog_id_type::ChallengePresenterCatalogId;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
@@ -13,7 +14,7 @@ pub struct BackendChallenge {
     pub case_id: String,
     pub party_id: String,
     pub owner_character_id: u64,
-    pub finale_case_site_id: String,
+    pub finale_case_site_id: CaseSiteId,
     pub puzzle_projection_json: String,
     pub presenter_catalog_id: ChallengePresenterCatalogId,
     pub revision: u32,
@@ -38,7 +39,7 @@ pub struct BackendChallengeCols {
     pub case_id: __sdk::__query_builder::Col<BackendChallenge, String>,
     pub party_id: __sdk::__query_builder::Col<BackendChallenge, String>,
     pub owner_character_id: __sdk::__query_builder::Col<BackendChallenge, u64>,
-    pub finale_case_site_id: __sdk::__query_builder::Col<BackendChallenge, String>,
+    pub finale_case_site_id: __sdk::__query_builder::Col<BackendChallenge, CaseSiteId>,
     pub puzzle_projection_json: __sdk::__query_builder::Col<BackendChallenge, String>,
     pub presenter_catalog_id:
         __sdk::__query_builder::Col<BackendChallenge, ChallengePresenterCatalogId>,

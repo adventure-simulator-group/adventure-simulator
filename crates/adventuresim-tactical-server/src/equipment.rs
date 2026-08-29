@@ -60,7 +60,7 @@ type ItemView<'a> = (
     Option<&'a ItemOf>,
     &'a EquipmentTopology,
     Option<&'a EquipSlot>,
-    Option<&'a EquipmentPhysical>,
+    Option<&'a TacticalEquipmentPhysical>,
     Has<TacticalSceneItem>,
     Option<&'a Transform>,
 );
@@ -408,7 +408,7 @@ fn hand_topology(hand: EquipmentHand) -> EquipmentTopology {
             .into(),
         ),
         occupancies: vec![EquipmentTopologyOccupancy {
-            occupancy_id: format!("tactical:{:?}:held", hand),
+            occupancy_id: format!("tactical:{}:held", hand.id()),
             anchor: TacticalEquipmentAnchor::CharacterLocation(hand.location()),
             channel: EquipmentChannel::Held,
             order: 0,
@@ -905,7 +905,7 @@ fn drop_hand(
     true
 }
 
-fn item_box_center(grip: Vec3, physical: &EquipmentPhysical) -> Vec3 {
+fn item_box_center(grip: Vec3, physical: &TacticalEquipmentPhysical) -> Vec3 {
     grip - physical.anchor_offset_m
 }
 
@@ -1120,7 +1120,7 @@ mod tests {
 
     #[test]
     fn pickup_box_center_accounts_for_nonzero_anchor_offset() {
-        let physical = EquipmentPhysical {
+        let physical = TacticalEquipmentPhysical {
             dimensions_m: Vec3::splat(0.2),
             grip_to_tip_m: 0.4,
             anchor_offset_m: Vec3::new(0.15, -0.05, 0.1),

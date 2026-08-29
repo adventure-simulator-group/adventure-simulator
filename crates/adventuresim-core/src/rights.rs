@@ -6,6 +6,8 @@
 
 use std::{fmt, num::NonZeroU64};
 
+use sha2::{Digest, Sha256};
+
 use crate::{
     physical_object::{
         CustodyCharacterId, CustodyPartyId, ObjectCustody, OperationalCustody, PhysicalObjectId,
@@ -27,6 +29,144 @@ pub trait OrganizationPresentation: Clone + fmt::Debug + Eq {}
 pub trait OrganizationRecognition: Clone + fmt::Debug + Eq {}
 pub trait OrganizationPrivilegeEvidenceValue: Clone + fmt::Debug + Eq {}
 pub trait PublicRightsAllowance: Clone + fmt::Debug + Eq {}
+
+/// Canonical, versioned encoding for durable rights-question fingerprints.
+///
+/// Every component is length-framed, and common boundary variants are encoded
+/// here so domain rights digests cannot drift into ad hoc concatenation or
+/// enum formatting.
+pub(crate) struct CanonicalRightsQuestionDigest(Sha256);
+
+impl CanonicalRightsQuestionDigest {
+    pub(crate) fn new(purpose: &[u8]) -> Self {
+        let mut digest = Self(Sha256::new());
+        digest.frame(b"adventuresim.rights-question");
+        digest.frame(b"v1");
+        digest.frame(purpose);
+        digest
+    }
+
+    pub(crate) fn frame(&mut self, value: &[u8]) {
+        self.0.update((value.len() as u64).to_le_bytes());
+        self.0.update(value);
+    }
+
+    pub(crate) fn frame_subject<S: DomainRightsSubject>(
+        &mut self,
+        subject: &RightsSubject<S>,
+        frame_domain: impl FnOnce(&mut Self, &S),
+    ) {
+        match subject {
+            RightsSubject::Character(character) => {
+                self.frame(b"character");
+                self.frame(&character.get().to_le_bytes());
+            }
+            RightsSubject::Party(party) => {
+                self.frame(b"party");
+                self.frame(party.as_str().as_bytes());
+            }
+            RightsSubject::Domain(domain) => {
+                self.frame(b"domain");
+                frame_domain(self, domain);
+            }
+        }
+    }
+
+    pub(crate) fn frame_resource<R: DomainRightsResource>(
+        &mut self,
+        resource: &RightsResource<R>,
+        frame_domain: impl FnOnce(&mut Self, &R),
+    ) {
+        match resource {
+            RightsResource::Object(object) => {
+                self.frame(b"object");
+                self.frame(&object.get().to_le_bytes());
+            }
+            RightsResource::Place(place) => {
+                self.frame(b"place");
+                self.frame(place.to_string().as_bytes());
+            }
+            RightsResource::Fixture(fixture) => {
+                self.frame(b"fixture");
+                self.frame(fixture.to_string().as_bytes());
+            }
+            RightsResource::Domain(domain) => {
+                self.frame(b"domain");
+                frame_domain(self, domain);
+            }
+        }
+    }
+
+    pub(crate) fn frame_operation<O: DomainRightsOperation>(
+        &mut self,
+        operation: &RightsOperation<O>,
+        frame_domain: impl FnOnce(&mut Self, &O),
+    ) {
+        match operation {
+            RightsOperation::Own => self.frame(b"own"),
+            RightsOperation::HoldCustody => self.frame(b"hold-custody"),
+            RightsOperation::Use => self.frame(b"use"),
+            RightsOperation::TransferCustody { destination } => {
+                self.frame(b"transfer-custody");
+                self.frame_custody(destination);
+            }
+            RightsOperation::Alter => self.frame(b"alter"),
+            RightsOperation::Access => self.frame(b"access"),
+            RightsOperation::ReceivePermission => self.frame(b"receive-permission"),
+            RightsOperation::Domain(domain) => {
+                self.frame(b"domain");
+                frame_domain(self, domain);
+            }
+        }
+    }
+
+    pub(crate) fn frame_jurisdiction<J: DomainJurisdiction>(
+        &mut self,
+        jurisdiction: &RightsJurisdiction<J>,
+        frame_domain: impl FnOnce(&mut Self, &J),
+    ) {
+        match jurisdiction {
+            RightsJurisdiction::Global => self.frame(b"global"),
+            RightsJurisdiction::Place(place) => {
+                self.frame(b"place");
+                self.frame(place.to_string().as_bytes());
+            }
+            RightsJurisdiction::Domain(domain) => {
+                self.frame(b"domain");
+                frame_domain(self, domain);
+            }
+        }
+    }
+
+    fn frame_custody(&mut self, custody: &OperationalCustody) {
+        match custody {
+            OperationalCustody::Character(character) => {
+                self.frame(b"character");
+                self.frame(&character.get().to_le_bytes());
+            }
+            OperationalCustody::Party(party) => {
+                self.frame(b"party");
+                self.frame(party.as_str().as_bytes());
+            }
+            OperationalCustody::Container(container) => {
+                self.frame(b"container");
+                self.frame(&container.get().to_le_bytes());
+            }
+            OperationalCustody::Place(place) => {
+                self.frame(b"place");
+                self.frame(place.to_string().as_bytes());
+            }
+            OperationalCustody::Fixture(fixture) => {
+                self.frame(b"fixture");
+                self.frame(fixture.to_string().as_bytes());
+            }
+        }
+    }
+
+    pub(crate) fn finish(self) -> [u8; 32] {
+        self.0.finalize().into()
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RightsSubject<S: DomainRightsSubject> {

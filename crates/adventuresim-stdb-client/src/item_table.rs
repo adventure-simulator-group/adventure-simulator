@@ -2,11 +2,11 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use super::equipment_attachment_point_type::EquipmentAttachmentPoint;
-use super::equipment_placement_type::EquipmentPlacement;
-use super::item_kind_type::ItemKind;
 use super::item_type::Item;
 use super::melee_attack_style_type::MeleeAttackStyle;
+use super::persisted_equipment_attachment_point_type::PersistedEquipmentAttachmentPoint;
+use super::persisted_equipment_placement_type::PersistedEquipmentPlacement;
+use super::persisted_item_kind_type::PersistedItemKind;
 use super::slot_type::Slot;
 use super::weapon_skill_distribution_type::WeaponSkillDistribution;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};

@@ -5,6 +5,7 @@ enum ReferralDeliveryAuthority {
 
 use crate::relationship::{character_kinship as _, courtship as _};
 use crate::social::character_familiarity as _;
+use crate::local_problem::generated_problem_incident as _;
 
 fn referral_delivery_authority(
     ctx: &ReducerContext,
@@ -197,7 +198,9 @@ pub fn join_dialogue_session(
         .id()
         .find(&session_id)
         .ok_or("Dialogue session not found")?;
-    if session.catalog_revision != catalog_revision || session.state != "active" {
+    if session.catalog_revision != catalog_revision
+        || DialogueSessionState::parse(&session.state)? != DialogueSessionState::Active
+    {
         return Err("Dialogue session is stale or closed".into());
     }
     require_live_dialogue_presence(ctx, &session, character_id)?;
@@ -270,7 +273,7 @@ pub(crate) fn require_session_member(
         .id()
         .find(session_id.to_owned())
         .ok_or("Dialogue session not found")?;
-    if session.state != "active" {
+    if DialogueSessionState::parse(&session.state)? != DialogueSessionState::Active {
         return Err("Dialogue session is closed".into());
     }
     let member = ctx
@@ -443,13 +446,13 @@ fn dialogue_fact_context(
                     FactKey::ParticipantAgeBand {
                         role: participant.role.clone(),
                     },
-                    FactValue::Text(format!("{:?}", npc.age_band).to_lowercase()),
+                    FactValue::Text(npc.age_band.stable_id().into()),
                 );
                 result.facts.insert(
                     FactKey::ParticipantSex {
                         role: participant.role.clone(),
                     },
-                    FactValue::Text(format!("{:?}", npc.sex).to_lowercase()),
+                    FactValue::Text(npc.sex.stable_id().into()),
                 );
                 result.facts.insert(
                     FactKey::ParticipantLocalRole {
@@ -593,7 +596,7 @@ fn dialogue_fact_context(
                     .into_iter()
                     .filter_map(|row| ctx.db.inventory_item().id().find(row.inventory_item_id))
                     .filter_map(|inventory| ctx.db.item().id().find(&inventory.item_id))
-                    .find(|item| item.kind == crate::item::ItemKind::Clothing);
+                    .find(|item| item.kind == crate::item::PersistedItemKind::Clothing);
                 if let Some(item) = clothing {
                     result.facts.insert(
                         FactKey::ParticipantClothingCategory {
@@ -856,7 +859,7 @@ fn dialogue_fact_context(
                 FactKey::ContractState {
                     contract: "selected-service-contract".into(),
                 },
-                FactValue::Text(format!("{:?}", contract.status).to_lowercase()),
+                FactValue::Text(contract.status.stable_id().into()),
             );
         }
     Ok(result)
@@ -1296,9 +1299,16 @@ fn dialogue_runtime_bindings(
         bindings.bind(S::Testimony, belief.statement.clone());
         bindings.bind(S::Claim, belief.statement.clone());
     }
-    if let Some(circumstance) = beliefs
+    if let Some((_occurred_at, circumstance)) = beliefs
         .iter()
-        .find(|belief| belief.proposition_id.contains("circumstance"))
+        .filter_map(|belief| {
+            ctx.db
+                .generated_problem_incident()
+                .iter()
+                .find(|incident| incident.proposition_id == belief.proposition_id)
+                .map(|incident| (incident.occurred_at, belief))
+        })
+        .max_by_key(|(occurred_at, belief)| (*occurred_at, belief.id.as_str()))
     {
         bindings.bind(S::WitnessCircumstance, circumstance.statement.clone());
     }
@@ -1364,8 +1374,8 @@ fn dialogue_runtime_bindings(
             S::ReferralDescription,
             format!(
                 "a {} {}, {} build, with {} and {}",
-                format!("{:?}", contact.age_band).to_lowercase(),
-                format!("{:?}", contact.sex).to_lowercase(),
+                contact.age_band.stable_id(),
+                contact.sex.stable_id(),
                 contact.build,
                 contact.hair,
                 contact.visible_features

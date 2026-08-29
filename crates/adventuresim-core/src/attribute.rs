@@ -1,4 +1,59 @@
 use crate::body::{BodyPart, LimbWeights, PlayerBody};
+use serde::{Deserialize, Serialize};
+
+/// Complete, framework-neutral base attribute values for one character.
+///
+/// Persistence rows and ECS components may carry their own identity or
+/// framework metadata, but calculations share this value rather than
+/// redefining its fields.
+#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+#[serde(deny_unknown_fields)]
+pub struct PlayerAttributeValues {
+    pub endurance: f32,
+    pub immunity: f32,
+    pub gut: f32,
+    pub intelligence: f32,
+    pub instinct: f32,
+    pub eyesight: f32,
+    pub hearing: f32,
+    pub left_arm_strength: f32,
+    pub right_arm_strength: f32,
+    pub left_leg_strength: f32,
+    pub right_leg_strength: f32,
+    pub left_arm_agility: f32,
+    pub right_arm_agility: f32,
+    pub left_leg_agility: f32,
+    pub right_leg_agility: f32,
+}
+
+impl PlayerAttributes for PlayerAttributeValues {
+    fn raw_limb_attr(&self, attr: LimbAttribute, limb: BodyPart) -> f32 {
+        match (attr, limb) {
+            (LimbAttribute::Strength, BodyPart::LeftArm) => self.left_arm_strength,
+            (LimbAttribute::Strength, BodyPart::RightArm) => self.right_arm_strength,
+            (LimbAttribute::Strength, BodyPart::LeftLeg) => self.left_leg_strength,
+            (LimbAttribute::Strength, BodyPart::RightLeg) => self.right_leg_strength,
+            (LimbAttribute::Agility, BodyPart::LeftArm) => self.left_arm_agility,
+            (LimbAttribute::Agility, BodyPart::RightArm) => self.right_arm_agility,
+            (LimbAttribute::Agility, BodyPart::LeftLeg) => self.left_leg_agility,
+            (LimbAttribute::Agility, BodyPart::RightLeg) => self.right_leg_agility,
+            _ => 0.0,
+        }
+    }
+
+    fn raw_single_body_part_attr(&self, attr: SimpleAttribute) -> f32 {
+        match attr {
+            SimpleAttribute::Endurance => self.endurance,
+            SimpleAttribute::Immunity => self.immunity,
+            SimpleAttribute::Gut => self.gut,
+            SimpleAttribute::Intelligence => self.intelligence,
+            SimpleAttribute::Instinct => self.instinct,
+            SimpleAttribute::Eyesight => self.eyesight,
+            SimpleAttribute::Hearing => self.hearing,
+        }
+    }
+}
 
 /// Player attributes.
 ///
@@ -92,5 +147,31 @@ pub trait PlayerAttributes {
 
             sum + raw * weight * health
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn player_attribute_values_round_trip_without_accepting_schema_drift() {
+        let values = PlayerAttributeValues {
+            endurance: 3.0,
+            instinct: 4.0,
+            left_arm_strength: 2.5,
+            ..Default::default()
+        };
+        let encoded = serde_json::to_value(&values).unwrap();
+        assert_eq!(
+            serde_json::from_value::<PlayerAttributeValues>(encoded.clone()).unwrap(),
+            values
+        );
+        let mut drifted = encoded.as_object().unwrap().clone();
+        drifted.insert("legacy_endurance".into(), serde_json::json!(3.0));
+        assert!(
+            serde_json::from_value::<PlayerAttributeValues>(serde_json::Value::Object(drifted))
+                .is_err()
+        );
     }
 }

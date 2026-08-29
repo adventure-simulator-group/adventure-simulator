@@ -31,6 +31,27 @@ pub enum DiseaseId {
     Kobeldunst,
 }
 
+impl DiseaseId {
+    /// Stable variant code used by deterministic coordinates that historically
+    /// embedded the Rust variant spelling.
+    pub const fn stable_variant_id(self) -> &'static str {
+        match self {
+            Self::Influenza => "Influenza",
+            Self::Dysentery => "Dysentery",
+            Self::Typhus => "Typhus",
+            Self::Tetanus => "Tetanus",
+            Self::Erysipelas => "Erysipelas",
+            Self::Smallpox => "Smallpox",
+            Self::Plague => "Plague",
+            Self::Consumption => "Consumption",
+            Self::Mahrdruck => "Mahrdruck",
+            Self::ShroudFever => "ShroudFever",
+            Self::Bilwisschuss => "Bilwisschuss",
+            Self::Kobeldunst => "Kobeldunst",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DiseaseStage {
     Incubating,
@@ -364,6 +385,31 @@ pub enum TransmissionVector {
     Environmental,
     Wound,
     Blood,
+}
+
+impl TransmissionVector {
+    /// Stable compact code retained by the persisted outbreak boundary.
+    pub const fn stable_id(self) -> &'static str {
+        match self {
+            Self::CloseContact => "closecontact",
+            Self::FoodWater => "foodwater",
+            Self::Vermin => "vermin",
+            Self::Environmental => "environmental",
+            Self::Wound => "wound",
+            Self::Blood => "blood",
+        }
+    }
+
+    pub const fn stable_variant_id(self) -> &'static str {
+        match self {
+            Self::CloseContact => "CloseContact",
+            Self::FoodWater => "FoodWater",
+            Self::Vermin => "Vermin",
+            Self::Environmental => "Environmental",
+            Self::Wound => "Wound",
+            Self::Blood => "Blood",
+        }
+    }
 }
 
 impl DiseaseDefinition {

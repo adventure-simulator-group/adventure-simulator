@@ -6,7 +6,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct RecruitmentRequirements {
+pub struct RoleRequirements {
     pub melee: bool,
     pub ranged: bool,
     pub weapon_precision: f32,
@@ -23,6 +23,6 @@ pub struct RecruitmentRequirements {
     pub religion: u8,
 }
 
-impl __sdk::InModule for RecruitmentRequirements {
+impl __sdk::InModule for RoleRequirements {
     type Module = super::RemoteModule;
 }

@@ -269,9 +269,35 @@ fn persist(envelope: &WorldEventEnvelope) -> PersistedWorldEventEnvelope {
     }
 }
 
-fn fingerprint<T: Serialize>(value: &T) -> Result<String, String> {
+#[derive(Clone, Copy)]
+enum WorldEventFingerprintDomain {
+    Request,
+    Envelope,
+    ConsequenceSet,
+}
+
+impl WorldEventFingerprintDomain {
+    const fn stable_id(self) -> &'static [u8] {
+        match self {
+            Self::Request => b"adventuresim.world-event.request.v1",
+            Self::Envelope => b"adventuresim.world-event.envelope.v1",
+            Self::ConsequenceSet => b"adventuresim.world-event.consequence-set.v1",
+        }
+    }
+}
+
+fn fingerprint<T: Serialize>(
+    domain: WorldEventFingerprintDomain,
+    value: &T,
+) -> Result<String, String> {
     let bytes = serde_json::to_vec(value).map_err(|_| "Could not fingerprint typed world event")?;
-    Ok(Sha256::digest(bytes)
+    let mut hasher = Sha256::new();
+    for value in [domain.stable_id(), bytes.as_slice()] {
+        hasher.update((value.len() as u64).to_le_bytes());
+        hasher.update(value);
+    }
+    Ok(hasher
+        .finalize()
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect())
@@ -290,7 +316,7 @@ fn commit_world_event(
         .envelope()
         .validate()
         .map_err(|_| "Typed world event is invalid")?;
-    let request_digest = fingerprint(&request)?;
+    let request_digest = fingerprint(WorldEventFingerprintDomain::Request, &request)?;
     if let Some(existing) = ctx
         .db
         .world_event_receipt()
@@ -309,8 +335,9 @@ fn commit_world_event(
         .map_err(|_| "Typed world event is invalid")?;
     validate_consequences(order, &consequences)?;
     validate_semantic_binding(&request, &envelope, &consequences)?;
-    let digest = fingerprint(&envelope)?;
-    let consequence_digest = fingerprint(&consequences)?;
+    let digest = fingerprint(WorldEventFingerprintDomain::Envelope, &envelope)?;
+    let consequence_digest =
+        fingerprint(WorldEventFingerprintDomain::ConsequenceSet, &consequences)?;
     let consequence_count = u16::try_from(consequences.len())
         .map_err(|_| "World event consequence count is out of bounds")?;
     let persisted = persist(&envelope);
@@ -1000,7 +1027,34 @@ mod tests {
             },
         };
         assert_eq!(persist(&event).occurred_at_minute, 60);
-        assert_eq!(fingerprint(&event), fingerprint(&event.clone()));
+        assert_eq!(
+            fingerprint(WorldEventFingerprintDomain::Envelope, &event),
+            fingerprint(WorldEventFingerprintDomain::Envelope, &event.clone())
+        );
+    }
+
+    #[test]
+    fn world_event_fingerprint_has_fixed_domain_version_vector() {
+        assert_eq!(
+            fingerprint(
+                WorldEventFingerprintDomain::Request,
+                &serde_json::json!({ "a": 1 })
+            )
+            .unwrap(),
+            "4a6b437a59335bc8624abbaf1dc241ce88a51a0d3cbbd4c98db4c24c8a28ea43"
+        );
+        assert_ne!(
+            fingerprint(
+                WorldEventFingerprintDomain::Request,
+                &serde_json::json!({ "a": 1 })
+            )
+            .unwrap(),
+            fingerprint(
+                WorldEventFingerprintDomain::Envelope,
+                &serde_json::json!({ "a": 1 })
+            )
+            .unwrap()
+        );
     }
 
     #[test]
@@ -1082,8 +1136,8 @@ mod tests {
             infamy_centipoints: 101,
         };
         assert_ne!(
-            fingerprint(&request).unwrap(),
-            fingerprint(&changed).unwrap()
+            fingerprint(WorldEventFingerprintDomain::Request, &request).unwrap(),
+            fingerprint(WorldEventFingerprintDomain::Request, &changed).unwrap()
         );
 
         let consequences = vec![

@@ -2436,7 +2436,7 @@ pub fn record_committed_cut(
         let d = disease::definition(disease_id);
         let seed = disease::outbreak_exposure_seed(
             character_id,
-            &format!("cut-{}-{disease_id:?}", cut.id),
+            &format!("cut-{}-{}", cut.id, disease_id.stable_variant_id()),
         );
         if disease::acquisition_succeeds(seed, d, immunity, 0.0, residual) {
             ctx.db.infection_episode().insert(InfectionEpisodeRow {
@@ -2477,7 +2477,7 @@ pub fn record_standing_cut_exposure(
         let definition = disease::definition(disease_id);
         let seed = disease::outbreak_exposure_seed(
             character_id,
-            &format!("standing-cut-{token}-{disease_id:?}"),
+            &format!("standing-cut-{token}-{}", disease_id.stable_variant_id()),
         );
         if disease::acquisition_succeeds(seed, definition, immunity, 0.0, residual) {
             ctx.db.infection_episode().insert(InfectionEpisodeRow {
@@ -2810,8 +2810,10 @@ pub fn purchase_from_herbalist(
             .find(item_id)
             .ok_or("Herbalist item not found")?;
         let permitted = match definition.kind {
-            crate::ItemKind::Ingredient => true,
-            crate::ItemKind::Medication => physiology::intervention_profile(item_id, 1).is_some(),
+            crate::PersistedItemKind::Ingredient => true,
+            crate::PersistedItemKind::Medication => {
+                physiology::intervention_profile(item_id, 1).is_some()
+            }
             _ => false,
         };
         if !permitted

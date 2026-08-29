@@ -35,8 +35,8 @@ pub use chrome::{
     settlement_residence_page, settlement_resident_location_page,
 };
 pub use context::{LocationKind, LocationView};
+pub(crate) use rest::{RestServiceKind, party_rest_menu, rest_default_minutes, rest_service_menu};
 pub use rest::{RestSummary, SoapRestPreview, rest_result_page};
-pub(crate) use rest::{party_rest_menu, rest_default_minutes, rest_service_menu};
 pub(crate) use social::settlement_chat_area_with_info;
 pub use social::{SocialFeedback, SocialPresentation, party_social_dialog};
 pub use trade::{
@@ -57,12 +57,12 @@ pub(super) mod test_support {
     use crate::routes::travel::TravelDestination;
     use crate::spacetimedb::*;
 
-    pub(super) fn settlement() -> Settlement {
-        Settlement {
+    pub(super) fn settlement() -> SettlementView {
+        SettlementView {
             id: "viabundus-1".into(),
             name: "Lübeck".into(),
-            coord_x: 10.0,
-            coord_y: 53.0,
+            longitude: 10.0,
+            latitude: 53.0,
             population_level: 4,
             population_estimate: 12_000,
             category: crate::spacetimedb::SettlementCategory::City,

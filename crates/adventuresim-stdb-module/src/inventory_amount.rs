@@ -27,7 +27,7 @@ pub struct PartyItemAmount {
 }
 
 pub fn is_measured_definition(definition: &crate::Item) -> bool {
-    definition.kind == crate::ItemKind::Food
+    definition.kind == crate::PersistedItemKind::Food
         || definition.alcohol_serving_ml > 0
         || definition.id == adventuresim_core::item_references::SOFT_SOAP_ID
         || SMITHING_MATERIAL_IDS.contains(&definition.id.as_str())
@@ -207,7 +207,7 @@ mod tests {
     #[test]
     fn only_divisible_consumable_definitions_are_measured() {
         let food = crate::Item {
-            kind: crate::ItemKind::Food,
+            kind: crate::PersistedItemKind::Food,
             ..crate::Item::default()
         };
         let alcohol = crate::Item {
@@ -220,7 +220,7 @@ mod tests {
         };
         let sword = crate::Item {
             id: "sword".into(),
-            kind: crate::ItemKind::Weapon,
+            kind: crate::PersistedItemKind::Weapon,
             ..crate::Item::default()
         };
         let steel = crate::Item {

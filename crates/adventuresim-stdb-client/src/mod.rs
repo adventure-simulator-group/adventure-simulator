@@ -268,10 +268,10 @@ pub mod container_water_contribution_type;
 pub mod contextual_contact_receipt_type;
 pub mod contextual_decision_state_type;
 pub mod continue_camp_travel_reducer;
+pub mod contract_authority_type;
 pub mod contract_interaction_stage_type;
 pub mod contract_issuer_interaction_receipt_type;
 pub mod contract_status_type;
-pub mod contract_type;
 pub mod conviction_type;
 pub mod cooking_method_type;
 pub mod corpse_body_state_type;
@@ -363,16 +363,12 @@ pub mod ensure_settlement_activity_reducer;
 pub mod enter_mission_reducer;
 pub mod equip_item_at_placement_reducer;
 pub mod equipment_anchor_kind_type;
-pub mod equipment_attachment_point_type;
 pub mod equipment_attachment_target_selection_type;
 pub mod equipment_body_part_type;
 pub mod equipment_channel_type;
 pub mod equipment_location_type;
-pub mod equipment_occupancy_requirement_type;
 pub mod equipment_occupancy_table;
 pub mod equipment_occupancy_type;
-pub mod equipment_parent_requirement_type;
-pub mod equipment_placement_type;
 pub mod errantry_authority_type;
 pub mod estate_disposition_status_type;
 pub mod estate_disposition_type;
@@ -394,7 +390,7 @@ pub mod filth_disease_snapshot_type;
 pub mod filth_origin_type;
 pub mod filth_provenance_type;
 pub mod filth_substance_type;
-pub mod finale_kind_type;
+pub mod finale_execution_kind_type;
 pub mod finale_status_type;
 pub mod finalize_merchant_trade_reducer;
 pub mod finalize_party_offer_reducer;
@@ -483,9 +479,12 @@ pub mod inventory_object_type;
 pub mod inventory_quantity_target_table;
 pub mod inventory_quantity_target_type;
 pub mod investigation_action_attempt_type;
+pub mod investigation_action_availability_type;
 pub mod investigation_action_capability_type;
 pub mod investigation_action_outcome_type;
 pub mod investigation_action_receipt_type;
+pub mod investigation_action_unavailable_fields_type;
+pub mod investigation_action_unavailable_reason_type;
 pub mod investigation_area_authority_type;
 pub mod investigation_belief_revision_type;
 pub mod investigation_belief_type;
@@ -513,7 +512,6 @@ pub mod investigation_testimony_bundle_type;
 pub mod investigation_witness_referral_type;
 pub mod item_condition_table;
 pub mod item_condition_type;
-pub mod item_kind_type;
 pub mod item_table;
 pub mod item_type;
 pub mod join_dialogue_session_reducer;
@@ -576,8 +574,10 @@ pub mod mixed_lithology_type;
 pub mod modeled_tree_species_profile_type;
 pub mod modeled_tree_species_type;
 pub mod morale_band_type;
+pub mod morale_event_kind_type;
 pub mod morale_event_table;
 pub mod morale_event_type;
+pub mod morale_source_kind_type;
 pub mod mutable_personality_axis_type;
 pub mod narrative_combat_followup_authority_type;
 pub mod narrative_combat_followup_receipt_type;
@@ -598,6 +598,7 @@ pub mod npc_policy_type;
 pub mod npc_presentation_type;
 pub mod objective_continuity_guard_type;
 pub mod objective_continuity_kind_type;
+pub mod occupancy_requirement_type;
 pub mod official_religion_type;
 pub mod open_corpse_reducer;
 pub mod oral_language_hours_type;
@@ -615,6 +616,7 @@ pub mod outbreak_water_source_type;
 pub mod outcome_source_authority_type;
 pub mod outlook_type;
 pub mod palmer_drought_severity_index_type;
+pub mod parent_requirement_type;
 pub mod party_action_request_table;
 pub mod party_action_request_type;
 pub mod party_case_site_tracking_type;
@@ -652,11 +654,14 @@ pub mod perform_immediate_activity_reducer;
 pub mod perform_investigation_action_reducer;
 pub mod perform_social_action_reducer;
 pub mod persisted_case_resolution_payload_ref_type;
+pub mod persisted_equipment_attachment_point_type;
+pub mod persisted_equipment_placement_type;
 pub mod persisted_food_water_event_source_type;
 pub mod persisted_food_water_payload_ref_type;
 pub mod persisted_foraging_event_source_type;
 pub mod persisted_foraging_payload_ref_type;
 pub mod persisted_generated_finale_event_source_type;
+pub mod persisted_item_kind_type;
 pub mod persisted_operational_custody_type;
 pub mod persisted_world_event_actor_type;
 pub mod persisted_world_event_envelope_type;
@@ -705,7 +710,7 @@ pub mod recruitment_offer_id_type;
 pub mod recruitment_offer_status_type;
 pub mod recruitment_offer_table;
 pub mod recruitment_offer_type;
-pub mod recruitment_requirements_type;
+pub mod recruitment_role_purpose_type;
 pub mod recruitment_source_id_type;
 pub mod refresh_capabilities_reducer;
 pub mod refresh_strategic_condition_reducer;
@@ -760,6 +765,7 @@ pub mod river_watercourse_type;
 pub mod road_challenge_authority_type;
 pub mod road_challenge_resolution_receipt_type;
 pub mod rock_outcrop_soil_type;
+pub mod role_requirements_type;
 pub mod route_elevation_profile_type;
 pub mod route_elevation_sample_type;
 pub mod route_encounter_tag_type;
@@ -800,11 +806,9 @@ pub mod set_inventory_quantity_target_reducer;
 pub mod set_party_camp_fatigue_percent_reducer;
 pub mod set_party_travel_itinerary_reducer;
 pub mod settlement_action_service_type;
-pub mod settlement_alias_batch_row_type;
 pub mod settlement_alias_table;
 pub mod settlement_alias_type;
 pub mod settlement_category_type;
-pub mod settlement_description_batch_row_type;
 pub mod settlement_description_kind_type;
 pub mod settlement_description_table;
 pub mod settlement_description_type;
@@ -1218,10 +1222,10 @@ pub use container_water_contribution_type::ContainerWaterContribution;
 pub use contextual_contact_receipt_type::ContextualContactReceipt;
 pub use contextual_decision_state_type::ContextualDecisionState;
 pub use continue_camp_travel_reducer::continue_camp_travel;
+pub use contract_authority_type::ContractAuthority;
 pub use contract_interaction_stage_type::ContractInteractionStage;
 pub use contract_issuer_interaction_receipt_type::ContractIssuerInteractionReceipt;
 pub use contract_status_type::ContractStatus;
-pub use contract_type::Contract;
 pub use conviction_type::Conviction;
 pub use cooking_method_type::CookingMethod;
 pub use corpse_body_state_type::CorpseBodyState;
@@ -1313,16 +1317,12 @@ pub use ensure_settlement_activity_reducer::ensure_settlement_activity;
 pub use enter_mission_reducer::enter_mission;
 pub use equip_item_at_placement_reducer::equip_item_at_placement;
 pub use equipment_anchor_kind_type::EquipmentAnchorKind;
-pub use equipment_attachment_point_type::EquipmentAttachmentPoint;
 pub use equipment_attachment_target_selection_type::EquipmentAttachmentTargetSelection;
 pub use equipment_body_part_type::EquipmentBodyPart;
 pub use equipment_channel_type::EquipmentChannel;
 pub use equipment_location_type::EquipmentLocation;
-pub use equipment_occupancy_requirement_type::EquipmentOccupancyRequirement;
 pub use equipment_occupancy_table::*;
 pub use equipment_occupancy_type::EquipmentOccupancy;
-pub use equipment_parent_requirement_type::EquipmentParentRequirement;
-pub use equipment_placement_type::EquipmentPlacement;
 pub use errantry_authority_type::ErrantryAuthority;
 pub use estate_disposition_status_type::EstateDispositionStatus;
 pub use estate_disposition_type::EstateDisposition;
@@ -1344,7 +1344,7 @@ pub use filth_disease_snapshot_type::FilthDiseaseSnapshot;
 pub use filth_origin_type::FilthOrigin;
 pub use filth_provenance_type::FilthProvenance;
 pub use filth_substance_type::FilthSubstance;
-pub use finale_kind_type::FinaleKind;
+pub use finale_execution_kind_type::FinaleExecutionKind;
 pub use finale_status_type::FinaleStatus;
 pub use finalize_merchant_trade_reducer::finalize_merchant_trade;
 pub use finalize_party_offer_reducer::finalize_party_offer;
@@ -1433,9 +1433,12 @@ pub use inventory_object_type::InventoryObject;
 pub use inventory_quantity_target_table::*;
 pub use inventory_quantity_target_type::InventoryQuantityTarget;
 pub use investigation_action_attempt_type::InvestigationActionAttempt;
+pub use investigation_action_availability_type::InvestigationActionAvailability;
 pub use investigation_action_capability_type::InvestigationActionCapability;
 pub use investigation_action_outcome_type::InvestigationActionOutcome;
 pub use investigation_action_receipt_type::InvestigationActionReceipt;
+pub use investigation_action_unavailable_fields_type::InvestigationActionUnavailableFields;
+pub use investigation_action_unavailable_reason_type::InvestigationActionUnavailableReason;
 pub use investigation_area_authority_type::InvestigationAreaAuthority;
 pub use investigation_belief_revision_type::InvestigationBeliefRevision;
 pub use investigation_belief_type::InvestigationBelief;
@@ -1463,7 +1466,6 @@ pub use investigation_testimony_bundle_type::InvestigationTestimonyBundle;
 pub use investigation_witness_referral_type::InvestigationWitnessReferral;
 pub use item_condition_table::*;
 pub use item_condition_type::ItemCondition;
-pub use item_kind_type::ItemKind;
 pub use item_table::*;
 pub use item_type::Item;
 pub use join_dialogue_session_reducer::join_dialogue_session;
@@ -1526,8 +1528,10 @@ pub use mixed_lithology_type::MixedLithology;
 pub use modeled_tree_species_profile_type::ModeledTreeSpeciesProfile;
 pub use modeled_tree_species_type::ModeledTreeSpecies;
 pub use morale_band_type::MoraleBand;
+pub use morale_event_kind_type::MoraleEventKind;
 pub use morale_event_table::*;
 pub use morale_event_type::MoraleEvent;
+pub use morale_source_kind_type::MoraleSourceKind;
 pub use mutable_personality_axis_type::MutablePersonalityAxis;
 pub use narrative_combat_followup_authority_type::NarrativeCombatFollowupAuthority;
 pub use narrative_combat_followup_receipt_type::NarrativeCombatFollowupReceipt;
@@ -1548,6 +1552,7 @@ pub use npc_policy_type::NpcPolicy;
 pub use npc_presentation_type::NpcPresentation;
 pub use objective_continuity_guard_type::ObjectiveContinuityGuard;
 pub use objective_continuity_kind_type::ObjectiveContinuityKind;
+pub use occupancy_requirement_type::OccupancyRequirement;
 pub use official_religion_type::OfficialReligion;
 pub use open_corpse_reducer::open_corpse;
 pub use oral_language_hours_type::OralLanguageHours;
@@ -1565,6 +1570,7 @@ pub use outbreak_water_source_type::OutbreakWaterSource;
 pub use outcome_source_authority_type::OutcomeSourceAuthority;
 pub use outlook_type::Outlook;
 pub use palmer_drought_severity_index_type::PalmerDroughtSeverityIndex;
+pub use parent_requirement_type::ParentRequirement;
 pub use party_action_request_table::*;
 pub use party_action_request_type::PartyActionRequest;
 pub use party_case_site_tracking_type::PartyCaseSiteTracking;
@@ -1602,11 +1608,14 @@ pub use perform_immediate_activity_reducer::perform_immediate_activity;
 pub use perform_investigation_action_reducer::perform_investigation_action;
 pub use perform_social_action_reducer::perform_social_action;
 pub use persisted_case_resolution_payload_ref_type::PersistedCaseResolutionPayloadRef;
+pub use persisted_equipment_attachment_point_type::PersistedEquipmentAttachmentPoint;
+pub use persisted_equipment_placement_type::PersistedEquipmentPlacement;
 pub use persisted_food_water_event_source_type::PersistedFoodWaterEventSource;
 pub use persisted_food_water_payload_ref_type::PersistedFoodWaterPayloadRef;
 pub use persisted_foraging_event_source_type::PersistedForagingEventSource;
 pub use persisted_foraging_payload_ref_type::PersistedForagingPayloadRef;
 pub use persisted_generated_finale_event_source_type::PersistedGeneratedFinaleEventSource;
+pub use persisted_item_kind_type::PersistedItemKind;
 pub use persisted_operational_custody_type::PersistedOperationalCustody;
 pub use persisted_world_event_actor_type::PersistedWorldEventActor;
 pub use persisted_world_event_envelope_type::PersistedWorldEventEnvelope;
@@ -1655,7 +1664,7 @@ pub use recruitment_offer_id_type::RecruitmentOfferId;
 pub use recruitment_offer_status_type::RecruitmentOfferStatus;
 pub use recruitment_offer_table::*;
 pub use recruitment_offer_type::RecruitmentOffer;
-pub use recruitment_requirements_type::RecruitmentRequirements;
+pub use recruitment_role_purpose_type::RecruitmentRolePurpose;
 pub use recruitment_source_id_type::RecruitmentSourceId;
 pub use refresh_capabilities_reducer::refresh_capabilities;
 pub use refresh_strategic_condition_reducer::refresh_strategic_condition;
@@ -1710,6 +1719,7 @@ pub use river_watercourse_type::RiverWatercourse;
 pub use road_challenge_authority_type::RoadChallengeAuthority;
 pub use road_challenge_resolution_receipt_type::RoadChallengeResolutionReceipt;
 pub use rock_outcrop_soil_type::RockOutcropSoil;
+pub use role_requirements_type::RoleRequirements;
 pub use route_elevation_profile_type::RouteElevationProfile;
 pub use route_elevation_sample_type::RouteElevationSample;
 pub use route_encounter_tag_type::RouteEncounterTag;
@@ -1750,11 +1760,9 @@ pub use set_inventory_quantity_target_reducer::set_inventory_quantity_target;
 pub use set_party_camp_fatigue_percent_reducer::set_party_camp_fatigue_percent;
 pub use set_party_travel_itinerary_reducer::set_party_travel_itinerary;
 pub use settlement_action_service_type::SettlementActionService;
-pub use settlement_alias_batch_row_type::SettlementAliasBatchRow;
 pub use settlement_alias_table::*;
 pub use settlement_alias_type::SettlementAlias;
 pub use settlement_category_type::SettlementCategory;
-pub use settlement_description_batch_row_type::SettlementDescriptionBatchRow;
 pub use settlement_description_kind_type::SettlementDescriptionKind;
 pub use settlement_description_table::*;
 pub use settlement_description_type::SettlementDescription;
@@ -2131,7 +2139,7 @@ pub enum Reducer {
         leader_id: u64,
         name: String,
         quantity: u32,
-        requirements: RecruitmentRequirements,
+        requirements: RoleRequirements,
         save_role: bool,
     },
     CreateStartingCharacter {
@@ -2304,10 +2312,10 @@ pub enum Reducer {
         starting_request_key: String,
     },
     ImportSettlementAliases {
-        aliases: Vec<SettlementAliasBatchRow>,
+        aliases: Vec<SettlementAlias>,
     },
     ImportSettlementDescriptions {
-        descriptions: Vec<SettlementDescriptionBatchRow>,
+        descriptions: Vec<SettlementDescription>,
     },
     ImportSettlements {
         settlements: Vec<SettlementImport>,
@@ -2600,7 +2608,7 @@ pub enum Reducer {
     SaveRecruitmentRole {
         owner_id: u64,
         name: String,
-        requirements: RecruitmentRequirements,
+        requirements: RoleRequirements,
     },
     ScheduleWedding {
         first_character_id: u64,
@@ -2837,7 +2845,7 @@ pub enum Reducer {
         role_id: u64,
         name: String,
         quantity: u32,
-        requirements: RecruitmentRequirements,
+        requirements: RoleRequirements,
     },
     UpdateTrainingSchedule {
         character_id: u64,

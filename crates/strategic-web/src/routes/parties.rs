@@ -15,9 +15,9 @@ use super::{AppState, PartyAction, approve_party_action, execute_or_request_part
 use crate::session::Session;
 use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
-    Character, CharacterAttributes, CharacterCapability, CharacterLimbs, CharacterSkills, Party,
-    PartyActionRequest, PartyJoinRequest, PartyLeaderVote, PartyMember, PartyRecruitmentRole,
-    RecruitmentRequirements, SavedRecruitmentRole,
+    CharacterAttributes, CharacterCapability, CharacterLimbs, CharacterSkills, CharacterView,
+    PartyActionRequestView, PartyJoinRequest, PartyLeaderVote, PartyMember, PartyView,
+    RecruitmentRoleView, RoleRequirements, SavedRecruitmentRole,
 };
 use crate::templates::recruitment::{
     PartyCheckSummary, RecruitmentApplicant, RecruitmentRolePanel, recruitment_panel,
@@ -98,8 +98,8 @@ struct RecruitmentRoleForm {
 }
 
 impl RecruitmentRoleForm {
-    fn requirements(&self) -> RecruitmentRequirements {
-        RecruitmentRequirements {
+    fn requirements(&self) -> RoleRequirements {
+        RoleRequirements {
             melee: self.melee,
             ranged: self.ranged,
             weapon_precision: ((self.weapon_precision * 2.0).round() / 2.0)
@@ -290,9 +290,9 @@ async fn join_party(
 
     let role = state
         .db
-        .query::<PartyRecruitmentRole>(&format!(
-            "SELECT * FROM party_recruitment_role WHERE id = {id}"
-        ))
+        .query_sats_into::<adventuresim_stdb_client::PartyRecruitmentRole, RecruitmentRoleView>(
+            &crate::spacetimedb::party_recruitment_role_by_id(id),
+        )
         .await
         .unwrap_or_default()
         .into_iter()
@@ -300,7 +300,9 @@ async fn join_party(
     if let Some(role) = role {
         let party = state
             .db
-            .query::<Party>(&crate::spacetimedb::party_by_id(&role.party_id))
+            .query_sats_into::<adventuresim_stdb_client::Party, PartyView>(
+                &crate::spacetimedb::party_by_id(&role.party_id),
+            )
             .await
             .unwrap_or_default()
             .into_iter()
@@ -310,7 +312,7 @@ async fn join_party(
             if leader.is_some_and(|leader| leader.temporary) {
                 let request = state
                     .db
-                    .query::<PartyJoinRequest>(&format!(
+                    .query_sats::<PartyJoinRequest>(&format!(
                         "SELECT * FROM party_join_request WHERE character_id = {character_id}"
                     ))
                     .await
@@ -365,7 +367,9 @@ async fn recruitment_panel_fragment(
     };
     let Some(party) = state
         .db
-        .query::<Party>(&crate::spacetimedb::party_by_id(&party_id))
+        .query_sats_into::<adventuresim_stdb_client::Party, PartyView>(
+            &crate::spacetimedb::party_by_id(&party_id),
+        )
         .await
         .unwrap_or_default()
         .into_iter()
@@ -373,17 +377,19 @@ async fn recruitment_panel_fragment(
     else {
         return Html(String::new());
     };
-    let roles: Vec<PartyRecruitmentRole> = state
+    let roles: Vec<RecruitmentRoleView> = state
         .db
-        .query(&format!(
-            "SELECT * FROM party_recruitment_role WHERE party_id = {}",
-            sql_string_literal(&party_id)
-        ))
+        .query_sats_into::<adventuresim_stdb_client::PartyRecruitmentRole, RecruitmentRoleView>(
+            &format!(
+                "SELECT * FROM party_recruitment_role WHERE party_id = {}",
+                sql_string_literal(&party_id)
+            ),
+        )
         .await
         .unwrap_or_default();
     let memberships: Vec<PartyMember> = state
         .db
-        .query(&format!(
+        .query_sats(&format!(
             "SELECT * FROM party_member WHERE party_id = {}",
             sql_string_literal(&party_id)
         ))
@@ -391,7 +397,7 @@ async fn recruitment_panel_fragment(
         .unwrap_or_default();
     let requests: Vec<PartyJoinRequest> = state
         .db
-        .query(&format!(
+        .query_sats(&format!(
             "SELECT * FROM party_join_request WHERE party_id = {}",
             sql_string_literal(&party_id)
         ))
@@ -399,7 +405,7 @@ async fn recruitment_panel_fragment(
         .unwrap_or_default();
     let saved: Vec<SavedRecruitmentRole> = state
         .db
-        .query(&format!(
+        .query_sats(&format!(
             "SELECT * FROM saved_recruitment_role WHERE owner_character_id = {}",
             character_id
         ))
@@ -413,10 +419,9 @@ async fn recruitment_panel_fragment(
             .await;
         if let Some(capability) = state
             .db
-            .query::<CharacterCapability>(&format!(
-                "SELECT * FROM backend_character_capabilities WHERE character_id = {}",
-                membership.character_id
-            ))
+            .query_sats::<CharacterCapability>(
+                &crate::spacetimedb::character_capability_by_character_id(membership.character_id),
+            )
             .await
             .unwrap_or_default()
             .into_iter()
@@ -487,40 +492,40 @@ async fn recruitment_panel_fragment(
                     .await;
                 let capability = state
                     .db
-                    .query::<CharacterCapability>(&format!(
-                        "SELECT * FROM backend_character_capabilities WHERE character_id = {}",
-                        request.character_id
-                    ))
+                    .query_sats::<CharacterCapability>(
+                        &crate::spacetimedb::character_capability_by_character_id(
+                            request.character_id,
+                        ),
+                    )
                     .await
                     .unwrap_or_default()
                     .into_iter()
                     .next();
                 let attributes = state
                     .db
-                    .query::<CharacterAttributes>(&format!(
-                        "SELECT * FROM backend_character_attributes WHERE character_id = {}",
-                        request.character_id
-                    ))
+                    .query_sats::<CharacterAttributes>(
+                        &crate::spacetimedb::character_attributes_by_character_id(
+                            request.character_id,
+                        ),
+                    )
                     .await
                     .unwrap_or_default()
                     .into_iter()
                     .next();
                 let skills = state
                     .db
-                    .query::<CharacterSkills>(&format!(
-                        "SELECT * FROM backend_character_skills WHERE character_id = {}",
-                        request.character_id
-                    ))
+                    .query_sats::<CharacterSkills>(
+                        &crate::spacetimedb::character_skills_by_character_id(request.character_id),
+                    )
                     .await
                     .unwrap_or_default()
                     .into_iter()
                     .next();
                 let limbs = state
                     .db
-                    .query::<CharacterLimbs>(&format!(
-                        "SELECT * FROM backend_character_limbs WHERE character_id = {}",
-                        request.character_id
-                    ))
+                    .query_sats::<CharacterLimbs>(
+                        &crate::spacetimedb::character_limbs_by_character_id(request.character_id),
+                    )
                     .await
                     .unwrap_or_default()
                     .into_iter()
@@ -610,9 +615,11 @@ async fn reject_join_request(
 }
 
 async fn party_location_url(state: &AppState, party_id: &str) -> String {
-    let parties: Vec<Party> = state
+    let parties: Vec<PartyView> = state
         .db
-        .query(&crate::spacetimedb::party_by_id(party_id))
+        .query_sats_into::<adventuresim_stdb_client::Party, PartyView>(
+            &crate::spacetimedb::party_by_id(party_id),
+        )
         .await
         .unwrap_or_default();
     let Some(party) = parties.first() else {
@@ -628,7 +635,7 @@ async fn party_location_url(state: &AppState, party_id: &str) -> String {
 struct PartyNotifications {
     pending_join_requests: usize,
     role_join_requests: Vec<RoleNotification>,
-    action_requests: Vec<PartyActionRequest>,
+    action_requests: Vec<PartyActionRequestView>,
     succession_required: bool,
     leader_id: Option<String>,
     leader_votes: Vec<LeaderVoteNotification>,
@@ -680,9 +687,11 @@ async fn party_notifications(
             leader_votes: Vec::new(),
         });
     };
-    let parties: Vec<Party> = state
+    let parties: Vec<PartyView> = state
         .db
-        .query(&crate::spacetimedb::party_by_id(&party_id))
+        .query_sats_into::<adventuresim_stdb_client::Party, PartyView>(
+            &crate::spacetimedb::party_by_id(&party_id),
+        )
         .await
         .unwrap_or_default();
     let is_leader = parties
@@ -690,7 +699,7 @@ async fn party_notifications(
         .is_some_and(|party| party.leader_id == character_id);
     let requests: Vec<PartyJoinRequest> = state
         .db
-        .query(&format!(
+        .query_sats(&format!(
             "SELECT * FROM party_join_request WHERE party_id = {}",
             sql_string_literal(&party_id)
         ))
@@ -703,7 +712,7 @@ async fn party_notifications(
     let action_requests = if is_leader {
         state
             .db
-            .query::<PartyActionRequest>(&format!(
+            .query_sats_into::<adventuresim_stdb_client::PartyActionRequest, PartyActionRequestView>(&format!(
                 "SELECT * FROM party_action_request WHERE party_id = {}",
                 sql_string_literal(&party_id)
             ))
@@ -722,7 +731,7 @@ async fn party_notifications(
     };
     let leader_votes = state
         .db
-        .query::<PartyLeaderVote>(&format!(
+        .query_sats::<PartyLeaderVote>(&format!(
             "SELECT * FROM party_leader_vote WHERE party_id = {}",
             sql_string_literal(&party_id)
         ))
@@ -757,9 +766,9 @@ async fn approve_action_request(
     };
     let requests = match state
         .db
-        .query::<PartyActionRequest>(&format!(
-            "SELECT * FROM party_action_request WHERE id = {id}"
-        ))
+        .query_sats_into::<adventuresim_stdb_client::PartyActionRequest, PartyActionRequestView>(
+            &crate::spacetimedb::party_action_request_by_id(id),
+        )
         .await
     {
         Ok(requests) => requests,
@@ -842,7 +851,7 @@ async fn disband_party(
     Redirect::to("/")
 }
 
-async fn get_character(state: &AppState, character_id: u64) -> Option<Character> {
+async fn get_character(state: &AppState, character_id: u64) -> Option<CharacterView> {
     match super::data::character(state, character_id).await {
         Ok(character) => character,
         Err(error) => {

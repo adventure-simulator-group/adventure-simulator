@@ -11,6 +11,7 @@ const REDUCER_ERROR_PREFIX: &str = "[reducer-error:";
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ReducerErrorCode {
     ContractIssuerUnavailable,
+    DialogueContactUnavailable,
     InvestigationActionStale,
     InvestigationActionUnavailable,
     InvestigationNightWindow,
@@ -24,6 +25,7 @@ impl ReducerErrorCode {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::ContractIssuerUnavailable => "contract_issuer_unavailable",
+            Self::DialogueContactUnavailable => "dialogue_contact_unavailable",
             Self::InvestigationActionStale => "investigation_action_stale",
             Self::InvestigationActionUnavailable => "investigation_action_unavailable",
             Self::InvestigationNightWindow => "investigation_night_window",
@@ -47,6 +49,7 @@ impl FromStr for ReducerErrorCode {
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
             "contract_issuer_unavailable" => Ok(Self::ContractIssuerUnavailable),
+            "dialogue_contact_unavailable" => Ok(Self::DialogueContactUnavailable),
             "investigation_action_stale" => Ok(Self::InvestigationActionStale),
             "investigation_action_unavailable" => Ok(Self::InvestigationActionUnavailable),
             "investigation_night_window" => Ok(Self::InvestigationNightWindow),
@@ -74,14 +77,24 @@ mod tests {
 
     #[test]
     fn codes_round_trip_without_inspecting_detail_prose() {
-        let error = coded_reducer_error(
+        for code in [
+            ReducerErrorCode::ContractIssuerUnavailable,
+            ReducerErrorCode::DialogueContactUnavailable,
+            ReducerErrorCode::InvestigationActionStale,
+            ReducerErrorCode::InvestigationActionUnavailable,
+            ReducerErrorCode::InvestigationNightWindow,
+            ReducerErrorCode::InvestigationRouteInvalid,
+            ReducerErrorCode::JourneyDaylightWindowRequired,
             ReducerErrorCode::MerchantProviderUnavailable,
-            "This wording can change",
-        );
-        assert_eq!(
-            parse_reducer_error(&format!("purchase failed: {error}")),
-            Some(ReducerErrorCode::MerchantProviderUnavailable)
-        );
+            ReducerErrorCode::VictimCohortStateChanged,
+        ] {
+            let error = coded_reducer_error(code, "This wording can change");
+            assert_eq!(
+                parse_reducer_error(&format!("operation failed: {error}")),
+                Some(code)
+            );
+            assert_eq!(code.as_str().parse(), Ok(code));
+        }
         assert_eq!(parse_reducer_error("This wording can change"), None);
     }
 }

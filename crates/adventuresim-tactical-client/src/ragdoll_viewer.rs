@@ -160,15 +160,15 @@ struct CaptureSample {
 }
 
 #[derive(Serialize)]
-struct CaptureManifest {
+struct RagdollCaptureManifest {
     pipeline: &'static str,
     controls: &'static str,
     captures: Vec<CaptureSample>,
-    validation: CaptureValidation,
+    validation: RagdollCaptureValidation,
 }
 
 #[derive(Serialize)]
-struct CaptureValidation {
+struct RagdollCaptureValidation {
     all_modes_captured: bool,
     finite_telemetry: bool,
     active_hinges_driven: bool,
@@ -364,7 +364,7 @@ fn finish_capture(capture: &RagdollCapture, exit: &mut MessageWriter<AppExit>) {
     let active_final = active
         .and_then(|sample| sample.telemetry.as_ref())
         .map(|sample| sample.mean_error_radians);
-    let validation = CaptureValidation {
+    let validation = RagdollCaptureValidation {
         all_modes_captured: capture.captures.len() == CAPTURE_MODES.len(),
         finite_telemetry: capture
             .captures
@@ -403,7 +403,7 @@ fn finish_capture(capture: &RagdollCapture, exit: &mut MessageWriter<AppExit>) {
         && validation.passive_zero_strength
         && validation.terrain_contact_bounded
         && validation.pelvis_settled;
-    let manifest = CaptureManifest {
+    let manifest = RagdollCaptureManifest {
         pipeline: "cascadeur_humanoid_avian_ragdoll",
         controls: "T cycles animated -> active -> passive; R resets",
         captures: capture.captures.clone(),

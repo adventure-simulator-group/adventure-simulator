@@ -9,9 +9,10 @@ use sha2::{Digest, Sha256};
 use crate::{
     physical_object::CustodyCharacterId,
     rights::{
-        DecisionProvenance, DomainJurisdiction, DomainRightsOperation, DomainRightsResource,
-        DomainRightsSubject, PrivateRightsDecision, RightsDecisionKind, RightsJurisdiction,
-        RightsOperation, RightsQuestion, RightsResource, RightsRevision, RightsSubject,
+        CanonicalRightsQuestionDigest, DecisionProvenance, DomainJurisdiction,
+        DomainRightsOperation, DomainRightsResource, DomainRightsSubject, PrivateRightsDecision,
+        RightsDecisionKind, RightsJurisdiction, RightsOperation, RightsQuestion, RightsResource,
+        RightsRevision, RightsSubject,
     },
     strategic_action::{
         ActionCoordinates, ActionEffect, ActionRequirement, AuthoritativeSnapshot,
@@ -633,15 +634,22 @@ pub fn decide_forage_license(
 }
 
 fn forage_license_question_digest(question: &ForageRightsQuestion) -> [u8; 32] {
-    let mut hash = Sha256::new();
-    hash.update(b"forage-license-rights-v1");
-    if let RightsSubject::Character(actor) = question.subject() {
-        hash.update(actor.get().to_le_bytes());
-    }
-    if let RightsResource::Domain(ForageRightsResource::Source(source)) = question.resource() {
-        hash.update(source.id().as_bytes());
-    }
-    hash.finalize().into()
+    let mut digest = CanonicalRightsQuestionDigest::new(b"forage-license");
+    digest.frame_subject(question.subject(), |_, subject| match *subject {});
+    digest.frame_resource(question.resource(), |digest, resource| match resource {
+        ForageRightsResource::Source(source) => {
+            digest.frame(b"source");
+            digest.frame(source.id().as_bytes());
+        }
+    });
+    digest.frame_operation(question.operation(), |digest, operation| match operation {
+        ForageRightsOperation::Harvest => digest.frame(b"harvest"),
+    });
+    digest.frame_jurisdiction(
+        question.jurisdiction(),
+        |_, jurisdiction| match *jurisdiction {},
+    );
+    digest.finish()
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1154,6 +1162,13 @@ mod tests {
         assert_eq!(
             decide_forage_license(&question, false, 9).kind(),
             RightsDecisionKind::Denied
+        );
+        assert_eq!(
+            forage_license_question_digest(&question)
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>(),
+            "c1bfb7e72c93e3983ad5659bdbfe9eb850b6ff7f3a3f52225796786f6391d62c"
         );
     }
 

@@ -1,61 +1,309 @@
-//! SpacetimeDB response types
+//! Strategic-web boundary rows and presentation projections.
+//!
+//! Exact SpacetimeDB rows are generated from the module schema. The structs
+//! defined here are deliberately narrower presentation or joined-query views;
+//! none duplicate a persisted row.
 
 pub use adventuresim_core::{
-    case::ContractStatus,
-    courtship::HousingTier,
-    filth::{FilthOrigin, FilthSubstance},
-    food::{FoodPreparation, IngredientPreparationAction},
-    item_catalog::{EquipmentBodyPart, EquipmentLocation, Slot},
-    organization::OrganizationMembershipStatus,
+    capability::RoleRequirements,
+    investigation_action::{InvestigationActionAvailability, InvestigationActionUnavailableReason},
+    item_catalog::{
+        EquipmentBodyPart, EquipmentChannel, EquipmentLocation, OccupancyRequirement,
+        ParentRequirement, Slot,
+    },
+    personality::{
+        Conscience, Conviction, Courtship, Drive, Hygiene, Inclination, Mirth, Nerve, Outlook,
+        Personality, Presentation, SelfKnowledge, SelfRegard, Sex, Sociability, Temperance,
+        Transparency,
+    },
     physiology::BodyRegion,
+    strategic_place::CaseSiteId,
 };
 use adventuresim_core::{
-    combat_style::MeleeAttackStyle, food::CookingMethod, morale::IncapacitationStatus,
-    physical_object::InventoryLocation, physiology::InterventionRoute, social::PersonalityAxis,
+    combat_style::MeleeAttackStyle, equipment::WeaponSkillDistribution,
+    physiology::InterventionRoute, social::PersonalityAxis,
 };
+use adventuresim_stdb_client as sats;
 pub use adventuresim_stdb_client::{
-    BackendContextualDecision, ChallengePresenterCatalogId, CharacterContextKind,
-    CharacterContextRole, DestinationKnowledgeStage, EquipmentAnchorKind, EquipmentChannel,
-    HostileSurrenderMode, JourneyPrecipitation, JourneyTerrainKind, ProjectileKind,
-    RecruitmentOfferId, RecruitmentOfferStatus, RecruitmentSourceId, ResidenceTenure,
-    SettlementCategory,
+    AffinityBand, AlcoholConsumption, AutomaticSocialChat, AutoresolveReport,
+    BackendBestiaryDeduction, BackendBrowserCharacterAccess, BackendCaseSitePin, BackendChallenge,
+    BackendCharacterCaseSiteLocation, BackendCharacterRelationshipStatus,
+    BackendCharacterResidenceStatus, BackendContextCharacter, BackendContextualDecision,
+    BackendContract, BackendCorpse, BackendDevelopmentQuest, BackendDevelopmentScenario,
+    BackendDialogueEvent, BackendDialogueParticipant, BackendDialoguePrompt,
+    BackendDialogueSession, BackendDialogueTopicOption, BackendDialogueWitnessClaim,
+    BackendFamilyChild, BackendFireplaceDish, BackendFireplaceStation, BackendForageAttemptState,
+    BackendForageReceipt, BackendHostileNegotiation, BackendHostileSurrender,
+    BackendIngredientPreparationPlan, BackendInvestigationAction, BackendInvestigationCaseSummary,
+    BackendInvestigationJournalEntry, BackendInvestigationLead, BackendLocalChatMessage,
+    BackendLocalProblemTradeEffect, BackendOrganizationMembership, BackendPhysicalEvidence,
+    BackendPhysicalEvidenceInspection, BackendPhysiologyAdministration, BackendPhysiologyChart,
+    BackendRoadChallenge, BackendSettlementResident, BackendSettlementResidentRelationship,
+    BackendSocialChatReceipt, BackendTinctureStatus, BattleLootItem, BattleResult,
+    ChallengePresenterCatalogId, CharacterAffinity, CharacterAttributes, CharacterCapability,
+    CharacterCondition, CharacterDeath, CharacterFamiliarity, CharacterFilth, CharacterLimbs,
+    CharacterMoraleSource, CharacterNeeds, CharacterSettlementReputation, CharacterSkills,
+    CharacterStats, CharacterStrategicCondition, CharacterTime, CharacterTrainingSchedule,
+    ChildActivityFocus, ChildStage, ContainerLiquid, ContractStatus, CourtshipKind,
+    DestinationKnowledgeStage, EquipmentAnchorKind, EquipmentOccupancy, FamiliarityBand, FoodLot,
+    HostileSurrenderMode, HousingTier, IngredientPreparationAction, InventoryContainment,
+    InventoryItem, InventoryItemAmount, InventoryLocation, InventoryObject,
+    InventoryQuantityTarget, ItemCondition, JourneyCampInterval, JourneyEndpoint,
+    JourneyPrecipitation, JourneyRouteLeg, JourneyRoutePoint, JourneyTerrainKind,
+    JourneyTerrainSpan, LimbInjury, MoraleBand, NpcAgeBand, NpcPresentation,
+    OrganizationMembershipStatus, OrganizationPresentation, PartyInventoryItem, PartyItemAmount,
+    PartyJoinRequest, PartyJourney, PartyLeaderVote, PartyMember, PartyStake, ProjectileKind,
+    RecruitmentOffer, RecruitmentOfferStatus, ReligiousDemand, RepairOrder, ResidenceTenure,
+    RetainedProjectile, SavedRecruitmentRole, ScheduleAllocation, SettlementAlias,
+    SettlementCategory, SettlementDescription, SettlementDescriptionKind, SettlementResidenceOffer,
+    SettlementResidentPresence, SettlementSmith, SocialAddress, SocialBelief, SocialChatOutcome,
+    SocialChatTargetKind, StrategicEncounter, StrategicEncounterStatus, WeaponHolderInstance,
+    WeaponInstance, WorldClock,
 };
-pub use adventuresim_world_schema::SettlementDescriptionKind;
+#[cfg(test)]
+pub use adventuresim_stdb_client::{
+    BackendPhysiologyDifferential, FilthOrigin, FilthSubstance, FoodPreparation,
+    JourneyCaseSiteEndpoint, JourneySettlementEndpoint, StrategicEncounterLoss,
+};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde_json::Value;
+use spacetimedb_sats::{ser::Serialize as SatsSerialize, serde::SerdeWrapper};
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct BackendChallenge {
-    pub id: String,
-    pub case_id: String,
-    pub party_id: String,
-    pub owner_character_id: u64,
-    pub finale_case_site_id: String,
-    pub puzzle_projection_json: String,
-    #[serde(
-        deserialize_with = "deserialize_sql_unit_variant",
-        serialize_with = "serialize_sql_unit_variant"
-    )]
-    pub presenter_catalog_id: ChallengePresenterCatalogId,
-    pub revision: u32,
-    pub open: bool,
-    pub solved: bool,
-    pub active: bool,
-    pub last_attempt_correct: Option<bool>,
-    pub last_submission_json: Option<String>,
-    pub tactical_insight_text: Option<String>,
-    pub tactical_preparation_text: Option<String>,
+pub type QueryResponse = Vec<QueryResult>;
+
+#[derive(Debug, Deserialize)]
+pub struct QueryResult {
+    pub schema: QuerySchema,
+    pub rows: Vec<Value>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct BackendRoadChallenge {
-    pub id: String,
-    pub owner_character_id: u64,
-    pub absolute_minute: u64,
-    pub presentation_json: String,
-    pub revision: u32,
-    pub open: bool,
-    pub active: bool,
-    pub result_transcript: Option<String>,
-    pub quest_reward_addendum: Option<String>,
+#[derive(Debug, Deserialize)]
+pub struct QuerySchema {
+    pub elements: Vec<SchemaElement>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SchemaElement {
+    pub name: Option<AlgebraicTypeRef>,
+    pub algebraic_type: AlgebraicType,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AlgebraicTypeRef {
+    pub some: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum AlgebraicType {
+    Value(Value),
+}
+
+pub(crate) const fn npc_age_band_id(value: NpcAgeBand) -> &'static str {
+    match value {
+        NpcAgeBand::Child => "child",
+        NpcAgeBand::Adolescent => "adolescent",
+        NpcAgeBand::Adult => "adult",
+        NpcAgeBand::Elder => "elder",
+    }
+}
+
+pub(crate) const fn npc_presentation_id(value: NpcPresentation) -> &'static str {
+    match value {
+        NpcPresentation::Man => "man",
+        NpcPresentation::Ambiguous => "ambiguous",
+        NpcPresentation::Woman => "woman",
+    }
+}
+
+fn sats_to_serde<T, U>(value: &T) -> serde_json::Result<U>
+where
+    T: SatsSerialize + ?Sized,
+    U: DeserializeOwned,
+{
+    serde_json::from_value(normalize_sats_serde_value(serde_json::to_value(
+        SerdeWrapper::from_ref(value),
+    )?))
+}
+
+fn normalize_sats_serde_value(value: Value) -> Value {
+    match value {
+        Value::Array(values) => {
+            Value::Array(values.into_iter().map(normalize_sats_serde_value).collect())
+        }
+        Value::Object(object) if object.len() == 1 => {
+            let (name, payload) = object.into_iter().next().expect("one field");
+            if name.eq_ignore_ascii_case("none") && payload.as_array().is_some_and(Vec::is_empty) {
+                return Value::Null;
+            }
+            if name.eq_ignore_ascii_case("some") {
+                return normalize_sats_serde_value(payload);
+            }
+            if payload.as_array().is_some_and(Vec::is_empty) {
+                return Value::String(name);
+            }
+            Value::Object(
+                [(name, normalize_sats_serde_value(payload))]
+                    .into_iter()
+                    .collect(),
+            )
+        }
+        Value::Object(object) => Value::Object(
+            object
+                .into_iter()
+                .map(|(name, value)| (name, normalize_sats_serde_value(value)))
+                .collect(),
+        ),
+        value => value,
+    }
+}
+
+fn core_official_religion(
+    value: sats::OfficialReligion,
+) -> adventuresim_world_schema::OfficialReligion {
+    match value {
+        sats::OfficialReligion::RomanCatholic => {
+            adventuresim_world_schema::OfficialReligion::RomanCatholic
+        }
+        sats::OfficialReligion::Lutheran => adventuresim_world_schema::OfficialReligion::Lutheran,
+        sats::OfficialReligion::Reformed => adventuresim_world_schema::OfficialReligion::Reformed,
+        sats::OfficialReligion::Anglican => adventuresim_world_schema::OfficialReligion::Anglican,
+        sats::OfficialReligion::EasternOrthodox => {
+            adventuresim_world_schema::OfficialReligion::EasternOrthodox
+        }
+        sats::OfficialReligion::Islamic => adventuresim_world_schema::OfficialReligion::Islamic,
+        sats::OfficialReligion::Judaism => adventuresim_world_schema::OfficialReligion::Judaism,
+    }
+}
+
+fn core_western_christian_arrangement(
+    value: sats::WesternChristianArrangement,
+) -> adventuresim_world_schema::WesternChristianArrangement {
+    match value {
+        sats::WesternChristianArrangement::CatholicLutheran(church) => {
+            adventuresim_world_schema::WesternChristianArrangement::CatholicLutheran {
+                church: match church {
+                    sats::CatholicLutheranChurch::RomanCatholic => {
+                        adventuresim_world_schema::CatholicLutheranChurch::RomanCatholic
+                    }
+                    sats::CatholicLutheranChurch::Lutheran => {
+                        adventuresim_world_schema::CatholicLutheranChurch::Lutheran
+                    }
+                },
+            }
+        }
+        sats::WesternChristianArrangement::CatholicReformed(church) => {
+            adventuresim_world_schema::WesternChristianArrangement::CatholicReformed {
+                church: match church {
+                    sats::CatholicReformedChurch::RomanCatholic => {
+                        adventuresim_world_schema::CatholicReformedChurch::RomanCatholic
+                    }
+                    sats::CatholicReformedChurch::Reformed => {
+                        adventuresim_world_schema::CatholicReformedChurch::Reformed
+                    }
+                },
+            }
+        }
+        sats::WesternChristianArrangement::LutheranReformed(church) => {
+            adventuresim_world_schema::WesternChristianArrangement::LutheranReformed {
+                church: match church {
+                    sats::LutheranReformedChurch::Lutheran => {
+                        adventuresim_world_schema::LutheranReformedChurch::Lutheran
+                    }
+                    sats::LutheranReformedChurch::Reformed => {
+                        adventuresim_world_schema::LutheranReformedChurch::Reformed
+                    }
+                },
+            }
+        }
+    }
+}
+
+fn core_settlement_religious_status(
+    value: sats::SettlementReligiousStatus,
+) -> adventuresim_world_schema::SettlementReligiousStatus {
+    match value {
+        sats::SettlementReligiousStatus::Established(religion) => {
+            adventuresim_world_schema::SettlementReligiousStatus::Established {
+                religion: core_official_religion(religion),
+            }
+        }
+        sats::SettlementReligiousStatus::Parity(arrangement) => {
+            adventuresim_world_schema::SettlementReligiousStatus::Parity {
+                arrangement: core_western_christian_arrangement(arrangement),
+            }
+        }
+        sats::SettlementReligiousStatus::MultiConfessional(arrangement) => {
+            adventuresim_world_schema::SettlementReligiousStatus::MultiConfessional {
+                arrangement: core_western_christian_arrangement(arrangement),
+            }
+        }
+        sats::SettlementReligiousStatus::LocallyDetermined(church) => {
+            adventuresim_world_schema::SettlementReligiousStatus::LocallyDetermined {
+                church: core_official_religion(church),
+            }
+        }
+    }
+}
+
+fn sql_unit_variant_name<E: serde::de::Error>(value: Value) -> Result<String, E> {
+    match value {
+        Value::String(name) => Ok(name),
+        Value::Object(variant) if variant.len() == 1 => {
+            Ok(variant.into_iter().next().expect("one variant").0)
+        }
+        _ => Err(E::custom("expected a unit enum variant")),
+    }
+}
+
+fn serialize_settlement_category<S>(
+    value: &SettlementCategory,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    serializer.serialize_str(match value {
+        SettlementCategory::Unknown => "Unknown",
+        SettlementCategory::Hamlet => "Hamlet",
+        SettlementCategory::Village => "Village",
+        SettlementCategory::Town => "Town",
+        SettlementCategory::City => "City",
+        SettlementCategory::Capital => "Capital",
+    })
+}
+
+fn deserialize_settlement_category<'de, D>(deserializer: D) -> Result<SettlementCategory, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    match sql_unit_variant_name::<D::Error>(Value::deserialize(deserializer)?)?.as_str() {
+        "Unknown" => Ok(SettlementCategory::Unknown),
+        "Hamlet" => Ok(SettlementCategory::Hamlet),
+        "Village" => Ok(SettlementCategory::Village),
+        "Town" => Ok(SettlementCategory::Town),
+        "City" => Ok(SettlementCategory::City),
+        "Capital" => Ok(SettlementCategory::Capital),
+        _ => Err(serde::de::Error::custom("unknown settlement category")),
+    }
+}
+
+fn deserialize_equipment_channel<'de, D>(deserializer: D) -> Result<EquipmentChannel, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    match sql_unit_variant_name::<D::Error>(Value::deserialize(deserializer)?)?.as_str() {
+        "Held" => Ok(EquipmentChannel::Held),
+        "BaseClothing" => Ok(EquipmentChannel::BaseClothing),
+        "Padding" => Ok(EquipmentChannel::Padding),
+        "FlexibleArmor" => Ok(EquipmentChannel::FlexibleArmor),
+        "RigidArmor" => Ok(EquipmentChannel::RigidArmor),
+        "Outerwear" => Ok(EquipmentChannel::Outerwear),
+        "Accessory" => Ok(EquipmentChannel::Accessory),
+        "Mount" => Ok(EquipmentChannel::Mount),
+        "Containment" => Ok(EquipmentChannel::Containment),
+        _ => Err(serde::de::Error::custom("unknown equipment channel")),
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -86,18 +334,12 @@ pub fn bestiary_enemy_lore(
         .collect()
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct BackendBestiaryDeduction {
-    pub owner_character_id: u64,
-    pub case_id: String,
-    pub monster_kind: String,
-    pub support_band: String,
-    pub provenance_json: String,
-    pub updated_at: u64,
+pub trait BestiaryDeductionExt {
+    fn provenance(&self) -> Vec<String>;
 }
 
-impl BackendBestiaryDeduction {
-    pub fn provenance(&self) -> Vec<String> {
+impl BestiaryDeductionExt for BackendBestiaryDeduction {
+    fn provenance(&self) -> Vec<String> {
         serde_json::from_str::<Vec<String>>(&self.provenance_json)
             .unwrap_or_default()
             .into_iter()
@@ -106,1083 +348,74 @@ impl BackendBestiaryDeduction {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct BackendLocalProblemTradeEffect {
-    pub character_id: u64,
-    pub settlement_id: String,
-    pub buy_bps: i32,
-    pub sell_penalty_bps: i32,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct BackendInvestigationJournalEntry {
-    pub owner_character_id: u64,
-    pub case_id: String,
-    pub record_id: String,
-    pub kind: String,
-    pub summary: String,
-    pub source_label: String,
-    pub confidence_bps: u16,
-    pub contradiction_group: String,
-    pub corrected_by: String,
-    pub supersedes: String,
-    pub recorded_at: u64,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct BackendInvestigationLead {
-    pub owner_character_id: u64,
-    pub case_id: String,
-    pub lead_id: String,
-    pub summary: String,
-    pub source_label: String,
-    pub confidence_bps: u16,
-    #[serde(
-        deserialize_with = "deserialize_destination_knowledge_stage",
-        serialize_with = "serialize_destination_knowledge_stage"
-    )]
-    pub destination_stage: DestinationKnowledgeStage,
-    pub directions: String,
-    pub exact_location_id: String,
-    #[serde(rename = "latitude_e_7")]
-    pub latitude_e7: i32,
-    #[serde(rename = "longitude_e_7")]
-    pub longitude_e7: i32,
-    pub witness_name: String,
-    pub witness_description: String,
-    pub witness_occupation_or_relationship: String,
-    pub expected_location: String,
-    pub current_learned_location: String,
-    pub contradiction_group: String,
-    pub corrected_by: String,
-    pub recorded_at: u64,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct BackendInvestigationAction {
-    pub owner_character_id: u64,
-    pub action_id: String,
-    pub method: String,
-    pub expected_version: u32,
-    pub summary: String,
-    pub known_prerequisites: String,
-    pub duration_min_minutes: u32,
-    pub duration_max_minutes: u32,
-    pub uncertainty_bps: u16,
-    pub skill_contributions: String,
-    pub weather_available: bool,
-    pub required_case_site_id: String,
-    pub available: bool,
-    pub can_travel_to_required_site: bool,
-    pub unavailable_reason: String,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct BackendInvestigationCaseSummary {
-    pub owner_character_id: u64,
-    pub case_id: String,
-    pub subject: String,
-    pub status: String,
-    pub latest_update_at: u64,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct BackendCaseBattle {
-    pub owner_character_id: u64,
-    pub public_case_id: String,
-    pub party_id: String,
-    pub battle_id: String,
-    pub mission_id: String,
-    pub case_site_id: CaseSiteId,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct BackendCaseSitePin {
-    pub owner_character_id: u64,
-    pub case_id: String,
-    pub case_site_id: String,
-    pub origin_settlement_id: String,
-    pub name: String,
-    pub description: String,
-    pub scene_key: String,
-    #[serde(rename = "longitude_e_7")]
-    pub longitude_e7: i32,
-    #[serde(rename = "latitude_e_7")]
-    pub latitude_e7: i32,
-    pub coordinates_are_geographic: bool,
-    pub distance_m: u64,
-    #[serde(
-        deserialize_with = "deserialize_destination_knowledge_stage",
-        serialize_with = "serialize_destination_knowledge_stage"
-    )]
-    pub knowledge_stage: DestinationKnowledgeStage,
-    pub tracked: bool,
-    pub display_title: String,
-    pub generated_case: bool,
-    pub case_resolved: bool,
-    pub combat_available: bool,
-    #[serde(default)]
-    pub opposition_count: Option<u32>,
-    #[serde(default)]
-    pub opposition_combat_power: Option<u64>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct BackendPhysicalEvidence {
-    pub owner_character_id: u64,
-    pub evidence_id: String,
-    pub case_id: String,
-    pub case_site_id: String,
-    pub label: String,
-    pub portrait_icon: String,
-    pub description: String,
-    pub topics_json: String,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct BackendPhysicalEvidenceInspection {
-    pub attempt_id: String,
-    pub owner_character_id: u64,
-    pub evidence_id: String,
-    pub topic_id: String,
-    pub stat_label: String,
-    pub passed: bool,
-    pub narration: String,
-    pub attempted_at: u64,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct BackendCorpse {
-    pub owner_character_id: u64,
-    pub corpse_id: String,
-    pub display_name: String,
-    pub creature_kind: String,
-    pub source_id: String,
-    pub location: String,
-    pub decomposition: String,
-    pub case_site_id: String,
-    pub settlement_id: String,
-    pub opened: bool,
-    pub permission: String,
-    pub exhumation_permission: bool,
-    pub penalty_free_burning: bool,
-    pub revision: u32,
-    pub findings: Vec<String>,
-}
-
-use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error as _};
-use serde_json::Value;
-
-pub use adventuresim_stdb_client::{
-    AffinityBand, ChildActivityFocus, ChildStage, CourtshipKind, FamiliarityBand, MoraleBand,
-    SocialChatOutcome, SocialChatTargetKind,
-};
-
-fn unit_variant_name<E>(value: Value) -> Result<String, E>
-where
-    E: serde::de::Error,
-{
-    match value {
-        Value::String(name) => Ok(name),
-        Value::Object(variant) if variant.len() == 1 => {
-            Ok(variant.into_iter().next().expect("one variant").0)
-        }
-        _ => Err(E::custom("expected a unit enum variant")),
-    }
-}
-
-trait SqlUnitVariant: Sized {
-    fn from_sql_name(name: &str) -> Option<Self>;
-    fn sql_name(&self) -> &'static str;
-}
-
-macro_rules! impl_sql_unit_variant {
-    ($type:ty { $($variant:ident),+ $(,)? }) => {
-        impl SqlUnitVariant for $type {
-            fn from_sql_name(name: &str) -> Option<Self> {
-                match name {
-                    $(stringify!($variant) => Some(Self::$variant),)+
-                    _ => None,
-                }
-            }
-
-            fn sql_name(&self) -> &'static str {
-                match self {
-                    $(Self::$variant => stringify!($variant),)+
-                }
-            }
-        }
-    };
-}
-
-impl_sql_unit_variant!(ChallengePresenterCatalogId { LadyBeneathThornV1 });
-impl_sql_unit_variant!(SettlementDescriptionKind { Settlement, City });
-impl_sql_unit_variant!(EquipmentBodyPart {
-    LeftArm,
-    RightArm,
-    LeftLeg,
-    RightLeg,
-    Chest,
-    Stomach,
-    Head,
-});
-impl_sql_unit_variant!(EquipmentLocation {
-    Head,
-    Face,
-    Neck,
-    Chest,
-    Stomach,
-    Back,
-    LeftShoulder,
-    RightShoulder,
-    LeftArm,
-    RightArm,
-    LeftHand,
-    RightHand,
-    LeftLeg,
-    RightLeg,
-    LeftFoot,
-    RightFoot,
-    LeftBelt,
-    RightBelt,
-    FrontBelt,
-    BackBelt,
-    LeftPocket,
-    RightPocket,
-    BackLeftPocket,
-    BackRightPocket,
-});
-impl_sql_unit_variant!(Slot {
-    None,
-    LeftHolding,
-    RightHolding,
-    LeftArm,
-    RightArm,
-    LeftLeg,
-    RightLeg,
-    Chest,
-    Stomach,
-    Head,
-    AnyHolding,
-    AnyArm,
-    AnyLeg,
-});
-impl_sql_unit_variant!(BodyRegion {
-    LeftArm,
-    RightArm,
-    LeftLeg,
-    RightLeg,
-    Chest,
-    Abdomen,
-    Head,
-});
-impl_sql_unit_variant!(InterventionRoute {
-    Oral,
-    Topical,
-    Inhaled,
-    Injected,
-});
-impl_sql_unit_variant!(IncapacitationStatus {
-    Ready,
-    Staggered,
-    Incapacitated,
-});
-impl_sql_unit_variant!(OrganizationMembershipStatus { Active, Suspended });
-impl_sql_unit_variant!(MeleeAttackStyle { Swing, Stab });
-impl_sql_unit_variant!(SettlementCategory {
-    Unknown,
-    Hamlet,
-    Village,
-    Town,
-    City,
-    Capital,
-});
-impl_sql_unit_variant!(ResidenceTenure { Renter, Owner });
-impl_sql_unit_variant!(RecruitmentOfferStatus {
-    Open,
-    Closed,
-    Expired,
-});
-impl_sql_unit_variant!(BackendContextualDecision {
-    Request,
-    Refused,
-    Unavailable,
-    EmergencyTreatment,
-});
-impl_sql_unit_variant!(HostileSurrenderMode { Demand, Offer });
-impl_sql_unit_variant!(CharacterContextKind {
-    HostileGroup,
-    CaseSite,
-    StrategicEncounter,
-    RoadEncounter,
-});
-impl_sql_unit_variant!(CharacterContextRole {
-    Counterparty,
-    Patient,
-    Bystander,
-});
-impl_sql_unit_variant!(JourneyTerrainKind {
-    Road,
-    Open,
-    SparseWoods,
-    DeepWoods,
-    Wetland,
-});
-impl_sql_unit_variant!(JourneyPrecipitation { Clear, Rain, Snow });
-impl_sql_unit_variant!(EquipmentChannel {
-    Held,
-    BaseClothing,
-    Padding,
-    FlexibleArmor,
-    RigidArmor,
-    Outerwear,
-    Accessory,
-    Mount,
-    Containment,
-});
-impl_sql_unit_variant!(EquipmentAnchorKind {
-    CharacterLocation,
-    ItemAttachment,
-});
-impl_sql_unit_variant!(ProjectileKind { Arrowhead, Ball });
-
-fn deserialize_sql_unit_variant<'de, D, T>(deserializer: D) -> Result<T, D::Error>
-where
-    D: Deserializer<'de>,
-    T: SqlUnitVariant,
-{
-    let name = unit_variant_name::<D::Error>(Value::deserialize(deserializer)?)?;
-    T::from_sql_name(&name).ok_or_else(|| D::Error::custom("unknown SQL unit enum variant"))
-}
-
-fn serialize_sql_unit_variant<S, T>(value: &T, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-    T: SqlUnitVariant,
-{
-    serializer.serialize_str(value.sql_name())
-}
-
-fn deserialize_optional_sql_unit_variant<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
-where
-    D: Deserializer<'de>,
-    T: SqlUnitVariant,
-{
-    Option::<Value>::deserialize(deserializer)?
-        .map(|value| {
-            let name = unit_variant_name::<D::Error>(value)?;
-            T::from_sql_name(&name).ok_or_else(|| D::Error::custom("unknown SQL unit enum variant"))
-        })
-        .transpose()
-}
-
-fn serialize_optional_sql_unit_variant<S, T>(
-    value: &Option<T>,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-    T: SqlUnitVariant,
-{
-    match value {
-        Some(value) => serializer.serialize_some(value.sql_name()),
-        None => serializer.serialize_none(),
-    }
-}
-
-fn deserialize_sql_unit_variant_vec<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
-where
-    D: Deserializer<'de>,
-    T: SqlUnitVariant,
-{
-    Vec::<Value>::deserialize(deserializer)?
-        .into_iter()
-        .map(|value| {
-            let name = unit_variant_name::<D::Error>(value)?;
-            T::from_sql_name(&name).ok_or_else(|| D::Error::custom("unknown SQL unit enum variant"))
-        })
-        .collect()
-}
-
-trait SqlStringValue: Sized {
-    fn from_value(value: String) -> Self;
-    fn value(&self) -> &str;
-}
-
-impl SqlStringValue for RecruitmentOfferId {
-    fn from_value(value: String) -> Self {
-        Self { value }
-    }
-
-    fn value(&self) -> &str {
-        &self.value
-    }
-}
-
-impl SqlStringValue for RecruitmentSourceId {
-    fn from_value(value: String) -> Self {
-        Self { value }
-    }
-
-    fn value(&self) -> &str {
-        &self.value
-    }
-}
-
-fn deserialize_sql_string_value<'de, D, T>(deserializer: D) -> Result<T, D::Error>
-where
-    D: Deserializer<'de>,
-    T: SqlStringValue,
-{
-    #[derive(Deserialize)]
-    struct WireValue {
-        value: String,
-    }
-
-    WireValue::deserialize(deserializer).map(|wire| T::from_value(wire.value))
-}
-
-fn serialize_sql_string_value<S, T>(value: &T, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-    T: SqlStringValue,
-{
-    #[derive(Serialize)]
-    struct WireValue<'a> {
-        value: &'a str,
-    }
-
-    WireValue {
-        value: value.value(),
-    }
-    .serialize(serializer)
-}
-
-fn deserialize_destination_knowledge_stage<'de, D>(
-    deserializer: D,
-) -> Result<DestinationKnowledgeStage, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    match unit_variant_name::<D::Error>(Value::deserialize(deserializer)?)?.as_str() {
-        "Unknown" => Ok(DestinationKnowledgeStage::Unknown),
-        "Textual" => Ok(DestinationKnowledgeStage::Textual),
-        "Landmark" => Ok(DestinationKnowledgeStage::Landmark),
-        "ApproximateArea" => Ok(DestinationKnowledgeStage::ApproximateArea),
-        "RouteSegment" => Ok(DestinationKnowledgeStage::RouteSegment),
-        "ExactBelieved" => Ok(DestinationKnowledgeStage::ExactBelieved),
-        "Visited" => Ok(DestinationKnowledgeStage::Visited),
-        _ => Err(D::Error::custom("unknown destination knowledge stage")),
-    }
-}
-
-fn serialize_destination_knowledge_stage<S>(
-    stage: &DestinationKnowledgeStage,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    serializer.serialize_str(match stage {
-        DestinationKnowledgeStage::Unknown => "Unknown",
-        DestinationKnowledgeStage::Textual => "Textual",
-        DestinationKnowledgeStage::Landmark => "Landmark",
-        DestinationKnowledgeStage::ApproximateArea => "ApproximateArea",
-        DestinationKnowledgeStage::RouteSegment => "RouteSegment",
-        DestinationKnowledgeStage::ExactBelieved => "ExactBelieved",
-        DestinationKnowledgeStage::Visited => "Visited",
-    })
-}
-
-pub(crate) fn deserialize_affinity_band<'de, D>(deserializer: D) -> Result<AffinityBand, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    match unit_variant_name::<D::Error>(Value::deserialize(deserializer)?)?.as_str() {
-        "Hostile" => Ok(AffinityBand::Hostile),
-        "Reserved" => Ok(AffinityBand::Reserved),
-        "Warm" => Ok(AffinityBand::Warm),
-        "Trusted" => Ok(AffinityBand::Trusted),
-        _ => Err(D::Error::custom("unknown affinity band")),
-    }
-}
-
-pub(crate) fn deserialize_familiarity_band<'de, D>(
-    deserializer: D,
-) -> Result<FamiliarityBand, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    match unit_variant_name::<D::Error>(Value::deserialize(deserializer)?)?.as_str() {
-        "New" => Ok(FamiliarityBand::New),
-        "Known" => Ok(FamiliarityBand::Known),
-        "Familiar" => Ok(FamiliarityBand::Familiar),
-        "WellKnown" => Ok(FamiliarityBand::WellKnown),
-        _ => Err(D::Error::custom("unknown familiarity band")),
-    }
-}
-
-pub(crate) fn deserialize_morale_band<'de, D>(deserializer: D) -> Result<MoraleBand, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    match unit_variant_name::<D::Error>(Value::deserialize(deserializer)?)?.as_str() {
-        "Uncertain" => Ok(MoraleBand::Uncertain),
-        "Distressed" => Ok(MoraleBand::Distressed),
-        "Guarded" => Ok(MoraleBand::Guarded),
-        "Settled" => Ok(MoraleBand::Settled),
-        _ => Err(D::Error::custom("unknown morale band")),
-    }
-}
-
-pub(crate) fn deserialize_social_chat_outcome<'de, D>(
-    deserializer: D,
-) -> Result<SocialChatOutcome, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    match unit_variant_name::<D::Error>(Value::deserialize(deserializer)?)?.as_str() {
-        "Positive" => Ok(SocialChatOutcome::Positive),
-        "Mixed" => Ok(SocialChatOutcome::Mixed),
-        "Negative" => Ok(SocialChatOutcome::Negative),
-        _ => Err(D::Error::custom("unknown social chat outcome")),
-    }
-}
-
-pub(crate) fn deserialize_social_chat_target_kind<'de, D>(
-    deserializer: D,
-) -> Result<SocialChatTargetKind, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    match unit_variant_name::<D::Error>(Value::deserialize(deserializer)?)?.as_str() {
-        "SettlementResident" => Ok(SocialChatTargetKind::SettlementResident),
-        "PartyMember" => Ok(SocialChatTargetKind::PartyMember),
-        _ => Err(D::Error::custom("unknown social chat target kind")),
-    }
-}
-
-pub(crate) fn deserialize_optional_courtship_kind<'de, D>(
-    deserializer: D,
-) -> Result<Option<CourtshipKind>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let Some(value) = Option::<Value>::deserialize(deserializer)? else {
-        return Ok(None);
-    };
-    match unit_variant_name::<D::Error>(value)?.as_str() {
-        "Formal" => Ok(Some(CourtshipKind::Formal)),
-        "Informal" => Ok(Some(CourtshipKind::Informal)),
-        _ => Err(D::Error::custom("unknown courtship kind")),
-    }
-}
-
-pub(crate) fn deserialize_child_stage<'de, D>(deserializer: D) -> Result<ChildStage, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    match unit_variant_name::<D::Error>(Value::deserialize(deserializer)?)?.as_str() {
-        "EarlyChildhood" => Ok(ChildStage::EarlyChildhood),
-        "MiddleChildhood" => Ok(ChildStage::MiddleChildhood),
-        "Adolescence" => Ok(ChildStage::Adolescence),
-        "Adult" => Ok(ChildStage::Adult),
-        _ => Err(D::Error::custom("unknown child stage")),
-    }
-}
-
-pub(crate) fn deserialize_child_activity_focus<'de, D>(
-    deserializer: D,
-) -> Result<ChildActivityFocus, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    match unit_variant_name::<D::Error>(Value::deserialize(deserializer)?)?.as_str() {
-        "Play" => Ok(ChildActivityFocus::Play),
-        "Study" => Ok(ChildActivityFocus::Study),
-        "HouseholdHelp" => Ok(ChildActivityFocus::HouseholdHelp),
-        "SocialLearning" => Ok(ChildActivityFocus::SocialLearning),
-        _ => Err(D::Error::custom("unknown child activity focus")),
-    }
-}
-
-#[cfg(test)]
-mod typed_social_transport_tests {
-    use super::*;
-
-    #[derive(Deserialize)]
-    struct AffinityWire {
-        #[serde(deserialize_with = "deserialize_affinity_band")]
-        affinity: AffinityBand,
-    }
-
-    #[derive(Deserialize)]
-    struct CourtshipWire {
-        #[serde(deserialize_with = "deserialize_optional_courtship_kind")]
-        courtship: Option<CourtshipKind>,
-    }
-
-    #[derive(Deserialize)]
-    struct ChildWire {
-        #[serde(deserialize_with = "deserialize_child_stage")]
-        stage: ChildStage,
-        #[serde(deserialize_with = "deserialize_child_activity_focus")]
-        focus: ChildActivityFocus,
-    }
-
-    #[derive(Debug, Serialize, Deserialize)]
-    struct SharedUnitWire {
-        #[serde(
-            deserialize_with = "deserialize_sql_unit_variant",
-            serialize_with = "serialize_sql_unit_variant"
-        )]
-        channel: EquipmentChannel,
-    }
-
-    #[derive(Debug, Serialize, Deserialize)]
-    struct SharedCoreUnitWire {
-        #[serde(
-            deserialize_with = "deserialize_sql_unit_variant",
-            serialize_with = "serialize_sql_unit_variant"
-        )]
-        route: InterventionRoute,
-        #[serde(
-            deserialize_with = "deserialize_sql_unit_variant",
-            serialize_with = "serialize_sql_unit_variant"
-        )]
-        region: BodyRegion,
-        #[serde(
-            deserialize_with = "deserialize_sql_unit_variant",
-            serialize_with = "serialize_sql_unit_variant"
-        )]
-        status: IncapacitationStatus,
-        #[serde(
-            deserialize_with = "deserialize_sql_unit_variant",
-            serialize_with = "serialize_sql_unit_variant"
-        )]
-        style: MeleeAttackStyle,
-        #[serde(
-            deserialize_with = "deserialize_sql_unit_variant",
-            serialize_with = "serialize_sql_unit_variant"
-        )]
-        slot: Slot,
-        #[serde(
-            deserialize_with = "deserialize_sql_unit_variant",
-            serialize_with = "serialize_sql_unit_variant"
-        )]
-        location: EquipmentLocation,
-        #[serde(
-            default,
-            deserialize_with = "deserialize_optional_sql_unit_variant",
-            serialize_with = "serialize_optional_sql_unit_variant"
-        )]
-        optional_region: Option<BodyRegion>,
-    }
-
-    #[derive(Debug, Deserialize)]
-    struct SharedCoreUnitVecWire {
-        #[serde(deserialize_with = "deserialize_sql_unit_variant_vec")]
-        protection: Vec<EquipmentBodyPart>,
-    }
-
-    #[derive(Debug, Serialize, Deserialize)]
-    struct SharedIdWire {
-        #[serde(
-            deserialize_with = "deserialize_sql_string_value",
-            serialize_with = "serialize_sql_string_value"
-        )]
-        id: RecruitmentOfferId,
-    }
-
-    #[test]
-    fn social_enum_adapters_accept_sql_unit_variant_encodings() {
-        assert_eq!(
-            serde_json::from_value::<AffinityWire>(serde_json::json!({"affinity": "Trusted"}))
-                .unwrap()
-                .affinity,
-            AffinityBand::Trusted
-        );
-        assert_eq!(
-            serde_json::from_value::<AffinityWire>(serde_json::json!({"affinity": {"Warm": []}}))
-                .unwrap()
-                .affinity,
-            AffinityBand::Warm
-        );
-        assert_eq!(
-            serde_json::from_value::<CourtshipWire>(serde_json::json!({"courtship": "Formal"}))
-                .unwrap()
-                .courtship,
-            Some(CourtshipKind::Formal)
-        );
-        assert!(
-            serde_json::from_value::<AffinityWire>(serde_json::json!({"affinity": "invented"}))
-                .is_err()
-        );
-        let child = serde_json::from_value::<ChildWire>(serde_json::json!({
-            "stage": {"Adolescence": []},
-            "focus": "HouseholdHelp"
-        }))
-        .unwrap();
-        assert_eq!(child.stage, ChildStage::Adolescence);
-        assert_eq!(child.focus, ChildActivityFocus::HouseholdHelp);
-        assert!(
-            serde_json::from_value::<ChildWire>(serde_json::json!({
-                "stage": "SchoolAge",
-                "focus": "Crime"
-            }))
-            .is_err()
-        );
-    }
-
-    #[test]
-    fn shared_generated_types_have_strict_sql_boundary_adapters() {
-        let channel = serde_json::from_value::<SharedUnitWire>(serde_json::json!({
-            "channel": {"FlexibleArmor": []}
-        }))
-        .unwrap();
-        assert_eq!(channel.channel, EquipmentChannel::FlexibleArmor);
-        assert_eq!(
-            serde_json::to_value(channel).unwrap(),
-            serde_json::json!({"channel": "FlexibleArmor"})
-        );
-        assert!(
-            serde_json::from_value::<SharedUnitWire>(serde_json::json!({
-                "channel": "ImprovisedArmor"
-            }))
-            .is_err()
-        );
-
-        let id = serde_json::from_value::<SharedIdWire>(serde_json::json!({
-            "id": {"value": "recruitment:test"}
-        }))
-        .unwrap();
-        assert_eq!(id.id.value, "recruitment:test");
-        assert_eq!(
-            serde_json::to_value(id).unwrap(),
-            serde_json::json!({"id": {"value": "recruitment:test"}})
-        );
-    }
-
-    #[test]
-    fn shared_core_types_have_strict_sql_boundary_adapters() {
-        let decoded = serde_json::from_value::<SharedCoreUnitWire>(serde_json::json!({
-            "route": "Oral",
-            "region": {"LeftArm": []},
-            "status": "Staggered",
-            "style": "Stab",
-            "slot": "LeftHolding",
-            "location": "LeftHand",
-            "optional_region": "Abdomen"
-        }))
-        .unwrap();
-        assert_eq!(decoded.route, InterventionRoute::Oral);
-        assert_eq!(decoded.region, BodyRegion::LeftArm);
-        assert_eq!(decoded.status, IncapacitationStatus::Staggered);
-        assert_eq!(decoded.style, MeleeAttackStyle::Stab);
-        assert_eq!(decoded.slot, Slot::LeftHolding);
-        assert_eq!(decoded.location, EquipmentLocation::LeftHand);
-        assert_eq!(decoded.optional_region, Some(BodyRegion::Abdomen));
-        assert_eq!(
-            serde_json::to_value(decoded).unwrap(),
-            serde_json::json!({
-                "route": "Oral",
-                "region": "LeftArm",
-                "status": "Staggered",
-                "style": "Stab",
-                "slot": "LeftHolding",
-                "location": "LeftHand",
-                "optional_region": "Abdomen"
-            })
-        );
-
-        let protection = serde_json::from_value::<SharedCoreUnitVecWire>(serde_json::json!({
-            "protection": ["Head", {"LeftArm": []}]
-        }))
-        .unwrap();
-        assert_eq!(
-            protection.protection,
-            [EquipmentBodyPart::Head, EquipmentBodyPart::LeftArm]
-        );
-        assert!(
-            serde_json::from_value::<SharedCoreUnitWire>(serde_json::json!({
-                "route": "oral",
-                "region": "left_arm",
-                "status": "staggered",
-                "style": "stab",
-                "slot": "left_holding",
-                "location": "left_hand",
-                "optional_region": null
-            }))
-            .is_err()
-        );
-    }
-
-    #[test]
-    fn organization_membership_status_sql_boundary_is_typed_and_strict() {
-        let row = serde_json::json!({
-            "id": 1,
-            "character_id": 7,
-            "organization_id": "lodge_hart_king",
-            "role_id": "warden",
-            "joined_minute": 0,
-            "dues_paid_through_minute": 100,
-            "status": { "Active": [] },
-            "apprenticeship_minutes_accrued": 0,
-            "practice_minutes_accrued": 0
-        });
-        let decoded = serde_json::from_value::<OrganizationMembership>(row.clone()).unwrap();
-        assert_eq!(decoded.status, OrganizationMembershipStatus::Active);
-        assert_eq!(
-            serde_json::to_value(decoded).unwrap()["status"],
-            serde_json::json!("Active")
-        );
-
-        let mut unknown = row;
-        unknown["status"] = serde_json::json!("Delinquent");
-        assert!(serde_json::from_value::<OrganizationMembership>(unknown).is_err());
-    }
-}
-
-/// Response from SpacetimeDB SQL query (array of result sets)
-pub type QueryResponse = Vec<QueryResult>;
-
-#[derive(Debug, Deserialize)]
-pub struct QueryResult {
-    pub schema: QuerySchema,
-    pub rows: Vec<Value>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct QuerySchema {
-    pub elements: Vec<SchemaElement>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct SchemaElement {
-    pub name: Option<AlgebraicTypeRef>,
-    pub algebraic_type: AlgebraicType,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct AlgebraicTypeRef {
-    pub some: String,
-}
-
-// AlgebraicType can be many forms - we just need to accept any valid JSON
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-pub enum AlgebraicType {
-    Value(serde_json::Value),
-}
-
-// Domain types matching strategic-db schema
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BackendDevelopmentScenario {
-    pub slug: String,
-    pub revision: u16,
-    pub category: String,
-    pub label: String,
-    pub description: String,
-    pub primary_character_id: u64,
-    pub entry_route: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BackendDevelopmentQuest {
-    pub scenario_slug: String,
-    pub quest_kind: String,
-    pub subject_id: String,
-    pub canonical_case_id: String,
-    pub title: String,
-    pub status: String,
-    pub incident_count: u16,
-    pub public_awareness_bps: u16,
-    pub supports_incident_action: bool,
-    pub player_safe_summary: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Character {
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct CharacterView {
     pub id: u64,
     pub name: String,
     pub xp: u32,
     pub level: u32,
     pub current_settlement_id: Option<String>,
-    #[serde(default)]
-    pub current_case_site_id: Option<String>,
+    pub current_case_site_id: Option<CaseSiteId>,
     pub party_id: Option<String>,
     pub age_years: u16,
     pub alive: bool,
     pub temporary: bool,
-    /// SSR-only observer-specific count, populated after database decoding.
-    #[serde(default, skip_serializing)]
     pub social_notification_count: usize,
-    /// SSR-only actor/target preference used to decide portrait-action visibility.
-    #[serde(default, skip_serializing)]
     pub automatic_social_chat_enabled: bool,
 }
 
-macro_rules! personality_axis {
-    ($name:ident { $($variant:ident),+ $(,)? }) => {
-        #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-        pub enum $name { $($variant),+ }
-    };
-}
-personality_axis!(Nerve {
-    Neutral,
-    Brave,
-    Fearful
-});
-personality_axis!(Drive {
-    Neutral,
-    Ambitious,
-    Content
-});
-personality_axis!(Outlook {
-    Neutral,
-    Sanguine,
-    Brooding
-});
-personality_axis!(Sociability {
-    Neutral,
-    Gregarious,
-    Solitary
-});
-personality_axis!(Conscience {
-    Neutral,
-    Compassionate,
-    Callous,
-    Cruel
-});
-personality_axis!(SelfRegard {
-    Neutral,
-    Proud,
-    Humble
-});
-personality_axis!(Conviction {
-    Neutral,
-    Zealous,
-    Irreverent
-});
-personality_axis!(Hygiene {
-    Neutral,
-    Slovenly,
-    Cleanly
-});
-personality_axis!(Temperance {
-    Neutral,
-    Temperate,
-    Drunkard
-});
-personality_axis!(Mirth {
-    Neutral,
-    Merry,
-    Grave
-});
-personality_axis!(Courtship {
-    Neutral,
-    Amorous,
-    Proper
-});
-personality_axis!(Transparency {
-    Neutral,
-    Open,
-    Guarded
-});
-personality_axis!(SelfKnowledge {
-    Neutral,
-    Introspective,
-    SelfDeceiving
-});
-personality_axis!(Inclination {
-    Men,
-    Either,
-    Women,
-    Neither
-});
-personality_axis!(Presentation {
-    Man,
-    Ambiguous,
-    Woman
-});
-personality_axis!(Sex { Female, Male });
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CharacterPersonality {
-    pub character_id: u64,
-    pub projection_character_id: u64,
-    pub nerve: Nerve,
-    pub drive: Drive,
-    pub outlook: Outlook,
-    pub sociability: Sociability,
-    pub conscience: Conscience,
-    pub self_regard: SelfRegard,
-    pub conviction: Conviction,
-    pub hygiene: Hygiene,
-    pub temperance: Temperance,
-    pub mirth: Mirth,
-    pub courtship: Courtship,
-    pub transparency: Transparency,
-    pub self_knowledge: SelfKnowledge,
-    pub sex: Sex,
-    pub presentation: Presentation,
-    pub inclination: Inclination,
-}
-
-#[cfg(test)]
-impl CharacterPersonality {
-    pub fn neutral(character_id: u64) -> Self {
+impl From<sats::Character> for CharacterView {
+    fn from(row: sats::Character) -> Self {
+        let sats::Character {
+            id,
+            scan_id: _,
+            name,
+            xp,
+            level,
+            current_settlement_id,
+            party_id,
+            server: _,
+            in_server: _,
+            temporary,
+            age_years,
+            alive,
+            party_treatment_decision: _,
+        } = row;
         Self {
-            character_id,
-            projection_character_id: character_id,
-            nerve: Nerve::Neutral,
-            drive: Drive::Neutral,
-            outlook: Outlook::Neutral,
-            sociability: Sociability::Neutral,
-            conscience: Conscience::Neutral,
-            self_regard: SelfRegard::Neutral,
-            conviction: Conviction::Neutral,
-            hygiene: Hygiene::Neutral,
-            temperance: Temperance::Neutral,
-            mirth: Mirth::Neutral,
-            courtship: Courtship::Neutral,
-            transparency: Transparency::Neutral,
-            self_knowledge: SelfKnowledge::Neutral,
-            sex: Sex::Male,
-            presentation: Presentation::Man,
-            inclination: Inclination::Women,
+            id,
+            name,
+            xp,
+            level,
+            current_settlement_id,
+            current_case_site_id: None,
+            party_id,
+            age_years,
+            alive,
+            temporary,
+            social_notification_count: 0,
+            automatic_social_chat_enabled: false,
         }
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CharacterFilth {
-    pub id: u64,
-    pub character_id: u64,
-    pub substance: FilthSubstance,
-    pub origin: FilthOrigin,
-    pub amount: u16,
-    pub deposited_at: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Settlement {
+#[serde(deny_unknown_fields)]
+pub struct SettlementView {
     pub id: String,
     pub name: String,
-    pub coord_x: f64,
-    pub coord_y: f64,
+    pub longitude: f64,
+    pub latitude: f64,
     pub population_level: i32,
     pub population_estimate: u32,
     #[serde(
-        deserialize_with = "deserialize_sql_unit_variant",
-        serialize_with = "serialize_sql_unit_variant"
+        serialize_with = "serialize_settlement_category",
+        deserialize_with = "deserialize_settlement_category"
     )]
     pub category: SettlementCategory,
     pub languages: adventuresim_world_schema::SettlementLanguageProfile,
     pub industries: adventuresim_world_schema::InferredIndustryProfile,
     pub economy: adventuresim_world_schema::SettlementEconomyProfile,
-    #[serde(deserialize_with = "deserialize_settlement_religious_status")]
     pub religious_status: adventuresim_world_schema::SettlementReligiousStatus,
     pub scene_key: String,
     pub religion_id: String,
@@ -1190,181 +423,61 @@ pub struct Settlement {
     pub source_node_id: Option<u64>,
 }
 
-/// Public residence-offer projection generated from the strategic schema.
-/// These transport structs intentionally mirror only public tables/views; the
-/// browser never receives private relationship or pregnancy records.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SettlementResidenceOffer {
-    pub id: String,
-    pub settlement_id: String,
-    pub tier: HousingTier,
-    pub purchase_price: u32,
-    pub rent_per_period: u32,
-    pub owner_maintenance_per_period: u32,
-    pub property_tax_per_period: u32,
-    pub leisure_morale_basis_points: u16,
-}
+impl TryFrom<sats::Settlement> for SettlementView {
+    type Error = serde_json::Error;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BackendCharacterResidenceStatus {
-    pub character_id: u64,
-    pub holding_id: String,
-    pub owner_character_id: u64,
-    pub settlement_id: String,
-    pub tier: HousingTier,
-    #[serde(
-        deserialize_with = "deserialize_sql_unit_variant",
-        serialize_with = "serialize_sql_unit_variant"
-    )]
-    pub tenure: ResidenceTenure,
-    pub active: bool,
-    pub primary: bool,
-    pub occupied: bool,
-    pub last_billed_minute: u64,
-    pub next_due_minute: u64,
-    pub acquired_minute: u64,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[expect(
-    dead_code,
-    reason = "the complete backend relationship projection is consumed selectively by views"
-)]
-pub struct BackendCharacterRelationshipStatus {
-    pub character_id: u64,
-    pub spouse_id: Option<u64>,
-    pub courtship_partner_id: Option<u64>,
-    #[serde(deserialize_with = "deserialize_optional_courtship_kind")]
-    pub courtship_kind: Option<CourtshipKind>,
-    pub courtship_exposed: bool,
-    pub wedding_commitment_id: Option<String>,
-    pub wedding_partner_id: Option<u64>,
-    pub wedding_effective_minute: Option<u64>,
-    pub wedding_settlement_id: Option<String>,
-    pub pregnancy_due_minute: Option<u64>,
-    pub pregnancy_child_id: Option<u64>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct BackendFamilyChild {
-    pub owner_key: String,
-    pub observer_character_id: u64,
-    pub child_id: u64,
-    pub child_name: String,
-    #[serde(deserialize_with = "deserialize_child_stage")]
-    pub stage: ChildStage,
-    #[serde(deserialize_with = "deserialize_child_activity_focus")]
-    pub focus: ChildActivityFocus,
-    pub maturity_basis_points: u16,
-    pub adult_playable: bool,
-    pub alive: bool,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[expect(
-    dead_code,
-    reason = "the backend projection is reserved for the courtship discovery UI"
-)]
-pub struct BackendCourtshipDiscoveryStatus {
-    pub observer_character_id: u64,
-    pub first_character_id: u64,
-    pub second_character_id: u64,
-    pub discovered_minute: u64,
-}
-
-fn deserialize_settlement_religious_status<'de, D>(
-    deserializer: D,
-) -> Result<adventuresim_world_schema::SettlementReligiousStatus, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value = Value::deserialize(deserializer)?;
-    serde_json::from_value(normalize_religious_status(value)).map_err(D::Error::custom)
-}
-
-fn normalize_religious_status(value: Value) -> Value {
-    let Value::Object(mut status) = value else {
-        return value;
-    };
-    if status.len() != 1 {
-        return Value::Object(status);
-    }
-
-    let Some((variant, payload)) = status
-        .iter()
-        .next()
-        .map(|(variant, payload)| (variant.clone(), payload.clone()))
-    else {
-        return Value::Object(status);
-    };
-    let payload = match variant.as_str() {
-        "Established" => wrap_single_field(payload, "religion"),
-        "LocallyDetermined" => wrap_single_field(payload, "church"),
-        "Parity" | "MultiConfessional" => {
-            wrap_single_field(normalize_western_arrangement(payload), "arrangement")
-        }
-        _ => payload,
-    };
-    status = [(variant, payload)].into_iter().collect();
-    Value::Object(status)
-}
-
-fn normalize_western_arrangement(value: Value) -> Value {
-    let Value::Object(mut arrangement) = value else {
-        return value;
-    };
-    if arrangement.len() != 1 || arrangement.contains_key("arrangement") {
-        return Value::Object(arrangement);
-    }
-
-    let Some((variant, payload)) = arrangement
-        .iter()
-        .next()
-        .map(|(variant, payload)| (variant.clone(), payload.clone()))
-    else {
-        return Value::Object(arrangement);
-    };
-    arrangement = [(variant, wrap_single_field(payload, "church"))]
-        .into_iter()
-        .collect();
-    Value::Object(arrangement)
-}
-
-fn wrap_single_field(value: Value, field: &str) -> Value {
-    if value
-        .as_object()
-        .is_some_and(|object| object.contains_key(field))
-    {
-        value
-    } else {
-        Value::Object([(field.to_string(), value)].into_iter().collect())
+    fn try_from(row: sats::Settlement) -> Result<Self, Self::Error> {
+        let sats::Settlement {
+            id,
+            name,
+            coord_x,
+            coord_y,
+            population_level,
+            population_estimate,
+            category,
+            elevation: _,
+            land_use: _,
+            forest_cover: _,
+            potential_vegetation: _,
+            historical_vegetation: _,
+            tree_species: _,
+            soil: _,
+            geology: _,
+            religious_status,
+            languages,
+            drought: _,
+            hydrology: _,
+            industries,
+            economy,
+            scene_key,
+            religion_id,
+            currency_id,
+            source_node_id,
+            sources: _,
+        } = row;
+        Ok(Self {
+            id,
+            name,
+            longitude: coord_x,
+            latitude: coord_y,
+            population_level,
+            population_estimate,
+            category,
+            languages: sats_to_serde(&languages)?,
+            industries: sats_to_serde(&industries)?,
+            economy: sats_to_serde(&economy)?,
+            religious_status: core_settlement_religious_status(religious_status),
+            scene_key,
+            religion_id,
+            currency_id,
+            source_node_id,
+        })
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SettlementAlias {
-    pub id: String,
-    pub settlement_id: String,
-    pub name: String,
-    pub prefix: Option<String>,
-    pub language: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SettlementDescription {
-    pub id: String,
-    pub settlement_id: String,
-    #[serde(
-        deserialize_with = "deserialize_sql_unit_variant",
-        serialize_with = "serialize_sql_unit_variant"
-    )]
-    pub kind: SettlementDescriptionKind,
-    pub language: Option<String>,
-    pub body: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TravelEdge {
+#[serde(deny_unknown_fields)]
+pub struct TravelEdgeView {
     pub id: u64,
     pub from_node_id: u64,
     pub to_node_id: u64,
@@ -1376,54 +489,78 @@ pub struct TravelEdge {
     pub section: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ContractPresentation {
-    pub id: String,
-    pub case_id: String,
-    pub title: String,
-    pub description: String,
-    pub difficulty: i32,
-    pub gold_reward: i32,
-    pub xp_reward: i32,
-    pub settlement_id: String,
-    pub service_id: String,
-    pub issuer_resident_character_id: String,
-    pub status: ContractStatus,
-    pub accepted_by: Option<String>,
-    pub opposition_wording: String,
-    pub opposition_count_wording: String,
+impl TryFrom<sats::TravelEdge> for TravelEdgeView {
+    type Error = serde_json::Error;
+
+    fn try_from(row: sats::TravelEdge) -> Result<Self, Self::Error> {
+        let sats::TravelEdge {
+            id,
+            from_node_id,
+            to_node_id,
+            route,
+            provenance: _,
+            toll_at: _,
+            length_m,
+            slope_multiplier,
+            terrain,
+            certainty,
+            section,
+            sources: _,
+        } = row;
+        Ok(Self {
+            id,
+            from_node_id,
+            to_node_id,
+            route: sats_to_serde(&route)?,
+            length_m,
+            slope_multiplier,
+            terrain: sats_to_serde(&terrain)?,
+            certainty,
+            section,
+        })
+    }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RecruitmentOffer {
-    pub id_key: String,
-    #[serde(
-        deserialize_with = "deserialize_sql_string_value",
-        serialize_with = "serialize_sql_string_value"
-    )]
-    pub id: RecruitmentOfferId,
-    #[serde(
-        deserialize_with = "deserialize_sql_string_value",
-        serialize_with = "serialize_sql_string_value"
-    )]
-    pub source_id: RecruitmentSourceId,
-    pub recruiting_party_id: String,
-    pub settlement_id: String,
-    pub settlement_resident_id: String,
-    pub location_id: String,
-    pub leader_id: u64,
-    #[serde(
-        deserialize_with = "deserialize_sql_unit_variant",
-        serialize_with = "serialize_sql_unit_variant"
-    )]
-    pub status: RecruitmentOfferStatus,
-    pub created_at_minute: u64,
-    pub expires_at_minute: u64,
+#[derive(Debug, Clone, PartialEq)]
+pub struct CaseBattleView {
+    pub gateway_bucket: u8,
+    pub owner_character_id: u64,
+    pub public_case_id: String,
+    pub party_id: String,
+    pub battle_id: String,
+    pub mission_id: String,
+    pub case_site_id: CaseSiteId,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Party {
+impl TryFrom<sats::BackendCaseBattle> for CaseBattleView {
+    type Error = adventuresim_core::strategic_place::PlaceIdentityError;
+
+    fn try_from(row: sats::BackendCaseBattle) -> Result<Self, Self::Error> {
+        let sats::BackendCaseBattle {
+            gateway_bucket,
+            owner_character_id,
+            public_case_id,
+            party_id,
+            battle_id,
+            mission_id,
+            case_site_id,
+        } = row;
+        Ok(Self {
+            gateway_bucket,
+            owner_character_id,
+            public_case_id,
+            party_id,
+            battle_id,
+            mission_id,
+            case_site_id: CaseSiteId::try_new(case_site_id.value)?,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PartyView {
     pub id: String,
+    pub gateway_bucket: u8,
     pub name: String,
     pub leader_id: u64,
     pub current_settlement_id: Option<String>,
@@ -1443,271 +580,98 @@ pub struct Party {
     pub religion_target: f32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PartyJourney {
+impl TryFrom<sats::Party> for PartyView {
+    type Error = adventuresim_core::strategic_place::PlaceIdentityError;
+
+    fn try_from(row: sats::Party) -> Result<Self, Self::Error> {
+        let sats::Party {
+            id,
+            gateway_bucket,
+            name,
+            leader_id,
+            current_settlement_id,
+            current_case_site_id,
+            active_contract_id,
+            is_solo,
+            camp_fatigue_percent,
+            walking_minutes_per_day,
+            travel_at_night,
+            journey_start_minute_of_day,
+            wilderness_canonical_anchor_minute,
+            wilderness_elapsed_minutes,
+            camp_destination,
+            camp_remaining_minutes,
+            physiology_target,
+            command_target,
+            religion_target,
+        } = row;
+        Ok(Self {
+            id,
+            gateway_bucket,
+            name,
+            leader_id,
+            current_settlement_id,
+            current_case_site_id: current_case_site_id
+                .map(|site| CaseSiteId::try_new(site.value))
+                .transpose()?,
+            active_contract_id,
+            is_solo,
+            camp_fatigue_percent,
+            walking_minutes_per_day,
+            travel_at_night,
+            journey_start_minute_of_day,
+            wilderness_canonical_anchor_minute,
+            wilderness_elapsed_minutes,
+            camp_destination,
+            camp_remaining_minutes,
+            physiology_target,
+            command_target,
+            religion_target,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct PartyActionRequestView {
+    pub id: u64,
+    pub gateway_bucket: u8,
+    pub party_id: String,
+    pub requester_id: u64,
+    pub action_kind: String,
+    pub summary: String,
+    pub payload: String,
+}
+
+impl From<sats::PartyActionRequest> for PartyActionRequestView {
+    fn from(row: sats::PartyActionRequest) -> Self {
+        let sats::PartyActionRequest {
+            id,
+            gateway_bucket,
+            party_id,
+            requester_id,
+            action_kind,
+            summary,
+            payload,
+        } = row;
+        Self {
+            id,
+            gateway_bucket,
+            party_id,
+            requester_id,
+            action_kind,
+            summary,
+            payload,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PartyJourneyRouteView {
     pub party_id: String,
     pub gateway_bucket: u8,
-    pub origin: JourneyEndpoint,
-    pub destination: JourneyEndpoint,
-    pub total_movement_minutes: u64,
-    pub completed_movement_minutes: u64,
-    pub reached_camp_movement_minutes: Vec<u64>,
-    pub actual_camp_intervals: Vec<JourneyCampInterval>,
-    pub forecast_camp_intervals: Vec<JourneyCampInterval>,
-    pub fatigue_percent: u8,
-    pub departure_minute: u64,
-    pub total_elapsed_minutes: u64,
-    pub completed_elapsed_minutes: u64,
-    pub walking_minutes_per_day: u16,
-    pub travel_at_night: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct CaseSiteId {
-    pub value: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct JourneySettlementEndpoint {
-    pub id: String,
-    pub name: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct JourneyCaseSiteEndpoint {
-    pub id: CaseSiteId,
-    pub name: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum JourneyEndpoint {
-    Settlement(JourneySettlementEndpoint),
-    CaseSite(JourneyCaseSiteEndpoint),
-    Camp(String),
-}
-
-impl JourneyEndpoint {
-    pub fn settlement_id(&self) -> Option<&str> {
-        match self {
-            Self::Settlement(endpoint) => Some(&endpoint.id),
-            _ => None,
-        }
-    }
-
-    pub fn case_site_id(&self) -> Option<&str> {
-        match self {
-            Self::CaseSite(endpoint) => Some(&endpoint.id.value),
-            _ => None,
-        }
-    }
-
-    pub fn name(&self) -> &str {
-        match self {
-            Self::Settlement(endpoint) => &endpoint.name,
-            Self::CaseSite(endpoint) => &endpoint.name,
-            Self::Camp(_) => "Camp",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BackendCharacterCaseSiteLocation {
-    pub character_id: u64,
-    pub case_site_id: CaseSiteId,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct StrategicEncounterLoss {
-    pub owner_kind: String,
-    pub owner_id: u64,
-    pub inventory_id: u64,
-    pub item_id: String,
-    pub quantity: u32,
-    pub value_each: u32,
-}
-
-pub use adventuresim_stdb_client::StrategicEncounterStatus;
-
-fn deserialize_strategic_encounter_status<'de, D>(
-    deserializer: D,
-) -> Result<StrategicEncounterStatus, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    match unit_variant_name::<D::Error>(Value::deserialize(deserializer)?)?.as_str() {
-        "AwaitingChoice" => Ok(StrategicEncounterStatus::AwaitingChoice),
-        "Resolved" => Ok(StrategicEncounterStatus::Resolved),
-        _ => Err(D::Error::custom("unknown strategic encounter status")),
-    }
-}
-
-fn serialize_strategic_encounter_status<S>(
-    status: &StrategicEncounterStatus,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    serializer.serialize_str(match status {
-        StrategicEncounterStatus::AwaitingChoice => "AwaitingChoice",
-        StrategicEncounterStatus::Resolved => "Resolved",
-    })
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StrategicEncounter {
-    pub party_id: String,
-    pub encounter_id: String,
-    pub archetype: String,
-    pub enemy_count: u16,
-    pub roll_index: u64,
-    pub journey_movement_minute: u64,
-    pub journey_elapsed_minute: u64,
-    pub absolute_minute: u64,
-    #[serde(rename = "longitude_e_7")]
-    pub longitude_e7: i32,
-    #[serde(rename = "latitude_e_7")]
-    pub latitude_e7: i32,
-    pub terrain: String,
-    pub party_aware: bool,
-    pub enemy_aware: bool,
-    pub available_choices: Vec<String>,
-    #[serde(
-        deserialize_with = "deserialize_strategic_encounter_status",
-        serialize_with = "serialize_strategic_encounter_status"
-    )]
-    pub status: StrategicEncounterStatus,
-    pub revision: u32,
-    pub selected_choice: Option<String>,
-    pub selection_explanation: String,
-    pub party_speed_m_per_minute: u32,
-    pub enemy_speed_m_per_minute: u32,
-    pub run_ineligibility: Option<String>,
-    pub penalty_minutes: u64,
-    pub loss_preview: Vec<StrategicEncounterLoss>,
-    pub outcome: Option<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct BackendHostileNegotiation {
-    pub owner_character_id: u64,
-    pub case_site_id: String,
-    pub spokesman_id: u64,
-    pub context_ref: String,
-    pub expected_revision: u32,
-    #[serde(
-        deserialize_with = "deserialize_sql_unit_variant",
-        serialize_with = "serialize_sql_unit_variant"
-    )]
-    pub decision: BackendContextualDecision,
-    pub latest_response: Option<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct BackendHostileSurrender {
-    pub owner_character_id: u64,
-    pub case_site_id: String,
-    pub spokesman_id: u64,
-    pub context_ref: String,
-    pub expected_revision: u32,
-    #[serde(
-        deserialize_with = "deserialize_sql_unit_variant",
-        serialize_with = "serialize_sql_unit_variant"
-    )]
-    pub mode: HostileSurrenderMode,
-    pub latest_response: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BackendContextCharacter {
-    pub party_id: String,
-    pub contact_ref: String,
-    #[serde(
-        deserialize_with = "deserialize_sql_unit_variant",
-        serialize_with = "serialize_sql_unit_variant"
-    )]
-    pub context_kind: CharacterContextKind,
-    pub location_id: String,
-    pub character_id: u64,
-    #[serde(
-        deserialize_with = "deserialize_sql_unit_variant",
-        serialize_with = "serialize_sql_unit_variant"
-    )]
-    pub role: CharacterContextRole,
-    pub ordinal: u16,
-    pub alive: bool,
-    pub revision: u32,
-    pub membership_revision: u32,
-    #[serde(
-        deserialize_with = "deserialize_sql_unit_variant",
-        serialize_with = "serialize_sql_unit_variant"
-    )]
-    pub contact_decision: BackendContextualDecision,
-    #[serde(
-        deserialize_with = "deserialize_sql_unit_variant",
-        serialize_with = "serialize_sql_unit_variant"
-    )]
-    pub treatment_decision: BackendContextualDecision,
-    pub treatment_limb_slug: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct JourneyCampInterval {
-    pub movement_minute: u64,
-    pub elapsed_start_minute: u64,
-    pub elapsed_minutes: u64,
-    pub average_fatigue_start: f32,
-    pub average_fatigue_end: f32,
-    pub maximum_fatigue_end: f32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct JourneyRoutePoint {
-    pub latitude_e7: i32,
-    pub longitude_e7: i32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct JourneyTerrainSpan {
-    #[serde(
-        deserialize_with = "deserialize_sql_unit_variant",
-        serialize_with = "serialize_sql_unit_variant"
-    )]
-    pub kind: JourneyTerrainKind,
-    pub terrain: JourneyTerrainWeights,
-    pub training_multiplier_permille: u16,
-    pub check_millirank: u16,
-    pub start_minute: u64,
-    pub duration_minutes: u64,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct JourneyTerrainWeights {
-    pub plains: u16,
-    pub forest: u16,
-    pub hills: u16,
-    pub wetlands: u16,
-    pub urban: u16,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct JourneyRouteLeg {
-    pub distance_m: u64,
-    pub minutes: u64,
-    pub points: Vec<JourneyRoutePoint>,
-    pub spans: Vec<JourneyTerrainSpan>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PartyJourneyRoute {
-    pub party_id: String,
     pub package_digest: String,
     pub weather_rules_version: u16,
     pub weather_interval_start: u64,
-    #[serde(
-        deserialize_with = "deserialize_sql_unit_variant",
-        serialize_with = "serialize_sql_unit_variant"
-    )]
     pub precipitation: JourneyPrecipitation,
     pub intensity_bps: u16,
     pub ground_moisture_bps: u16,
@@ -1719,309 +683,244 @@ pub struct PartyJourneyRoute {
     pub return_route: Option<JourneyRouteLeg>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PartyMember {
-    pub id: u64,
-    pub party_id: String,
+impl From<sats::PartyJourneyRoute> for PartyJourneyRouteView {
+    fn from(row: sats::PartyJourneyRoute) -> Self {
+        let sats::PartyJourneyRoute {
+            party_id,
+            gateway_bucket,
+            package_digest,
+            weather_rules_version,
+            weather_interval_start,
+            precipitation,
+            intensity_bps,
+            ground_moisture_bps,
+            snow_cover_bps,
+            distance_m,
+            minutes,
+            points,
+            spans,
+            return_route,
+        } = row;
+        Self {
+            party_id,
+            gateway_bucket,
+            package_digest,
+            weather_rules_version,
+            weather_interval_start,
+            precipitation,
+            intensity_bps,
+            ground_moisture_bps,
+            snow_cover_bps,
+            distance_m,
+            minutes,
+            points,
+            spans,
+            return_route,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct EquippedItemView {
+    pub inventory_item_id: u64,
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "the generated-row boundary retains the owning character for explicit projection"
+        )
+    )]
     pub character_id: u64,
-    pub role: Option<String>,
-    pub recruitment_role_id: Option<u64>,
+    pub placement_id: String,
+    pub item_name: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PartyActionRequest {
+impl From<sats::CharacterEquippedItem> for EquippedItemView {
+    fn from(row: sats::CharacterEquippedItem) -> Self {
+        let sats::CharacterEquippedItem {
+            inventory_item_id,
+            character_id,
+            placement_id,
+        } = row;
+        Self {
+            inventory_item_id,
+            character_id,
+            placement_id,
+            item_name: String::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RecruitmentRoleView {
     pub id: u64,
     pub party_id: String,
-    pub requester_id: u64,
-    pub action_kind: String,
-    pub summary: String,
-    pub payload: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PartyLeaderVote {
-    pub id: String,
-    pub party_id: String,
-    pub voter_id: u64,
-    pub candidate_id: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BackendLocalChatMessage {
-    pub id: u64,
-    pub owner_character_id: u64,
-    pub conversation_kind: String,
-    pub subject_party_id: String,
-    pub subject_resident_character_id: String,
-    pub sender_id: u64,
-    pub sender_name: String,
-    pub body: String,
-    pub created_micros: i64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PartyInventoryItem {
-    pub id: u64,
-    pub party_id: String,
-    pub item_id: String,
-    pub quantity: u32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct InventoryQuantityTarget {
-    pub id: String,
-    pub owner_character_id: u64,
-    pub party_scope: bool,
-    pub item_id: String,
-    pub quantity: u32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PartyStake {
-    pub id: u64,
-    pub party_id: String,
-    pub character_id: u64,
-    pub value: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BattleResult {
-    pub battle_id: String,
-    pub party_id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AutoresolveReport {
-    pub battle_id: String,
-    pub party_id: String,
-    pub seed: u64,
-    pub victor: String,
-    pub rounds: u32,
-    pub summary: String,
-    pub log: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BattleLootItem {
-    pub id: u64,
-    pub loot_battle_id: String,
-    pub item_id: String,
-    pub quantity: u32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PartyJoinRequest {
-    pub id: u64,
-    pub party_id: String,
-    pub recruitment_role_id: u64,
-    pub character_id: u64,
-    pub meets_requirements: bool,
-}
-
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
-pub struct RecruitmentRequirements {
-    pub melee: bool,
-    pub ranged: bool,
-    pub weapon_precision: f32,
-    pub heavy: bool,
-    pub quarter_armor: bool,
-    pub half_armor: bool,
-    pub three_quarter_armor: bool,
-    pub full_armor: bool,
-    pub athletics: u8,
-    pub endurance: u8,
-    pub physiology: u8,
-    pub surgery: u8,
-    pub command: u8,
-    pub religion: u8,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PartyRecruitmentRole {
-    pub id: u64,
-    pub party_id: String,
+    pub purpose: sats::RecruitmentRolePurpose,
     pub name: String,
-    pub requirements: RecruitmentRequirements,
+    pub requirements: RoleRequirements,
     pub quantity: u32,
-    #[serde(default)]
     pub autoresolve_combat_power: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SavedRecruitmentRole {
-    pub id: u64,
-    pub owner_character_id: u64,
-    pub name: String,
-    pub requirements: RecruitmentRequirements,
+impl From<sats::PartyRecruitmentRole> for RecruitmentRoleView {
+    fn from(row: sats::PartyRecruitmentRole) -> Self {
+        let sats::PartyRecruitmentRole {
+            id,
+            party_id,
+            purpose,
+            name,
+            requirements,
+            quantity,
+        } = row;
+        Self {
+            id,
+            party_id,
+            purpose,
+            name,
+            requirements: role_requirements(&requirements),
+            quantity,
+            autoresolve_combat_power: 0,
+        }
+    }
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct CharacterCapability {
-    pub character_id: u64,
-    pub melee: bool,
-    pub ranged: bool,
-    pub precise: bool,
-    pub heavy: bool,
-    pub quarter_armor: bool,
-    pub half_armor: bool,
-    pub three_quarter_armor: bool,
-    pub full_armor: bool,
-    pub blunt: bool,
-    pub slash: bool,
-    pub pierce: bool,
-    pub athletics: f32,
-    pub endurance: f32,
-    pub physiology: f32,
-    pub knife: f32,
-    pub tailoring: f32,
-    pub surgery: f32,
-    pub command: f32,
-    pub religion: f32,
-    pub weapon_precision: f32,
-    #[serde(default)]
-    pub autoresolve_combat_power: u64,
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub enum MissionStatus {
+    #[default]
+    Ready,
+    Pending,
+    Failed,
+    Ended,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct InventoryItem {
-    pub id: u64,
-    pub character_id: u64,
-    pub item_id: String,
-    pub quantity: u32,
+impl MissionStatus {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Ready => "Ready",
+            Self::Pending => "Pending",
+            Self::Failed => "Failed",
+            Self::Ended => "Ended",
+        }
+    }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct InventoryItemAmount {
-    pub inventory_item_id: u64,
-    pub remaining_fraction_micros: u32,
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct MissionServerView {
+    pub identity: Option<String>,
+    pub gateway_bucket: u8,
+    pub mission_id: String,
+    pub scene_key: String,
+    pub party_id: String,
+    pub status: MissionStatus,
+    pub addr: String,
+    pub cert_digest: String,
+    pub character_id: Option<u64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct InventoryObject {
-    pub id: u64,
-    pub item_id: String,
-    pub location: InventoryLocation,
+impl MissionServerView {
+    pub fn pending(
+        mission_id: String,
+        gateway_bucket: u8,
+        scene_key: String,
+        party_id: String,
+    ) -> Self {
+        Self {
+            identity: None,
+            gateway_bucket,
+            mission_id,
+            scene_key,
+            party_id,
+            status: MissionStatus::Pending,
+            addr: String::new(),
+            cert_digest: String::new(),
+            character_id: None,
+        }
+    }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BackendWeaponInstance {
-    pub physical_object_id: u64,
-    pub generator_version: u16,
-    pub design_hash: Vec<u8>,
-    pub recipe: Vec<u8>,
-    pub mass_grams: u32,
-    pub length_mm: u32,
-    pub grip_to_tip_mm: u32,
+impl From<sats::TacticalServer> for MissionServerView {
+    fn from(row: sats::TacticalServer) -> Self {
+        let sats::TacticalServer {
+            identity,
+            gateway_bucket,
+            mission_id,
+            scene_key,
+            party_id,
+            addr,
+            cert_digest,
+            expected_party_members: _,
+            authorized_party_member_ids: _,
+            required_enemy_kills: _,
+            enemy_difficulty: _,
+            enemy_combat_scale_bps: _,
+            countermeasure_multiplier_bps: _,
+            normalized_combat_power: _,
+            enemy_character_ids: _,
+            party_has_surprise: _,
+        } = row;
+        Self {
+            identity: Some(identity.to_string()),
+            gateway_bucket,
+            mission_id,
+            scene_key,
+            party_id,
+            status: MissionStatus::Ready,
+            addr,
+            cert_digest,
+            character_id: None,
+        }
+    }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BackendWeaponHolderInstance {
-    pub physical_object_id: u64,
-    pub generator_version: u16,
-    pub design_hash: Vec<u8>,
-    pub recipe: Vec<u8>,
-    pub mass_grams: u32,
-    pub length_mm: u32,
-    pub grip_to_tip_mm: u32,
+#[derive(Debug, Clone, PartialEq)]
+pub struct MissionServerRequestView {
+    pub mission_id: String,
+    pub gateway_bucket: u8,
+    pub scene_key: String,
+    pub party_id: String,
+    pub requested_by: u64,
+    pub required_enemy_kills: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct InventoryContainment {
-    pub child_object_id: u64,
-    pub parent_object_id: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ContainerLiquid {
-    pub container_object_id: u64,
-    pub liquid_item_id: String,
-    pub water_ml: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BackendTinctureStatus {
-    pub container_object_id: u64,
-    pub ready_at_world_minute: u64,
-    pub matured: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PartyItemAmount {
-    pub party_inventory_item_id: u64,
-    pub remaining_fraction_micros: u32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FoodLot {
-    pub id: u64,
-    pub inventory_item_id: Option<u64>,
-    pub party_inventory_item_id: Option<u64>,
-    pub material_revision: u64,
-    pub display_name: String,
-    pub preparation: FoodPreparation,
-    pub ingredient_item_ids: Vec<String>,
-    pub ingredient_quantities: Vec<f32>,
-    pub salty_kg: f32,
-    pub spicy_kg: f32,
-    pub sweet_kg: f32,
-    pub sour_kg: f32,
-    pub savory_kg: f32,
-    pub quality: u8,
-    pub mass_kg: f32,
-    pub nutrition_kcal: f32,
-    pub total_value: f32,
-    pub created_at_minute: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BackendIngredientPreparationPlan {
-    pub actor_character_id: u64,
-    pub inventory_scope: String,
-    pub inventory_item_id: u64,
-    pub food_lot_id: u64,
-    pub material_object_id: u64,
-    pub request_id: String,
-    pub expected_revision: u64,
-    pub attempt_generation: u64,
-    pub action: IngredientPreparationAction,
-    pub duration_minutes: u32,
-    pub next_display_name: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BackendFireplaceStation {
-    pub key: String,
-    pub character_id: u64,
-    pub fireplace_fixture_id: String,
-    pub instrument_item_id: Option<String>,
-    #[serde(default)]
-    pub instrument_object_id: Option<u64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BackendFireplaceDish {
-    pub station_key: String,
-    pub character_id: u64,
-    pub fireplace_fixture_id: String,
-    pub contributor_name: String,
-    pub method: CookingMethod,
-    pub started_at_minute: u64,
-    pub target_minutes: u32,
-    pub display_name: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CharacterNeeds {
-    pub character_id: u64,
-    pub food_balance_kcal: f32,
-    pub water_balance_ml: f32,
+impl From<sats::TacticalServerRequest> for MissionServerRequestView {
+    fn from(row: sats::TacticalServerRequest) -> Self {
+        let sats::TacticalServerRequest {
+            mission_id,
+            gateway_bucket,
+            scene_key,
+            party_id,
+            requested_by,
+            longitude_e_7: _,
+            latitude_e_7: _,
+            absolute_minute: _,
+            lunar_phase_minute: _,
+            expected_party_members: _,
+            authorized_party_member_ids: _,
+            required_enemy_kills,
+            enemy_difficulty: _,
+            enemy_combat_scale_bps: _,
+            countermeasure_multiplier_bps: _,
+            normalized_combat_power: _,
+            enemy_character_ids: _,
+            party_has_surprise: _,
+        } = row;
+        Self {
+            mission_id,
+            gateway_bucket,
+            scene_key,
+            party_id,
+            requested_by,
+            required_enemy_kills,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct CharacterEquipmentGraph {
     pub _character_id: u64,
     pub worn_item_ids: Vec<u64>,
-    pub equipment_nodes: Vec<CharacterEquippedItem>,
+    pub equipment_nodes: Vec<EquippedItemView>,
     pub equipment_occupancies: Vec<EquipmentOccupancy>,
     pub attachment_targets: Vec<EquipmentAttachmentTarget>,
 }
@@ -2033,234 +932,327 @@ impl CharacterEquipmentGraph {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[expect(
-    dead_code,
-    reason = "backend equipment rows retain authority fields used by other consumers"
-)]
-pub struct CharacterEquippedItem {
-    pub inventory_item_id: u64,
-    pub character_id: u64,
-    pub placement_id: String,
-    #[serde(default)]
-    pub item_name: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct EquipmentAttachmentTarget {
     pub parent_inventory_item_id: u64,
     pub parent_item_name: String,
     pub attachment_point_id: String,
-    #[serde(deserialize_with = "deserialize_sql_unit_variant")]
+    #[serde(deserialize_with = "deserialize_equipment_channel")]
     pub channel: EquipmentChannel,
     pub accepts_tags: Vec<String>,
     pub free_capacity: u16,
     pub order: u16,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[expect(
-    dead_code,
-    reason = "full selection identity is preserved even when only labels are rendered"
-)]
-pub struct EquipmentAttachmentTargetSelection {
-    pub requirement_index: u16,
-    pub parent_inventory_item_id: u64,
-    pub attachment_point_id: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[expect(
-    dead_code,
-    reason = "the complete backend occupancy projection is consumed selectively by views"
-)]
-pub struct EquipmentOccupancy {
+#[derive(Debug, Clone)]
+pub struct CatalogEquipmentPlacement {
     pub id: String,
-    pub character_id: u64,
-    pub inventory_item_id: u64,
-    #[serde(deserialize_with = "deserialize_sql_unit_variant")]
-    pub anchor_kind: EquipmentAnchorKind,
-    #[serde(default, deserialize_with = "deserialize_optional_sql_unit_variant")]
-    pub location: Option<EquipmentLocation>,
-    pub parent_inventory_item_id: Option<u64>,
-    pub attachment_point_id: Option<String>,
-    #[serde(deserialize_with = "deserialize_sql_unit_variant")]
-    pub channel: EquipmentChannel,
-    pub order: u16,
-    pub requirement_index: u16,
-    pub capacity_index: u16,
-}
-
-#[expect(
-    dead_code,
-    reason = "the complete backend item catalog shape is consumed selectively by views"
-)]
-#[derive(Debug, Clone, Deserialize)]
-pub struct ItemDefinition {
-    pub id: String,
-    pub weight: f32,
-    #[serde(default)]
-    pub exterior_volume_ml: u32,
-    #[serde(default, deserialize_with = "deserialize_sql_unit_variant")]
-    pub slot: Slot,
-    pub kind: ItemKind,
-    #[serde(default)]
-    pub equipment_placements: Vec<EquipmentPlacement>,
-    #[serde(default)]
-    pub attachment_tags: Vec<String>,
-    #[serde(default)]
-    pub attachment_points: Vec<EquipmentAttachmentPoint>,
-    #[serde(default)]
-    pub repairable: bool,
-    #[serde(default)]
-    pub accuracy: f32,
-    #[serde(default)]
-    pub swing_precision: f32,
-    #[serde(default)]
-    pub stab_precision: f32,
-    #[serde(default, deserialize_with = "deserialize_sql_unit_variant")]
-    pub preferred_melee_style: MeleeAttackStyle,
-    #[serde(default)]
-    pub reach: f32,
-    #[serde(default)]
-    pub block: f32,
-    #[serde(default)]
-    pub coverage: f32,
-    #[serde(default)]
-    pub penetration: f32,
-    #[serde(default)]
-    pub resistance: f32,
-    #[serde(default)]
-    pub padding: f32,
-    #[serde(default)]
-    pub flexibility: f32,
-    #[serde(default)]
-    pub range_of_motion: f32,
-    #[serde(default)]
-    pub precise: bool,
-    #[serde(default)]
-    pub moment_of_inertia_kg_m_2: f32,
-    #[serde(default)]
-    pub balance: f32,
-    #[serde(default)]
-    pub melee: bool,
-    #[serde(default)]
-    pub ranged: bool,
-    #[serde(default)]
-    pub weapon_skills: WeaponSkillDistribution,
-    #[serde(default)]
-    pub blunt: bool,
-    #[serde(default)]
-    pub slash: bool,
-    #[serde(default)]
-    pub pierce: bool,
-    #[serde(default)]
-    pub base_value: Option<u32>,
-    #[serde(default)]
-    pub nutrition_kcal: f32,
-    #[serde(default)]
-    pub water_capacity_ml: u32,
-    #[serde(default)]
-    pub container_capacity_ml: u32,
-    #[serde(default)]
-    pub alcohol_serving_ml: u32,
-    #[serde(default)]
-    pub alcohol_abv_basis_points: u16,
-    #[serde(default)]
-    pub alcohol_net_hydration_ml: u32,
-    #[serde(default)]
-    pub alcohol_disinfectant_effectiveness: u16,
-    #[serde(default)]
-    pub alcohol_disinfectant_focused: bool,
-    #[serde(default)]
-    pub alcohol_potable: bool,
-    #[serde(default)]
-    pub quality: u8,
-    #[serde(default)]
-    pub durability_yield: f32,
-    #[serde(default)]
-    pub durability_fracture: f32,
-    #[serde(default)]
-    pub durability_wear: f32,
-    #[serde(default)]
-    pub durability_failure_share: f32,
-    #[serde(default)]
-    pub edge_sensitivity: f32,
-    #[serde(default)]
-    pub handling_sensitivity: f32,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct EquipmentPlacement {
-    pub id: String,
-    pub occupancy: Vec<EquipmentOccupancyRequirement>,
-    pub parents: Vec<EquipmentParentRequirement>,
-    #[serde(deserialize_with = "deserialize_sql_unit_variant_vec")]
+    pub occupancy: Vec<OccupancyRequirement>,
+    pub parents: Vec<ParentRequirement>,
     pub protection: Vec<EquipmentBodyPart>,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize)]
-pub struct EquipmentOccupancyRequirement {
-    #[serde(deserialize_with = "deserialize_sql_unit_variant")]
-    pub location: EquipmentLocation,
-    #[serde(deserialize_with = "deserialize_sql_unit_variant")]
-    pub channel: EquipmentChannel,
-    pub order: u16,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize)]
-pub struct EquipmentParentRequirement {
-    #[serde(deserialize_with = "deserialize_sql_unit_variant")]
-    pub channel: EquipmentChannel,
-    pub order: u16,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct EquipmentAttachmentPoint {
+#[derive(Debug, Clone)]
+pub struct CatalogEquipmentAttachmentPoint {
     pub id: String,
-    #[serde(deserialize_with = "deserialize_sql_unit_variant")]
     pub channel: EquipmentChannel,
     pub capacity: u16,
     pub order: u16,
     pub accepts_tags: Vec<String>,
 }
 
-#[derive(Debug, Clone, Copy, Default, Deserialize)]
-pub struct WeaponSkillDistribution {
-    pub polearm: f32,
-    pub axe: f32,
-    pub bludgeon: f32,
-    pub sword: f32,
-    pub knife: f32,
-    pub bow: f32,
-    pub crossbow: f32,
-    pub firearm: f32,
-    pub throw_skill: f32,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CatalogItemKind {
+    Simple,
+    Weapon,
+    Armor,
+    Shield,
+    Clothing,
+    Container,
+    Currency,
+    Ingredient,
+    Medication,
+    Food,
 }
 
-impl WeaponSkillDistribution {
-    pub fn core(self) -> adventuresim_core::equipment::WeaponSkillDistribution {
-        adventuresim_core::equipment::WeaponSkillDistribution {
-            polearm: self.polearm,
-            axe: self.axe,
-            bludgeon: self.bludgeon,
-            sword: self.sword,
-            knife: self.knife,
-            bow: self.bow,
-            crossbow: self.crossbow,
-            firearm: self.firearm,
-            throw: self.throw_skill,
+#[derive(Debug, Clone)]
+pub struct CatalogItemView {
+    pub id: String,
+    pub weight: f32,
+    pub exterior_volume_ml: u32,
+    pub slot: Slot,
+    pub kind: CatalogItemKind,
+    pub equipment_placements: Vec<CatalogEquipmentPlacement>,
+    pub attachment_tags: Vec<String>,
+    pub attachment_points: Vec<CatalogEquipmentAttachmentPoint>,
+    pub repairable: bool,
+    pub accuracy: f32,
+    pub swing_precision: f32,
+    pub stab_precision: f32,
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "the catalog projection records persisted combat fields even before presentation consumes them"
+        )
+    )]
+    pub preferred_melee_style: MeleeAttackStyle,
+    pub reach: f32,
+    pub block: f32,
+    pub coverage: f32,
+    pub penetration: f32,
+    pub resistance: f32,
+    pub padding: f32,
+    pub flexibility: f32,
+    pub range_of_motion: f32,
+    pub precise: bool,
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "the catalog projection records persisted combat fields even before presentation consumes them"
+        )
+    )]
+    pub moment_of_inertia_kg_m_2: f32,
+    pub balance: f32,
+    pub melee: bool,
+    pub ranged: bool,
+    pub weapon_skills: WeaponSkillDistribution,
+    pub blunt: bool,
+    pub slash: bool,
+    pub pierce: bool,
+    pub base_value: Option<u32>,
+    pub nutrition_kcal: f32,
+    pub water_capacity_ml: u32,
+    pub container_capacity_ml: u32,
+    pub alcohol_serving_ml: u32,
+    pub alcohol_abv_basis_points: u16,
+    pub alcohol_net_hydration_ml: u32,
+    pub alcohol_disinfectant_effectiveness: u16,
+    pub alcohol_disinfectant_focused: bool,
+    pub alcohol_potable: bool,
+    pub quality: u8,
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "the catalog projection records persisted durability fields even before presentation consumes them"
+        )
+    )]
+    pub durability_yield: f32,
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "the catalog projection records persisted durability fields even before presentation consumes them"
+        )
+    )]
+    pub durability_fracture: f32,
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "the catalog projection records persisted durability fields even before presentation consumes them"
+        )
+    )]
+    pub durability_wear: f32,
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "the catalog projection records persisted durability fields even before presentation consumes them"
+        )
+    )]
+    pub durability_failure_share: f32,
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "the catalog projection records persisted durability fields even before presentation consumes them"
+        )
+    )]
+    pub edge_sensitivity: f32,
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "the catalog projection records persisted durability fields even before presentation consumes them"
+        )
+    )]
+    pub handling_sensitivity: f32,
+}
+
+impl From<sats::Item> for CatalogItemView {
+    fn from(row: sats::Item) -> Self {
+        let sats::Item {
+            id,
+            weight,
+            exterior_volume_ml,
+            slot,
+            kind,
+            equipment_placements,
+            attachment_tags,
+            attachment_points,
+            repairable,
+            accuracy,
+            swing_precision,
+            stab_precision,
+            preferred_melee_style,
+            reach,
+            block,
+            coverage,
+            penetration,
+            resistance,
+            padding,
+            flexibility,
+            range_of_motion,
+            precise,
+            moment_of_inertia_kg_m_2,
+            balance,
+            melee,
+            ranged,
+            weapon_skills,
+            blunt,
+            slash,
+            pierce,
+            base_value,
+            nutrition_kcal,
+            water_capacity_ml,
+            container_capacity_ml,
+            alcohol_serving_ml,
+            alcohol_abv_basis_points,
+            alcohol_net_hydration_ml,
+            alcohol_disinfectant_effectiveness,
+            alcohol_disinfectant_focused,
+            alcohol_potable,
+            quality,
+            durability_yield,
+            durability_fracture,
+            durability_wear,
+            durability_failure_share,
+            edge_sensitivity,
+            handling_sensitivity,
+        } = row;
+        Self {
+            id,
+            weight,
+            exterior_volume_ml,
+            slot: core_slot(slot),
+            kind: catalog_item_kind(kind),
+            equipment_placements: equipment_placements
+                .into_iter()
+                .map(|placement| {
+                    let sats::PersistedEquipmentPlacement {
+                        id,
+                        occupancy,
+                        parents,
+                        protection,
+                    } = placement;
+                    CatalogEquipmentPlacement {
+                        id,
+                        occupancy: occupancy
+                            .into_iter()
+                            .map(|requirement| {
+                                let sats::OccupancyRequirement {
+                                    location,
+                                    channel,
+                                    order,
+                                } = requirement;
+                                OccupancyRequirement {
+                                    location: core_equipment_location(location),
+                                    channel: core_equipment_channel(channel),
+                                    order,
+                                }
+                            })
+                            .collect(),
+                        parents: parents
+                            .into_iter()
+                            .map(|requirement| {
+                                let sats::ParentRequirement { channel, order } = requirement;
+                                ParentRequirement {
+                                    channel: core_equipment_channel(channel),
+                                    order,
+                                }
+                            })
+                            .collect(),
+                        protection: protection
+                            .into_iter()
+                            .map(core_equipment_body_part)
+                            .collect(),
+                    }
+                })
+                .collect(),
+            attachment_tags,
+            attachment_points: attachment_points
+                .into_iter()
+                .map(|point| {
+                    let sats::PersistedEquipmentAttachmentPoint {
+                        id,
+                        channel,
+                        capacity,
+                        order,
+                        accepts_tags,
+                    } = point;
+                    CatalogEquipmentAttachmentPoint {
+                        id,
+                        channel: core_equipment_channel(channel),
+                        capacity,
+                        order,
+                        accepts_tags,
+                    }
+                })
+                .collect(),
+            repairable,
+            accuracy,
+            swing_precision,
+            stab_precision,
+            preferred_melee_style: core_melee_style(preferred_melee_style),
+            reach,
+            block,
+            coverage,
+            penetration,
+            resistance,
+            padding,
+            flexibility,
+            range_of_motion,
+            precise,
+            moment_of_inertia_kg_m_2,
+            balance,
+            melee,
+            ranged,
+            weapon_skills: core_weapon_skills(weapon_skills),
+            blunt,
+            slash,
+            pierce,
+            base_value,
+            nutrition_kcal,
+            water_capacity_ml,
+            container_capacity_ml,
+            alcohol_serving_ml,
+            alcohol_abv_basis_points,
+            alcohol_net_hydration_ml,
+            alcohol_disinfectant_effectiveness,
+            alcohol_disinfectant_focused,
+            alcohol_potable,
+            quality,
+            durability_yield,
+            durability_fracture,
+            durability_wear,
+            durability_failure_share,
+            edge_sensitivity,
+            handling_sensitivity,
         }
     }
 }
 
-impl Default for ItemDefinition {
+impl Default for CatalogItemView {
     fn default() -> Self {
         Self {
             id: String::new(),
             weight: 0.0,
             exterior_volume_ml: 0,
             slot: Slot::None,
-            kind: ItemKind::Simple,
+            kind: CatalogItemKind::Simple,
             equipment_placements: Vec::new(),
             attachment_tags: Vec::new(),
             attachment_points: Vec::new(),
@@ -2307,18 +1299,573 @@ impl Default for ItemDefinition {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct ItemCondition {
-    pub inventory_item_id: u64,
-    pub tier_1: f32,
-    pub tier_2: f32,
-    pub tier_3: f32,
-    pub tier_4: f32,
-    pub tier_5: f32,
+fn core_slot(value: sats::Slot) -> Slot {
+    match value {
+        sats::Slot::None => Slot::None,
+        sats::Slot::LeftHolding => Slot::LeftHolding,
+        sats::Slot::RightHolding => Slot::RightHolding,
+        sats::Slot::LeftArm => Slot::LeftArm,
+        sats::Slot::RightArm => Slot::RightArm,
+        sats::Slot::LeftLeg => Slot::LeftLeg,
+        sats::Slot::RightLeg => Slot::RightLeg,
+        sats::Slot::Chest => Slot::Chest,
+        sats::Slot::Stomach => Slot::Stomach,
+        sats::Slot::Head => Slot::Head,
+        sats::Slot::AnyHolding => Slot::AnyHolding,
+        sats::Slot::AnyArm => Slot::AnyArm,
+        sats::Slot::AnyLeg => Slot::AnyLeg,
+    }
 }
 
-impl ItemCondition {
-    pub fn bins(&self) -> [f32; 5] {
+pub fn core_equipment_location(value: sats::EquipmentLocation) -> EquipmentLocation {
+    match value {
+        sats::EquipmentLocation::Head => EquipmentLocation::Head,
+        sats::EquipmentLocation::Face => EquipmentLocation::Face,
+        sats::EquipmentLocation::Neck => EquipmentLocation::Neck,
+        sats::EquipmentLocation::Chest => EquipmentLocation::Chest,
+        sats::EquipmentLocation::Stomach => EquipmentLocation::Stomach,
+        sats::EquipmentLocation::Back => EquipmentLocation::Back,
+        sats::EquipmentLocation::LeftShoulder => EquipmentLocation::LeftShoulder,
+        sats::EquipmentLocation::RightShoulder => EquipmentLocation::RightShoulder,
+        sats::EquipmentLocation::LeftArm => EquipmentLocation::LeftArm,
+        sats::EquipmentLocation::RightArm => EquipmentLocation::RightArm,
+        sats::EquipmentLocation::LeftHand => EquipmentLocation::LeftHand,
+        sats::EquipmentLocation::RightHand => EquipmentLocation::RightHand,
+        sats::EquipmentLocation::LeftLeg => EquipmentLocation::LeftLeg,
+        sats::EquipmentLocation::RightLeg => EquipmentLocation::RightLeg,
+        sats::EquipmentLocation::LeftFoot => EquipmentLocation::LeftFoot,
+        sats::EquipmentLocation::RightFoot => EquipmentLocation::RightFoot,
+        sats::EquipmentLocation::LeftBelt => EquipmentLocation::LeftBelt,
+        sats::EquipmentLocation::RightBelt => EquipmentLocation::RightBelt,
+        sats::EquipmentLocation::FrontBelt => EquipmentLocation::FrontBelt,
+        sats::EquipmentLocation::BackBelt => EquipmentLocation::BackBelt,
+        sats::EquipmentLocation::LeftPocket => EquipmentLocation::LeftPocket,
+        sats::EquipmentLocation::RightPocket => EquipmentLocation::RightPocket,
+        sats::EquipmentLocation::BackLeftPocket => EquipmentLocation::BackLeftPocket,
+        sats::EquipmentLocation::BackRightPocket => EquipmentLocation::BackRightPocket,
+    }
+}
+
+pub fn core_body_region(value: sats::BodyRegion) -> BodyRegion {
+    match value {
+        sats::BodyRegion::LeftArm => BodyRegion::LeftArm,
+        sats::BodyRegion::RightArm => BodyRegion::RightArm,
+        sats::BodyRegion::LeftLeg => BodyRegion::LeftLeg,
+        sats::BodyRegion::RightLeg => BodyRegion::RightLeg,
+        sats::BodyRegion::Chest => BodyRegion::Chest,
+        sats::BodyRegion::Abdomen => BodyRegion::Abdomen,
+        sats::BodyRegion::Head => BodyRegion::Head,
+    }
+}
+
+pub fn core_intervention_route(value: sats::InterventionRoute) -> InterventionRoute {
+    match value {
+        sats::InterventionRoute::Oral => InterventionRoute::Oral,
+        sats::InterventionRoute::Topical => InterventionRoute::Topical,
+        sats::InterventionRoute::Inhaled => InterventionRoute::Inhaled,
+        sats::InterventionRoute::Injected => InterventionRoute::Injected,
+    }
+}
+
+pub fn core_personality_axis(value: sats::PersonalityAxis) -> PersonalityAxis {
+    match value {
+        sats::PersonalityAxis::Nerve => PersonalityAxis::Nerve,
+        sats::PersonalityAxis::Drive => PersonalityAxis::Drive,
+        sats::PersonalityAxis::Outlook => PersonalityAxis::Outlook,
+        sats::PersonalityAxis::Sociability => PersonalityAxis::Sociability,
+        sats::PersonalityAxis::Conscience => PersonalityAxis::Conscience,
+        sats::PersonalityAxis::SelfRegard => PersonalityAxis::SelfRegard,
+        sats::PersonalityAxis::Conviction => PersonalityAxis::Conviction,
+        sats::PersonalityAxis::Hygiene => PersonalityAxis::Hygiene,
+        sats::PersonalityAxis::Temperance => PersonalityAxis::Temperance,
+        sats::PersonalityAxis::Mirth => PersonalityAxis::Mirth,
+        sats::PersonalityAxis::Courtship => PersonalityAxis::Courtship,
+        sats::PersonalityAxis::Transparency => PersonalityAxis::Transparency,
+        sats::PersonalityAxis::SelfKnowledge => PersonalityAxis::SelfKnowledge,
+        sats::PersonalityAxis::Inclination => PersonalityAxis::Inclination,
+        sats::PersonalityAxis::Presentation => PersonalityAxis::Presentation,
+    }
+}
+
+pub fn core_incapacitation_status(
+    value: sats::IncapacitationStatus,
+) -> adventuresim_core::morale::IncapacitationStatus {
+    match value {
+        sats::IncapacitationStatus::Ready => adventuresim_core::morale::IncapacitationStatus::Ready,
+        sats::IncapacitationStatus::Staggered => {
+            adventuresim_core::morale::IncapacitationStatus::Staggered
+        }
+        sats::IncapacitationStatus::Incapacitated => {
+            adventuresim_core::morale::IncapacitationStatus::Incapacitated
+        }
+    }
+}
+
+pub fn core_investigation_action_availability(
+    value: &sats::InvestigationActionAvailability,
+) -> InvestigationActionAvailability {
+    match value {
+        sats::InvestigationActionAvailability::Available => {
+            InvestigationActionAvailability::Available
+        }
+        sats::InvestigationActionAvailability::Unavailable(details) => {
+            let sats::InvestigationActionUnavailableFields {
+                reason,
+                can_travel_to_required_site,
+                wait_minutes,
+            } = details.clone();
+            InvestigationActionAvailability::Unavailable {
+                reason: match reason {
+                    sats::InvestigationActionUnavailableReason::PartyNotReady => {
+                        InvestigationActionUnavailableReason::PartyNotReady
+                    }
+                    sats::InvestigationActionUnavailableReason::TravelRequired => {
+                        InvestigationActionUnavailableReason::TravelRequired
+                    }
+                    sats::InvestigationActionUnavailableReason::NightWindow => {
+                        InvestigationActionUnavailableReason::NightWindow
+                    }
+                    sats::InvestigationActionUnavailableReason::TargetChanged => {
+                        InvestigationActionUnavailableReason::TargetChanged
+                    }
+                    sats::InvestigationActionUnavailableReason::ContactScheduleWindow => {
+                        InvestigationActionUnavailableReason::ContactScheduleWindow
+                    }
+                    sats::InvestigationActionUnavailableReason::ContactNotPresent => {
+                        InvestigationActionUnavailableReason::ContactNotPresent
+                    }
+                    sats::InvestigationActionUnavailableReason::CharacterUnavailable => {
+                        InvestigationActionUnavailableReason::CharacterUnavailable
+                    }
+                    sats::InvestigationActionUnavailableReason::PartyRequired => {
+                        InvestigationActionUnavailableReason::PartyRequired
+                    }
+                },
+                can_travel_to_required_site,
+                wait_minutes,
+            }
+        }
+    }
+}
+
+pub fn core_equipment_channel(value: sats::EquipmentChannel) -> EquipmentChannel {
+    match value {
+        sats::EquipmentChannel::Held => EquipmentChannel::Held,
+        sats::EquipmentChannel::BaseClothing => EquipmentChannel::BaseClothing,
+        sats::EquipmentChannel::Padding => EquipmentChannel::Padding,
+        sats::EquipmentChannel::FlexibleArmor => EquipmentChannel::FlexibleArmor,
+        sats::EquipmentChannel::RigidArmor => EquipmentChannel::RigidArmor,
+        sats::EquipmentChannel::Outerwear => EquipmentChannel::Outerwear,
+        sats::EquipmentChannel::Accessory => EquipmentChannel::Accessory,
+        sats::EquipmentChannel::Mount => EquipmentChannel::Mount,
+        sats::EquipmentChannel::Containment => EquipmentChannel::Containment,
+    }
+}
+
+fn core_equipment_body_part(value: sats::EquipmentBodyPart) -> EquipmentBodyPart {
+    match value {
+        sats::EquipmentBodyPart::LeftArm => EquipmentBodyPart::LeftArm,
+        sats::EquipmentBodyPart::RightArm => EquipmentBodyPart::RightArm,
+        sats::EquipmentBodyPart::LeftLeg => EquipmentBodyPart::LeftLeg,
+        sats::EquipmentBodyPart::RightLeg => EquipmentBodyPart::RightLeg,
+        sats::EquipmentBodyPart::Chest => EquipmentBodyPart::Chest,
+        sats::EquipmentBodyPart::Stomach => EquipmentBodyPart::Stomach,
+        sats::EquipmentBodyPart::Head => EquipmentBodyPart::Head,
+    }
+}
+
+fn core_melee_style(value: sats::MeleeAttackStyle) -> MeleeAttackStyle {
+    match value {
+        sats::MeleeAttackStyle::Swing => MeleeAttackStyle::Swing,
+        sats::MeleeAttackStyle::Stab => MeleeAttackStyle::Stab,
+    }
+}
+
+fn catalog_item_kind(value: sats::PersistedItemKind) -> CatalogItemKind {
+    match value {
+        sats::PersistedItemKind::Simple => CatalogItemKind::Simple,
+        sats::PersistedItemKind::Weapon => CatalogItemKind::Weapon,
+        sats::PersistedItemKind::Armor => CatalogItemKind::Armor,
+        sats::PersistedItemKind::Shield => CatalogItemKind::Shield,
+        sats::PersistedItemKind::Clothing => CatalogItemKind::Clothing,
+        sats::PersistedItemKind::Container => CatalogItemKind::Container,
+        sats::PersistedItemKind::Currency => CatalogItemKind::Currency,
+        sats::PersistedItemKind::Ingredient => CatalogItemKind::Ingredient,
+        sats::PersistedItemKind::Medication => CatalogItemKind::Medication,
+        sats::PersistedItemKind::Food => CatalogItemKind::Food,
+    }
+}
+
+fn core_weapon_skills(value: sats::WeaponSkillDistribution) -> WeaponSkillDistribution {
+    let sats::WeaponSkillDistribution {
+        polearm,
+        axe,
+        bludgeon,
+        sword,
+        knife,
+        bow,
+        crossbow,
+        firearm,
+        throw,
+    } = value;
+    WeaponSkillDistribution {
+        polearm,
+        axe,
+        bludgeon,
+        sword,
+        knife,
+        bow,
+        crossbow,
+        firearm,
+        throw,
+    }
+}
+
+pub trait JourneyEndpointExt {
+    fn settlement_id(&self) -> Option<&str>;
+    fn case_site_id(&self) -> Option<&str>;
+    fn name(&self) -> &str;
+}
+
+impl JourneyEndpointExt for JourneyEndpoint {
+    fn settlement_id(&self) -> Option<&str> {
+        match self {
+            Self::Settlement(endpoint) => Some(&endpoint.id),
+            _ => None,
+        }
+    }
+
+    fn case_site_id(&self) -> Option<&str> {
+        match self {
+            Self::CaseSite(endpoint) => Some(&endpoint.id.value),
+            _ => None,
+        }
+    }
+
+    fn name(&self) -> &str {
+        match self {
+            Self::Settlement(endpoint) => &endpoint.name,
+            Self::CaseSite(endpoint) => &endpoint.name,
+            Self::Camp(_) => "Camp",
+        }
+    }
+}
+
+pub trait ItemConditionExt {
+    fn bins(&self) -> [f32; 5];
+    fn total(&self) -> f32;
+    fn repairable(&self, skill: u8) -> f32;
+    fn residual(&self, skill: u8) -> f32;
+}
+
+pub trait ReligionHoursExt {
+    fn direct(&self, religion: adventuresim_world_schema::OfficialReligion) -> f32;
+    fn effective(&self, religion: adventuresim_world_schema::OfficialReligion) -> f32;
+    fn total_direct(&self) -> f32;
+}
+
+#[cfg(test)]
+pub(crate) fn generated_character_skills_fixture() -> sats::CharacterSkills {
+    sats::CharacterSkills {
+        character_id: 0,
+        polearm_hours: 0.0,
+        axe_hours: 0.0,
+        bludgeon_hours: 0.0,
+        sword_hours: 0.0,
+        knife_hours: 0.0,
+        dodge_hours: 0.0,
+        block_hours: 0.0,
+        bow_hours: 0.0,
+        crossbow_hours: 0.0,
+        firearm_hours: 0.0,
+        throw_hours: 0.0,
+        will_hours: 0.0,
+        insight_hours: 0.0,
+        charm_hours: 0.0,
+        command_hours: 0.0,
+        deception_hours: 0.0,
+        physiology_hours: 0.0,
+        cooking_hours: 0.0,
+        herbalism_hours: 0.0,
+        religion_hours: sats::ReligionHours {
+            roman_catholic: 0.0,
+            lutheran: 0.0,
+            reformed: 0.0,
+            anglican: 0.0,
+            eastern_orthodox: 0.0,
+            islamic: 0.0,
+            judaism: 0.0,
+        },
+        bestiary_hours: sats::BestiaryHours {
+            beast: 0.0,
+            undead: 0.0,
+            human: 0.0,
+            werekin: 0.0,
+            elf: 0.0,
+            dwarf: 0.0,
+            fey: 0.0,
+            spirit: 0.0,
+            greenskin: 0.0,
+            insectoid: 0.0,
+            draconid: 0.0,
+            construct: 0.0,
+            wildmen: 0.0,
+        },
+        oral_languages: sats::OralLanguageHours {
+            east_central: 0.0,
+            west_central: 0.0,
+            low: 0.0,
+            yiddish: 0.0,
+            latin: 0.0,
+            romani: 0.0,
+            elven: 0.0,
+            dwarfish: 0.0,
+        },
+        written_languages: sats::WrittenLanguageHours {
+            german: 0.0,
+            low: 0.0,
+            latin: 0.0,
+            hebrew: 0.0,
+            yiddish: 0.0,
+            elven: 0.0,
+            dwarfish: 0.0,
+        },
+        stealth_hours: 0.0,
+        balance_hours: 0.0,
+        terrain_plains_hours: 0.0,
+        terrain_forest_hours: 0.0,
+        terrain_hills_hours: 0.0,
+        terrain_wetlands_hours: 0.0,
+        terrain_urban_hours: 0.0,
+        terrain_snow_hours: 0.0,
+        surgery_hours: 0.0,
+        tailoring_hours: 0.0,
+        smithing_hours: 0.0,
+    }
+}
+
+impl ReligionHoursExt for sats::ReligionHours {
+    fn direct(&self, religion: adventuresim_world_schema::OfficialReligion) -> f32 {
+        core_religion_hours(self).direct(religion)
+    }
+
+    fn effective(&self, religion: adventuresim_world_schema::OfficialReligion) -> f32 {
+        core_religion_hours(self).effective(religion)
+    }
+
+    fn total_direct(&self) -> f32 {
+        core_religion_hours(self).total_direct()
+    }
+}
+
+pub trait OralLanguageHoursExt {
+    fn direct(&self, language: adventuresim_world_schema::OralLanguage) -> f32;
+    fn effective(&self, language: adventuresim_world_schema::OralLanguage) -> f32;
+}
+
+impl OralLanguageHoursExt for sats::OralLanguageHours {
+    fn direct(&self, language: adventuresim_world_schema::OralLanguage) -> f32 {
+        core_oral_language_hours(self).direct(language)
+    }
+
+    fn effective(&self, language: adventuresim_world_schema::OralLanguage) -> f32 {
+        core_oral_language_hours(self).effective(language)
+    }
+}
+
+pub trait WrittenLanguageHoursExt {
+    fn direct(&self, language: adventuresim_world_schema::WrittenLanguage) -> f32;
+    fn effective(&self, language: adventuresim_world_schema::WrittenLanguage) -> f32;
+}
+
+impl WrittenLanguageHoursExt for sats::WrittenLanguageHours {
+    fn direct(&self, language: adventuresim_world_schema::WrittenLanguage) -> f32 {
+        core_written_language_hours(self).direct(language)
+    }
+
+    fn effective(&self, language: adventuresim_world_schema::WrittenLanguage) -> f32 {
+        core_written_language_hours(self).effective(language)
+    }
+}
+
+pub trait BestiaryHoursExt {
+    fn direct(&self, category: adventuresim_world_schema::BestiaryCategory) -> f32;
+    fn effective(&self, category: adventuresim_world_schema::BestiaryCategory) -> f32;
+    fn aggregate_effective(&self) -> f32;
+    fn total_direct(&self) -> f32;
+}
+
+impl BestiaryHoursExt for sats::BestiaryHours {
+    fn direct(&self, category: adventuresim_world_schema::BestiaryCategory) -> f32 {
+        core_bestiary_hours(self).direct(category)
+    }
+
+    fn effective(&self, category: adventuresim_world_schema::BestiaryCategory) -> f32 {
+        core_bestiary_hours(self).effective(category)
+    }
+
+    fn aggregate_effective(&self) -> f32 {
+        core_bestiary_hours(self).aggregate_effective()
+    }
+
+    fn total_direct(&self) -> f32 {
+        core_bestiary_hours(self).total_direct()
+    }
+}
+
+fn core_religion_hours(value: &sats::ReligionHours) -> adventuresim_world_schema::ReligionHours {
+    adventuresim_world_schema::ReligionHours {
+        roman_catholic: value.roman_catholic,
+        lutheran: value.lutheran,
+        reformed: value.reformed,
+        anglican: value.anglican,
+        eastern_orthodox: value.eastern_orthodox,
+        islamic: value.islamic,
+        judaism: value.judaism,
+    }
+}
+
+pub fn religion_hours_from_core(
+    value: &adventuresim_world_schema::ReligionHours,
+) -> sats::ReligionHours {
+    sats::ReligionHours {
+        roman_catholic: value.roman_catholic,
+        lutheran: value.lutheran,
+        reformed: value.reformed,
+        anglican: value.anglican,
+        eastern_orthodox: value.eastern_orthodox,
+        islamic: value.islamic,
+        judaism: value.judaism,
+    }
+}
+
+pub fn core_oral_language_hours(
+    value: &sats::OralLanguageHours,
+) -> adventuresim_world_schema::OralLanguageHours {
+    adventuresim_world_schema::OralLanguageHours {
+        east_central: value.east_central,
+        west_central: value.west_central,
+        low: value.low,
+        yiddish: value.yiddish,
+        latin: value.latin,
+        romani: value.romani,
+        elven: value.elven,
+        dwarfish: value.dwarfish,
+    }
+}
+
+pub fn core_morale_source_kind(
+    value: sats::MoraleSourceKind,
+) -> adventuresim_core::morale::MoraleSourceKind {
+    use adventuresim_core::morale::MoraleSourceKind as Core;
+    match value {
+        sats::MoraleSourceKind::Injury => Core::Injury,
+        sats::MoraleSourceKind::Cleanliness => Core::Cleanliness,
+        sats::MoraleSourceKind::Religion => Core::Religion,
+        sats::MoraleSourceKind::ReligiousDiscord => Core::ReligiousDiscord,
+        sats::MoraleSourceKind::Prayer => Core::Prayer,
+        sats::MoraleSourceKind::Meditation => Core::Meditation,
+        sats::MoraleSourceKind::Power => Core::Power,
+        sats::MoraleSourceKind::Ally => Core::Ally,
+        sats::MoraleSourceKind::CorpseHandling => Core::CorpseHandling,
+        sats::MoraleSourceKind::SocialInteraction => Core::SocialInteraction,
+        sats::MoraleSourceKind::WitnessCharm => Core::WitnessCharm,
+        sats::MoraleSourceKind::WitnessCommand => Core::WitnessCommand,
+        sats::MoraleSourceKind::WitnessBluff => Core::WitnessBluff,
+        sats::MoraleSourceKind::Victory => Core::Victory,
+        sats::MoraleSourceKind::Defeat => Core::Defeat,
+        sats::MoraleSourceKind::MasteryEnjoyment => Core::MasteryEnjoyment,
+        sats::MoraleSourceKind::ReligiousObservanceNeglected => Core::ReligiousObservanceNeglected,
+        sats::MoraleSourceKind::HolyDayObserved => Core::HolyDayObserved,
+        sats::MoraleSourceKind::TravelPrayerNeglected => Core::TravelPrayerNeglected,
+        sats::MoraleSourceKind::SpouseLeisure => Core::SpouseLeisure,
+        sats::MoraleSourceKind::Carousing => Core::Carousing,
+        sats::MoraleSourceKind::AlcoholSatisfied => Core::AlcoholSatisfied,
+        sats::MoraleSourceKind::AlcoholUnsatisfied => Core::AlcoholUnsatisfied,
+        sats::MoraleSourceKind::ResidenceLeisure => Core::ResidenceLeisure,
+        sats::MoraleSourceKind::Leisure => Core::Leisure,
+    }
+}
+
+pub fn empty_oral_language_hours() -> sats::OralLanguageHours {
+    sats::OralLanguageHours {
+        east_central: 0.0,
+        west_central: 0.0,
+        low: 0.0,
+        yiddish: 0.0,
+        latin: 0.0,
+        romani: 0.0,
+        elven: 0.0,
+        dwarfish: 0.0,
+    }
+}
+
+fn core_written_language_hours(
+    value: &sats::WrittenLanguageHours,
+) -> adventuresim_world_schema::WrittenLanguageHours {
+    adventuresim_world_schema::WrittenLanguageHours {
+        german: value.german,
+        low: value.low,
+        latin: value.latin,
+        hebrew: value.hebrew,
+        yiddish: value.yiddish,
+        elven: value.elven,
+        dwarfish: value.dwarfish,
+    }
+}
+
+pub fn empty_written_language_hours() -> sats::WrittenLanguageHours {
+    sats::WrittenLanguageHours {
+        german: 0.0,
+        low: 0.0,
+        latin: 0.0,
+        hebrew: 0.0,
+        yiddish: 0.0,
+        elven: 0.0,
+        dwarfish: 0.0,
+    }
+}
+
+fn core_bestiary_hours(value: &sats::BestiaryHours) -> adventuresim_world_schema::BestiaryHours {
+    adventuresim_world_schema::BestiaryHours {
+        beast: value.beast,
+        undead: value.undead,
+        human: value.human,
+        werekin: value.werekin,
+        elf: value.elf,
+        dwarf: value.dwarf,
+        fey: value.fey,
+        spirit: value.spirit,
+        greenskin: value.greenskin,
+        insectoid: value.insectoid,
+        draconid: value.draconid,
+        construct: value.construct,
+        wildmen: value.wildmen,
+    }
+}
+
+pub fn bestiary_hours_from_core(
+    value: &adventuresim_world_schema::BestiaryHours,
+) -> sats::BestiaryHours {
+    sats::BestiaryHours {
+        beast: value.beast,
+        undead: value.undead,
+        human: value.human,
+        werekin: value.werekin,
+        elf: value.elf,
+        dwarf: value.dwarf,
+        fey: value.fey,
+        spirit: value.spirit,
+        greenskin: value.greenskin,
+        insectoid: value.insectoid,
+        draconid: value.draconid,
+        construct: value.construct,
+        wildmen: value.wildmen,
+    }
+}
+
+impl ItemConditionExt for ItemCondition {
+    fn bins(&self) -> [f32; 5] {
         [
             self.tier_1,
             self.tier_2,
@@ -2327,897 +1874,712 @@ impl ItemCondition {
             self.tier_5,
         ]
     }
-    pub fn total(&self) -> f32 {
+    fn total(&self) -> f32 {
         self.bins().iter().sum::<f32>().clamp(0.0, 1.0)
     }
-    pub fn repairable(&self, skill: u8) -> f32 {
+    fn repairable(&self, skill: u8) -> f32 {
         self.bins().iter().take(skill.min(5) as usize).sum()
     }
-    pub fn residual(&self, skill: u8) -> f32 {
+    fn residual(&self, skill: u8) -> f32 {
         self.bins().iter().skip(skill.min(5) as usize).sum()
     }
 }
 
-#[expect(
-    dead_code,
-    reason = "the complete backend smith projection is reserved for repair views"
-)]
-#[derive(Debug, Clone, Deserialize)]
-pub struct SettlementSmith {
-    pub settlement_id: String,
-    pub weaponsmith_skill: u8,
-    pub armourer_skill: u8,
-    pub tailor_skill: u8,
-}
-
-#[expect(
-    dead_code,
-    reason = "the complete repair-order projection is consumed selectively by views"
-)]
-#[derive(Debug, Clone, Deserialize)]
-pub struct RepairOrder {
-    pub id: u64,
-    pub owner_character_id: u64,
-    pub inventory_item_id: u64,
-    pub item_id: String,
-    pub settlement_id: String,
-    pub smith_skill: u8,
-    pub submitted_at_minutes: u64,
-    pub ready_at_minutes: u64,
-    pub target_condition: f32,
-    pub equipped_placement_id: Option<String>,
-    pub attachment_targets: Vec<EquipmentAttachmentTargetSelection>,
-    pub quoted_cost: u32,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
-pub enum ItemKind {
-    Simple,
-    Weapon,
-    Armor,
-    Shield,
-    Clothing,
-    Container,
-    Currency,
-    Ingredient,
-    Medication,
-    Food,
-}
-
-/// Attribute values for a character. These mirror the public strategic tables
-/// and are rendered as the base values on the character sheet.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CharacterAttributes {
-    pub character_id: u64,
-    pub endurance: f32,
-    pub immunity: f32,
-    pub gut: f32,
-    pub intelligence: f32,
-    pub instinct: f32,
-    pub eyesight: f32,
-    pub hearing: f32,
-    pub left_arm_strength: f32,
-    pub right_arm_strength: f32,
-    pub left_leg_strength: f32,
-    pub right_leg_strength: f32,
-    pub left_arm_agility: f32,
-    pub right_arm_agility: f32,
-    pub left_leg_agility: f32,
-    pub right_leg_agility: f32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct CharacterSkills {
-    pub character_id: u64,
-    pub polearm_hours: f32,
-    pub axe_hours: f32,
-    pub bludgeon_hours: f32,
-    pub sword_hours: f32,
-    pub knife_hours: f32,
-    pub dodge_hours: f32,
-    pub block_hours: f32,
-    pub bow_hours: f32,
-    pub crossbow_hours: f32,
-    pub firearm_hours: f32,
-    pub throw_hours: f32,
-    pub will_hours: f32,
-    pub insight_hours: f32,
-    pub charm_hours: f32,
-    pub command_hours: f32,
-    pub deception_hours: f32,
-    pub physiology_hours: f32,
-    pub cooking_hours: f32,
-    pub herbalism_hours: f32,
-    pub religion_hours: adventuresim_world_schema::ReligionHours,
-    pub bestiary_hours: adventuresim_world_schema::BestiaryHours,
-    pub oral_languages: adventuresim_world_schema::OralLanguageHours,
-    pub written_languages: adventuresim_world_schema::WrittenLanguageHours,
-    pub stealth_hours: f32,
-    pub balance_hours: f32,
-    pub terrain_plains_hours: f32,
-    pub terrain_forest_hours: f32,
-    pub terrain_hills_hours: f32,
-    pub terrain_wetlands_hours: f32,
-    pub terrain_urban_hours: f32,
-    pub terrain_snow_hours: f32,
-    pub surgery_hours: f32,
-    pub tailoring_hours: f32,
-    pub smithing_hours: f32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CharacterTime {
-    pub character_id: u64,
-    pub minutes: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OrganizationMembership {
-    pub id: u64,
-    pub character_id: u64,
-    pub organization_id: String,
-    pub role_id: String,
-    pub joined_minute: u64,
-    pub dues_paid_through_minute: u64,
-    #[serde(
-        deserialize_with = "deserialize_sql_unit_variant",
-        serialize_with = "serialize_sql_unit_variant"
-    )]
-    pub status: OrganizationMembershipStatus,
-    pub apprenticeship_minutes_accrued: u64,
-    pub practice_minutes_accrued: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OrganizationPresentation {
-    pub character_id: u64,
-    pub organization_id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AlcoholConsumption {
-    pub id: String,
-    pub character_id: u64,
-    pub evening_id: u64,
-    pub ethanol_ml: u32,
-    pub morale_evaluated: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BackendPhysiologyDifferential {
-    pub disease_id: String,
-    pub label: String,
-    pub likelihood_bps: u16,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BackendPhysiologyChart {
-    pub id: String,
-    pub observer_id: u64,
-    pub patient_id: u64,
-    pub observed_at: u64,
-    pub physiology_band: u8,
-    pub observation_minutes: u64,
-    pub sanguine_bps: Vec<i16>,
-    pub phlegmatic_bps: Vec<i16>,
-    pub choleric_bps: Vec<i16>,
-    pub melancholic_bps: Vec<i16>,
-    pub possible_diseases: Vec<BackendPhysiologyDifferential>,
-    pub known_interventions: Vec<String>,
-    pub confidence_bps: u16,
-    pub gap_from: Option<u64>,
-    pub gap_to: Option<u64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BackendPhysiologyAdministration {
-    pub id: u64,
-    pub patient_id: u64,
-    pub preparation_id: String,
-    pub profile_version: u16,
-    #[serde(
-        deserialize_with = "deserialize_sql_unit_variant",
-        serialize_with = "serialize_sql_unit_variant"
-    )]
-    pub route: InterventionRoute,
-    pub dose_milliunits: u32,
-    #[serde(
-        default,
-        deserialize_with = "deserialize_optional_sql_unit_variant",
-        serialize_with = "serialize_optional_sql_unit_variant"
-    )]
-    pub region: Option<BodyRegion>,
-    pub administered_at: u64,
-    pub stopped_at: Option<u64>,
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CharacterStats {
-    pub character_id: u64,
-    pub calories_used: f32,
-    pub focus: f32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct ScheduleAllocation {
-    pub reading_minutes: u16,
-    pub combat_training_minutes: u16,
-    pub carousing_minutes: u16,
-    pub socializing_minutes: u16,
-    pub apprenticeship_minutes: u16,
-    pub apprenticeship_organization_id: Option<String>,
-    pub profession_practice_minutes: u16,
-    pub practice_organization_id: Option<String>,
-    pub labor_minutes: u16,
-    pub prayer_minutes: u16,
-    pub thievery_minutes: u16,
-    pub raiding_minutes: u16,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CharacterTrainingSchedule {
-    pub character_id: u64,
-    pub downtime: ScheduleAllocation,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CharacterSettlementReputation {
-    pub id: String,
-    pub character_id: u64,
-    pub settlement_id: String,
-    pub fame: i32,
-    pub infamy: i32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BackendForageReceipt {
-    pub character_id: u64,
-    pub request_id: String,
-    pub elapsed_minutes: u64,
-    pub yielded_item_ids: Vec<String>,
-    pub yielded_quantities: Vec<u16>,
-    pub interrupted: bool,
-    pub legal_outcome: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BackendForageAttemptState {
-    pub character_id: u64,
-    pub next_generation: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorldClock {
-    pub id: u64,
-    pub official_minutes: u64,
-    pub epoch_micros: i64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CharacterLimbs {
-    pub character_id: u64,
-    pub left_arm_health: f32,
-    pub right_arm_health: f32,
-    pub left_leg_health: f32,
-    pub right_leg_health: f32,
-    pub head_health: f32,
-    pub chest_health: f32,
-    pub stomach_health: f32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LimbInjury {
-    pub id: String,
-    pub character_id: u64,
-    #[serde(
-        deserialize_with = "deserialize_sql_unit_variant",
-        serialize_with = "serialize_sql_unit_variant"
-    )]
-    pub limb: BodyRegion,
-    pub cut_damage: f32,
-    pub bruise_damage: f32,
-    pub frostbite_damage: f32,
-    pub fracture_damage: f32,
-    pub bandaged: bool,
-    pub stitched: bool,
-    pub stitch_quality: f32,
-    pub splint_owner_id: Option<u64>,
-    pub splint_inventory_item_id: Option<u64>,
-    pub infection_exposure: f32,
-    pub infection_checks: u32,
-    pub infection_origin_minute: Option<u64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RetainedProjectile {
-    pub id: u64,
-    pub character_id: u64,
-    #[serde(
-        deserialize_with = "deserialize_sql_unit_variant",
-        serialize_with = "serialize_sql_unit_variant"
-    )]
-    pub limb: BodyRegion,
-    #[serde(
-        deserialize_with = "deserialize_sql_unit_variant",
-        serialize_with = "serialize_sql_unit_variant"
-    )]
-    pub kind: ProjectileKind,
-    pub extraction_dc: f32,
-    pub source_damage: f32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CharacterCondition {
-    pub character_id: u64,
-    pub body_weight_kg: f32,
-    pub current_blood_ml: f32,
-    pub maximum_blood_ml: f32,
-    pub religion_id: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[expect(
-    dead_code,
-    reason = "the projection is reserved for environmental exposure presentation"
-)]
-pub struct CharacterExposure {
-    pub character_id: u64,
-    pub wetness_bps: u16,
-    pub thermal_strain: i32,
-    pub frostbite_progress_minutes: u32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CharacterStrategicCondition {
-    pub character_id: u64,
-    pub morale: f32,
-    pub morale_bonus: f32,
-    pub morale_bonus_cap: f32,
-    pub fervor: f32,
-    pub pain: f32,
-    pub blood_loss: f32,
-    pub fear: f32,
-    pub fatigue: f32,
-    pub hunger: f32,
-    pub thirst: f32,
-    pub thermal: f32,
-    pub wetness_bps: u16,
-    /// Signed: negative is cold, positive is hot.
-    pub thermal_strain: i32,
-    /// Positive physiological food reserve in travel days; excludes inventory.
-    pub food_days: f32,
-    /// Positive physiological hydration reserve in travel days; excludes water held in containers.
-    pub water_days: f32,
-    pub water_capacity_ml: u32,
-    pub incapacitation: f32,
-    pub check_multiplier: f32,
-    #[serde(
-        deserialize_with = "deserialize_sql_unit_variant",
-        serialize_with = "serialize_sql_unit_variant"
-    )]
-    pub status: IncapacitationStatus,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CharacterMoraleSource {
-    pub id: String,
-    pub character_id: u64,
-    pub kind: String,
-    pub label: String,
-    pub magnitude: f32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CharacterAffinity {
-    pub id: String,
-    pub subject_id: u64,
-    pub actor_id: u64,
-    pub anchor: f32,
-    pub anchor_minute: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CharacterFamiliarity {
-    pub id: String,
-    pub low_id: u64,
-    pub high_id: u64,
-    pub shared_minutes: u64,
-    pub joint_minute_anchor: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SocialBelief {
-    pub id: String,
-    pub observer_id: u64,
-    pub subject_id: u64,
-    pub axis: PersonalityAxis,
-    pub perceived_value: i8,
-    pub confidence: f32,
-    pub observed_at_minute: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SocialAddress {
-    pub id: String,
-    pub actor_id: u64,
-    pub target_id: u64,
-    pub source_id: String,
-    pub addressed_at_minute: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AutomaticSocialChat {
-    pub id: String,
-    pub actor_id: u64,
-    pub target_id: u64,
-    pub enabled: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ReligiousDemand {
-    pub id: u64,
-    pub character_id: u64,
-    pub kind: String,
-    pub title: String,
-    pub description: String,
-    pub fervor: f32,
-    pub status: String,
-    pub created_at_minute: u64,
-    pub resolved_at_minute: Option<u64>,
-    pub resolution: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TacticalServer {
-    #[serde(default)]
-    pub identity: Option<String>,
-    pub mission_id: String,
-    pub scene_key: String,
-    pub party_id: String,
-    #[serde(default)]
-    pub status: MissionStatus,
-    #[serde(default)]
-    pub addr: String,
-    #[serde(default)]
-    pub cert_digest: String,
-    #[serde(default)]
-    pub character_id: Option<u64>,
-}
-
-impl TacticalServer {
-    pub fn pending(mission_id: String, scene_key: String, party_id: String) -> Self {
-        Self {
-            identity: None,
-            mission_id,
-            scene_key,
-            status: MissionStatus::Pending,
-            addr: String::new(),
-            cert_digest: String::new(),
-            character_id: None,
-            party_id,
-        }
+pub fn core_personality(row: &sats::CharacterPersonality) -> Personality {
+    let sats::CharacterPersonality {
+        character_id: _,
+        projection_character_id: _,
+        nerve,
+        drive,
+        outlook,
+        sociability,
+        conscience,
+        self_regard,
+        conviction,
+        hygiene,
+        temperance,
+        mirth,
+        courtship,
+        transparency,
+        self_knowledge,
+        sex,
+        presentation,
+        inclination,
+    } = row.clone();
+    Personality {
+        nerve: match nerve {
+            sats::Nerve::Neutral => Nerve::Neutral,
+            sats::Nerve::Brave => Nerve::Brave,
+            sats::Nerve::Fearful => Nerve::Fearful,
+        },
+        drive: match drive {
+            sats::Drive::Neutral => Drive::Neutral,
+            sats::Drive::Ambitious => Drive::Ambitious,
+            sats::Drive::Content => Drive::Content,
+        },
+        outlook: match outlook {
+            sats::Outlook::Neutral => Outlook::Neutral,
+            sats::Outlook::Sanguine => Outlook::Sanguine,
+            sats::Outlook::Brooding => Outlook::Brooding,
+        },
+        sociability: match sociability {
+            sats::Sociability::Neutral => Sociability::Neutral,
+            sats::Sociability::Gregarious => Sociability::Gregarious,
+            sats::Sociability::Solitary => Sociability::Solitary,
+        },
+        conscience: match conscience {
+            sats::Conscience::Neutral => Conscience::Neutral,
+            sats::Conscience::Compassionate => Conscience::Compassionate,
+            sats::Conscience::Callous => Conscience::Callous,
+            sats::Conscience::Cruel => Conscience::Cruel,
+        },
+        self_regard: match self_regard {
+            sats::SelfRegard::Neutral => SelfRegard::Neutral,
+            sats::SelfRegard::Proud => SelfRegard::Proud,
+            sats::SelfRegard::Humble => SelfRegard::Humble,
+        },
+        conviction: match conviction {
+            sats::Conviction::Neutral => Conviction::Neutral,
+            sats::Conviction::Zealous => Conviction::Zealous,
+            sats::Conviction::Irreverent => Conviction::Irreverent,
+        },
+        hygiene: match hygiene {
+            sats::Hygiene::Neutral => Hygiene::Neutral,
+            sats::Hygiene::Slovenly => Hygiene::Slovenly,
+            sats::Hygiene::Cleanly => Hygiene::Cleanly,
+        },
+        temperance: match temperance {
+            sats::Temperance::Neutral => Temperance::Neutral,
+            sats::Temperance::Temperate => Temperance::Temperate,
+            sats::Temperance::Drunkard => Temperance::Drunkard,
+        },
+        mirth: match mirth {
+            sats::Mirth::Neutral => Mirth::Neutral,
+            sats::Mirth::Merry => Mirth::Merry,
+            sats::Mirth::Grave => Mirth::Grave,
+        },
+        courtship: match courtship {
+            sats::Courtship::Neutral => Courtship::Neutral,
+            sats::Courtship::Amorous => Courtship::Amorous,
+            sats::Courtship::Proper => Courtship::Proper,
+        },
+        transparency: match transparency {
+            sats::Transparency::Neutral => Transparency::Neutral,
+            sats::Transparency::Open => Transparency::Open,
+            sats::Transparency::Guarded => Transparency::Guarded,
+        },
+        self_knowledge: match self_knowledge {
+            sats::SelfKnowledge::Neutral => SelfKnowledge::Neutral,
+            sats::SelfKnowledge::Introspective => SelfKnowledge::Introspective,
+            sats::SelfKnowledge::SelfDeceiving => SelfKnowledge::SelfDeceiving,
+        },
+        inclination: match inclination {
+            sats::Inclination::Men => Inclination::Men,
+            sats::Inclination::Either => Inclination::Either,
+            sats::Inclination::Women => Inclination::Women,
+            sats::Inclination::Neither => Inclination::Neither,
+        },
+        presentation: match presentation {
+            sats::Presentation::Man => Presentation::Man,
+            sats::Presentation::Ambiguous => Presentation::Ambiguous,
+            sats::Presentation::Woman => Presentation::Woman,
+        },
+        sex: match sex {
+            sats::Sex::Female => Sex::Female,
+            sats::Sex::Male => Sex::Male,
+        },
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
-pub enum MissionStatus {
-    #[default]
-    Ready,
-    Pending,
-    Failed,
-    Ended,
-}
-
-impl MissionStatus {
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::Ready => "Ready",
-            Self::Pending => "Pending",
-            Self::Failed => "Failed",
-            Self::Ended => "Ended",
-        }
+pub fn role_requirements(row: &sats::RoleRequirements) -> RoleRequirements {
+    let sats::RoleRequirements {
+        melee,
+        ranged,
+        weapon_precision,
+        heavy,
+        quarter_armor,
+        half_armor,
+        three_quarter_armor,
+        full_armor,
+        athletics,
+        endurance,
+        physiology,
+        surgery,
+        command,
+        religion,
+    } = row.clone();
+    RoleRequirements {
+        melee,
+        ranged,
+        weapon_precision,
+        heavy,
+        quarter_armor,
+        half_armor,
+        three_quarter_armor,
+        full_armor,
+        athletics,
+        endurance,
+        physiology,
+        surgery,
+        command,
+        religion,
     }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TacticalServerRequest {
-    pub mission_id: String,
-    pub scene_key: String,
-    pub party_id: String,
-    pub requested_by: u64,
-    pub required_enemy_kills: u32,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use adventuresim_core::{
-        local_problem::Scope,
-        quest_generation::{
-            GenerationContext, TemplateFamily, generate, observer_scoped_id, test_witnesses,
-        },
-    };
-    use std::collections::BTreeSet;
 
-    #[test]
-    fn bestiary_deduction_provenance_is_bounded_and_contains_no_score() {
-        let result = BackendBestiaryDeduction {
-            owner_character_id: 1,
-            case_id: "case".into(),
-            monster_kind: "Wolf".into(),
-            support_band: "plausible".into(),
-            provenance_json: r#"["received report from a shepherd"]"#.into(),
-            updated_at: 1,
-        };
-        assert_eq!(result.provenance(), ["received report from a shepherd"]);
-        let serialized = serde_json::to_string(&result).unwrap();
-        assert!(!serialized.contains("support_bps"));
-        assert!(!serialized.contains("score"));
+    fn generated_role_requirements() -> sats::RoleRequirements {
+        sats::RoleRequirements {
+            melee: true,
+            ranged: false,
+            weapon_precision: 0.75,
+            heavy: true,
+            quarter_armor: true,
+            half_armor: false,
+            three_quarter_armor: false,
+            full_armor: false,
+            athletics: 2,
+            endurance: 3,
+            physiology: 4,
+            surgery: 5,
+            command: 1,
+            religion: 2,
+        }
     }
 
-    #[test]
-    fn strategic_statuses_accept_only_canonical_values() {
-        assert_eq!(
-            serde_json::from_str::<ContractStatus>("\"Accepted\"").unwrap(),
-            ContractStatus::Accepted
-        );
-        assert!(serde_json::from_str::<ContractStatus>("\"accepted\"").is_err());
-        assert!(serde_json::from_str::<ContractStatus>("\"mystery\"").is_err());
-        assert_eq!(
-            serde_json::from_str::<MissionStatus>("\"Pending\"").unwrap(),
-            MissionStatus::Pending
-        );
-        assert!(serde_json::from_str::<MissionStatus>("\"Starting\"").is_err());
-    }
-
-    #[test]
-    fn party_case_site_decodes_the_typed_spacetimedb_sql_shape() {
-        let row = serde_json::json!({
-            "id": "party-7",
-            "gateway_bucket": 0,
-            "name": "Ada's party",
-            "leader_id": 7,
-            "current_settlement_id": null,
-            "current_case_site_id": { "value": "site:known" },
-            "active_contract_id": null,
-            "is_solo": true,
-            "camp_fatigue_percent": 50,
-            "walking_minutes_per_day": 480,
-            "travel_at_night": false,
-            "journey_start_minute_of_day": 480,
-            "wilderness_canonical_anchor_minute": null,
-            "wilderness_elapsed_minutes": 0,
-            "camp_destination": null,
-            "camp_remaining_minutes": 0,
-            "physiology_target": 0.0,
-            "command_target": 0.0,
-            "religion_target": 0.0
-        });
-        let decoded: Party = serde_json::from_value(row).unwrap();
-        assert_eq!(
-            decoded.current_case_site_id,
-            Some(CaseSiteId {
-                value: "site:known".into()
-            })
-        );
-    }
-
-    #[test]
-    fn investigation_projection_coordinates_match_spacetimedb_sql_schema() {
-        let lead = serde_json::json!({
-            "owner_character_id": 7,
-            "case_id": "case-public",
-            "lead_id": "lead-public",
-            "summary": "Tracks cross the north road.",
-            "source_label": "witness",
-            "confidence_bps": 6500,
-            "destination_stage": { "ExactBelieved": [] },
-            "directions": "Beyond the old milestone.",
-            "exact_location_id": "site-public",
-            "latitude_e_7": 521234567,
-            "longitude_e_7": 134567890,
-            "witness_name": "Greta",
-            "witness_description": "A tall cooper with grey hair.",
-            "witness_occupation_or_relationship": "cooper",
-            "expected_location": "Public square",
-            "current_learned_location": "Public square",
-            "contradiction_group": "creature-shape",
-            "corrected_by": "",
-            "recorded_at": 50000
-        });
-        let decoded: BackendInvestigationLead = serde_json::from_value(lead).unwrap();
-        assert_eq!(decoded.latitude_e7, 521_234_567);
-        assert_eq!(decoded.longitude_e7, 134_567_890);
-        assert_eq!(
-            decoded.destination_stage,
-            DestinationKnowledgeStage::ExactBelieved
-        );
-
-        let pin = serde_json::json!({
-            "owner_character_id": 7,
-            "case_id": "case-public",
-            "case_site_id": "site-public",
-            "origin_settlement_id": "settlement-public",
-            "name": "Old milestone",
-            "description": "A weathered stone beside the north road.",
-            "scene_key": "roadside",
-            "longitude_e_7": 134567890,
-            "latitude_e_7": 521234567,
-            "coordinates_are_geographic": true,
-            "distance_m": 1800,
-            "knowledge_stage": { "ExactBelieved": [] },
-            "tracked": true,
-            "display_title": "Something preys on travellers",
-            "generated_case": true,
-            "combat_available": true,
-            "case_resolved": false
-        });
-        let decoded: BackendCaseSitePin = serde_json::from_value(pin).unwrap();
-        assert_eq!(decoded.latitude_e7, 521_234_567);
-        assert_eq!(decoded.longitude_e7, 134_567_890);
-        assert!(decoded.generated_case);
-        assert!(decoded.combat_available);
-        assert!(!decoded.case_resolved);
-        assert_eq!(
-            decoded.knowledge_stage,
-            DestinationKnowledgeStage::ExactBelieved
-        );
-    }
-
-    #[test]
-    fn investigation_action_projection_decodes_eligibility_contract() {
-        let action = serde_json::json!({
-            "owner_character_id": 7,
-            "action_id": "action-public",
-            "method": "inspect_site",
-            "expected_version": 2,
-            "summary": "Inspect the abandoned croft.",
-            "known_prerequisites": "Reach the croft.",
-            "duration_min_minutes": 30,
-            "duration_max_minutes": 90,
-            "uncertainty_bps": 2000,
-            "skill_contributions": "awareness",
-            "weather_available": false,
-            "required_case_site_id": "site-public",
-            "available": false,
-            "can_travel_to_required_site": true,
-            "unavailable_reason": "Travel to the known investigation site before inspecting it."
-        });
-        let decoded: BackendInvestigationAction = serde_json::from_value(action).unwrap();
-        assert_eq!(decoded.required_case_site_id, "site-public");
-        assert!(!decoded.available);
-        assert!(decoded.can_travel_to_required_site);
-        assert!(decoded.unavailable_reason.contains("Travel"));
-    }
-
-    #[test]
-    fn strategic_encounter_decodes_the_spacetimedb_sql_shape() {
-        let row = serde_json::json!({
-            "party_id": "party-7",
-            "encounter_id": "party-7:3",
-            "archetype": "bandits",
-            "enemy_count": 4,
-            "roll_index": 3,
-            "journey_movement_minute": 540,
-            "journey_elapsed_minute": 700,
-            "absolute_minute": 1700,
-            "longitude_e_7": 134567890,
-            "latitude_e_7": 521234567,
-            "terrain": "road",
-            "party_aware": false,
-            "enemy_aware": true,
-            "available_choices": ["attack", "surrender"],
-            "status": "AwaitingChoice",
-            "revision": 2,
-            "selected_choice": null,
-            "selection_explanation": "The enemy surprised the party.",
-            "party_speed_m_per_minute": 60,
-            "enemy_speed_m_per_minute": 80,
-            "run_ineligibility": "The enemy is faster.",
-            "penalty_minutes": 0,
-            "loss_preview": [],
-            "outcome": null
-        });
-
-        let decoded: StrategicEncounter = serde_json::from_value(row).unwrap();
-        assert_eq!(decoded.longitude_e7, 134_567_890);
-        assert_eq!(decoded.latitude_e7, 521_234_567);
-        assert_eq!(decoded.status, StrategicEncounterStatus::AwaitingChoice);
-        assert_eq!(decoded.revision, 2);
-        assert_eq!(
-            decoded.available_choices,
-            vec!["attack".to_string(), "surrender".to_string()]
-        );
-    }
-
-    #[test]
-    fn investigation_projection_rejects_noncanonical_coordinate_names() {
-        let lead = serde_json::json!({
-            "owner_character_id": 7,
-            "case_id": "case-public",
-            "lead_id": "lead-public",
-            "summary": "Tracks cross the north road.",
-            "source_label": "witness",
-            "confidence_bps": 6500,
-            "destination_stage": { "ExactBelieved": [] },
-            "directions": "Beyond the old milestone.",
-            "exact_location_id": "site-public",
-            "latitude_e7": 521234567,
-            "longitude_e7": 134567890,
-            "witness_name": "Greta",
-            "witness_description": "A tall cooper with grey hair.",
-            "witness_occupation_or_relationship": "cooper",
-            "expected_location": "Public square",
-            "current_learned_location": "Public square",
-            "contradiction_group": "creature-shape",
-            "corrected_by": "",
-            "recorded_at": 50000
-        });
-        assert!(serde_json::from_value::<BackendInvestigationLead>(lead).is_err());
-    }
-
-    #[test]
-    fn serialized_investigation_dtos_use_independent_opaque_ids() {
-        let context = |entropy: u64, ordinal: u16| GenerationContext {
-            seed: 0x4341_4e4f_4e49_4341,
-            observer_entropy_hi: entropy,
-            observer_entropy_lo: entropy.rotate_left(29) ^ 0x4c2d_5345_4e54_494e,
-            settlement_id: "sentinel-settlement".into(),
-            settlement_name: "Sentinel".into(),
-            scope: Scope::Settlement {
-                settlement_id: "sentinel-settlement".into(),
-            },
-            ordinal,
-            now_minute: 50_000,
-            incident_weather: adventuresim_core::weather::Precipitation::Clear,
-            requested_family: Some(TemplateFamily::RecurringDepredation),
-            witness_candidates: test_witnesses(),
-        };
-        let first_context = context(11, 0);
-        let second_context = context(12, 1);
-        let first = generate(&first_context).unwrap();
-        let second = generate(&second_context).unwrap();
-        let capability_id = observer_scoped_id(
-            &first_context,
-            "capability",
-            &format!("7:{}", first.actions[0].id.0),
-        );
-        let lead_id = observer_scoped_id(&first_context, "lead", "attempt-private-sentinel");
-        let action = BackendInvestigationAction {
-            owner_character_id: 7,
-            action_id: capability_id.clone(),
-            method: "search_area".into(),
-            expected_version: 0,
-            summary: "Search the reported area.".into(),
-            known_prerequisites: "A local account.".into(),
-            duration_min_minutes: 30,
-            duration_max_minutes: 180,
-            uncertainty_bps: 7_000,
-            skill_contributions: "terrain".into(),
-            weather_available: false,
-            required_case_site_id: String::new(),
-            available: true,
-            can_travel_to_required_site: false,
-            unavailable_reason: String::new(),
-        };
-        let lead = BackendInvestigationLead {
-            owner_character_id: 7,
-            case_id: first.public_case_id.clone(),
-            lead_id: lead_id.clone(),
-            summary: "A bounded lead.".into(),
-            source_label: "witness".into(),
-            confidence_bps: 5_000,
-            destination_stage: DestinationKnowledgeStage::Textual,
-            directions: String::new(),
-            exact_location_id: String::new(),
-            latitude_e7: 0,
-            longitude_e7: 0,
-            witness_name: String::new(),
-            witness_description: String::new(),
-            witness_occupation_or_relationship: String::new(),
-            expected_location: String::new(),
-            current_learned_location: String::new(),
-            contradiction_group: String::new(),
-            corrected_by: String::new(),
-            recorded_at: 50_000,
-        };
-        let proposition_ids = first
-            .evidence
-            .iter()
-            .map(|evidence| evidence.proposition_id.clone())
-            .collect::<Vec<_>>();
-        let witness_ids = first
-            .witnesses
-            .iter()
-            .map(|witness| witness.id.0.clone())
-            .collect::<Vec<_>>();
-        let json = serde_json::to_string(&(
-            &action,
-            &lead,
-            &first.actions,
-            &witness_ids,
-            &proposition_ids,
-        ))
-        .unwrap();
-        assert!(!json.contains(&first.canonical_case_id));
-        assert!(!json.contains("CANONICAL-SENTINEL"));
-        assert!(!json.contains("attempt-private-sentinel"));
-        let first_ids = first
-            .actions
-            .iter()
-            .map(|item| item.id.0.clone())
-            .chain(witness_ids.iter().cloned())
-            .chain(proposition_ids.iter().cloned())
-            .chain([capability_id, lead_id])
-            .collect::<BTreeSet<_>>();
-        let second_ids = second
-            .actions
-            .iter()
-            .map(|item| item.id.0.clone())
-            .chain(second.witnesses.iter().map(|item| item.id.0.clone()))
-            .chain(
-                second
-                    .evidence
-                    .iter()
-                    .map(|item| item.proposition_id.clone()),
-            )
-            .chain([
-                observer_scoped_id(&second_context, "capability", "same-logical-action"),
-                observer_scoped_id(&second_context, "lead", "same-logical-attempt"),
-            ])
-            .collect::<BTreeSet<_>>();
-        assert!(first_ids.is_disjoint(&second_ids));
-        assert_eq!(
-            first_ids.len(),
-            first.actions.len() + witness_ids.len() + proposition_ids.len() + 2
-        );
-    }
-
-    #[test]
-    fn settlement_description_kind_is_a_closed_set() {
-        let row = |kind| {
-            serde_json::from_value::<SettlementDescription>(serde_json::json!({
-                "id": "description:1",
-                "settlement_id": "settlement:1",
-                "kind": kind,
-                "language": null,
-                "body": "Description"
-            }))
-        };
-        assert_eq!(row("City").unwrap().kind, SettlementDescriptionKind::City,);
-        assert!(row("city").is_err());
-        assert!(row("bridge").is_err());
-    }
-
-    #[test]
-    fn settlement_religion_normalizes_single_field_sats_variants() {
-        use adventuresim_world_schema::{
-            CatholicLutheranChurch, OfficialReligion, SettlementReligiousStatus,
-            WesternChristianArrangement,
-        };
-
-        let established: SettlementReligiousStatus = serde_json::from_value(
-            normalize_religious_status(serde_json::json!({ "Established": "Lutheran" })),
-        )
-        .unwrap();
-        assert_eq!(
-            established,
-            SettlementReligiousStatus::Established {
-                religion: OfficialReligion::Lutheran,
-            }
-        );
-
-        let parity: SettlementReligiousStatus =
-            serde_json::from_value(normalize_religious_status(serde_json::json!({
-                "Parity": { "CatholicLutheran": "RomanCatholic" }
-            })))
-            .unwrap();
-        assert_eq!(
-            parity,
-            SettlementReligiousStatus::Parity {
-                arrangement: WesternChristianArrangement::CatholicLutheran {
-                    church: CatholicLutheranChurch::RomanCatholic,
+    fn generated_settlement() -> sats::Settlement {
+        sats::Settlement {
+            id: "lubeck".into(),
+            name: "Lubeck".into(),
+            coord_x: 10.6866,
+            coord_y: 53.8655,
+            population_level: 5,
+            population_estimate: 22_000,
+            category: sats::SettlementCategory::City,
+            elevation: sats::ElevationMeters { meters: 0 },
+            land_use: sats::LandUseProfile {
+                cropland: sats::LandUseFraction { basis_points: 0 },
+                grazing: sats::LandUseFraction { basis_points: 0 },
+                built_up: sats::LandUseFraction { basis_points: 0 },
+                natural: sats::LandUseFraction {
+                    basis_points: 10_000,
                 },
-            }
+            },
+            forest_cover: sats::ForestCover::Open,
+            potential_vegetation: sats::PotentialVegetation::Categorical(
+                sats::PotentialVegetationClass::Grassland,
+            ),
+            historical_vegetation: sats::HistoricalVegetation::Fallback(
+                sats::FallbackHistoricalVegetation {
+                    cover: sats::FallbackHistoricalVegetationCover::Grassland,
+                    method: sats::FallbackHistoricalVegetationMethod::PotentialEnvelopeV4,
+                },
+            ),
+            tree_species: sats::TreeSpeciesProfile::Inferred(sats::InferredTreeSpeciesProfile {
+                species: Vec::new(),
+            }),
+            soil: sats::SoilProfile {
+                wrb_group: sats::WrbReferenceGroup::Regosol,
+                parent_material: sats::SurfaceLithology::Unconsolidated(
+                    sats::UnconsolidatedDeposit::Sand,
+                ),
+                properties: sats::SoilProperties {
+                    substrate: sats::SoilSubstrate::RockOutcrop(sats::RockOutcropSoil {
+                        stones: sats::StoneContentPercent { percent: 100 },
+                    }),
+                    water_regime: sats::SoilWaterRegime::UsuallyDry,
+                    agricultural_limitation: sats::AgriculturalLimitation::ShallowRock,
+                },
+                acidity: sats::SoilAcidity::Neutral,
+                cation_exchange_capacity: sats::CationExchangeCapacity::Low,
+                fertility: sats::SoilFertility::Low,
+                confidence: sats::SoilBasisPoints { value: 1_000 },
+                evidence: sats::SoilEvidence::DeterministicInference,
+            },
+            geology: sats::SurfaceGeology::Inferred(sats::InferredGeologicSetting {
+                lithology: sats::SurfaceLithology::Unconsolidated(
+                    sats::UnconsolidatedDeposit::Sand,
+                ),
+                age: sats::GeologicEra::Quaternary,
+            }),
+            religious_status: sats::SettlementReligiousStatus::Established(
+                sats::OfficialReligion::RomanCatholic,
+            ),
+            languages: sats::SettlementLanguageProfile {
+                east_central_bp: 10_000,
+                west_central_bp: 0,
+                low_bp: 0,
+                yiddish_incidence_bp: 125,
+            },
+            drought: sats::DroughtProfile::Inferred(sats::DroughtHistory {
+                current_summer: sats::PalmerDroughtSeverityIndex { milli_units: 0 },
+                twenty_year_mean: sats::PalmerDroughtSeverityIndex { milli_units: 0 },
+                drought_summers: 0,
+                wet_summers: 0,
+            }),
+            hydrology: sats::SettlementHydrology {
+                flowing: None,
+                inland: None,
+                marine: None,
+            },
+            industries: sats::InferredIndustryProfile {
+                outputs: vec![sats::IndustryEvidence::Fallback(
+                    sats::FallbackIndustry::WoodlandFuelwood,
+                )],
+            },
+            economy: sats::SettlementEconomyProfile {
+                rules_version: 10,
+                prosperity_score: 0,
+                prosperity_tier: sats::ProsperityTier::Subsistence,
+                services: vec![sats::SettlementService::Inn],
+                specializations: Vec::new(),
+                stock: vec![sats::SettlementStock {
+                    category: sats::StockCategory::GeneralGoods,
+                    abundance: 1,
+                    provenance: sats::ProfileFactProvenance::DeterministicGapFill,
+                }],
+            },
+            scene_key: "lubeck-market".into(),
+            religion_id: "roman_catholic".into(),
+            currency_id: "lubeck_penny".into(),
+            source_node_id: Some(52),
+            sources: "fixture evidence".into(),
+        }
+    }
+
+    fn generated_travel_edge() -> sats::TravelEdge {
+        sats::TravelEdge {
+            id: 41,
+            from_node_id: 52,
+            to_node_id: 53,
+            route: sats::TravelRoute::Land(sats::LandRoute {
+                bridge: None,
+                water_crossings: Vec::new(),
+            }),
+            provenance: sats::TravelEdgeProvenance::DocumentedViabundus,
+            toll_at: None,
+            length_m: 1_250,
+            slope_multiplier: 1.25,
+            terrain: sats::RouteTerrain {
+                elevation_profile: sats::RouteElevationProfile {
+                    samples: vec![
+                        sats::RouteElevationSample {
+                            progress: sats::EdgeProgressPermille { permille: 0 },
+                            elevation: sats::ElevationMeters { meters: 0 },
+                        },
+                        sats::RouteElevationSample {
+                            progress: sats::EdgeProgressPermille { permille: 1_000 },
+                            elevation: sats::ElevationMeters { meters: 0 },
+                        },
+                    ],
+                },
+                ascent: sats::RouteVerticalMeters { meters: 0 },
+                descent: sats::RouteVerticalMeters { meters: 0 },
+                max_uphill_grade: sats::RouteSignedGradePermille { permille: 0 },
+                max_downhill_grade: sats::RouteSignedGradePermille { permille: 0 },
+                mean_slope: sats::RouteSlopePermille { permille: 0 },
+                max_slope: sats::RouteSlopePermille { permille: 0 },
+                dominant_aspect: sats::DominantAspect::Flat,
+                roughness: sats::RouteRoughnessMeters { meters: 0 },
+                relief: sats::RouteReliefMeters { meters: 0 },
+                landforms: Vec::new(),
+                class: sats::RouteTerrainClass::Flat,
+                water_adjacencies: Vec::new(),
+                seasonal_risks: Vec::new(),
+                encounter_tags: vec![sats::RouteEncounterTag::Flat],
+            },
+            certainty: 90,
+            section: "52:53".into(),
+            sources: "fixture evidence".into(),
+        }
+    }
+
+    fn generated_item() -> sats::Item {
+        sats::Item {
+            id: "arming_sword".into(),
+            weight: 1.25,
+            exterior_volume_ml: 900,
+            slot: sats::Slot::AnyHolding,
+            kind: sats::PersistedItemKind::Weapon,
+            equipment_placements: vec![sats::PersistedEquipmentPlacement {
+                id: "right_hand".into(),
+                occupancy: vec![sats::OccupancyRequirement {
+                    location: sats::EquipmentLocation::RightHand,
+                    channel: sats::EquipmentChannel::Held,
+                    order: 2,
+                }],
+                parents: vec![sats::ParentRequirement {
+                    channel: sats::EquipmentChannel::Mount,
+                    order: 3,
+                }],
+                protection: vec![sats::EquipmentBodyPart::RightArm],
+            }],
+            attachment_tags: vec!["blade".into()],
+            attachment_points: vec![sats::PersistedEquipmentAttachmentPoint {
+                id: "pommel".into(),
+                channel: sats::EquipmentChannel::Accessory,
+                capacity: 2,
+                order: 4,
+                accepts_tags: vec!["charm".into()],
+            }],
+            repairable: true,
+            accuracy: 0.1,
+            swing_precision: 0.2,
+            stab_precision: 0.3,
+            preferred_melee_style: sats::MeleeAttackStyle::Stab,
+            reach: 1.1,
+            block: 0.4,
+            coverage: 0.5,
+            penetration: 0.6,
+            resistance: 0.7,
+            padding: 0.8,
+            flexibility: 0.9,
+            range_of_motion: 1.0,
+            precise: true,
+            moment_of_inertia_kg_m_2: 1.2,
+            balance: 1.3,
+            melee: true,
+            ranged: false,
+            weapon_skills: sats::WeaponSkillDistribution {
+                polearm: 0.0,
+                axe: 0.0,
+                bludgeon: 0.0,
+                sword: 1.0,
+                knife: 0.1,
+                bow: 0.0,
+                crossbow: 0.0,
+                firearm: 0.0,
+                throw: 0.2,
+            },
+            blunt: false,
+            slash: true,
+            pierce: true,
+            base_value: Some(25),
+            nutrition_kcal: 0.0,
+            water_capacity_ml: 0,
+            container_capacity_ml: 0,
+            alcohol_serving_ml: 0,
+            alcohol_abv_basis_points: 0,
+            alcohol_net_hydration_ml: 0,
+            alcohol_disinfectant_effectiveness: 0,
+            alcohol_disinfectant_focused: false,
+            alcohol_potable: false,
+            quality: 3,
+            durability_yield: 0.11,
+            durability_fracture: 0.22,
+            durability_wear: 0.33,
+            durability_failure_share: 0.44,
+            edge_sensitivity: 0.55,
+            handling_sensitivity: 0.66,
+        }
+    }
+
+    #[test]
+    fn generated_rows_map_to_views_with_explicit_enrichment_and_gateway_fields() {
+        let character = CharacterView::from(sats::Character {
+            id: 7,
+            scan_id: 700,
+            name: "Ada".into(),
+            xp: 12,
+            level: 3,
+            current_settlement_id: Some("lubeck".into()),
+            party_id: Some("party:7".into()),
+            server: sats::spacetimedb_sdk::Identity::ZERO,
+            in_server: true,
+            temporary: false,
+            age_years: 24,
+            alive: true,
+            party_treatment_decision: sats::ContextualDecisionState::Allowed,
+        });
+        assert_eq!((character.id, character.name.as_str()), (7, "Ada"));
+        assert_eq!(character.current_case_site_id, None);
+        assert_eq!(character.social_notification_count, 0);
+        assert!(!character.automatic_social_chat_enabled);
+
+        let settlement = SettlementView::try_from(generated_settlement()).unwrap();
+        assert_eq!(
+            (settlement.id.as_str(), settlement.name.as_str()),
+            ("lubeck", "Lubeck")
         );
+        assert_eq!(
+            (settlement.longitude, settlement.latitude),
+            (10.6866, 53.8655)
+        );
+        assert_eq!(settlement.languages.east_central_bp, 10_000);
+        assert_eq!(settlement.industries.outputs().len(), 1);
+        assert_eq!(settlement.economy.rules_version, 10);
+        assert_eq!(settlement.source_node_id, Some(52));
+
+        let travel_edge = TravelEdgeView::try_from(generated_travel_edge()).unwrap();
+        assert_eq!(
+            (
+                travel_edge.id,
+                travel_edge.from_node_id,
+                travel_edge.to_node_id
+            ),
+            (41, 52, 53)
+        );
+        assert!(matches!(
+            travel_edge.route,
+            adventuresim_world_schema::TravelRoute::Land(_)
+        ));
+        assert_eq!(
+            travel_edge.terrain,
+            adventuresim_world_schema::RouteTerrain::stage_placeholder()
+        );
+        assert_eq!((travel_edge.length_m, travel_edge.certainty), (1_250, 90));
+
+        let case_battle = CaseBattleView::try_from(sats::BackendCaseBattle {
+            gateway_bucket: 6,
+            owner_character_id: 7,
+            public_case_id: "case:1".into(),
+            party_id: "party:7".into(),
+            battle_id: "battle:1".into(),
+            mission_id: "mission:1".into(),
+            case_site_id: sats::CaseSiteId {
+                value: "site:1".into(),
+            },
+        })
+        .unwrap();
+        assert_eq!(case_battle.gateway_bucket, 6);
+        assert_eq!(case_battle.case_site_id.as_str(), "site:1");
+
+        let party = PartyView::try_from(sats::Party {
+            id: "party:7".into(),
+            gateway_bucket: 5,
+            name: "Company".into(),
+            leader_id: 7,
+            current_settlement_id: None,
+            current_case_site_id: Some(sats::CaseSiteId {
+                value: "site:1".into(),
+            }),
+            active_contract_id: Some("contract:1".into()),
+            is_solo: false,
+            camp_fatigue_percent: 25,
+            walking_minutes_per_day: 480,
+            travel_at_night: true,
+            journey_start_minute_of_day: 360,
+            wilderness_canonical_anchor_minute: Some(1_000),
+            wilderness_elapsed_minutes: 90,
+            camp_destination: None,
+            camp_remaining_minutes: 30,
+            physiology_target: 2.0,
+            command_target: 3.0,
+            religion_target: 4.0,
+        })
+        .unwrap();
+        assert_eq!(party.gateway_bucket, 5);
+        assert_eq!(party.current_case_site_id.as_deref(), Some("site:1"));
+
+        let request = PartyActionRequestView::from(sats::PartyActionRequest {
+            id: 11,
+            gateway_bucket: 4,
+            party_id: "party:7".into(),
+            requester_id: 7,
+            action_kind: "travel".into(),
+            summary: "Travel".into(),
+            payload: "{}".into(),
+        });
+        assert_eq!((request.id, request.gateway_bucket), (11, 4));
+
+        let route = PartyJourneyRouteView::from(sats::PartyJourneyRoute {
+            party_id: "party:7".into(),
+            gateway_bucket: 3,
+            package_digest: "a".repeat(64),
+            weather_rules_version: 2,
+            weather_interval_start: 10,
+            precipitation: sats::JourneyPrecipitation::Rain,
+            intensity_bps: 100,
+            ground_moisture_bps: 200,
+            snow_cover_bps: 300,
+            distance_m: 400,
+            minutes: 500,
+            points: Vec::new(),
+            spans: Vec::new(),
+            return_route: None,
+        });
+        assert_eq!((route.gateway_bucket, route.minutes), (3, 500));
+
+        let equipped = EquippedItemView::from(sats::CharacterEquippedItem {
+            inventory_item_id: 21,
+            character_id: 7,
+            placement_id: "right_hand".into(),
+        });
+        assert_eq!((equipped.inventory_item_id, equipped.character_id), (21, 7));
+        assert!(equipped.item_name.is_empty());
+
+        let role = RecruitmentRoleView::from(sats::PartyRecruitmentRole {
+            id: 31,
+            party_id: "party:7".into(),
+            purpose: sats::RecruitmentRolePurpose::Specialized,
+            name: "Vanguard".into(),
+            requirements: generated_role_requirements(),
+            quantity: 2,
+        });
+        assert!(role.requirements.melee);
+        assert_eq!(role.purpose, sats::RecruitmentRolePurpose::Specialized);
+        assert_eq!(role.autoresolve_combat_power, 0);
+
+        let server = MissionServerView::from(sats::TacticalServer {
+            identity: sats::spacetimedb_sdk::Identity::ZERO,
+            gateway_bucket: 2,
+            mission_id: "mission:1".into(),
+            scene_key: "forest".into(),
+            party_id: "party:7".into(),
+            addr: "127.0.0.1:3000".into(),
+            cert_digest: "cert".into(),
+            expected_party_members: 2,
+            authorized_party_member_ids: vec![7, 8],
+            required_enemy_kills: 3,
+            enemy_difficulty: 4,
+            enemy_combat_scale_bps: 5,
+            countermeasure_multiplier_bps: 6,
+            normalized_combat_power: 7,
+            enemy_character_ids: vec![9],
+            party_has_surprise: true,
+        });
+        assert_eq!(
+            (server.gateway_bucket, server.status),
+            (2, MissionStatus::Ready)
+        );
+        assert_eq!(server.character_id, None);
+
+        let server_request = MissionServerRequestView::from(sats::TacticalServerRequest {
+            mission_id: "mission:2".into(),
+            gateway_bucket: 1,
+            scene_key: "road".into(),
+            party_id: "party:7".into(),
+            requested_by: 7,
+            longitude_e_7: 100,
+            latitude_e_7: 200,
+            absolute_minute: 300,
+            lunar_phase_minute: 400,
+            expected_party_members: 2,
+            authorized_party_member_ids: vec![7, 8],
+            required_enemy_kills: 9,
+            enemy_difficulty: 10,
+            enemy_combat_scale_bps: 11,
+            countermeasure_multiplier_bps: 12,
+            normalized_combat_power: 13,
+            enemy_character_ids: vec![14],
+            party_has_surprise: false,
+        });
+        assert_eq!(
+            (
+                server_request.gateway_bucket,
+                server_request.required_enemy_kills
+            ),
+            (1, 9)
+        );
+
+        let item = CatalogItemView::from(generated_item());
+        assert_eq!(
+            (item.kind, item.slot),
+            (CatalogItemKind::Weapon, Slot::AnyHolding)
+        );
+        assert_eq!(item.equipment_placements[0].occupancy[0].order, 2);
+        assert_eq!(item.equipment_placements[0].parents[0].order, 3);
+        assert_eq!(item.attachment_points[0].accepts_tags, ["charm"]);
+        assert_eq!(item.weapon_skills.sword, 1.0);
+        assert_eq!(item.preferred_melee_style, MeleeAttackStyle::Stab);
+        assert_eq!(item.moment_of_inertia_kg_m_2, 1.2);
+        assert_eq!(
+            (
+                item.durability_yield,
+                item.durability_fracture,
+                item.durability_wear,
+                item.durability_failure_share,
+                item.edge_sensitivity,
+                item.handling_sensitivity,
+            ),
+            (0.11, 0.22, 0.33, 0.44, 0.55, 0.66)
+        );
+    }
+
+    #[test]
+    fn personality_conversion_maps_every_axis_family() {
+        let row = sats::CharacterPersonality {
+            character_id: 7,
+            projection_character_id: 9,
+            nerve: sats::Nerve::Brave,
+            drive: sats::Drive::Ambitious,
+            outlook: sats::Outlook::Brooding,
+            sociability: sats::Sociability::Gregarious,
+            conscience: sats::Conscience::Cruel,
+            self_regard: sats::SelfRegard::Humble,
+            conviction: sats::Conviction::Irreverent,
+            hygiene: sats::Hygiene::Cleanly,
+            temperance: sats::Temperance::Drunkard,
+            mirth: sats::Mirth::Merry,
+            courtship: sats::Courtship::Proper,
+            transparency: sats::Transparency::Guarded,
+            self_knowledge: sats::SelfKnowledge::SelfDeceiving,
+            sex: sats::Sex::Female,
+            presentation: sats::Presentation::Woman,
+            inclination: sats::Inclination::Neither,
+        };
+        let mapped = core_personality(&row);
+        assert_eq!(mapped.nerve, Nerve::Brave);
+        assert_eq!(mapped.self_knowledge, SelfKnowledge::SelfDeceiving);
+        assert_eq!(mapped.inclination, Inclination::Neither);
+    }
+
+    #[test]
+    fn generated_nested_rows_serialize_strictly() {
+        let languages = sats::SettlementLanguageProfile {
+            east_central_bp: 5_000,
+            west_central_bp: 3_000,
+            low_bp: 2_000,
+            yiddish_incidence_bp: 100,
+        };
+        let converted: adventuresim_world_schema::SettlementLanguageProfile =
+            sats_to_serde(&languages).unwrap();
+        assert_eq!(converted.east_central_bp, 5_000);
+        let mut encoded = serde_json::to_value(SerdeWrapper::from_ref(&languages)).unwrap();
+        encoded["unexpected"] = serde_json::json!(1);
+        assert!(
+            serde_json::from_value::<SerdeWrapper<sats::SettlementLanguageProfile>>(encoded)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn gateway_fields_are_removed_only_by_explicit_projection() {
+        let row = sats::PartyActionRequest {
+            id: 11,
+            gateway_bucket: 4,
+            party_id: "party:1".into(),
+            requester_id: 7,
+            action_kind: "travel".into(),
+            summary: "Travel".into(),
+            payload: "{}".into(),
+        };
+        let view = PartyActionRequestView::from(row);
+        assert_eq!((view.id, view.party_id.as_str()), (11, "party:1"));
+    }
+
+    #[test]
+    fn typed_investigation_availability_is_wording_invariant() {
+        let generated = sats::InvestigationActionAvailability::Unavailable(
+            sats::InvestigationActionUnavailableFields {
+                reason: sats::InvestigationActionUnavailableReason::TravelRequired,
+                can_travel_to_required_site: true,
+                wait_minutes: 45,
+            },
+        );
+        let outcome = core_investigation_action_availability(&generated);
+        let (can_travel, wait_minutes) = match outcome {
+            InvestigationActionAvailability::Available => (false, 0),
+            InvestigationActionAvailability::Unavailable {
+                reason: InvestigationActionUnavailableReason::TravelRequired,
+                can_travel_to_required_site,
+                wait_minutes,
+            } => (can_travel_to_required_site, wait_minutes),
+            InvestigationActionAvailability::Unavailable { .. } => panic!("wrong reason"),
+        };
+        assert!(can_travel);
+        assert_eq!(wait_minutes, 45);
     }
 }

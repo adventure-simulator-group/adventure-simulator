@@ -15,6 +15,7 @@ pub mod combat_style;
 pub mod composite;
 pub mod courtship;
 pub mod developer_quest;
+pub mod dialogue_boundary;
 pub mod disease;
 pub mod durability;
 pub mod encounter;

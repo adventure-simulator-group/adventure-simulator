@@ -1,4 +1,4 @@
-pub(crate) fn living_party_members(members: &[Character]) -> Vec<Character> {
+pub(crate) fn living_party_members(members: &[CharacterView]) -> Vec<CharacterView> {
     members
         .iter()
         .filter(|member| member.alive)
@@ -37,24 +37,9 @@ pub(super) struct ApprenticeshipResult {
     message: &'static str,
 }
 
-#[derive(Deserialize)]
-struct ApprenticeshipRepresentativeRow {
-    character_id: u64,
-    home_settlement_id: String,
-    organization_id: String,
-    conversation_id: String,
-}
-
-#[derive(Deserialize)]
-struct ApprenticeshipRepresentativePresenceRow {
-    character_id: u64,
-    settlement_id: String,
-    location_id: String,
-}
-
 fn exact_apprenticeship_representative_present(
-    representative: Option<&ApprenticeshipRepresentativeRow>,
-    presences: &[ApprenticeshipRepresentativePresenceRow],
+    representative: Option<&crate::spacetimedb::BackendSettlementResident>,
+    presences: &[crate::spacetimedb::SettlementResidentPresence],
     expected_id: u64,
     settlement_id: &str,
     organization_id: &str,
@@ -96,7 +81,7 @@ pub(super) async fn begin_service_apprenticeship(
     };
     let settlement = state
         .db
-        .query_one::<Settlement>(&crate::spacetimedb::settlement_by_id(&id))
+        .query_one_sats_into::<adventuresim_stdb_client::Settlement, SettlementView>(&crate::spacetimedb::settlement_by_id(&id))
         .await
         .ok()
         .flatten();
@@ -118,10 +103,9 @@ pub(super) async fn begin_service_apprenticeship(
         adventuresim_core::organization::organization_representative_id(&id, &organization.id);
     let representative = match state
         .db
-        .query_one::<ApprenticeshipRepresentativeRow>(&format!(
-            "SELECT * FROM backend_settlement_residents WHERE character_id = {}",
-            representative_id
-        ))
+        .query_one_sats::<crate::spacetimedb::BackendSettlementResident>(
+            &crate::spacetimedb::settlement_resident_by_character_id(representative_id),
+        )
         .await
     {
         Ok(representative) => representative,
@@ -135,10 +119,9 @@ pub(super) async fn begin_service_apprenticeship(
     };
     let presences = match state
         .db
-        .query::<ApprenticeshipRepresentativePresenceRow>(&format!(
-            "SELECT * FROM settlement_resident_presence WHERE character_id = {}",
-            representative_id
-        ))
+        .query_sats::<crate::spacetimedb::SettlementResidentPresence>(
+            &crate::spacetimedb::settlement_resident_presence_by_character_id(representative_id),
+        )
         .await
     {
         Ok(presences) => presences,
@@ -206,10 +189,24 @@ mod apprenticeship_representative_tests {
         id: u64,
         settlement_id: &str,
         organization_id: &str,
-    ) -> ApprenticeshipRepresentativeRow {
-        ApprenticeshipRepresentativeRow {
+    ) -> crate::spacetimedb::BackendSettlementResident {
+        crate::spacetimedb::BackendSettlementResident {
             character_id: id,
             home_settlement_id: settlement_id.into(),
+            name: "Guild representative".into(),
+            age_band: crate::spacetimedb::NpcAgeBand::Adult,
+            presentation: crate::spacetimedb::NpcPresentation::Ambiguous,
+            height: String::new(),
+            build: String::new(),
+            hair: String::new(),
+            facial_hair: String::new(),
+            complexion: String::new(),
+            visible_features: String::new(),
+            clothing: String::new(),
+            profession: String::new(),
+            household: String::new(),
+            local_role: String::new(),
+            service_id: String::new(),
             organization_id: organization_id.into(),
             conversation_id: "organization-representative".into(),
         }
@@ -219,11 +216,16 @@ mod apprenticeship_representative_tests {
         id: u64,
         settlement_id: &str,
         location_id: &str,
-    ) -> ApprenticeshipRepresentativePresenceRow {
-        ApprenticeshipRepresentativePresenceRow {
+    ) -> crate::spacetimedb::SettlementResidentPresence {
+        crate::spacetimedb::SettlementResidentPresence {
             character_id: id,
             settlement_id: settlement_id.into(),
             location_id: location_id.into(),
+            start_minute: 0,
+            end_minute: adventuresim_core::strategic_time::MINUTES_PER_DAY as u16,
+            is_default: true,
+            context_suppressed: false,
+            health_suppressed: false,
         }
     }
 
@@ -345,9 +347,11 @@ pub(super) async fn service_quest_offers(
     Path(id): Path<String>,
     session: Session,
 ) -> Json<ServiceActivityResponse> {
-    let settlements: Vec<Settlement> = state
+    let settlements: Vec<SettlementView> = state
         .db
-        .query("SELECT * FROM settlement")
+        .query_sats_into::<adventuresim_stdb_client::Settlement, SettlementView>(
+            "SELECT * FROM settlement",
+        )
         .await
         .unwrap_or_default();
     let Some(settlement) = settlements.iter().find(|settlement| settlement.id == id) else {
@@ -356,17 +360,19 @@ pub(super) async fn service_quest_offers(
             recruitment: Vec::new(),
         });
     };
-    let quests: Vec<ContractPresentation> = state
+    let quests: Vec<BackendContract> = state
         .db
-        .query(&format!(
+        .query_sats(&format!(
             "SELECT * FROM backend_contracts WHERE settlement_id = {}",
             sql_string_literal(&id)
         ))
         .await
         .unwrap_or_default();
-    let edges: Vec<TravelEdge> = state
+    let edges: Vec<TravelEdgeView> = state
         .db
-        .query("SELECT * FROM travel_edge")
+        .query_sats_into::<adventuresim_stdb_client::TravelEdge, TravelEdgeView>(
+            "SELECT * FROM travel_edge",
+        )
         .await
         .unwrap_or_default();
     let neighboring_name = connected_destinations(settlement, &settlements, &edges)
@@ -380,7 +386,7 @@ pub(super) async fn service_quest_offers(
     {
         state
             .db
-            .query::<Party>(&crate::spacetimedb::party_by_id(party_id))
+            .query_sats_into::<adventuresim_stdb_client::Party, PartyView>(&crate::spacetimedb::party_by_id(party_id))
             .await
             .unwrap_or_default()
             .into_iter()
@@ -397,32 +403,36 @@ pub(super) async fn service_quest_offers(
     let can_turn_in = active_character.as_ref().is_some_and(|(character, _)| {
         character.current_settlement_id.as_deref() == Some(id.as_str()) && active_party.is_some()
     });
-    let parties: Vec<Party> = state
+    let parties: Vec<PartyView> = state
         .db
-        .query("SELECT * FROM party")
+        .query_sats_into::<adventuresim_stdb_client::Party, PartyView>("SELECT * FROM party")
         .await
         .unwrap_or_default();
     let party_memberships: Vec<PartyMember> = state
         .db
-        .query("SELECT * FROM party_member")
+        .query_sats("SELECT * FROM party_member")
         .await
         .unwrap_or_default();
-    let recruitment_roles: Vec<PartyRecruitmentRole> = state
+    let recruitment_roles: Vec<RecruitmentRoleView> = state
         .db
-        .query("SELECT * FROM party_recruitment_role")
+        .query_sats_into::<adventuresim_stdb_client::PartyRecruitmentRole, RecruitmentRoleView>(
+            "SELECT * FROM party_recruitment_role",
+        )
         .await
         .unwrap_or_default();
     let recruitment_offers: Vec<RecruitmentOffer> = state
         .db
-        .query(&format!(
+        .query_sats(&format!(
             "SELECT * FROM recruitment_offer WHERE settlement_id = {}",
             sql_string_literal(&id)
         ))
         .await
         .unwrap_or_default();
-    let characters: Vec<Character> = state
+    let characters: Vec<CharacterView> = state
         .db
-        .query("SELECT * FROM backend_characters")
+        .query_sats_into::<adventuresim_stdb_client::Character, CharacterView>(
+            "SELECT * FROM backend_characters",
+        )
         .await
         .unwrap_or_default();
     let viewer_party_id = active_party.as_ref().map(|party| party.id.as_str());
@@ -443,9 +453,9 @@ pub(super) async fn service_quest_offers(
             .await;
         if let Some(capability) = state
             .db
-            .query::<CharacterCapability>(&format!(
-                "SELECT * FROM backend_character_capabilities WHERE character_id = {character_id}"
-            ))
+            .query_sats::<CharacterCapability>(
+                &crate::spacetimedb::character_capability_by_character_id(character_id),
+            )
             .await
             .unwrap_or_default()
             .into_iter()
@@ -534,10 +544,10 @@ pub(super) async fn service_quest_offers(
                     party.active_contract_id.as_deref() == Some(quest.id.as_str())
                         && quest.accepted_by.as_deref() == Some(party.id.as_str())
                 });
-                let state = if quest.status == ContractStatus::Offered {
+                let state = if quest.status == adventuresim_stdb_client::ContractStatus::Offered {
                     "available"
                 } else if is_current
-                    && quest.status == ContractStatus::ReadyToReport
+                    && quest.status == adventuresim_stdb_client::ContractStatus::ReadyToReport
                 {
                     "ready"
                 } else if is_current {
@@ -620,7 +630,7 @@ pub(super) fn service_quest_greeting(service_id: &str) -> (&'static str, &'stati
 
 pub(super) fn service_quest_details(
     _service_id: &str,
-    quest: &ContractPresentation,
+    quest: &BackendContract,
     _settlement_name: &str,
     _neighboring_name: &str,
 ) -> String {
@@ -637,8 +647,8 @@ pub(super) fn service_quest_details(
 mod bestiary_quest_presentation_tests {
     use super::*;
 
-    fn quest(opposition_wording: &str, description: &str) -> ContractPresentation {
-        ContractPresentation {
+    fn quest(opposition_wording: &str, description: &str) -> BackendContract {
+        BackendContract {
             id: "q".into(),
             case_id: "case:q".into(),
             title: "Problem".into(),
@@ -648,11 +658,16 @@ mod bestiary_quest_presentation_tests {
             xp_reward: 20,
             settlement_id: "s".into(),
             service_id: "inn".into(),
-            issuer_resident_character_id: String::new(),
+            issuer_resident_character_id: 0,
             status: ContractStatus::Offered,
             accepted_by: None,
             opposition_wording: opposition_wording.into(),
             opposition_count_wording: "perhaps several".into(),
+            opposition_count: 0,
+            opposition_combat_power: 0,
+            accepted_at_minute: None,
+            paid_at_minute: None,
+            distance_m: 0,
         }
     }
 
@@ -668,7 +683,7 @@ mod bestiary_quest_presentation_tests {
     }
 }
 
-pub(super) fn role_requirement_labels(role: &PartyRecruitmentRole) -> Vec<String> {
+pub(super) fn role_requirement_labels(role: &RecruitmentRoleView) -> Vec<String> {
     let requirements = role.requirements;
     let mut labels = Vec::new();
     for (required, label) in [
@@ -701,7 +716,7 @@ pub(super) fn role_requirement_labels(role: &PartyRecruitmentRole) -> Vec<String
 
 pub(super) fn party_role_match(
     capabilities: &[CharacterCapability],
-    role: &PartyRecruitmentRole,
+    role: &RecruitmentRoleView,
 ) -> (&'static str, String) {
     let total = role_requirement_labels(role).len();
     if total == 0 {
@@ -735,9 +750,9 @@ pub(super) fn party_role_match(
 
 pub(super) fn matched_role_requirements(
     capability: &CharacterCapability,
-    role: &PartyRecruitmentRole,
+    role: &RecruitmentRoleView,
 ) -> usize {
-    let requirements: RecruitmentRequirements = role.requirements;
+    let requirements: RoleRequirements = role.requirements;
     let mut matched = 0;
     for (required, present) in [
         (requirements.melee, capability.melee),

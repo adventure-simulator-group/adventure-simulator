@@ -13,17 +13,17 @@ use super::{
         ActivityPreviewRates, CharacterSheetActions, SummaryIconKind, character_summary_icons,
         party_skills_rail, skill_rank_tier,
     },
-    chrome::{party_portrait_overlay, visual_stage},
+    chrome::{VisualStageKind, party_portrait_overlay, visual_stage},
     context::LocationView,
     social::player_chat_area,
     trade::religious_demand_rail,
 };
 use crate::medical::MedicalPresentation;
 use crate::spacetimedb::{
-    Character, CharacterAttributes, CharacterCapability, CharacterLimbs, CharacterSkills,
-    CharacterStrategicCondition, CharacterTrainingSchedule, FoodLot, InventoryItem,
-    InventoryItemAmount, ItemDefinition, LimbInjury, OrganizationMembership,
-    OrganizationMembershipStatus, OrganizationPresentation, Party, RetainedProjectile,
+    BackendOrganizationMembership, CatalogItemView, CharacterAttributes, CharacterCapability,
+    CharacterLimbs, CharacterSkills, CharacterStrategicCondition, CharacterTrainingSchedule,
+    CharacterView, FoodLot, InventoryItem, InventoryItemAmount, LimbInjury,
+    OrganizationMembershipStatus, OrganizationPresentation, PartyView, RetainedProjectile,
 };
 use crate::templates::{
     decorative_game_icon, organization_charge, organization_colors, religion_icon, sidebar_section,
@@ -85,7 +85,7 @@ fn character_summary_rail(
     reason = "the stats panel renders independently optional character projections"
 )]
 pub(crate) fn character_stats_panel(
-    character: &Character,
+    character: &CharacterView,
     capability: Option<&CharacterCapability>,
     attributes: Option<&CharacterAttributes>,
     skills: Option<&CharacterSkills>,
@@ -117,12 +117,12 @@ pub(crate) fn character_stats_panel(
 }
 
 pub(crate) struct CharacterSheetView<'a> {
-    pub character: &'a Character,
+    pub character: &'a CharacterView,
     pub capability: Option<&'a CharacterCapability>,
     pub attributes: Option<&'a CharacterAttributes>,
     pub skills: Option<&'a CharacterSkills>,
     pub limbs: Option<&'a CharacterLimbs>,
-    pub personality: Option<&'a crate::spacetimedb::CharacterPersonality>,
+    pub personality: Option<&'a crate::spacetimedb::Personality>,
     pub medical: &'a MedicalPresentation,
     pub combat_profile: CombatTrainingProfile,
     pub religion_id: Option<&'a str>,
@@ -133,7 +133,7 @@ pub(crate) struct CharacterSheetView<'a> {
     pub skills_title: &'a str,
     pub description: &'a str,
     pub can_renounce: bool,
-    pub organization_memberships: &'a [OrganizationMembership],
+    pub organization_memberships: &'a [BackendOrganizationMembership],
     pub organization_presentation: Option<&'a OrganizationPresentation>,
     pub organization_minute: u64,
     pub physiology_dialog_id: Option<&'a str>,
@@ -178,7 +178,7 @@ pub(crate) fn character_sheet_markup(view: CharacterSheetView<'_>) -> Markup {
         main class="center-content settlement-main party-member-stage" {
             (view.center_before)
             (view.portraits)
-            (visual_stage("character", &view.character.name, view.description))
+            (visual_stage(VisualStageKind::Character, &view.character.name, view.description))
             (view.center_after)
         }
         aside class="right-sidebar" {
@@ -222,8 +222,12 @@ pub(crate) fn character_sheet_markup(view: CharacterSheetView<'_>) -> Markup {
     }
 }
 
-pub(crate) fn character_visual_preview(character: &Character) -> Markup {
-    visual_stage("character", &character.name, "Adventurer profile")
+pub(crate) fn character_visual_preview(character: &CharacterView) -> Markup {
+    visual_stage(
+        VisualStageKind::Character,
+        &character.name,
+        "Adventurer profile",
+    )
 }
 
 /// Active character's combined strategic view.
@@ -233,8 +237,8 @@ pub(crate) fn character_visual_preview(character: &Character) -> Markup {
 )]
 pub fn party_personal_page(
     location: &LocationView,
-    active_character: &Character,
-    party_members: &[Character],
+    active_character: &CharacterView,
+    party_members: &[CharacterView],
     capability: Option<&CharacterCapability>,
     attributes: Option<&CharacterAttributes>,
     skills: Option<&CharacterSkills>,
@@ -242,7 +246,7 @@ pub fn party_personal_page(
     condition: Option<&CharacterStrategicCondition>,
     morale_sources: &[crate::spacetimedb::CharacterMoraleSource],
     religion_id: Option<&str>,
-    organization_memberships: &[OrganizationMembership],
+    organization_memberships: &[BackendOrganizationMembership],
     organization_presentation: Option<&OrganizationPresentation>,
     organization_minute: u64,
     prayer_religion_check: f32,
@@ -253,7 +257,7 @@ pub fn party_personal_page(
     religious_demand: Option<&crate::spacetimedb::ReligiousDemand>,
     fame: f32,
     infamy: f32,
-    personality: Option<&crate::spacetimedb::CharacterPersonality>,
+    personality: Option<&crate::spacetimedb::Personality>,
     medical: &MedicalPresentation,
     _can_examine: bool,
     injuries: &[LimbInjury],
@@ -262,7 +266,7 @@ pub fn party_personal_page(
     _inventory: &[InventoryItem],
     _inventory_amounts: &[InventoryItemAmount],
     _food_lots: &[FoodLot],
-    _item_definitions: &[ItemDefinition],
+    _item_definitions: &[CatalogItemView],
     character_action_dialog: Option<Markup>,
     surgery_open: Option<&str>,
     social_open: bool,
@@ -302,7 +306,6 @@ pub fn party_personal_page(
         Some(active_character),
         &location_path,
         Some(active_character.id),
-        false,
     );
     let center_after = character_action_dialog
         .unwrap_or_else(|| player_chat_area(location, active_character, active_character));
@@ -366,9 +369,9 @@ pub fn party_personal_page(
 )]
 pub fn party_stats_page(
     location: &LocationView,
-    selected: &Character,
-    active_character: &Character,
-    party_members: &[Character],
+    selected: &CharacterView,
+    active_character: &CharacterView,
+    party_members: &[CharacterView],
     capability: Option<&CharacterCapability>,
     selected_attributes: Option<&CharacterAttributes>,
     selected_skills: Option<&CharacterSkills>,
@@ -377,11 +380,11 @@ pub fn party_stats_page(
     condition: Option<&CharacterStrategicCondition>,
     morale_sources: &[crate::spacetimedb::CharacterMoraleSource],
     religion_id: Option<&str>,
-    active_party: Option<&Party>,
-    selected_party: Option<&Party>,
+    active_party: Option<&PartyView>,
+    selected_party: Option<&PartyView>,
     fame: f32,
     infamy: f32,
-    personality: Option<&crate::spacetimedb::CharacterPersonality>,
+    personality: Option<&crate::spacetimedb::Personality>,
     medical: &MedicalPresentation,
     _can_examine: bool,
     injuries: &[LimbInjury],
@@ -408,7 +411,6 @@ pub fn party_stats_page(
         Some(active_character),
         &location_path,
         Some(selected.id),
-        false,
     );
     let center_after = character_action_dialog
         .unwrap_or_else(|| player_chat_area(location, selected, active_character));
@@ -505,14 +507,14 @@ pub(super) fn religion_name(religion_id: Option<&str>) -> &'static str {
     reason = "the biography rail renders independent identity, reputation, and organization projections"
 )]
 fn character_bio_rail(
-    character: &Character,
+    character: &CharacterView,
     religion_id: Option<&str>,
     fame: f32,
     infamy: f32,
-    personality: Option<&crate::spacetimedb::CharacterPersonality>,
+    personality: Option<&crate::spacetimedb::Personality>,
     can_renounce: bool,
     location_path: &str,
-    organization_memberships: &[OrganizationMembership],
+    organization_memberships: &[BackendOrganizationMembership],
     organization_presentation: Option<&OrganizationPresentation>,
     organization_minute: u64,
 ) -> Markup {
@@ -576,7 +578,7 @@ fn religion_identity_display(religion_id: Option<&str>) -> Markup {
 }
 
 fn organization_identity_display(
-    memberships: &[OrganizationMembership],
+    memberships: &[BackendOrganizationMembership],
     presentation: Option<&OrganizationPresentation>,
 ) -> Markup {
     let selected = presentation.and_then(|presentation| {
@@ -610,7 +612,7 @@ fn organization_identity_display(
 }
 
 fn religion_identity_button(
-    character: &Character,
+    character: &CharacterView,
     religion_id: Option<&str>,
     location_path: &str,
 ) -> Markup {
@@ -640,10 +642,10 @@ fn religion_identity_button(
 }
 
 fn organization_identity_picker(
-    character: &Character,
+    character: &CharacterView,
     settlement_id: &str,
     _location_path: &str,
-    memberships: &[OrganizationMembership],
+    memberships: &[BackendOrganizationMembership],
     presentation: Option<&OrganizationPresentation>,
     minute: u64,
 ) -> Markup {
@@ -765,7 +767,7 @@ fn empty_organization_crest() -> Markup {
 }
 
 fn personality_tags(
-    personality: &crate::spacetimedb::CharacterPersonality,
+    personality: &crate::spacetimedb::Personality,
 ) -> Vec<(&'static str, &'static str)> {
     use crate::spacetimedb::{
         Conscience::*, Conviction::*, Courtship::*, Drive::*, Hygiene::*, Inclination::*, Mirth::*,
@@ -914,8 +916,7 @@ mod personality_tests {
 
     #[test]
     fn neutral_behavioral_axes_are_omitted_but_demographics_remain_visible_to_owner() {
-        let personality = CharacterPersonality {
-            character_id: 1,
+        let personality = Personality {
             nerve: Nerve::Brave,
             drive: Drive::Neutral,
             outlook: Outlook::Neutral,
@@ -925,7 +926,7 @@ mod personality_tests {
             conviction: Conviction::Neutral,
             hygiene: Hygiene::Neutral,
             temperance: Temperance::Neutral,
-            ..CharacterPersonality::neutral(1)
+            ..Personality::neutral()
         };
         let tags = personality_tags(&personality);
         assert_eq!(
@@ -937,8 +938,7 @@ mod personality_tests {
     #[test]
     fn every_visible_tag_has_an_accessible_explanation() {
         let profiles = [
-            CharacterPersonality {
-                character_id: 1,
+            Personality {
                 nerve: Nerve::Brave,
                 drive: Drive::Ambitious,
                 outlook: Outlook::Sanguine,
@@ -948,10 +948,9 @@ mod personality_tests {
                 conviction: Conviction::Zealous,
                 hygiene: Hygiene::Cleanly,
                 temperance: Temperance::Temperate,
-                ..CharacterPersonality::neutral(1)
+                ..Personality::neutral()
             },
-            CharacterPersonality {
-                character_id: 2,
+            Personality {
                 nerve: Nerve::Fearful,
                 drive: Drive::Content,
                 outlook: Outlook::Brooding,
@@ -961,10 +960,9 @@ mod personality_tests {
                 conviction: Conviction::Irreverent,
                 hygiene: Hygiene::Slovenly,
                 temperance: Temperance::Drunkard,
-                ..CharacterPersonality::neutral(2)
+                ..Personality::neutral()
             },
-            CharacterPersonality {
-                character_id: 3,
+            Personality {
                 nerve: Nerve::Neutral,
                 drive: Drive::Neutral,
                 outlook: Outlook::Neutral,
@@ -974,7 +972,7 @@ mod personality_tests {
                 conviction: Conviction::Neutral,
                 hygiene: Hygiene::Neutral,
                 temperance: Temperance::Neutral,
-                ..CharacterPersonality::neutral(3)
+                ..Personality::neutral()
             },
         ];
 
@@ -1015,7 +1013,7 @@ mod tests {
     fn summary_icons_expose_instant_tooltips_and_keyboard_names() {
         let skills = CharacterSkills {
             sword_hours: 50_000.0,
-            ..Default::default()
+            ..crate::spacetimedb::generated_character_skills_fixture()
         };
         let profile = CombatTrainingProfile {
             weapons: adventuresim_core::equipment::WeaponSkillDistribution {

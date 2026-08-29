@@ -373,6 +373,7 @@ pub fn outermost_wearable(
 /// SpacetimeDB-friendly weights for the nine weapon leaf skills. A weapon may
 /// combine melee and ranged families; callers normalize the positive entries.
 #[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
 pub struct WeaponSkillDistribution {
     pub polearm: f32,
     pub axe: f32,
@@ -383,6 +384,22 @@ pub struct WeaponSkillDistribution {
     pub crossbow: f32,
     pub firearm: f32,
     pub throw: f32,
+}
+
+impl From<crate::item_catalog_schema::WeaponSkills> for WeaponSkillDistribution {
+    fn from(skills: crate::item_catalog_schema::WeaponSkills) -> Self {
+        Self {
+            polearm: skills.polearm,
+            axe: skills.axe,
+            bludgeon: skills.bludgeon,
+            sword: skills.sword,
+            knife: skills.knife,
+            bow: skills.bow,
+            crossbow: skills.crossbow,
+            firearm: skills.firearm,
+            throw: skills.throw,
+        }
+    }
 }
 
 impl WeaponSkillDistribution {
@@ -534,19 +551,8 @@ pub fn melee_attack_timing(
 /// Unknown and non-weapon identifiers deliberately return an empty
 /// distribution. There is no ID-shaped sword fallback.
 pub fn weapon_skill_distribution_for_item(item_id: &str) -> WeaponSkillDistribution {
-    crate::item_catalog::weapon_skills(item_id).map_or_else(WeaponSkillDistribution::default, |s| {
-        WeaponSkillDistribution {
-            polearm: s.polearm,
-            axe: s.axe,
-            bludgeon: s.bludgeon,
-            sword: s.sword,
-            knife: s.knife,
-            bow: s.bow,
-            crossbow: s.crossbow,
-            firearm: s.firearm,
-            throw: s.throw,
-        }
-    })
+    crate::item_catalog::weapon_skills(item_id)
+        .map_or_else(WeaponSkillDistribution::default, Into::into)
 }
 
 pub const LOWER_MUSCLE_MASS_PER_LEG_STRENGTH: f32 = 5.0;
@@ -750,6 +756,23 @@ pub trait PlayerEquipment {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn weapon_skill_distribution_uses_the_shared_boundary_shape() {
+        let skills = WeaponSkillDistribution {
+            sword: 0.75,
+            throw: 0.25,
+            ..Default::default()
+        };
+        let encoded = serde_json::to_value(skills).unwrap();
+        assert_eq!(encoded["sword"], serde_json::json!(0.75));
+        assert_eq!(encoded["throw"], serde_json::json!(0.25));
+        assert!(encoded.get("throw_skill").is_none());
+        assert_eq!(
+            serde_json::from_value::<WeaponSkillDistribution>(encoded).unwrap(),
+            skills
+        );
+    }
 
     #[test]
     fn hybrid_weapon_distribution_uses_normalized_leaf_checks() {

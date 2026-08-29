@@ -5,24 +5,23 @@ mod encumbrance_tests {
         personal_encumbrance,
     };
     use crate::spacetimedb::{
-        Character, CharacterAttributes, CharacterCondition, CharacterLimbs, ContainerLiquid,
-        FoodLot, FoodPreparation, InventoryItem, InventoryObject, ItemDefinition,
+        CharacterView, CharacterAttributes, CharacterCondition, CharacterLimbs, ContainerLiquid,
+        FoodLot, FoodPreparation, InventoryItem, InventoryObject, CatalogItemView,
         PartyInventoryItem,
     };
-    use adventuresim_core::physical_object::InventoryLocation;
-    use serde_json::json;
+    use adventuresim_stdb_client::{InventoryLocation, PersonalInventoryLocation};
 
-    fn item(id: &str, weight: f32) -> ItemDefinition {
-        serde_json::from_value(json!({
-            "id": id,
-            "weight": weight,
-            "kind": "Weapon"
-        }))
-        .unwrap()
+    fn item(id: &str, weight: f32) -> CatalogItemView {
+        CatalogItemView {
+            id: id.into(),
+            weight,
+            kind: crate::spacetimedb::CatalogItemKind::Weapon,
+            ..CatalogItemView::default()
+        }
     }
 
-    fn character(id: u64, alive: bool) -> Character {
-        Character {
+    fn character(id: u64, alive: bool) -> CharacterView {
+        CharacterView {
             id,
             name: format!("Character {id}"),
             xp: 0,
@@ -87,7 +86,10 @@ mod encumbrance_tests {
             objects: vec![InventoryObject {
                 id: 30,
                 item_id: "waterskin".into(),
-                location: InventoryLocation::personal(1, 31),
+                location: InventoryLocation::Personal(PersonalInventoryLocation {
+                    character_id: 1,
+                    row_id: 31,
+                }),
             }],
             containment: Vec::new(),
             liquids: vec![ContainerLiquid {

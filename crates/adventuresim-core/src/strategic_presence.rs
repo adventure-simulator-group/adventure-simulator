@@ -287,6 +287,25 @@ pub fn outbreak_patient_suppression_at(
 }
 
 impl DailyPresenceWindow {
+    pub fn minutes_until_start(self, personal_minute: u64) -> Result<u32, PresenceError> {
+        if u64::from(self.start_minute) > MINUTES_PER_DAY
+            || u64::from(self.end_minute) > MINUTES_PER_DAY
+            || self.start_minute == self.end_minute
+        {
+            return Err(PresenceError::InvalidSchedule);
+        }
+        if self
+            .remaining_minutes(personal_minute, false, false)
+            .is_ok()
+        {
+            return Ok(0);
+        }
+        let current = personal_minute % MINUTES_PER_DAY;
+        let start = u64::from(self.start_minute);
+        let wait = (start + MINUTES_PER_DAY - current) % MINUTES_PER_DAY;
+        Ok(if wait == 0 { MINUTES_PER_DAY } else { wait } as u32)
+    }
+
     pub fn remaining_minutes(
         self,
         personal_minute: u64,
@@ -458,6 +477,23 @@ mod tests {
             StrategicPresence::residence_occupancy(2, home, 1, 800, frontier(1, 720), true),
             Err(PresenceError::FutureEvidence)
         );
+    }
+
+    #[test]
+    fn daily_presence_wait_uses_the_same_wrapped_schedule_as_remaining_time() {
+        let daytime = DailyPresenceWindow {
+            start_minute: 240,
+            end_minute: 960,
+        };
+        assert_eq!(daytime.minutes_until_start(77), Ok(163));
+        assert_eq!(daytime.minutes_until_start(300), Ok(0));
+
+        let overnight = DailyPresenceWindow {
+            start_minute: 1_200,
+            end_minute: 120,
+        };
+        assert_eq!(overnight.minutes_until_start(60), Ok(0));
+        assert_eq!(overnight.minutes_until_start(600), Ok(600));
     }
 
     #[test]

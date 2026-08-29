@@ -270,7 +270,7 @@ fn actor_party_owns_incident_site(
         .id()
         .find(party_id.to_owned())
         .and_then(|party| party.current_case_site_id)
-        .is_some_and(|site| site.value == case_site_id);
+        .is_some_and(|site| site.as_str() == case_site_id);
     party_membership_matches
         && party_site_matches
         && ctx
@@ -278,7 +278,7 @@ fn actor_party_owns_incident_site(
             .strategic_incident()
             .party_id()
             .filter(party_id)
-            .any(|incident| incident.case_site_id.value == case_site_id)
+            .any(|incident| incident.case_site_id.as_str() == case_site_id)
 }
 
 fn actor_party_has_pending_incident_at_current_site(
@@ -302,7 +302,7 @@ fn actor_party_has_pending_incident_at_current_site(
             .filter(party_id)
             .any(|incident| {
                 incident.status == IncidentStatus::Pending
-                    && incident.case_site_id.value == case_site_id
+                    && incident.case_site_id.as_str() == case_site_id
             })
 }
 
@@ -1365,7 +1365,7 @@ mod tests {
             ".party_authority()",
             "party.current_case_site_id",
             ".strategic_incident()",
-            "incident.case_site_id.value == case_site_id",
+            "incident.case_site_id.as_str() == case_site_id",
         ] {
             assert!(authority.contains(exact_boundary), "{exact_boundary}");
         }
@@ -1398,7 +1398,7 @@ mod tests {
             .expect("pending incident forage gate");
         assert!(pending.contains("actor_party_owns_incident_site"));
         assert!(pending.contains("incident.status == IncidentStatus::Pending"));
-        assert!(pending.contains("incident.case_site_id.value == case_site_id"));
+        assert!(pending.contains("incident.case_site_id.as_str() == case_site_id"));
 
         let reducer = source
             .split("pub fn forage_current_vicinity")

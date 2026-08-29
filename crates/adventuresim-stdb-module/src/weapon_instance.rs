@@ -12,7 +12,7 @@ use crate::inventory_container::inventory_object__view;
 use crate::item::item;
 use crate::strategic::PartyInventoryItem;
 use crate::strategic::strategic_gateway_authority__view;
-use crate::{InventoryItem, ItemKind, inventory_object};
+use crate::{InventoryItem, PersistedItemKind, inventory_object};
 
 pub const MAX_WEAPON_RECIPE_BYTES: usize = 16 * 1024;
 
@@ -184,7 +184,7 @@ pub(crate) fn initialize_personal_weapon(
     let Some(definition) = ctx.db.item().id().find(inventory.item_id.clone()) else {
         return Err(format!("Unknown weapon definition {}", inventory.item_id));
     };
-    if definition.kind != ItemKind::Weapon || !definition.melee {
+    if definition.kind != PersistedItemKind::Weapon || !definition.melee {
         return Ok(());
     }
     let Some(design) = default_design(&inventory.item_id) else {
@@ -210,7 +210,7 @@ pub(crate) fn initialize_party_weapon(
     let Some(definition) = ctx.db.item().id().find(inventory.item_id.clone()) else {
         return Err(format!("Unknown weapon definition {}", inventory.item_id));
     };
-    if definition.kind != ItemKind::Weapon || !definition.melee {
+    if definition.kind != PersistedItemKind::Weapon || !definition.melee {
         return Ok(());
     }
     let Some(design) = default_design(&inventory.item_id) else {
@@ -341,7 +341,7 @@ pub(crate) fn replace_design(
         .id()
         .find(object.item_id.clone())
         .ok_or("Weapon catalog definition not found")?;
-    if definition.kind != ItemKind::Weapon || !definition.melee {
+    if definition.kind != PersistedItemKind::Weapon || !definition.melee {
         return Err("Only melee weapon objects accept parametric designs".into());
     }
     if design.catalog_id != object.item_id {

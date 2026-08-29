@@ -229,7 +229,7 @@ fn persist_action_result_lead(
     let (stage, exact_location_id, latitude_e7, longitude_e7) = if let Some(site) = site {
         (
             DestinationKnowledgeStage::ExactBelieved,
-            site.id.value,
+            site.id.into_string(),
             site.latitude_e7,
             site.longitude_e7,
         )
@@ -353,6 +353,12 @@ fn validate_action_position(
     capability: &InvestigationActionCapability,
     kind: action::InvestigationActionKind,
 ) -> Result<(), String> {
+    let unavailable = |detail| {
+        adventuresim_core::reducer_error::coded_reducer_error(
+            adventuresim_core::reducer_error::ReducerErrorCode::InvestigationActionUnavailable,
+            detail,
+        )
+    };
     match capability.target_kind {
         action::InvestigationTargetKind::Contact => {
             let resident_character_id = capability
@@ -364,14 +370,16 @@ fn validate_action_position(
                 .settlement_resident_presence()
                 .character_id()
                 .find(resident_character_id)
-                .ok_or("Referred contact no longer has an authoritative presence")?;
+                .ok_or_else(|| {
+                    unavailable("Referred contact no longer has an authoritative presence")
+                })?;
             if actor.current_settlement_id.as_deref() != Some(presence.settlement_id.as_str()) {
-                return Err("The referred contact is in another settlement".into());
+                return Err(unavailable("The referred contact is in another settlement"));
             }
             if kind == action::InvestigationActionKind::LocateContact {
                 let minute = character_strategic_minute(ctx, actor.id);
                 if !crate::settlement_population::npc_is_present(ctx, &presence, minute) {
-                    return Err("The referred contact is not currently present".into());
+                    return Err(unavailable("The referred contact is not currently present"));
                 }
             }
             Ok(())
@@ -546,7 +554,7 @@ fn validate_generated_pattern_condition(
                         "Victim cohort authority no longer exists",
                     )
                 })?;
-            let expected_demographic = format!("{demographic:?}").to_ascii_lowercase();
+            let expected_demographic = demographic.as_str();
             if target.case_id != capability.case_id
                 || target.demographic != expected_demographic
                 || target.age_band != *age_band
@@ -604,8 +612,8 @@ fn validate_generated_pattern_condition(
                     resident_character_id: npc.character_id,
                     display_name: npc.name.clone(),
                     demographic: crate::strategic::generated_npc_demographic(&npc),
-                    age_band: format!("{:?}", npc.age_band).to_ascii_lowercase(),
-                    sex: format!("{:?}", npc.sex).to_ascii_lowercase(),
+                    age_band: npc.age_band.stable_id().to_owned(),
+                    sex: npc.sex.stable_id().to_owned(),
                     profession: npc.profession.clone(),
                     visible_description: String::new(),
                     expected_location: presence.location_id.clone(),
@@ -1346,10 +1354,7 @@ fn site_bound_investigation_plan(
     else {
         return Ok(None);
     };
-    let place = site
-        .id
-        .to_place()
-        .ok_or("Investigation site identity is malformed")?;
+    let place = site.id.to_place();
     let actor = CustodyCharacterId::try_new(actor_id)
         .map_err(|_| "Investigation actor identity is malformed")?;
     let coordinates = ActionCoordinates::try_new(
@@ -1537,7 +1542,7 @@ pub(crate) fn perform_investigation_action_authorized(
                 && capability.method == "inspect_site"
         })
         .and_then(|capability| exact_action_case_site_for_observer(ctx, capability))
-        .and_then(|matched| matched.site.id.to_place());
+        .map(|matched| matched.site.id.to_place());
     let rights_question = action::investigation_rights_question(
         adventuresim_core::physical_object::CustodyCharacterId::try_new(actor_id)
             .map_err(|_| "Investigation actor identity is malformed")?,

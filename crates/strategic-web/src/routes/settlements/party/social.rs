@@ -20,6 +20,19 @@ fn observer_safe_relationship_answer(
     }
 }
 
+const fn social_topic_order(topic: adventuresim_core::social::SocialTopic) -> u8 {
+    use adventuresim_core::social::SocialTopic;
+
+    match topic {
+        SocialTopic::Defeat => 0,
+        SocialTopic::Faith => 1,
+        SocialTopic::Fatigue => 2,
+        SocialTopic::Filth => 3,
+        SocialTopic::Hunger => 4,
+        SocialTopic::Injury => 5,
+    }
+}
+
 pub(super) async fn party_social(
     State(state): State<AppState>,
     Path((kind, id, target_id)): Path<(String, String, u64)>,
@@ -67,16 +80,23 @@ pub(super) async fn party_social(
     let mut shared_concerns = actor_sources
         .iter()
         .filter(|source| {
-            adventuresim_core::social::social_source_eligible(&source.kind, source.magnitude)
+            adventuresim_core::social::social_source_eligible(
+                crate::spacetimedb::core_morale_source_kind(source.kind),
+                source.magnitude,
+            )
         })
-        .filter_map(|source| adventuresim_core::social::topic_for_source_kind(&source.kind))
+        .filter_map(|source| {
+            adventuresim_core::social::topic_for_source_kind(
+                crate::spacetimedb::core_morale_source_kind(source.kind),
+            )
+        })
         .collect::<Vec<_>>();
-    shared_concerns.sort_by_key(|topic| format!("{topic:?}"));
+    shared_concerns.sort_by_key(|topic| social_topic_order(*topic));
     shared_concerns.dedup();
     let target_condition_result = state
         .db
-        .query_one::<CharacterCondition>(&format!(
-            "SELECT * FROM backend_character_conditions WHERE character_id = {target_id}"
+        .query_one_sats::<CharacterCondition>(&crate::spacetimedb::character_condition_by_character_id(
+            target_id,
         ))
         .await;
     let religion_id = target_condition_result
@@ -91,16 +111,16 @@ pub(super) async fn party_social(
     let infamy = reputation
         .as_ref()
         .map_or(0.0, |value| value.infamy as f32 / 100.0);
-    let target_minute = query_single::<CharacterTime>(&state, "backend_character_times", target_id)
-        .await
-        .map_or(0, |v| v.minutes);
+    let target_minute = query_single::<CharacterTime>(
+        &state,
+        crate::spacetimedb::character_time_by_character_id(target_id),
+    )
+    .await
+    .map_or(0, |v| v.minutes);
     let affinity_id = format!("{target_id}:{}", active.id);
     let affinity_result = state
         .db
-        .query_one::<CharacterAffinity>(&format!(
-            "SELECT * FROM backend_character_affinities WHERE id = {}",
-            sql_string_literal(&affinity_id)
-        ))
+        .query_one_sats::<CharacterAffinity>(&crate::spacetimedb::character_affinity_by_id(&affinity_id))
         .await;
     let affinity_available = affinity_result.is_ok();
     let affinity = affinity_result.ok().flatten().map_or(0.0, |v| {
@@ -113,9 +133,8 @@ pub(super) async fn party_social(
     let familiarity_id = format!("{low}:{high}");
     let familiarity_result = state
         .db
-        .query_one::<CharacterFamiliarity>(&format!(
-            "SELECT * FROM backend_character_familiarities WHERE id = {}",
-            sql_string_literal(&familiarity_id)
+        .query_one_sats::<CharacterFamiliarity>(&crate::spacetimedb::character_familiarity_by_id(
+            &familiarity_id,
         ))
         .await;
     let familiarity_available = familiarity_result.is_ok();
@@ -125,7 +144,7 @@ pub(super) async fn party_social(
         .map_or(0, |v| v.shared_minutes);
     let beliefs_result = state
         .db
-        .query::<SocialBelief>(&format!(
+        .query_sats::<SocialBelief>(&format!(
             "SELECT * FROM backend_social_beliefs WHERE observer_id = {}",
             active.id
         ))
@@ -143,7 +162,7 @@ pub(super) async fn party_social(
     };
     let addressed_source_ids = state
         .db
-        .query::<SocialAddress>(&format!(
+        .query_sats::<SocialAddress>(&format!(
             "SELECT * FROM backend_social_addresses WHERE actor_id = {}",
             active.id
         ))
@@ -158,9 +177,8 @@ pub(super) async fn party_social(
     } else {
         state
             .db
-            .query_one::<AutomaticSocialChat>(&format!(
-                "SELECT * FROM backend_automatic_social_chats WHERE id = {}",
-                sql_string_literal(&format!("{}:{target_id}", active.id))
+            .query_one_sats::<AutomaticSocialChat>(&crate::spacetimedb::automatic_social_chat_by_id(
+                &format!("{}:{target_id}", active.id),
             ))
             .await
             .ok()
@@ -169,9 +187,9 @@ pub(super) async fn party_social(
     };
     let relationship_answer = state
         .db
-        .query_one::<crate::spacetimedb::BackendCharacterRelationshipStatus>(&format!(
-            "SELECT * FROM backend_character_relationship_statuses WHERE character_id = {target_id}"
-        ))
+        .query_one_sats::<BackendCharacterRelationshipStatus>(
+            &crate::spacetimedb::character_relationship_status_by_character_id(target_id),
+        )
         .await
         .ok()
         .flatten()
@@ -179,14 +197,16 @@ pub(super) async fn party_social(
 
     let actor_personality_result = state
         .db
-        .query::<CharacterPersonality>(&format!(
-            "SELECT * FROM backend_character_personalities WHERE character_id = {}",
-            active.id
+        .query_sats::<adventuresim_stdb_client::CharacterPersonality>(&crate::spacetimedb::character_personality_by_character_id(
+            active.id,
         ))
         .await;
     let actor_personality_available = actor_personality_result.is_ok();
     let actor_personality = match actor_personality_result {
-        Ok(rows) => rows.into_iter().next(),
+        Ok(rows) => rows
+            .into_iter()
+            .next()
+            .map(|row| crate::spacetimedb::core_personality(&row)),
         Err(error) => {
             tracing::error!(
                 %error,
@@ -198,9 +218,8 @@ pub(super) async fn party_social(
     };
     let actor_skills_result = state
         .db
-        .query_one::<CharacterSkills>(&format!(
-            "SELECT * FROM backend_character_skills WHERE character_id = {}",
-            active.id
+        .query_one_sats::<CharacterSkills>(&crate::spacetimedb::character_skills_by_character_id(
+            active.id,
         ))
         .await;
     let prayer_disabled_reason = if target_id == active.id {
@@ -319,12 +338,6 @@ pub(super) struct CasualChatForm {
 }
 
 #[derive(Deserialize)]
-pub(super) struct BackendSocialChatReceiptRow {
-    #[serde(deserialize_with = "crate::spacetimedb::deserialize_social_chat_outcome")]
-    outcome: SocialChatOutcome,
-}
-
-#[derive(Deserialize)]
 pub(super) struct AutomaticSocialChatForm {
     enabled: Option<String>,
 }
@@ -394,10 +407,7 @@ pub(super) async fn perform_social_action(
             let address_id = format!("{actor_id}:{target_id}:{}", form.source_id);
             match state
                 .db
-                .query_one::<SocialAddress>(&format!(
-                    "SELECT * FROM backend_social_addresses WHERE id = {}",
-                    sql_string_literal(&address_id)
-                ))
+                .query_one_sats::<SocialAddress>(&crate::spacetimedb::social_address_by_id(&address_id))
                 .await
             {
                 Ok(Some(_)) => "addressed",
@@ -453,7 +463,7 @@ pub(super) async fn chat_with_party_member(
     let feedback = match result {
         Ok(()) => state
             .db
-            .query_one::<BackendSocialChatReceiptRow>(&format!(
+            .query_one_sats::<crate::spacetimedb::BackendSocialChatReceipt>(&format!(
                 "SELECT * FROM backend_social_chat_receipts WHERE id = {} AND actor_id = {actor_id}",
                 sql_string_literal(&format!("{actor_id}:{}", form.action_id.as_str()))
             ))
@@ -491,13 +501,10 @@ pub(super) fn social_action_error_feedback(_error: &str) -> &'static str {
 
 pub(super) fn social_action_blocked_by_actor(
     personality_available: bool,
-    personality: Option<&CharacterPersonality>,
+    personality: Option<&Personality>,
     action: adventuresim_core::social::SocialActionKind,
 ) -> bool {
-    use adventuresim_core::{
-        personality::{Courtship as CoreCourtship, Mirth as CoreMirth},
-        social::actor_allows_social_action,
-    };
+    use adventuresim_core::social::actor_allows_social_action;
 
     if !personality_available {
         return true;
@@ -505,17 +512,7 @@ pub(super) fn social_action_blocked_by_actor(
     let Some(personality) = personality else {
         return true;
     };
-    let mirth = match personality.mirth {
-        crate::spacetimedb::Mirth::Neutral => CoreMirth::Neutral,
-        crate::spacetimedb::Mirth::Merry => CoreMirth::Merry,
-        crate::spacetimedb::Mirth::Grave => CoreMirth::Grave,
-    };
-    let courtship = match personality.courtship {
-        crate::spacetimedb::Courtship::Neutral => CoreCourtship::Neutral,
-        crate::spacetimedb::Courtship::Amorous => CoreCourtship::Amorous,
-        crate::spacetimedb::Courtship::Proper => CoreCourtship::Proper,
-    };
-    !actor_allows_social_action(action, mirth, courtship)
+    !actor_allows_social_action(action, personality.mirth, personality.courtship)
 }
 
 pub(super) fn social_feedback(
@@ -590,5 +587,31 @@ mod relationship_privacy_tests {
         );
         assert!(observer_safe_relationship_answer(&informal(false), 7).contains("in courtship"));
         assert!(observer_safe_relationship_answer(&informal(true), 9).contains("in courtship"));
+    }
+
+    #[test]
+    fn shared_concern_order_is_a_fixed_domain_order() {
+        use adventuresim_core::social::SocialTopic;
+
+        let mut topics = vec![
+            SocialTopic::Injury,
+            SocialTopic::Hunger,
+            SocialTopic::Filth,
+            SocialTopic::Fatigue,
+            SocialTopic::Faith,
+            SocialTopic::Defeat,
+        ];
+        topics.sort_by_key(|topic| social_topic_order(*topic));
+        assert_eq!(
+            topics,
+            vec![
+                SocialTopic::Defeat,
+                SocialTopic::Faith,
+                SocialTopic::Fatigue,
+                SocialTopic::Filth,
+                SocialTopic::Hunger,
+                SocialTopic::Injury,
+            ]
+        );
     }
 }

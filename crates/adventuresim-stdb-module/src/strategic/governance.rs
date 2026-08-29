@@ -771,7 +771,7 @@ pub fn create_recruitment_role(
     leader_id: u64,
     name: String,
     quantity: u32,
-    requirements: RecruitmentRequirements,
+    requirements: RoleRequirements,
     save_role: bool,
 ) -> Result<(), String> {
     require_strategic_character_authority(ctx, leader_id)?;
@@ -824,6 +824,7 @@ pub fn create_recruitment_role(
         .insert(PartyRecruitmentRole {
             id: 0,
             party_id,
+            purpose: RecruitmentRolePurpose::Specialized,
             name: role_name.clone(),
             requirements,
             quantity,
@@ -851,7 +852,7 @@ pub fn update_recruitment_role(
     role_id: u64,
     name: String,
     quantity: u32,
-    requirements: RecruitmentRequirements,
+    requirements: RoleRequirements,
 ) -> Result<(), String> {
     require_strategic_character_authority(ctx, leader_id)?;
     crate::character::require_living_character(ctx, leader_id)?;
@@ -976,7 +977,7 @@ pub fn save_recruitment_role(
     ctx: &ReducerContext,
     owner_id: u64,
     name: String,
-    requirements: RecruitmentRequirements,
+    requirements: RoleRequirements,
 ) -> Result<(), String> {
     require_strategic_character_authority(ctx, owner_id)?;
     crate::character::require_living_character(ctx, owner_id)?;
@@ -1026,7 +1027,7 @@ pub fn rename_saved_recruitment_role(
     Ok(())
 }
 
-fn validate_recruitment_requirements(requirements: RecruitmentRequirements) -> Result<(), String> {
+fn validate_recruitment_requirements(requirements: RoleRequirements) -> Result<(), String> {
     if !(0.0..=adventuresim_core::capability::WEAPON_PRECISION_RAPIER)
         .contains(&requirements.weapon_precision)
         || (requirements.weapon_precision * 2.0).fract() != 0.0
@@ -1113,7 +1114,7 @@ fn filled_role_slots(ctx: &ReducerContext, role_id: u64) -> u32 {
 fn role_requirements(
     role: &PartyRecruitmentRole,
 ) -> adventuresim_core::capability::RoleRequirements {
-    let mut requirements = adventuresim_core::capability::RoleRequirements::from(role.requirements);
+    let mut requirements = role.requirements;
     requirements.physiology = 0;
     requirements.surgery = 0;
     requirements.command = 0;
@@ -1369,19 +1370,24 @@ pub fn request_general_party_join(
         .party_recruitment_role()
         .party_id()
         .filter(&target_party_id)
-        .find(|role| role.quantity == 0 && role.name == "Unassigned")
+        .find(is_general_join_role)
         .unwrap_or_else(|| {
             ctx.db
                 .party_recruitment_role()
                 .insert(PartyRecruitmentRole {
                     id: 0,
                     party_id: target_party_id.clone(),
+                    purpose: RecruitmentRolePurpose::GeneralJoin,
                     name: "Unassigned".into(),
-                    requirements: RecruitmentRequirements::default(),
+                    requirements: RoleRequirements::default(),
                     quantity: 0,
                 })
         });
     request_to_join_party(ctx, character_id, role.id)
+}
+
+fn is_general_join_role(role: &PartyRecruitmentRole) -> bool {
+    role.purpose == RecruitmentRolePurpose::GeneralJoin
 }
 
 #[reducer]
@@ -1540,7 +1546,10 @@ pub fn accept_party_join_request(
             crate::investigation::set_character_case_site(
                 ctx,
                 member.character_id,
-                party.current_case_site_id.clone().map(|id| id.value),
+                party
+                    .current_case_site_id
+                    .clone()
+                    .map(CaseSiteId::into_string),
             )?;
             crate::social::reset_familiarity_after_join(ctx, member.character_id);
         }

@@ -58,7 +58,7 @@ impl LiveRunner {
             let Some((leader, _)) = self.current_leader(party_id) else {
                 return Ok(());
             };
-            let result = reducer_call!(self, "unsafe_contract_retreat_to_settlement", |cb| self
+            let result = reducer_call!(self, ReducerOperation::UnsafeContractRetreatToSettlement, |cb| self
                 .connection
                 .reducers
                 .travel_to_settlement_then(leader, quest.settlement_id.clone(), cb));
@@ -74,15 +74,17 @@ impl LiveRunner {
         if leader != quest_owner {
             return Ok(());
         }
-        let result = reducer_call!(self, "abandon_unsafe_active_contract", |cb| self
+        let result = reducer_call!(self, ReducerOperation::AbandonUnsafeActiveContract, |cb| self
             .connection
             .reducers
             .abandon_contract_then(leader, quest.id.clone(), cb));
         self.call(result)?;
         self.metrics.direct_contracts_safely_abandoned += 1;
-        self.event(
+        self.direct_contract_event(
             leader_agent,
             CoreLoopEventKind::AbandonQuest,
+            party_id,
+            &quest.id,
             format!(
                 "quest={};reason=active_contract_public_matchup_unsafe",
                 bounded_event_field(&quest.id)
@@ -220,7 +222,7 @@ impl LiveRunner {
                     "public_presence_projection",
                 );
             }
-            let result = reducer_call!(self, "interact_accept_contract", |cb| self
+            let result = reducer_call!(self, ReducerOperation::InteractAcceptContract, |cb| self
                 .connection
                 .reducers
                 .simulate_contract_issuer_interaction_then(
@@ -242,7 +244,7 @@ impl LiveRunner {
             }
             self.metrics.quests_attempted += 1;
             self.metrics.direct_contracts_attempted += 1;
-            let result = reducer_call!(self, "accept_quest", |cb| self
+            let result = reducer_call!(self, ReducerOperation::AcceptQuest, |cb| self
                 .connection
                 .reducers
                 .accept_contract_then(leader, quest.id.clone(), cb));
@@ -254,12 +256,12 @@ impl LiveRunner {
             .backend_case_site_pins()
             .iter()
             .filter(|site| site.owner_character_id == leader && site.case_id == quest.case_id)
-            .min_by_key(|site| (site.distance_m, site.case_site_id.clone()))
+            .min_by_key(|site| (site.distance_m, site.case_site_id.value.clone()))
             .ok_or("accepted quest did not disclose an exact case site")?;
         let already_at_case_site = party
             .current_case_site_id
             .as_ref()
-            .is_some_and(|site| site.value == case_site.case_site_id);
+            .is_some_and(|site| site == &case_site.case_site_id);
         if !already_at_case_site {
             if party.current_settlement_id.is_some() ^ party.current_case_site_id.is_some() {
                 match self.validate_case_site_thermal_readiness(party_id, leader_agent, &case_site)
@@ -324,9 +326,11 @@ impl LiveRunner {
                 );
             }
             if !resuming_contract {
-                self.event(
+                self.direct_contract_event(
                     leader_agent,
                     CoreLoopEventKind::AcceptContract,
+                    party_id,
+                    &quest.id,
                     format!(
                         "cycle={cycle};party={};quest={};title={};difficulty={};opposition={} {};distance_m={}",
                         bounded_event_field(party_id),
@@ -339,27 +343,27 @@ impl LiveRunner {
                     ),
                 );
             } else {
-                self.event(
+                self.direct_contract_event(
                     leader_agent,
                     CoreLoopEventKind::Travel,
+                    party_id,
+                    &quest.id,
                     format!(
                         "direct_contract={};continuation=outbound;case_site={}",
                         bounded_event_field(&quest.id),
-                        bounded_event_field(&case_site.case_site_id),
+                        bounded_event_field(&case_site.case_site_id.value),
                     ),
                 );
             }
 
             let outbound_before = self.expedition_member_observations(party_id)?;
             let outbound_supplies_before = self.expedition_supplies(party_id);
-            let result = reducer_call!(self, "travel_to_case_site", |cb| self
+            let result = reducer_call!(self, ReducerOperation::TravelToCaseSite, |cb| self
                 .connection
                 .reducers
                 .travel_to_case_site_then(
                     leader,
-                    CaseSiteId {
-                        value: case_site.case_site_id.clone(),
-                    },
+                    case_site.case_site_id.clone(),
                     cb,
                 ));
             self.call(result)?;
@@ -383,23 +387,27 @@ impl LiveRunner {
                     supplies_after: outbound_supplies_after,
                 },
             );
-            self.event(
+            self.direct_contract_event(
                 leader_agent,
                 CoreLoopEventKind::Travel,
+                party_id,
+                &quest.id,
                 format!(
                     "party={};direct_contract={};outbound={}",
                     bounded_event_field(party_id),
                     bounded_event_field(&quest.id),
-                    bounded_event_field(&case_site.case_site_id)
+                    bounded_event_field(&case_site.case_site_id.value)
                 ),
             );
             if self.travel_camps(party_id)? != JourneyTravelOutcome::Completed {
                 return Ok(());
             }
         } else {
-            self.event(
+            self.direct_contract_event(
                 leader_agent,
                 CoreLoopEventKind::Travel,
+                party_id,
+                &quest.id,
                 format!(
                     "direct_contract={};continuation=arrived_case_site",
                     bounded_event_field(&quest.id)
@@ -424,7 +432,7 @@ impl LiveRunner {
                 return Ok(());
             };
             leader = current;
-            let result = reducer_call!(self, "illness_retreat_to_settlement", |cb| self
+            let result = reducer_call!(self, ReducerOperation::IllnessRetreatToSettlement, |cb| self
                 .connection
                 .reducers
                 .travel_to_settlement_then(leader, quest.settlement_id.clone(), cb));
@@ -442,13 +450,19 @@ impl LiveRunner {
             };
             leader = quest_owner;
             leader_agent = current_agent;
-            let result = reducer_call!(self, "abandon_unsafe_quest", |cb| self
+            let result = reducer_call!(self, ReducerOperation::AbandonUnsafeQuest, |cb| self
                 .connection
                 .reducers
                 .abandon_contract_then(leader, quest.id.clone(), cb));
             self.call(result)?;
             self.metrics.direct_contracts_safely_abandoned += 1;
-            self.event(leader_agent, CoreLoopEventKind::AbandonQuest, quest.id);
+            self.direct_contract_event(
+                leader_agent,
+                CoreLoopEventKind::AbandonQuest,
+                party_id,
+                &quest.id,
+                quest.id.clone(),
+            );
             return Ok(());
         }
 
@@ -465,10 +479,10 @@ impl LiveRunner {
 
         let mission_id = format!(
             "mission:sim-autoresolve:{party_id}:{}:{cycle}",
-            case_site.case_site_id
+            case_site.case_site_id.value
         );
         let battle_id = format!("battle:{mission_id}");
-        let result = reducer_call!(self, "autoresolve_mission", |cb| self
+        let result = reducer_call!(self, ReducerOperation::AutoresolveMission, |cb| self
             .connection
             .reducers
             .autoresolve_mission_then(leader, mission_id.clone(), cb));
@@ -493,13 +507,15 @@ impl LiveRunner {
             .iter()
             .any(|result| result.battle_id == battle_id);
         let winning_battle_id = victory.then_some(battle_id);
-        self.event(
+        self.direct_contract_event(
             leader_agent,
             if victory {
                 CoreLoopEventKind::AutoresolveVictory
             } else {
                 CoreLoopEventKind::AutoresolveDefeat
             },
+            party_id,
+            &quest.id,
             format!(
                 "party={};quest={};seed={};rounds={};summary={};log={:?}",
                 bounded_event_field(party_id),
@@ -514,7 +530,7 @@ impl LiveRunner {
             self.metrics.defeats += 1;
         }
         if !victory {
-            let result = reducer_call!(self, "defeat_retreat_to_settlement", |cb| self
+            let result = reducer_call!(self, ReducerOperation::DefeatRetreatToSettlement, |cb| self
                 .connection
                 .reducers
                 .travel_to_settlement_then(leader, quest.settlement_id.clone(), cb));
@@ -537,21 +553,23 @@ impl LiveRunner {
             };
             leader = quest_owner;
             leader_agent = current_agent;
-            let result = reducer_call!(self, "abandon_defeated_quest", |cb| self
+            let result = reducer_call!(self, ReducerOperation::AbandonDefeatedQuest, |cb| self
                 .connection
                 .reducers
                 .abandon_contract_then(leader, quest.id.clone(), cb));
             self.call(result)?;
             self.metrics.direct_contracts_safely_abandoned += 1;
-            self.event(
+            self.direct_contract_event(
                 leader_agent,
                 CoreLoopEventKind::AbandonQuest,
+                party_id,
+                &quest.id,
                 format!(
                     "quest={};reason=unchanged_defeated_threat",
                     bounded_event_field(&quest.id)
                 ),
             );
-            let result = reducer_call!(self, "replenish_quests_after_abandon", |cb| self
+            let result = reducer_call!(self, ReducerOperation::ReplenishQuestsAfterAbandon, |cb| self
                 .connection
                 .reducers
                 .ensure_settlement_activity_then(quest.settlement_id.clone(), cb));
@@ -586,7 +604,7 @@ impl LiveRunner {
                     ),
             );
         }
-        let result = reducer_call!(self, "store_battle_loot", |cb| self
+        let result = reducer_call!(self, ReducerOperation::StoreBattleLoot, |cb| self
             .connection
             .reducers
             .store_battle_loot_then(leader, winning_battle_id, vec![], vec![], cb,));
@@ -597,14 +615,16 @@ impl LiveRunner {
             format!("stacks={}", loot.len()),
         );
 
-        let result = reducer_call!(self, "return_to_settlement", |cb| self
+        let result = reducer_call!(self, ReducerOperation::ReturnToSettlement, |cb| self
             .connection
             .reducers
             .travel_to_settlement_then(leader, quest.settlement_id.clone(), cb));
         self.call(result)?;
-        self.event(
+        self.direct_contract_event(
             leader_agent,
             CoreLoopEventKind::Travel,
+            party_id,
+            &quest.id,
             format!("return={}", quest.settlement_id),
         );
         if self.travel_camps(party_id)? != JourneyTravelOutcome::Completed {
@@ -637,7 +657,7 @@ impl LiveRunner {
                 .sum();
             let ids = sale.iter().map(|row| row.id).collect();
             let quantities = sale.iter().map(|row| row.quantity).collect();
-            let result = reducer_call!(self, "liquidate_party_inventory", |cb| self
+            let result = reducer_call!(self, ReducerOperation::LiquidatePartyInventory, |cb| self
                 .connection
                 .reducers
                 .liquidate_party_inventory_then(
@@ -741,7 +761,10 @@ impl LiveRunner {
             .iter()
             .filter_map(|candidate| {
                 let utility = equipment_utility(&profile, candidate)?;
-                let armor = matches!(candidate.kind, ItemKind::Armor | ItemKind::Clothing);
+                let armor = matches!(
+                    candidate.kind,
+                    PersistedItemKind::Armor | PersistedItemKind::Clothing
+                );
                 let current = equipped_definitions
                     .iter()
                     .filter(|(item, _)| {
@@ -749,7 +772,10 @@ impl LiveRunner {
                             item.melee || item.ranged
                         } else {
                             armor
-                                && matches!(item.kind, ItemKind::Armor | ItemKind::Clothing)
+                                && matches!(
+                                    item.kind,
+                                    PersistedItemKind::Armor | PersistedItemKind::Clothing
+                                )
                                 && item.slot == candidate.slot
                         }
                     })
@@ -818,9 +844,7 @@ impl LiveRunner {
             .find(|row| row.party_id == party_id && row.character_id == character_id)
             .map_or(0, |row| row.value);
         let maximum_personal_payment = quoted_cost.saturating_sub(earned_shortfall);
-        let result = reducer_call!(
-            self,
-            "purchase_personal_storefront_with_party_stake",
+        let result = reducer_call!(self, ReducerOperation::PurchasePersonalStorefrontWithPartyStake,
             |cb| self
                 .connection
                 .reducers
@@ -908,7 +932,7 @@ impl LiveRunner {
             })
             .and_then(|index| u16::try_from(index).ok())
             .ok_or("equipment upgrade lacks a compatible authored root placement")?;
-        let result = reducer_call!(self, "replace_item_at_placement", |cb| self
+        let result = reducer_call!(self, ReducerOperation::ReplaceItemAtPlacement, |cb| self
             .connection
             .reducers
             .replace_item_at_placement_then(
@@ -929,7 +953,12 @@ impl LiveRunner {
             return Err("equip reducer completed without the requested equipped state".into());
         }
         self.metrics.equipment_upgrades += 1;
-        self.event(agent, CoreLoopEventKind::Equip, candidate.id);
+        self.item_event(
+            agent,
+            CoreLoopEventKind::Equip,
+            inventory.id,
+            candidate.id,
+        );
         Ok(())
     }
 }

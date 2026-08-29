@@ -593,7 +593,7 @@ quest-analyze-promote seed="41" family="recurring-depredation":
     @cargo run -p adventuresim-strategic-sim -- quest-analyze-promote --seed {{ seed }} --family {{ family }} --max-steps 1 --output quest-analysis-replay-candidate.json
 
 quest-analyze-replay-fixture:
-    @cargo run -p adventuresim-strategic-sim -- quest-analyze-replay --fixture crates/adventuresim-strategic-sim/fixtures/quest-analysis-failure-v3.json
+    @cargo run -p adventuresim-strategic-sim -- quest-analyze-replay --fixture crates/adventuresim-strategic-sim/fixtures/quest-analysis-failure-v4.json
 
 test-strategic-sim:
     @cargo test -p adventuresim-strategic-sim

@@ -101,7 +101,41 @@ personality_enum!(Presentation {
     Ambiguous,
     Woman,
 });
+
+impl Presentation {
+    pub const fn stable_id(self) -> &'static str {
+        match self {
+            Self::Man => "man",
+            Self::Ambiguous => "ambiguous",
+            Self::Woman => "woman",
+        }
+    }
+
+    pub const fn stable_variant_id(self) -> &'static str {
+        match self {
+            Self::Man => "Man",
+            Self::Ambiguous => "Ambiguous",
+            Self::Woman => "Woman",
+        }
+    }
+}
 personality_enum!(Sex { Female, Male });
+
+impl Sex {
+    pub const fn stable_id(self) -> &'static str {
+        match self {
+            Self::Female => "female",
+            Self::Male => "male",
+        }
+    }
+
+    pub const fn stable_variant_id(self) -> &'static str {
+        match self {
+            Self::Female => "Female",
+            Self::Male => "Male",
+        }
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

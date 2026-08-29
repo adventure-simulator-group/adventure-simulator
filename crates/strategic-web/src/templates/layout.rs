@@ -5,6 +5,22 @@ use adventuresim_core::strategic_time::{DAYS_PER_YEAR, LUNAR_CYCLE_MINUTES, MINU
 use maud::{DOCTYPE, Markup, PreEscaped, html};
 
 use super::{organization_charge, organization_colors, religion_icon_path};
+
+const fn chapter_building_kind_tag(
+    kind: adventuresim_core::organization::ChapterBuildingKind,
+) -> &'static str {
+    use adventuresim_core::organization::ChapterBuildingKind;
+
+    match kind {
+        ChapterBuildingKind::Guildhall => "guildhall",
+        ChapterBuildingKind::Workshop => "workshop",
+        ChapterBuildingKind::College => "college",
+        ChapterBuildingKind::Confraternity => "confraternity",
+        ChapterBuildingKind::Commandery => "commandery",
+        ChapterBuildingKind::Lodge => "lodge",
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ScriptProfile {
     Entry,
@@ -353,7 +369,7 @@ fn settlement_top_bar(
                     @let chapter = organization.chapter(settlement_id).expect("local chapter");
                     @let standalone = economy.is_none_or(|profile| adventuresim_core::organization::chapter_has_standalone_building(organization, chapter, profile));
                     @if standalone {
-                    @let kind = format!("{:?}", chapter.building_kind).to_ascii_lowercase();
+                    @let kind = chapter_building_kind_tag(chapter.building_kind);
                     @let charge = organization_charge(organization);
                     @let (field, accent) = organization_colors(&organization.id);
                     @let tint = building_tint(settlement_id, &chapter.location_id, material);
@@ -793,10 +809,36 @@ pub fn sidebar_section(title: &str, content: Markup) -> Markup {
 mod tests {
     use super::{
         HorizonVariant, ScriptProfile, WildernessVariant, building_tier, building_tint,
-        entry_layout, horizon_variant, journal_layout, page_shell, quest_location_top_bar,
-        religion_icon_path, settlement_layout_with_session, settlement_top_bar, wilderness_variant,
+        chapter_building_kind_tag, entry_layout, horizon_variant, journal_layout, page_shell,
+        quest_location_top_bar, religion_icon_path, settlement_layout_with_session,
+        settlement_top_bar, wilderness_variant,
     };
     use crate::spacetimedb::SettlementCategory;
+
+    #[test]
+    fn organization_building_tags_are_fixed_boundary_values() {
+        use adventuresim_core::organization::ChapterBuildingKind::*;
+
+        assert_eq!(
+            [
+                Guildhall,
+                Workshop,
+                College,
+                Confraternity,
+                Commandery,
+                Lodge
+            ]
+            .map(chapter_building_kind_tag),
+            [
+                "guildhall",
+                "workshop",
+                "college",
+                "confraternity",
+                "commandery",
+                "lodge",
+            ]
+        );
+    }
     use maud::html;
 
     #[test]

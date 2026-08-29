@@ -26,6 +26,7 @@ use crate::{
 use adventuresim_core::investigation as inv;
 use adventuresim_core::investigation_action as action;
 use adventuresim_core::skill::{PlayerSkills, Skill};
+use adventuresim_core::strategic_place::CaseSiteId;
 use inv::{DestinationKnowledgeStage, InvestigationProvenanceKind};
 use serde::{Deserialize, Serialize};
 use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view};
@@ -33,55 +34,10 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 const MAX_TEXT: usize = 512;
 
-/// SpacetimeDB transport for the opaque component of a canonical
-/// `StrategicPlaceId::CaseSite`. It has no independent identity semantics;
-/// consumers must cross the centralized conversion boundary below.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, SpacetimeType)]
-pub struct CaseSiteId {
-    pub value: String,
-}
-
-impl CaseSiteId {
-    pub fn try_new(value: impl Into<String>) -> Result<Self, String> {
-        let value = value.into();
-        adventuresim_core::strategic_place::StrategicPlaceId::case_site(value.clone())
-            .map_err(|_| "Case-site identity is malformed")?;
-        Ok(Self { value })
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.value
-    }
-
-    pub(crate) fn to_place(&self) -> Option<adventuresim_core::strategic_place::StrategicPlaceId> {
-        adventuresim_core::strategic_place::StrategicPlaceId::case_site(self.value.clone()).ok()
-    }
-}
-
-impl From<String> for CaseSiteId {
-    fn from(value: String) -> Self {
-        Self::try_new(value).expect("server-authored case-site component must be canonical")
-    }
-}
-
 pub(crate) fn canonical_case_site_place(
     value: &str,
 ) -> Option<adventuresim_core::strategic_place::StrategicPlaceId> {
-    CaseSiteId::try_new(value.to_owned()).ok()?.to_place()
-}
-
-impl std::ops::Deref for CaseSiteId {
-    type Target = str;
-
-    fn deref(&self) -> &Self::Target {
-        self.as_str()
-    }
-}
-
-impl std::fmt::Display for CaseSiteId {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.value.fmt(formatter)
-    }
+    Some(CaseSiteId::try_new(value.to_owned()).ok()?.to_place())
 }
 
 #[derive(Clone, Debug)]
@@ -1109,7 +1065,8 @@ pub(crate) fn character_case_site_occupancy_at(
 }
 
 pub(crate) fn character_case_site_id(ctx: &ReducerContext, character_id: u64) -> Option<String> {
-    current_character_case_site_occupancy(ctx, character_id).map(|row| row.case_site_id.value)
+    current_character_case_site_occupancy(ctx, character_id)
+        .map(|row| row.case_site_id.into_string())
 }
 
 pub(crate) fn set_character_case_site(
@@ -1119,7 +1076,8 @@ pub(crate) fn set_character_case_site(
 ) -> Result<(), String> {
     let case_site_id = match case_site_id {
         Some(value) => {
-            let value = CaseSiteId::try_new(value)?;
+            let value = CaseSiteId::try_new(value)
+                .map_err(|_| "Case-site identity is malformed".to_owned())?;
             Some(value)
         }
         None => None,
@@ -1142,7 +1100,9 @@ pub(crate) fn set_character_case_site(
         return Err("Character has conflicting active case-site occupancy".into());
     }
     let current = current_rows.pop();
-    let previous_site = current.as_ref().map(|row| row.case_site_id.value.clone());
+    let previous_site = current
+        .as_ref()
+        .map(|row| row.case_site_id.as_str().to_owned());
     if previous_site.as_deref() == case_site_id.as_ref().map(CaseSiteId::as_str) {
         return Ok(());
     }

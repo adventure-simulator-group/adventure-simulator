@@ -278,7 +278,8 @@ fn exact_site_provenance_accepts_only_valid_manual_or_generated_tuples() {
         catalog_revision: manifest.catalog_revision.clone(),
         context_commitment: crate::strategic::quest_generation_context_commitment(
             &context_snapshot_json,
-        ),
+        )
+        .unwrap(),
         context_snapshot_json,
         manifest_json: serde_json::to_string(&manifest).unwrap(),
         factor_trace_json: serde_json::to_string(&manifest.factor_trace).unwrap(),

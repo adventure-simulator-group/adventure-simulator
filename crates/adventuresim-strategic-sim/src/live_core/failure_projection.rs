@@ -10,12 +10,254 @@ fn event_is_repeatable(kind: &CoreLoopEventKind) -> bool {
     )
 }
 
-fn contract_issuer_unavailable_failure(error: &str) -> bool {
-    parse_reducer_error(error) == Some(ReducerErrorCode::ContractIssuerUnavailable)
+fn is_duplicate_semantic_event(
+    previous: Option<&CoreLoopEventSemanticKey>,
+    current: &CoreLoopEventSemanticKey,
+) -> bool {
+    !event_is_repeatable(&current.kind) && previous == Some(current)
 }
 
-fn merchant_provider_unavailable_failure(error: &str) -> bool {
-    parse_reducer_error(error) == Some(ReducerErrorCode::MerchantProviderUnavailable)
+fn contract_issuer_unavailable_failure(error: &CoreLoopError) -> bool {
+    error.reducer_code() == Some(ReducerErrorCode::ContractIssuerUnavailable)
+}
+
+fn merchant_provider_unavailable_failure(error: &CoreLoopError) -> bool {
+    error.reducer_code() == Some(ReducerErrorCode::MerchantProviderUnavailable)
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CoreLoopFailureCategory {
+    CoreLoopError,
+    DialogueActionFailed,
+    DiscoveryContactFailed,
+    EquipmentPurchaseFailed,
+    InvestigationActionFailed,
+    InvestigationStateChanged,
+    InvestigationTemporallyUnavailable,
+    InvalidInvestigationRoute,
+    JourneyProvisionPurchaseFailed,
+    JourneyTemporallyUnavailable,
+    JourneyTravelFailed,
+    MedicalInterventionFailed,
+    MedicalPurchaseFailed,
+    RestActionFailed,
+    SurvivalPurchaseFailed,
+}
+
+impl CoreLoopFailureCategory {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::CoreLoopError => "core_loop_error",
+            Self::DialogueActionFailed => "dialogue_action_failed",
+            Self::DiscoveryContactFailed => "discovery_contact_failed",
+            Self::EquipmentPurchaseFailed => "equipment_purchase_failed",
+            Self::InvestigationActionFailed => "investigation_action_failed",
+            Self::InvestigationStateChanged => "investigation_state_changed",
+            Self::InvestigationTemporallyUnavailable => "investigation_temporally_unavailable",
+            Self::InvalidInvestigationRoute => "invalid_investigation_route",
+            Self::JourneyProvisionPurchaseFailed => "journey_provision_purchase_failed",
+            Self::JourneyTemporallyUnavailable => "journey_temporally_unavailable",
+            Self::JourneyTravelFailed => "journey_travel_failed",
+            Self::MedicalInterventionFailed => "medical_intervention_failed",
+            Self::MedicalPurchaseFailed => "medical_purchase_failed",
+            Self::RestActionFailed => "rest_action_failed",
+            Self::SurvivalPurchaseFailed => "survival_purchase_failed",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CoreLoopFailureReason {
+    AmmunitionPurchaseFailed,
+    DialogueActionFailed,
+    DiscoveryContactFailed,
+    EquipmentStorefrontTradeFailed,
+    InvestigationActionFailed,
+    InvestigationActionStale,
+    InvestigationActionUnavailable,
+    InvestigationNightWindow,
+    InvestigationVictimCohortStateChanged,
+    InvestigationWaitFailed,
+    InvalidInvestigationRoute,
+    JourneyDaylightWindowRestRequired,
+    JourneyProvisionPurchaseFailed,
+    JourneyTravelReducerFailed,
+    MedicalInterventionFailed,
+    MedicalPurchaseFailed,
+    PartyTentPurchaseFailed,
+    RestActionFailed,
+    UnclassifiedCoreLoopError,
+}
+
+impl CoreLoopFailureReason {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::AmmunitionPurchaseFailed => "ammunition_purchase_failed",
+            Self::DialogueActionFailed => "dialogue_action_failed",
+            Self::DiscoveryContactFailed => "discovery_contact_failed",
+            Self::EquipmentStorefrontTradeFailed => "equipment_storefront_trade_failed",
+            Self::InvestigationActionFailed => "investigation_action_failed",
+            Self::InvestigationActionStale => "investigation_action_stale",
+            Self::InvestigationActionUnavailable => "investigation_action_unavailable",
+            Self::InvestigationNightWindow => "investigation_night_window",
+            Self::InvestigationVictimCohortStateChanged => {
+                "investigation_victim_cohort_state_changed"
+            }
+            Self::InvestigationWaitFailed => "investigation_wait_failed",
+            Self::InvalidInvestigationRoute => "invalid_investigation_route",
+            Self::JourneyDaylightWindowRestRequired => "journey_daylight_window_rest_required",
+            Self::JourneyProvisionPurchaseFailed => "journey_provision_purchase_failed",
+            Self::JourneyTravelReducerFailed => "journey_travel_reducer_failed",
+            Self::MedicalInterventionFailed => "medical_intervention_failed",
+            Self::MedicalPurchaseFailed => "medical_purchase_failed",
+            Self::PartyTentPurchaseFailed => "party_tent_purchase_failed",
+            Self::RestActionFailed => "rest_action_failed",
+            Self::UnclassifiedCoreLoopError => "unclassified_core_loop_error",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct CoreLoopFailureProjection {
+    category: CoreLoopFailureCategory,
+    reason: CoreLoopFailureReason,
+    operation: Option<ReducerOperation>,
+    message: &'static str,
+}
+
+fn project_core_loop_failure(error: &CoreLoopError) -> CoreLoopFailureProjection {
+    let operation = error.operation_kind();
+    let coded = match error.reducer_code() {
+        Some(ReducerErrorCode::JourneyDaylightWindowRequired) => Some((
+            CoreLoopFailureCategory::JourneyTemporallyUnavailable,
+            CoreLoopFailureReason::JourneyDaylightWindowRestRequired,
+            "Camp travel was continued outside its public projected walking window.",
+        )),
+        Some(ReducerErrorCode::InvestigationNightWindow) => Some((
+            CoreLoopFailureCategory::InvestigationTemporallyUnavailable,
+            CoreLoopFailureReason::InvestigationNightWindow,
+            "A projected investigation action was attempted outside its learned time window.",
+        )),
+        Some(ReducerErrorCode::InvestigationRouteInvalid) => Some((
+            CoreLoopFailureCategory::InvalidInvestigationRoute,
+            CoreLoopFailureReason::InvalidInvestigationRoute,
+            "The projected investigation route no longer has a coherent completed origin.",
+        )),
+        Some(ReducerErrorCode::InvestigationActionStale) => Some((
+            CoreLoopFailureCategory::InvestigationStateChanged,
+            CoreLoopFailureReason::InvestigationActionStale,
+            "A publicly projected investigation target changed before the action completed.",
+        )),
+        Some(ReducerErrorCode::InvestigationActionUnavailable) => Some((
+            CoreLoopFailureCategory::InvestigationStateChanged,
+            CoreLoopFailureReason::InvestigationActionUnavailable,
+            "A publicly projected investigation target changed before the action completed.",
+        )),
+        Some(ReducerErrorCode::VictimCohortStateChanged) => Some((
+            CoreLoopFailureCategory::InvestigationStateChanged,
+            CoreLoopFailureReason::InvestigationVictimCohortStateChanged,
+            "A publicly projected investigation target changed before the action completed.",
+        )),
+        Some(ReducerErrorCode::DialogueContactUnavailable) => Some((
+            CoreLoopFailureCategory::DiscoveryContactFailed,
+            CoreLoopFailureReason::DiscoveryContactFailed,
+            "A public discovery contact could not be completed.",
+        )),
+        Some(
+            ReducerErrorCode::ContractIssuerUnavailable
+            | ReducerErrorCode::MerchantProviderUnavailable,
+        )
+        | None => None,
+    };
+    if let Some((category, reason, message)) = coded {
+        return CoreLoopFailureProjection {
+            category,
+            reason,
+            operation,
+            message,
+        };
+    }
+
+    let (category, reason, message) = match operation {
+        Some(operation) if operation.is_travel() => (
+            CoreLoopFailureCategory::JourneyTravelFailed,
+            CoreLoopFailureReason::JourneyTravelReducerFailed,
+            "The authoritative journey transition could not be completed.",
+        ),
+        Some(ReducerOperation::StartDiscoveryDialogue) => (
+            CoreLoopFailureCategory::DiscoveryContactFailed,
+            CoreLoopFailureReason::DiscoveryContactFailed,
+            "A public discovery contact could not be completed.",
+        ),
+        Some(ReducerOperation::PurchaseJourneyProvisions) => (
+            CoreLoopFailureCategory::JourneyProvisionPurchaseFailed,
+            CoreLoopFailureReason::JourneyProvisionPurchaseFailed,
+            "The public journey-provision purchase could not be completed.",
+        ),
+        Some(ReducerOperation::PurchasePartyTent) => (
+            CoreLoopFailureCategory::SurvivalPurchaseFailed,
+            CoreLoopFailureReason::PartyTentPurchaseFailed,
+            "The public party-shelter purchase could not be completed.",
+        ),
+        Some(ReducerOperation::PurchaseAmmunition | ReducerOperation::WithdrawPurchaseCoin) => (
+            CoreLoopFailureCategory::SurvivalPurchaseFailed,
+            CoreLoopFailureReason::AmmunitionPurchaseFailed,
+            "The public ammunition preparation could not be completed.",
+        ),
+        Some(ReducerOperation::PurchaseFromHerbalist) => (
+            CoreLoopFailureCategory::MedicalPurchaseFailed,
+            CoreLoopFailureReason::MedicalPurchaseFailed,
+            "The selected public herbalist preparation could not be purchased.",
+        ),
+        Some(ReducerOperation::PurchasePersonalStorefrontWithPartyStake) => (
+            CoreLoopFailureCategory::EquipmentPurchaseFailed,
+            CoreLoopFailureReason::EquipmentStorefrontTradeFailed,
+            "The revalidated public equipment purchase was rejected by authoritative storefront rules.",
+        ),
+        Some(ReducerOperation::AdministerPreparation) => (
+            CoreLoopFailureCategory::MedicalInterventionFailed,
+            CoreLoopFailureReason::MedicalInterventionFailed,
+            "The selected public preparation was rejected by authoritative intervention rules.",
+        ),
+        Some(ReducerOperation::PerformInvestigationAction) => (
+            CoreLoopFailureCategory::InvestigationActionFailed,
+            CoreLoopFailureReason::InvestigationActionFailed,
+            "The authoritative investigation action could not be completed.",
+        ),
+        Some(
+            ReducerOperation::WaitForInvestigationWindowSettlement
+            | ReducerOperation::WaitForInvestigationWindowCamp,
+        ) => (
+            CoreLoopFailureCategory::InvestigationActionFailed,
+            CoreLoopFailureReason::InvestigationWaitFailed,
+            "The authoritative investigation action could not be completed.",
+        ),
+        Some(
+            ReducerOperation::PassiveNoActionableRest
+            | ReducerOperation::SponsorPartyMemberInnRest
+            | ReducerOperation::SettlementActivityRest,
+        ) => (
+            CoreLoopFailureCategory::RestActionFailed,
+            CoreLoopFailureReason::RestActionFailed,
+            "The authoritative rest action could not be completed.",
+        ),
+        Some(ReducerOperation::ChooseDialogueTopic) => (
+            CoreLoopFailureCategory::DialogueActionFailed,
+            CoreLoopFailureReason::DialogueActionFailed,
+            "The authoritative dialogue action could not be completed.",
+        ),
+        Some(_) | None => (
+            CoreLoopFailureCategory::CoreLoopError,
+            CoreLoopFailureReason::UnclassifiedCoreLoopError,
+            "The authoritative core loop stopped before completion.",
+        ),
+    };
+    CoreLoopFailureProjection {
+        category,
+        reason,
+        operation,
+        message,
+    }
 }
 
 #[derive(Clone)]
@@ -23,6 +265,7 @@ struct FailureRecorder {
     output: Option<PathBuf>,
     fixture_disease: String,
     draft: std::sync::Arc<std::sync::Mutex<FailureDraft>>,
+    error: std::sync::Arc<std::sync::Mutex<Option<CoreLoopError>>>,
 }
 
 impl FailureRecorder {
@@ -31,6 +274,7 @@ impl FailureRecorder {
             output,
             fixture_disease,
             draft: Default::default(),
+            error: Default::default(),
         }
     }
 
@@ -40,11 +284,23 @@ impl FailureRecorder {
         }
     }
 
-    fn write(&self, error: &str) -> Result<(), String> {
+    fn record(&self, error: CoreLoopError) {
+        if let Ok(mut current) = self.error.lock() {
+            *current = Some(error);
+        }
+    }
+
+    fn write(&self, rendered_error: &str) -> Result<(), String> {
         let Some(path) = &self.output else {
             return Ok(());
         };
-        let (category, message) = safe_core_loop_failure(error);
+        let error = self
+            .error
+            .lock()
+            .map_err(|_| "failure error state was unavailable".to_string())?
+            .clone()
+            .unwrap_or_else(|| CoreLoopError::Other(rendered_error.to_owned()));
+        let projection = project_core_loop_failure(&error);
         let draft = self
             .draft
             .lock()
@@ -52,10 +308,12 @@ impl FailureRecorder {
             .clone();
         let artifact = CoreLoopFailureArtifact {
             schema_version: CORE_LOOP_FAILURE_SCHEMA_VERSION,
-            category: category.into(),
-            message: message.into(),
-            operation: safe_failure_operation(error).map(|operation| operation.as_str().to_owned()),
-            reason_code: safe_failure_reason_code(error, category).into(),
+            category: projection.category.as_str().into(),
+            message: projection.message.into(),
+            operation: projection
+                .operation
+                .map(|operation| operation.as_str().to_owned()),
+            reason_code: projection.reason.as_str().into(),
             fixture_disease: self.fixture_disease.clone(),
             metrics: draft.metrics,
             quest_coverage: None,
@@ -75,302 +333,6 @@ impl FailureRecorder {
                 file.write_all(b"\n")
             })
             .map_err(|error| format!("could not write failure diagnostic: {error}"))
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum FailureOperation {
-    PerformInvestigationAction,
-    WaitForInvestigationWindowSettlement,
-    WaitForInvestigationWindowCamp,
-    StartDiscoveryDialogue,
-    ChooseDialogueTopic,
-    RestAtCamp,
-    ContinueCampTravel,
-    TravelCamps,
-    PassiveNoActionableRest,
-    SponsorPartyMemberInnRest,
-    SettlementActivityRest,
-    PurchaseJourneyProvisions,
-    PurchasePartyTent,
-    PurchaseAmmunition,
-    WithdrawPurchaseCoin,
-    PurchaseFromHerbalist,
-    FinalizeStorefrontTrade,
-    PurchasePersonalStorefrontWithPartyStake,
-    AdministerPreparation,
-    TravelToCaseSite,
-    TravelToGeneratedCaseSite,
-    UnsafeContractRetreatToSettlement,
-    IllnessRetreatToSettlement,
-    DefeatRetreatToSettlement,
-    ReturnToSettlement,
-    ReturnCompletedGeneratedCase,
-    GeneratedUnchangedDefeatRetreat,
-    GeneratedDefeatRetreatToSettlement,
-    ReturnFromGeneratedCaseSite,
-    ExpeditionHealthEvacuation,
-}
-
-impl FailureOperation {
-    const ALL: [Self; 30] = [
-        Self::PerformInvestigationAction,
-        Self::WaitForInvestigationWindowSettlement,
-        Self::WaitForInvestigationWindowCamp,
-        Self::StartDiscoveryDialogue,
-        Self::ChooseDialogueTopic,
-        Self::RestAtCamp,
-        Self::ContinueCampTravel,
-        Self::TravelCamps,
-        Self::PassiveNoActionableRest,
-        Self::SponsorPartyMemberInnRest,
-        Self::SettlementActivityRest,
-        Self::PurchaseJourneyProvisions,
-        Self::PurchasePartyTent,
-        Self::PurchaseAmmunition,
-        Self::WithdrawPurchaseCoin,
-        Self::PurchaseFromHerbalist,
-        Self::FinalizeStorefrontTrade,
-        Self::PurchasePersonalStorefrontWithPartyStake,
-        Self::AdministerPreparation,
-        Self::TravelToCaseSite,
-        Self::TravelToGeneratedCaseSite,
-        Self::UnsafeContractRetreatToSettlement,
-        Self::IllnessRetreatToSettlement,
-        Self::DefeatRetreatToSettlement,
-        Self::ReturnToSettlement,
-        Self::ReturnCompletedGeneratedCase,
-        Self::GeneratedUnchangedDefeatRetreat,
-        Self::GeneratedDefeatRetreatToSettlement,
-        Self::ReturnFromGeneratedCaseSite,
-        Self::ExpeditionHealthEvacuation,
-    ];
-
-    const fn as_str(self) -> &'static str {
-        match self {
-            Self::PerformInvestigationAction => "perform_investigation_action",
-            Self::WaitForInvestigationWindowSettlement => {
-                "wait_for_investigation_window_settlement"
-            }
-            Self::WaitForInvestigationWindowCamp => "wait_for_investigation_window_camp",
-            Self::StartDiscoveryDialogue => "start_discovery_dialogue",
-            Self::ChooseDialogueTopic => "choose_dialogue_topic",
-            Self::RestAtCamp => "rest_at_camp",
-            Self::ContinueCampTravel => "continue_camp_travel",
-            Self::TravelCamps => "travel_camps",
-            Self::PassiveNoActionableRest => "passive_no_actionable_rest",
-            Self::SponsorPartyMemberInnRest => "sponsor_party_member_inn_rest",
-            Self::SettlementActivityRest => "settlement_activity_rest",
-            Self::PurchaseJourneyProvisions => "purchase_journey_provisions",
-            Self::PurchasePartyTent => "purchase_party_tent",
-            Self::PurchaseAmmunition => "purchase_ammunition",
-            Self::WithdrawPurchaseCoin => "withdraw_purchase_coin",
-            Self::PurchaseFromHerbalist => "purchase_from_herbalist",
-            Self::FinalizeStorefrontTrade => "finalize_storefront_trade",
-            Self::PurchasePersonalStorefrontWithPartyStake => {
-                "purchase_personal_storefront_with_party_stake"
-            }
-            Self::AdministerPreparation => "administer_preparation",
-            Self::TravelToCaseSite => "travel_to_case_site",
-            Self::TravelToGeneratedCaseSite => "travel_to_generated_case_site",
-            Self::UnsafeContractRetreatToSettlement => "unsafe_contract_retreat_to_settlement",
-            Self::IllnessRetreatToSettlement => "illness_retreat_to_settlement",
-            Self::DefeatRetreatToSettlement => "defeat_retreat_to_settlement",
-            Self::ReturnToSettlement => "return_to_settlement",
-            Self::ReturnCompletedGeneratedCase => "return_completed_generated_case",
-            Self::GeneratedUnchangedDefeatRetreat => "generated_unchanged_defeat_retreat",
-            Self::GeneratedDefeatRetreatToSettlement => "generated_defeat_retreat_to_settlement",
-            Self::ReturnFromGeneratedCaseSite => "return_from_generated_case_site",
-            Self::ExpeditionHealthEvacuation => "expedition_health_evacuation",
-        }
-    }
-
-    const fn is_travel(self) -> bool {
-        matches!(
-            self,
-            Self::RestAtCamp
-                | Self::ContinueCampTravel
-                | Self::TravelCamps
-                | Self::TravelToCaseSite
-                | Self::TravelToGeneratedCaseSite
-                | Self::UnsafeContractRetreatToSettlement
-                | Self::IllnessRetreatToSettlement
-                | Self::DefeatRetreatToSettlement
-                | Self::ReturnToSettlement
-                | Self::ReturnCompletedGeneratedCase
-                | Self::GeneratedUnchangedDefeatRetreat
-                | Self::GeneratedDefeatRetreatToSettlement
-                | Self::ReturnFromGeneratedCaseSite
-                | Self::ExpeditionHealthEvacuation
-        )
-    }
-}
-
-fn safe_failure_operation(error: &str) -> Option<FailureOperation> {
-    FailureOperation::ALL.into_iter().find(|operation| {
-        let name = operation.as_str();
-        error.starts_with(&format!("{name} failed:"))
-            || error.starts_with(&format!("{name} timed out"))
-            || error.starts_with(&format!("could not send {name}:"))
-    })
-}
-
-fn safe_failure_reason_code(error: &str, category: &str) -> &'static str {
-    match parse_reducer_error(error) {
-        Some(ReducerErrorCode::JourneyDaylightWindowRequired) => {
-            return "journey_daylight_window_rest_required";
-        }
-        Some(ReducerErrorCode::InvestigationNightWindow) => return "investigation_night_window",
-        Some(ReducerErrorCode::InvestigationRouteInvalid) => {
-            return "invalid_investigation_route";
-        }
-        Some(ReducerErrorCode::InvestigationActionStale) => {
-            return "investigation_action_stale";
-        }
-        Some(ReducerErrorCode::InvestigationActionUnavailable) => {
-            return "investigation_action_unavailable";
-        }
-        Some(ReducerErrorCode::VictimCohortStateChanged) => {
-            return "investigation_victim_cohort_state_changed";
-        }
-        Some(
-            ReducerErrorCode::ContractIssuerUnavailable
-            | ReducerErrorCode::MerchantProviderUnavailable,
-        )
-        | None => {}
-    }
-    match safe_failure_operation(error) {
-        Some(operation) if operation.is_travel() => "journey_travel_reducer_failed",
-        Some(FailureOperation::StartDiscoveryDialogue) => "discovery_contact_failed",
-        Some(FailureOperation::PurchaseJourneyProvisions) => "journey_provision_purchase_failed",
-        Some(FailureOperation::PurchasePartyTent) => "party_tent_purchase_failed",
-        Some(FailureOperation::PurchaseAmmunition | FailureOperation::WithdrawPurchaseCoin) => {
-            "ammunition_purchase_failed"
-        }
-        Some(FailureOperation::PurchaseFromHerbalist) => "medical_purchase_failed",
-        Some(
-            FailureOperation::FinalizeStorefrontTrade
-            | FailureOperation::PurchasePersonalStorefrontWithPartyStake,
-        ) => "equipment_storefront_trade_failed",
-        Some(FailureOperation::AdministerPreparation) => "medical_intervention_failed",
-        Some(FailureOperation::PerformInvestigationAction) => "investigation_action_failed",
-        Some(
-            FailureOperation::WaitForInvestigationWindowSettlement
-            | FailureOperation::WaitForInvestigationWindowCamp,
-        ) => "investigation_wait_failed",
-        Some(
-            FailureOperation::PassiveNoActionableRest
-            | FailureOperation::SponsorPartyMemberInnRest
-            | FailureOperation::SettlementActivityRest,
-        ) => "rest_action_failed",
-        Some(FailureOperation::ChooseDialogueTopic) => "dialogue_action_failed",
-        Some(_) | None => match category {
-            "rest_service_unavailable" => "rest_service_unavailable",
-            "insufficient_visible_resources" => "insufficient_visible_resources",
-            "bounded_progress_exhausted" => "bounded_progress_exhausted",
-            "authoritative_backend_unavailable" => "authoritative_backend_unavailable",
-            "invalid_run_environment" => "invalid_run_environment",
-            _ => "unclassified_core_loop_error",
-        },
-    }
-}
-
-fn safe_core_loop_failure(error: &str) -> (&'static str, &'static str) {
-    match parse_reducer_error(error) {
-        Some(ReducerErrorCode::JourneyDaylightWindowRequired) => {
-            return (
-                "journey_temporally_unavailable",
-                "Camp travel was continued outside its public projected walking window.",
-            );
-        }
-        Some(ReducerErrorCode::InvestigationNightWindow) => {
-            return (
-                "investigation_temporally_unavailable",
-                "A projected investigation action was attempted outside its learned time window.",
-            );
-        }
-        Some(ReducerErrorCode::InvestigationRouteInvalid) => {
-            return (
-                "invalid_investigation_route",
-                "The projected investigation route no longer has a coherent completed origin.",
-            );
-        }
-        Some(
-            ReducerErrorCode::InvestigationActionStale
-            | ReducerErrorCode::InvestigationActionUnavailable
-            | ReducerErrorCode::VictimCohortStateChanged,
-        ) => {
-            return (
-                "investigation_state_changed",
-                "A publicly projected investigation target changed before the action completed.",
-            );
-        }
-        Some(
-            ReducerErrorCode::ContractIssuerUnavailable
-            | ReducerErrorCode::MerchantProviderUnavailable,
-        )
-        | None => {}
-    }
-    match safe_failure_operation(error) {
-        Some(operation) if operation.is_travel() => (
-            "journey_travel_failed",
-            "The authoritative journey transition could not be completed.",
-        ),
-        Some(FailureOperation::StartDiscoveryDialogue) => (
-            "discovery_contact_failed",
-            "A public discovery contact could not be completed.",
-        ),
-        Some(FailureOperation::PurchaseJourneyProvisions) => (
-            "journey_provision_purchase_failed",
-            "The public journey-provision purchase could not be completed.",
-        ),
-        Some(FailureOperation::PurchasePartyTent) => (
-            "survival_purchase_failed",
-            "The public party-shelter purchase could not be completed.",
-        ),
-        Some(FailureOperation::PurchaseAmmunition | FailureOperation::WithdrawPurchaseCoin) => (
-            "survival_purchase_failed",
-            "The public ammunition preparation could not be completed.",
-        ),
-        Some(FailureOperation::PurchaseFromHerbalist) => (
-            "medical_purchase_failed",
-            "The selected public herbalist preparation could not be purchased.",
-        ),
-        Some(
-            FailureOperation::FinalizeStorefrontTrade
-            | FailureOperation::PurchasePersonalStorefrontWithPartyStake,
-        ) => (
-            "equipment_purchase_failed",
-            "The revalidated public equipment purchase was rejected by authoritative storefront rules.",
-        ),
-        Some(FailureOperation::AdministerPreparation) => (
-            "medical_intervention_failed",
-            "The selected public preparation was rejected by authoritative intervention rules.",
-        ),
-        Some(
-            FailureOperation::PerformInvestigationAction
-            | FailureOperation::WaitForInvestigationWindowSettlement
-            | FailureOperation::WaitForInvestigationWindowCamp,
-        ) => (
-            "investigation_action_failed",
-            "The authoritative investigation action could not be completed.",
-        ),
-        Some(FailureOperation::ChooseDialogueTopic) => (
-            "dialogue_action_failed",
-            "The authoritative dialogue action could not be completed.",
-        ),
-        Some(
-            FailureOperation::PassiveNoActionableRest
-            | FailureOperation::SponsorPartyMemberInnRest
-            | FailureOperation::SettlementActivityRest,
-        ) => (
-            "rest_action_failed",
-            "The authoritative rest action could not be completed.",
-        ),
-        Some(_) | None => (
-            "core_loop_error",
-            "The authoritative core loop stopped before completion.",
-        ),
     }
 }
 

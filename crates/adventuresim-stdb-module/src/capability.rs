@@ -11,7 +11,7 @@ use crate::item::item as _;
 use crate::repair::item_condition as _;
 use crate::{
     CharacterAttributes, CharacterLimbs, CharacterSkills, CharacterStats, InventoryItem, Item,
-    ItemKind, character_attributes, character_limbs, character_skills, character_stats,
+    PersistedItemKind, character_attributes, character_limbs, character_skills, character_stats,
     character_strategic_condition, inventory_item,
 };
 
@@ -200,29 +200,11 @@ impl PlayerEssentials for CharacterStats {
 
 impl PlayerAttributes for CharacterAttributes {
     fn raw_limb_attr(&self, attr: LimbAttribute, limb: BodyPart) -> f32 {
-        match (attr, limb) {
-            (LimbAttribute::Strength, BodyPart::LeftArm) => self.left_arm_strength,
-            (LimbAttribute::Strength, BodyPart::RightArm) => self.right_arm_strength,
-            (LimbAttribute::Strength, BodyPart::LeftLeg) => self.left_leg_strength,
-            (LimbAttribute::Strength, BodyPart::RightLeg) => self.right_leg_strength,
-            (LimbAttribute::Agility, BodyPart::LeftArm) => self.left_arm_agility,
-            (LimbAttribute::Agility, BodyPart::RightArm) => self.right_arm_agility,
-            (LimbAttribute::Agility, BodyPart::LeftLeg) => self.left_leg_agility,
-            (LimbAttribute::Agility, BodyPart::RightLeg) => self.right_leg_agility,
-            _ => 0.0,
-        }
+        self.values().raw_limb_attr(attr, limb)
     }
 
     fn raw_single_body_part_attr(&self, attr: SimpleAttribute) -> f32 {
-        match attr {
-            SimpleAttribute::Endurance => self.endurance,
-            SimpleAttribute::Immunity => self.immunity,
-            SimpleAttribute::Gut => self.gut,
-            SimpleAttribute::Intelligence => self.intelligence,
-            SimpleAttribute::Instinct => self.instinct,
-            SimpleAttribute::Eyesight => self.eyesight,
-            SimpleAttribute::Hearing => self.hearing,
-        }
+        self.values().raw_single_body_part_attr(attr)
     }
 }
 
@@ -325,7 +307,7 @@ impl StrategicEquipment {
         ];
         let weapon_index = hands.iter().position(|item| {
             item.as_ref()
-                .is_some_and(|item| item.kind == ItemKind::Weapon)
+                .is_some_and(|item| item.kind == PersistedItemKind::Weapon)
         });
         let weapon = weapon_index.and_then(|index| hands[index].clone());
         let weapon_side = weapon_index.map(|index| {
@@ -338,51 +320,51 @@ impl StrategicEquipment {
         let shield = hands
             .iter()
             .flatten()
-            .find(|item| item.kind == ItemKind::Shield)
+            .find(|item| item.kind == PersistedItemKind::Shield)
             .cloned();
         let shield_inventory_id = hands
             .iter()
             .position(|item| {
                 item.as_ref()
-                    .is_some_and(|item| item.kind == ItemKind::Shield)
+                    .is_some_and(|item| item.kind == PersistedItemKind::Shield)
             })
             .and_then(|index| hand_inventory_ids[index]);
         let melee_weapon = hands
             .iter()
             .flatten()
-            .find(|item| item.kind == ItemKind::Weapon && item.melee)
+            .find(|item| item.kind == PersistedItemKind::Weapon && item.melee)
             .cloned();
         let melee_weapon_side = hands
             .iter()
             .position(|item| {
                 item.as_ref()
-                    .is_some_and(|item| item.kind == ItemKind::Weapon && item.melee)
+                    .is_some_and(|item| item.kind == PersistedItemKind::Weapon && item.melee)
             })
             .map(hand_side);
         let melee_weapon_inventory_id = hands
             .iter()
             .position(|item| {
                 item.as_ref()
-                    .is_some_and(|item| item.kind == ItemKind::Weapon && item.melee)
+                    .is_some_and(|item| item.kind == PersistedItemKind::Weapon && item.melee)
             })
             .and_then(|index| hand_inventory_ids[index]);
         let ranged_weapon = hands
             .iter()
             .flatten()
-            .find(|item| item.kind == ItemKind::Weapon && item.ranged)
+            .find(|item| item.kind == PersistedItemKind::Weapon && item.ranged)
             .cloned();
         let ranged_weapon_side = hands
             .iter()
             .position(|item| {
                 item.as_ref()
-                    .is_some_and(|item| item.kind == ItemKind::Weapon && item.ranged)
+                    .is_some_and(|item| item.kind == PersistedItemKind::Weapon && item.ranged)
             })
             .map(hand_side);
         let ranged_weapon_inventory_id = hands
             .iter()
             .position(|item| {
                 item.as_ref()
-                    .is_some_and(|item| item.kind == ItemKind::Weapon && item.ranged)
+                    .is_some_and(|item| item.kind == PersistedItemKind::Weapon && item.ranged)
             })
             .and_then(|index| hand_inventory_ids[index]);
         let ammunition = ctx
@@ -542,8 +524,8 @@ impl StrategicEquipment {
         use adventuresim_core::strategic_schedule::EquippedCombatItem;
         adventuresim_core::strategic_schedule::CombatTrainingProfile::from_equipped_hands(
             self.hands.iter().flatten().map(|item| EquippedCombatItem {
-                weapons: item.weapon_skills.core(),
-                shield: item.kind == ItemKind::Shield,
+                weapons: item.weapon_skills,
+                shield: item.kind == PersistedItemKind::Shield,
                 balance: item.balance,
             }),
         )
@@ -621,7 +603,7 @@ fn runtime_body_part(part: EquipmentBodyPart) -> BodyPart {
 
 fn combat_weapon(item: &Item) -> CombatWeapon {
     CombatWeapon {
-        skills: item.weapon_skills.core(),
+        skills: item.weapon_skills,
         melee: item.melee,
         ranged: item.ranged,
         blunt: item.blunt,
@@ -659,7 +641,7 @@ impl PlayerEquipment for StrategicEquipment {
     fn weapon_skill_distribution(&self) -> adventuresim_core::equipment::WeaponSkillDistribution {
         self.weapon
             .as_ref()
-            .map_or_else(Default::default, |item| item.weapon_skills.core())
+            .map_or_else(Default::default, |item| item.weapon_skills)
     }
     fn weapon_is_melee(&self) -> bool {
         self.weapon.as_ref().is_some_and(|item| item.melee)
@@ -793,23 +775,7 @@ pub(crate) fn load_combatant(
 
     Ok(Combatant {
         id: character_id,
-        attributes: CombatAttributes {
-            endurance: attributes.endurance,
-            immunity: attributes.immunity,
-            gut: attributes.gut,
-            intelligence: attributes.intelligence,
-            instinct: attributes.instinct,
-            eyesight: attributes.eyesight,
-            hearing: attributes.hearing,
-            left_arm_strength: attributes.left_arm_strength,
-            right_arm_strength: attributes.right_arm_strength,
-            left_leg_strength: attributes.left_leg_strength,
-            right_leg_strength: attributes.right_leg_strength,
-            left_arm_agility: attributes.left_arm_agility,
-            right_arm_agility: attributes.right_arm_agility,
-            left_leg_agility: attributes.left_leg_agility,
-            right_leg_agility: attributes.right_leg_agility,
-        },
+        attributes: attributes.into(),
         body: CombatBody {
             health: [
                 limbs.left_arm_health,

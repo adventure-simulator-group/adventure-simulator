@@ -11,6 +11,14 @@ pub(super) struct PrepareIngredientForm {
     return_to: Option<String>,
 }
 
+fn parse_preparation_action(value: &str) -> Option<IngredientPreparationAction> {
+    match value {
+        "cut" => Some(IngredientPreparationAction::Cut),
+        "grind" => Some(IngredientPreparationAction::Grind),
+        _ => None,
+    }
+}
+
 pub(super) async fn prepare_ingredient_lot(
     State(state): State<AppState>,
     session: Session,
@@ -19,33 +27,41 @@ pub(super) async fn prepare_ingredient_lot(
     let Some(character_id) = session.character_id_u64() else {
         return (StatusCode::UNAUTHORIZED, "Select a character first").into_response();
     };
-    let action = match form.preparation_action.as_str() {
-        "cut" => json!({ "cut": {} }),
-        "grind" => json!({ "grind": {} }),
-        _ => return (StatusCode::BAD_REQUEST, "Invalid ingredient preparation").into_response(),
+    let Some(preparation_action) = parse_preparation_action(&form.preparation_action) else {
+        return (StatusCode::BAD_REQUEST, "Invalid ingredient preparation").into_response();
     };
-    if let Err(error) = state.db.call(
-        "prepare_ingredient_lot",
-        &[
-            json!(character_id),
-            json!(form.inventory_scope),
-            json!(form.inventory_item_id),
-            json!(form.food_lot_id),
-            json!(form.material_object_id),
-            json!(form.request_id),
-            json!(form.expected_revision),
-            json!(form.attempt_generation),
-            action,
-        ],
-    ).await {
+    let action = match preparation_action {
+        IngredientPreparationAction::Cut => json!({ "cut": {} }),
+        IngredientPreparationAction::Grind => json!({ "grind": {} }),
+    };
+    if let Err(error) = state
+        .db
+        .call(
+            "prepare_ingredient_lot",
+            &[
+                json!(character_id),
+                json!(form.inventory_scope),
+                json!(form.inventory_item_id),
+                json!(form.food_lot_id),
+                json!(form.material_object_id),
+                json!(form.request_id),
+                json!(form.expected_revision),
+                json!(form.attempt_generation),
+                action,
+            ],
+        )
+        .await
+    {
         return (StatusCode::BAD_REQUEST, error.to_string()).into_response();
     }
-    redirect_to_local(form.return_to.as_deref().unwrap_or(""), "/")
-        .into_response()
+    redirect_to_local(form.return_to.as_deref().unwrap_or(""), "/").into_response()
 }
 
 #[cfg(test)]
 mod tests {
+    use super::parse_preparation_action;
+    use crate::spacetimedb::IngredientPreparationAction;
+
     #[test]
     fn preparation_redirect_uses_shared_local_url_validation() {
         let source = include_str!("ingredient_preparation.rs");
@@ -58,5 +74,18 @@ mod tests {
         assert!(source.contains("form.attempt_generation"));
         assert!(!handler.contains("form.action"));
         assert!(!source.contains("starts_with(\"//\")"));
+    }
+
+    #[test]
+    fn preparation_action_form_uses_closed_wire_tags() {
+        assert_eq!(
+            parse_preparation_action("cut"),
+            Some(IngredientPreparationAction::Cut)
+        );
+        assert_eq!(
+            parse_preparation_action("grind"),
+            Some(IngredientPreparationAction::Grind)
+        );
+        assert_eq!(parse_preparation_action("chop"), None);
     }
 }

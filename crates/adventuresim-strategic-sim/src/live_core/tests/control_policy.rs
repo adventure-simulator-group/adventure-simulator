@@ -45,12 +45,10 @@ fn projected_action(action_id: &str, method: &str) -> BackendInvestigationAction
         uncertainty_bps: 1_000,
         skill_contributions: "public contribution summary".into(),
         weather_available: true,
-        required_case_site_id: String::new(),
-        available: true,
-        can_travel_to_required_site: false,
-        unavailable_reason_code: String::new(),
+        contact_character_id: None,
+        required_case_site_id: None,
+        availability: InvestigationActionAvailability::Available,
         unavailable_reason: String::new(),
-        wait_minutes: 0,
     }
 }
 
@@ -93,36 +91,29 @@ fn public_contract_matchup_uses_readiness_count_difficulty_and_fails_closed() {
         capability.athletics = 2.0;
         PublicPartyCombatant { capability, ready }
     };
-    assert_eq!(public_opposition_count("one"), Some(1));
-    assert_eq!(public_opposition_count("a pair"), Some(2));
-    assert_eq!(public_opposition_count("perhaps two"), Some(3));
-    assert_eq!(public_opposition_count("perhaps eleven"), Some(12));
-    assert_eq!(public_opposition_count("perhaps several"), None);
-    assert_eq!(public_opposition_count("a household guard"), None);
-
     // One superficially strong novice is not enough: the authoritative enemy
     // also owns weapon, dodge, block, balance, and protection mechanics.
-    assert!(!public_contract_assessment(1, "one", 10_000, &[strong(1, true)]).eligible);
-    assert!(!public_contract_assessment(1, "two", 20_000, &[strong(1, true)]).eligible);
+    assert!(!public_contract_assessment(1, 1, 10_000, &[strong(1, true)]).eligible);
+    assert!(!public_contract_assessment(1, 2, 20_000, &[strong(1, true)]).eligible);
     assert!(
-        !public_contract_assessment(1, "two", 20_000, &[strong(1, true), strong(2, true)]).eligible
+        !public_contract_assessment(1, 2, 20_000, &[strong(1, true), strong(2, true)]).eligible
     );
     assert!(
-        !public_contract_assessment(6, "two", 20_000, &[strong(1, true), strong(2, true)]).eligible
+        !public_contract_assessment(6, 2, 20_000, &[strong(1, true), strong(2, true)]).eligible
     );
-    assert!(!public_contract_assessment(1, "one", 10_000, &[strong(1, false)]).eligible);
+    assert!(!public_contract_assessment(1, 1, 10_000, &[strong(1, false)]).eligible);
     assert!(
-        !public_contract_assessment(1, "several", 20_000, &[strong(1, true), strong(2, true)])
+        !public_contract_assessment(1, 0, 20_000, &[strong(1, true), strong(2, true)])
             .eligible
     );
     assert_eq!(
-        public_contract_assessment(1, "one", 0, &[strong(1, true)]).reason,
+        public_contract_assessment(1, 1, 0, &[strong(1, true)]).reason,
         "missing_authoritative_opposition_power"
     );
 
     let accepted = public_contract_assessment(
         1,
-        "perhaps two",
+        3,
         18_000,
         &[
             strong(1, true),
@@ -133,7 +124,7 @@ fn public_contract_matchup_uses_readiness_count_difficulty_and_fails_closed() {
     );
     let deteriorated = public_contract_assessment(
         1,
-        "perhaps two",
+        3,
         18_000,
         &[
             strong(1, true),
@@ -149,11 +140,11 @@ fn public_contract_matchup_uses_readiness_count_difficulty_and_fails_closed() {
     let mut overflow = strong(9, true);
     overflow.capability.autoresolve_combat_power = u64::MAX;
     assert_eq!(
-        public_contract_assessment(1, "one", 1, &[overflow.clone()]).reason,
+        public_contract_assessment(1, 1, 1, &[overflow.clone()]).reason,
         "public_combat_margin_overflow"
     );
     assert_eq!(
-        public_contract_assessment(1, "one", 1, &[overflow.clone(), overflow]).reason,
+        public_contract_assessment(1, 1, 1, &[overflow.clone(), overflow]).reason,
         "public_party_power_overflow"
     );
 }
@@ -168,9 +159,20 @@ fn generated_action_score_prefers_progress_then_fit_then_public_costs() {
     assert!(generated_action_score(&profile, &inspect) > generated_action_score(&profile, &ambush));
 
     let mut travel = inspect.clone();
-    travel.available = false;
-    travel.can_travel_to_required_site = true;
+    travel.availability =
+        InvestigationActionAvailability::Unavailable(InvestigationActionUnavailableFields {
+            reason: InvestigationActionUnavailableReason::TravelRequired,
+            can_travel_to_required_site: true,
+            wait_minutes: 0,
+        });
     assert!(generated_action_score(&profile, &inspect) > generated_action_score(&profile, &travel));
+
+    let mut reworded = travel.clone();
+    reworded.unavailable_reason = "completely different presentation copy".into();
+    assert_eq!(
+        generated_action_score(&profile, &travel),
+        generated_action_score(&profile, &reworded)
+    );
 
     let mut uncertain = inspect.clone();
     uncertain.uncertainty_bps = 9_000;
@@ -293,9 +295,15 @@ fn generated_defeat_policy_suppresses_work_until_public_capability_changes() {
 fn departure_preflights_the_selected_travel_action_not_a_longer_alternative() {
     let profile = generate_profile(42, 0);
     let mut selected = projected_action("selected-62", "search");
-    selected.available = false;
-    selected.can_travel_to_required_site = true;
-    selected.required_case_site_id = "site".into();
+    selected.availability =
+        InvestigationActionAvailability::Unavailable(InvestigationActionUnavailableFields {
+            reason: InvestigationActionUnavailableReason::TravelRequired,
+            can_travel_to_required_site: true,
+            wait_minutes: 0,
+        });
+    selected.required_case_site_id = Some(CaseSiteId {
+        value: "site".into(),
+    });
     selected.duration_max_minutes = 62;
     let mut alternative = selected.clone();
     alternative.action_id = "alternative-67".into();
@@ -321,13 +329,13 @@ fn first_generated_combat_uses_the_same_checked_public_margin() {
         capability: capability(1, true, false, false, false),
         ready: true,
     }];
-    let unsafe_assessment = public_contract_assessment(1, "one", u64::MAX, &members);
+    let unsafe_assessment = public_contract_assessment(1, 1, u64::MAX, &members);
     assert!(!unsafe_assessment.eligible);
     assert!(matches!(
         unsafe_assessment.reason,
         "public_combat_margin_overflow" | "public_matchup_below_safety_margin"
     ));
-    let missing = public_contract_assessment(1, "one", 0, &members);
+    let missing = public_contract_assessment(1, 1, 0, &members);
     assert!(!missing.eligible);
     assert_eq!(missing.reason, "missing_authoritative_opposition_power");
 
@@ -340,7 +348,9 @@ fn first_generated_combat_uses_the_same_checked_public_margin() {
     let revalidated = generated
         .find("generated_combat_revalidation_failed")
         .unwrap();
-    let reducer = generated.find("autoresolve_generated_mission").unwrap();
+    let reducer = generated
+        .find("ReducerOperation::AutoresolveGeneratedMission")
+        .unwrap();
     assert!(first < revalidated && revalidated < reducer);
 }
 
@@ -485,9 +495,18 @@ fn quest_fixture_lane_plan_is_exact_and_order_independent() {
 #[test]
 fn simulation_duration_is_relative_to_the_post_bootstrap_world_clock() {
     let absolute_start = 8_000_000;
-    assert_eq!(simulation_elapsed_minutes(absolute_start, absolute_start), 0);
-    assert_eq!(simulation_elapsed_minutes(absolute_start, absolute_start + 1_440), 1_440);
-    assert_eq!(simulation_elapsed_minutes(absolute_start, absolute_start - 1), 0);
+    assert_eq!(
+        simulation_elapsed_minutes(absolute_start, absolute_start),
+        0
+    );
+    assert_eq!(
+        simulation_elapsed_minutes(absolute_start, absolute_start + 1_440),
+        1_440
+    );
+    assert_eq!(
+        simulation_elapsed_minutes(absolute_start, absolute_start - 1),
+        0
+    );
 
     let bootstrap = LIVE_CORE_SOURCE
         .split("let simulation_start_minutes")

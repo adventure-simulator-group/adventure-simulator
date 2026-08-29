@@ -1089,28 +1089,28 @@ pub fn distribution_summary(
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CatalogDiagnostic {
+pub struct BestiaryCatalogDiagnostic {
     pub message: String,
 }
 
-pub fn validate_catalog() -> Vec<CatalogDiagnostic> {
+pub fn validate_catalog() -> Vec<BestiaryCatalogDiagnostic> {
     let mut errors = Vec::new();
     let threats = catalog_threats();
     if has_duplicates(&threats) {
-        errors.push(CatalogDiagnostic {
+        errors.push(BestiaryCatalogDiagnostic {
             message: "duplicate stable threat ID".into(),
         });
     }
     for id in &threats {
         let p = profile(*id);
         if id.as_str().parse::<ThreatId>() != Ok(*id) {
-            errors.push(CatalogDiagnostic {
+            errors.push(BestiaryCatalogDiagnostic {
                 message: format!("strict ID coverage failed for {}", id.as_str()),
             });
         }
         if p.id != *id || p.display_name.is_empty() || p.base_weight == 0 || p.curation_weight == 0
         {
-            errors.push(CatalogDiagnostic {
+            errors.push(BestiaryCatalogDiagnostic {
                 message: format!("invalid profile {}", id.as_str()),
             });
         }
@@ -1127,12 +1127,12 @@ pub fn validate_catalog() -> Vec<CatalogDiagnostic> {
             || combat.morale > 100
             || combat.evidence_invalid()
         {
-            errors.push(CatalogDiagnostic {
+            errors.push(BestiaryCatalogDiagnostic {
                 message: format!("invalid numeric combat profile {}", id.as_str()),
             });
         }
         if has_unsupported_layered_protection(combat) {
-            errors.push(CatalogDiagnostic {
+            errors.push(BestiaryCatalogDiagnostic {
                 message: format!(
                     "innate and worn armor composition is unsupported for {}",
                     id.as_str()
@@ -1151,7 +1151,7 @@ pub fn validate_catalog() -> Vec<CatalogDiagnostic> {
                 ..=crate::threat_escalation::MAX_ORC_EQUIVALENT_POWER)
                 .contains(&p.combat.escalation.baseline_enemy_power)
         {
-            errors.push(CatalogDiagnostic {
+            errors.push(BestiaryCatalogDiagnostic {
                 message: format!("duplicate or invalid investigation values {}", id.as_str()),
             });
         }
@@ -1159,13 +1159,13 @@ pub fn validate_catalog() -> Vec<CatalogDiagnostic> {
             || p.investigation.silhouettes.is_empty()
             || p.investigation.distinguishing_clues.is_empty()
         {
-            errors.push(CatalogDiagnostic {
+            errors.push(BestiaryCatalogDiagnostic {
                 message: format!("incomplete investigation profile {}", id.as_str()),
             });
         }
         for habitat in p.investigation.habitats {
             if habitat_weight(*id, *habitat) == 0 {
-                errors.push(CatalogDiagnostic {
+                errors.push(BestiaryCatalogDiagnostic {
                     message: format!("unreachable habitat for {}", id.as_str()),
                 });
             }
@@ -1174,14 +1174,14 @@ pub fn validate_catalog() -> Vec<CatalogDiagnostic> {
             .iter()
             .all(|habitat| habitat_weight(*id, *habitat) == 0)
         {
-            errors.push(CatalogDiagnostic {
+            errors.push(BestiaryCatalogDiagnostic {
                 message: format!("threat {} is unreachable", id.as_str()),
             });
         }
         for habitat in ALL_HABITATS {
             let weight = habitat_weight(*id, *habitat);
             if weight > 0 && weight < 25 && required_bridge(*id, *habitat).is_none() {
-                errors.push(CatalogDiagnostic {
+                errors.push(BestiaryCatalogDiagnostic {
                     message: format!("rare relation lacks bridge for {}", id.as_str()),
                 });
             }
@@ -1190,7 +1190,7 @@ pub fn validate_catalog() -> Vec<CatalogDiagnostic> {
     for report in ALL_REPORTS {
         let cardinality = ambiguous_description_cardinality(*report);
         if cardinality < 2 {
-            errors.push(CatalogDiagnostic {
+            errors.push(BestiaryCatalogDiagnostic {
                 message: format!("description {report:?} is not ambiguous"),
             });
         }
@@ -1199,12 +1199,12 @@ pub fn validate_catalog() -> Vec<CatalogDiagnostic> {
             .iter()
             .any(|item| item.curated_basis_points > 9_500)
         {
-            errors.push(CatalogDiagnostic {
+            errors.push(BestiaryCatalogDiagnostic {
                 message: format!("description {report:?} is over-dominant"),
             });
         }
         if cardinality > 1 && distinguishing_clue_set_count(*report) < 2 {
-            errors.push(CatalogDiagnostic {
+            errors.push(BestiaryCatalogDiagnostic {
                 message: format!("description {report:?} lacks distinguishing clues"),
             });
         }
@@ -1228,13 +1228,13 @@ fn has_duplicates<T: PartialEq>(values: &[T]) -> bool {
         .any(|(index, value)| values[..index].contains(value))
 }
 
-pub fn diagnose_scores(scores: &[CandidateScore]) -> Vec<CatalogDiagnostic> {
+pub fn diagnose_scores(scores: &[CandidateScore]) -> Vec<BestiaryCatalogDiagnostic> {
     let total = scores
         .iter()
         .fold(0_u64, |sum, item| sum.saturating_add(item.score));
     let mut out = Vec::new();
     if total == 0 {
-        out.push(CatalogDiagnostic {
+        out.push(BestiaryCatalogDiagnostic {
             message: "unreachable distribution".into(),
         });
     }
@@ -1243,7 +1243,7 @@ pub fn diagnose_scores(scores: &[CandidateScore]) -> Vec<CatalogDiagnostic> {
             item.score.saturating_mul(u64::from(BASIS_POINTS_PER_WHOLE)) / total > 9_500
         })
     {
-        out.push(CatalogDiagnostic {
+        out.push(BestiaryCatalogDiagnostic {
             message: "over-dominant distribution".into(),
         });
     }

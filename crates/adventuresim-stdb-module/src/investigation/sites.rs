@@ -3,7 +3,7 @@ pub fn backend_case_site_pins(ctx: &ViewContext) -> Vec<BackendCaseSitePin> {
     if !is_gateway(ctx) {
         return Vec::new();
     }
-    let mut pins: BTreeMap<(u64, String), BackendCaseSitePin> = BTreeMap::new();
+    let mut pins: BTreeMap<(u64, CaseSiteId), BackendCaseSitePin> = BTreeMap::new();
     for lead in ctx
         .db
         .investigation_lead()
@@ -42,7 +42,7 @@ pub fn backend_case_site_pins(ctx: &ViewContext) -> Vec<BackendCaseSitePin> {
                 case_id: aliases
                     .as_ref()
                     .map_or_else(|| site.case_id.clone(), |aliases| aliases.1.clone()),
-                case_site_id: site.id.value,
+                case_site_id: site.id,
                 origin_settlement_id: site.origin_settlement_id,
                 name: site.name,
                 description: site.description,
@@ -113,7 +113,7 @@ fn case_site_presentation_view(
     let validated = validate_quest_generation_authority(&authority).ok()?;
     let generated_site = validated.manifest.sites.iter().find(|generated_site| {
         canonical_case_site_place(&generated_site.id.0)
-            .zip(site.id.to_place())
+            .map(|generated| (generated, site.id.to_place()))
             .is_some_and(|(generated, persisted)| generated == persisted)
     })?;
     if generated_site.safe_label != site.name {
@@ -197,7 +197,7 @@ fn lead_projects_exact_case_site_pin(
         && (lead.case_id == site.case_id
             || generated_public_case_id.is_some_and(|public| lead.case_id == public))
         && canonical_case_site_place(&lead.exact_location_id)
-            .zip(site.id.to_place())
+            .map(|lead_place| (lead_place, site.id.to_place()))
             .is_some_and(|(lead_place, site_place)| lead_place == site_place)
         && lead.latitude_e7 == site.latitude_e7
         && lead.longitude_e7 == site.longitude_e7
@@ -404,7 +404,7 @@ pub(crate) fn exact_case_site_for_observer_at(
         .case_site_authority()
         .id_key()
         .find(case_site_id.to_string())?;
-    if site.id.to_place()? != requested_place {
+    if site.id.to_place() != requested_place {
         return None;
     }
     let generated_aliases = case_site_provenance_reducer(ctx, &site)?;
@@ -436,14 +436,14 @@ pub(crate) fn case_site_presence_for_observer(
 ) -> Option<adventuresim_core::strategic_presence::StrategicPresence> {
     let occupancy =
         crate::investigation::character_case_site_occupancy_at(ctx, character_id, minute)?;
-    let place = occupancy.case_site_id.to_place()?;
+    let place = occupancy.case_site_id.to_place();
     let (site, _) = exact_case_site_for_observer_at(
         ctx,
         observer_character_id,
         occupancy.case_site_id.as_str(),
         minute,
     )?;
-    if site.id.to_place()? != place {
+    if site.id.to_place() != place {
         return None;
     }
     adventuresim_core::strategic_presence::StrategicPresence::case_site_occupancy(
@@ -483,7 +483,7 @@ pub(crate) fn case_context_presence_for_observer(
         &membership.location_id,
         minute,
     )?;
-    if site.id.to_place()? != place {
+    if site.id.to_place() != place {
         return None;
     }
     adventuresim_core::strategic_presence::StrategicPresence::case_context_membership(
@@ -501,6 +501,28 @@ pub(crate) fn case_context_presence_for_observer(
         crate::relationship::character_alive_at(ctx, membership.character_id, minute),
     )
     .ok()
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum CaseSiteDisclosureLeadId {
+    Base,
+    Revision(u32),
+}
+
+impl CaseSiteDisclosureLeadId {
+    fn parse(value: &str, base_id: &str) -> Option<Self> {
+        if value == base_id {
+            return Some(Self::Base);
+        }
+        let revision = value
+            .strip_prefix(base_id)?
+            .strip_prefix(":revision:")?;
+        if revision.len() != 8 || !revision.bytes().all(|byte| byte.is_ascii_digit()) {
+            return None;
+        }
+        let revision = revision.parse::<u32>().ok()?;
+        (revision > 0).then_some(Self::Revision(revision))
+    }
 }
 
 pub(crate) fn disclose_exact_case_site(
@@ -525,13 +547,18 @@ pub(crate) fn disclose_exact_case_site(
         .investigation_lead()
         .owner_character_id()
         .filter(observer_character_id)
-        .filter(|lead| lead.exact_location_id == site.id.value && lead.id.starts_with(&base_id))
+        .filter_map(|lead| {
+            (lead.exact_location_id == site.id.as_str())
+                .then(|| CaseSiteDisclosureLeadId::parse(&lead.id, &base_id))
+                .flatten()
+                .map(|id| (id, lead))
+        })
         .collect();
-    disclosures.sort_by(|left, right| left.id.cmp(&right.id));
+    disclosures.sort_by_key(|(id, _lead)| *id);
     let active: Vec<_> = disclosures
         .iter()
-        .filter(|lead| lead.corrected_by.is_empty())
-        .cloned()
+        .filter(|(_id, lead)| lead.corrected_by.is_empty())
+        .map(|(_id, lead)| lead.clone())
         .collect();
     if let Some(canonical_id) = active
         .iter()
@@ -554,7 +581,18 @@ pub(crate) fn disclose_exact_case_site(
     let id = if disclosures.is_empty() {
         base_id
     } else {
-        format!("{base_id}:revision:{:08}", disclosures.len())
+        let next_revision = disclosures
+            .iter()
+            .filter_map(|(id, _lead)| match id {
+                CaseSiteDisclosureLeadId::Base => None,
+                CaseSiteDisclosureLeadId::Revision(revision) => Some(*revision),
+            })
+            .max()
+            .unwrap_or(0)
+            .checked_add(1)
+            .filter(|revision| *revision <= 99_999_999)
+            .ok_or("Case-site disclosure revision space is exhausted")?;
+        format!("{base_id}:revision:{next_revision:08}")
     };
     for mut stale in active {
         stale.corrected_by = id.clone();
@@ -570,7 +608,7 @@ pub(crate) fn disclose_exact_case_site(
         confidence_bps: adventuresim_world_schema::BASIS_POINTS_PER_WHOLE,
         destination_stage: DestinationKnowledgeStage::ExactBelieved,
         directions: site.description.clone(),
-        exact_location_id: site.id.value.clone(),
+        exact_location_id: site.id.as_str().to_owned(),
         latitude_e7: site.latitude_e7,
         longitude_e7: site.longitude_e7,
         witness_name: String::new(),
@@ -606,7 +644,7 @@ pub(crate) fn mark_case_site_visited(
         .filter(observer_character_id)
         .filter(|lead| {
             lead.case_id == site.case_id
-                && lead.exact_location_id == site.id.value
+                && lead.exact_location_id == site.id.as_str()
                 && lead.latitude_e7 == site.latitude_e7
                 && lead.longitude_e7 == site.longitude_e7
                 && lead.corrected_by.is_empty()

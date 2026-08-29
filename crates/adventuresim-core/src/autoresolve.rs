@@ -11,53 +11,6 @@ const COMBAT_ROUND_SECONDS: f32 = 1.0;
 const REFERENCE_MELEE_ATTACK_SECONDS: f32 = 1.0;
 const MIN_MOVEMENT_SPEED_METERS_PER_SECOND: f32 = 0.25;
 
-#[derive(Clone, Debug, Default)]
-pub struct CombatAttributes {
-    pub endurance: f32,
-    pub immunity: f32,
-    pub gut: f32,
-    pub intelligence: f32,
-    pub instinct: f32,
-    pub eyesight: f32,
-    pub hearing: f32,
-    pub left_arm_strength: f32,
-    pub right_arm_strength: f32,
-    pub left_leg_strength: f32,
-    pub right_leg_strength: f32,
-    pub left_arm_agility: f32,
-    pub right_arm_agility: f32,
-    pub left_leg_agility: f32,
-    pub right_leg_agility: f32,
-}
-
-impl PlayerAttributes for CombatAttributes {
-    fn raw_limb_attr(&self, attr: LimbAttribute, limb: BodyPart) -> f32 {
-        match (attr, limb) {
-            (LimbAttribute::Strength, BodyPart::LeftArm) => self.left_arm_strength,
-            (LimbAttribute::Strength, BodyPart::RightArm) => self.right_arm_strength,
-            (LimbAttribute::Strength, BodyPart::LeftLeg) => self.left_leg_strength,
-            (LimbAttribute::Strength, BodyPart::RightLeg) => self.right_leg_strength,
-            (LimbAttribute::Agility, BodyPart::LeftArm) => self.left_arm_agility,
-            (LimbAttribute::Agility, BodyPart::RightArm) => self.right_arm_agility,
-            (LimbAttribute::Agility, BodyPart::LeftLeg) => self.left_leg_agility,
-            (LimbAttribute::Agility, BodyPart::RightLeg) => self.right_leg_agility,
-            _ => 0.0,
-        }
-    }
-
-    fn raw_single_body_part_attr(&self, attr: SimpleAttribute) -> f32 {
-        match attr {
-            SimpleAttribute::Endurance => self.endurance,
-            SimpleAttribute::Immunity => self.immunity,
-            SimpleAttribute::Gut => self.gut,
-            SimpleAttribute::Intelligence => self.intelligence,
-            SimpleAttribute::Instinct => self.instinct,
-            SimpleAttribute::Eyesight => self.eyesight,
-            SimpleAttribute::Hearing => self.hearing,
-        }
-    }
-}
-
 #[derive(Clone, Debug)]
 pub struct CombatBody {
     pub health: [f32; 7],
@@ -395,7 +348,7 @@ impl PlayerEquipment for CombatEquipment {
 #[derive(Clone, Debug)]
 pub struct Combatant {
     pub id: u64,
-    pub attributes: CombatAttributes,
+    pub attributes: PlayerAttributeValues,
     pub body: CombatBody,
     pub essentials: CombatEssentials,
     pub equipment: CombatEquipment,
@@ -423,7 +376,7 @@ impl Combatant {
     pub fn new(id: u64) -> Self {
         Self {
             id,
-            attributes: CombatAttributes::default(),
+            attributes: PlayerAttributeValues::default(),
             body: CombatBody::default(),
             essentials: CombatEssentials {
                 focus_level: 1.0,
@@ -446,7 +399,7 @@ impl Combatant {
         &'a self,
         equipment: &'a CombatEquipment,
     ) -> PlayerInfo<
-        &'a CombatAttributes,
+        &'a PlayerAttributeValues,
         &'a CombatBody,
         &'a CombatEssentials,
         &'a CombatEquipment,
@@ -681,7 +634,7 @@ pub fn authored_threat_combatant(
     let profile = threat_profile.combat;
     let mut combatant = Combatant::new(id);
     combatant.bestiary_categories = threat_profile.categories().collect();
-    combatant.attributes = CombatAttributes {
+    combatant.attributes = PlayerAttributeValues {
         endurance: physical_rating,
         immunity: physical_rating,
         gut: physical_rating,
@@ -1740,7 +1693,7 @@ mod tests {
 
     fn fighter(id: u64, skill: f32, ranged: bool) -> Combatant {
         let mut fighter = Combatant::new(id);
-        fighter.attributes = CombatAttributes {
+        fighter.attributes = PlayerAttributeValues {
             endurance: 3.0,
             intelligence: 2.0,
             instinct: 3.0,
@@ -1752,7 +1705,7 @@ mod tests {
             right_arm_agility: skill,
             left_leg_agility: skill,
             right_leg_agility: skill,
-            ..CombatAttributes::default()
+            ..PlayerAttributeValues::default()
         };
         fighter.skills = CombatSkills {
             sword_hours: skill * 2_000.0,

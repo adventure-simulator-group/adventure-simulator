@@ -1,10 +1,10 @@
 #[cfg(test)]
 mod herbalist_tests {
     use super::living_party_members;
-    use crate::spacetimedb::Character;
+    use crate::spacetimedb::CharacterView;
 
-    fn member(id: u64, alive: bool) -> Character {
-        Character {
+    fn member(id: u64, alive: bool) -> CharacterView {
+        CharacterView {
             id,
             name: format!("Member {id}"),
             xp: 0,

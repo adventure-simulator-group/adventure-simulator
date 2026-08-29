@@ -1,19 +1,16 @@
 //! Shared typed reads used by more than one strategic feature.
 
 use super::AppState;
-use crate::spacetimedb::{BackendCharacterCaseSiteLocation, Character, Result};
-use serde::Deserialize;
-
-#[derive(Deserialize)]
-struct BackendCharacterDeathMinute {
-    strategic_minute: u64,
-}
+use crate::spacetimedb::{
+    BackendCharacterCaseSiteLocation, CaseSiteId, CharacterDeath, CharacterTime, CharacterView,
+    Result, SpacetimeError,
+};
 
 async fn character_minute(state: &AppState, character_id: u64) -> Result<Option<u64>> {
     state
         .db
-        .query_one::<crate::spacetimedb::CharacterTime>(&format!(
-            "SELECT * FROM backend_character_times WHERE character_id = {character_id}"
+        .query_one_sats::<CharacterTime>(&crate::spacetimedb::character_time_by_character_id(
+            character_id,
         ))
         .await
         .map(|time| time.map(|time| time.minutes))
@@ -54,10 +51,12 @@ fn prefer_complete_cache<T>(cache: Option<Option<T>>, fallback: Option<T>) -> Op
     cache.unwrap_or(fallback)
 }
 
-pub(crate) async fn character(state: &AppState, character_id: u64) -> Result<Option<Character>> {
-    let case_site_sql = format!(
-        "SELECT * FROM backend_character_case_site_locations WHERE character_id = {character_id}"
-    );
+pub(crate) async fn character(
+    state: &AppState,
+    character_id: u64,
+) -> Result<Option<CharacterView>> {
+    let case_site_sql =
+        crate::spacetimedb::character_case_site_location_by_character_id(character_id);
     // Character is a public mutable projection and is served from the SDK
     // cache once its explicit subscription is complete. The case-site view is
     // intentionally kept on HTTP SQL: owner-scoped/private projections are
@@ -66,17 +65,27 @@ pub(crate) async fn character(state: &AppState, character_id: u64) -> Result<Opt
     let mut character = match cached_character {
         Some(character) => Ok(prefer_complete_cache(Some(character), None)),
         None => {
-            let character_sql =
-                format!("SELECT * FROM backend_characters WHERE id = {character_id}");
-            state.db.query_one::<Character>(&character_sql).await
+            state
+                .db
+                .query_one_sats_into::<adventuresim_stdb_client::Character, CharacterView>(
+                    &crate::spacetimedb::character_by_id(character_id),
+                )
+                .await
         }
     }?;
     let case_site = state
         .db
-        .query_one::<BackendCharacterCaseSiteLocation>(&case_site_sql)
+        .query_one_sats::<BackendCharacterCaseSiteLocation>(&case_site_sql)
         .await?;
     if let Some(character) = character.as_mut() {
-        character.current_case_site_id = case_site.map(|location| location.case_site_id.value);
+        character.current_case_site_id = case_site
+            .map(|location| CaseSiteId::try_new(location.case_site_id.value))
+            .transpose()
+            .map_err(|error| {
+                SpacetimeError::Spacetime(format!(
+                    "generated case-site identity failed validation: {error}"
+                ))
+            })?;
     }
     Ok(character)
 }
@@ -87,12 +96,12 @@ pub(crate) async fn character(state: &AppState, character_id: u64) -> Result<Opt
 pub(crate) async fn project_alive_as_observed(
     state: &AppState,
     observer_character_id: u64,
-    characters: &mut [Character],
+    characters: &mut [CharacterView],
 ) -> Result<()> {
     let observer_time = match state
         .db
-        .query_one::<crate::spacetimedb::CharacterTime>(&format!(
-            "SELECT * FROM backend_character_times WHERE character_id = {observer_character_id}"
+        .query_one_sats::<CharacterTime>(&crate::spacetimedb::character_time_by_character_id(
+            observer_character_id,
         ))
         .await
     {
@@ -117,9 +126,8 @@ pub(crate) async fn project_alive_as_observed(
     for character in characters.iter_mut().filter(|character| !character.alive) {
         let death = match state
             .db
-            .query_one::<BackendCharacterDeathMinute>(&format!(
-                "SELECT * FROM backend_character_deaths WHERE character_id = {}",
-                character.id
+            .query_one_sats::<CharacterDeath>(&crate::spacetimedb::character_death_by_character_id(
+                character.id,
             ))
             .await
         {
@@ -139,7 +147,7 @@ pub(crate) async fn character_as_observed(
     state: &AppState,
     character_id: u64,
     observer_character_id: u64,
-) -> Result<Option<Character>> {
+) -> Result<Option<CharacterView>> {
     if !character_not_ahead_of_observer(state, character_id, observer_character_id).await? {
         // We cannot reconstruct location, party, age, wealth, or progression
         // at the observer's earlier date. Fail closed instead of returning a
@@ -191,10 +199,10 @@ pub(crate) fn new_id() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::prefer_complete_cache;
-    use crate::spacetimedb::Character;
+    use crate::spacetimedb::CharacterView;
 
-    fn character(id: u64) -> Character {
-        Character {
+    fn character(id: u64) -> CharacterView {
+        CharacterView {
             id,
             name: format!("character-{id}"),
             xp: 0,
@@ -235,7 +243,7 @@ mod tests {
             .split("pub(crate) async fn project_alive_as_observed")
             .next()
             .unwrap();
-        assert!(loader.contains("backend_character_case_site_locations"));
+        assert!(loader.contains("character_case_site_location_by_character_id"));
         assert!(loader.contains("character.current_case_site_id"));
         assert!(loader.contains("location.case_site_id.value"));
         assert!(!loader.contains("current_case_site_id.unwrap"));
@@ -251,8 +259,8 @@ mod tests {
             .split("pub(crate) async fn character_as_observed")
             .next()
             .unwrap();
-        assert!(projection.contains("backend_character_times"));
-        assert!(projection.contains("backend_character_deaths"));
+        assert!(projection.contains("character_time_by_character_id"));
+        assert!(projection.contains("character_death_by_character_id"));
         assert!(projection.contains("death.strategic_minute > observer_minute"));
         assert!(projection.contains("let Some(observer_minute)"));
         assert!(projection.contains("character.alive = true"));

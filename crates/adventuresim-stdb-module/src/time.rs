@@ -166,10 +166,16 @@ fn activity_execution_location(
             .db
             .case_site_authority()
             .id_key()
-            .find(&occupancy.case_site_id.value)
+            .find(occupancy.case_site_id.to_string())
             .ok_or("Character's case site not found")?;
+        let is_incident_site = ctx
+            .db
+            .strategic_incident()
+            .id_key()
+            .find(site.case_id.clone())
+            .is_some();
         return Ok(ActivityExecutionLocation {
-            policy: if site.distance_m > 0 && !site.case_id.starts_with("incident:") {
+            policy: if site.distance_m > 0 && !is_incident_site {
                 ActivityLocation::NamedOutdoorLocation
             } else {
                 ActivityLocation::IneligibleNamedLocation
@@ -757,8 +763,27 @@ pub fn synchronize_party_for_activity(ctx: &ReducerContext, leader_id: u64) -> R
         let together_at_settlement = leader.current_settlement_id.is_some()
             && member.current_settlement_id == leader.current_settlement_id
             && member.current_settlement_id == party.current_settlement_id;
+        let together_at_party_case_site =
+            party
+                .current_case_site_id
+                .as_ref()
+                .is_some_and(|case_site_id| {
+                    let leader_occupancy =
+                        crate::investigation::current_character_case_site_occupancy(ctx, leader_id);
+                    let member_occupancy =
+                        crate::investigation::current_character_case_site_occupancy(
+                            ctx, *member_id,
+                        );
+                    leader_occupancy
+                        .zip(member_occupancy)
+                        .is_some_and(|(leader, member)| {
+                            leader.case_site_id == *case_site_id
+                                && member.case_site_id == *case_site_id
+                        })
+                });
         if member.party_id.as_deref() != Some(party_id.as_str())
             || !(together_at_settlement
+                || together_at_party_case_site
                 || crate::world_actor::characters_are_contextually_present(
                     ctx, leader_id, *member_id,
                 ))
@@ -1727,7 +1752,7 @@ fn apply_activity_outcomes_inner(
         crate::condition::record_morale_event(
             ctx,
             character_id,
-            "carousing",
+            adventuresim_core::morale::MoraleEventKind::Carousing,
             outcome.carousing_morale,
             Some("activity:carousing".into()),
         )?;
@@ -3747,7 +3772,9 @@ mod tests {
         assert!(immediate.contains("require_character_no_unresolved_encounter"));
         assert!(immediate.contains("IncidentStatus::Pending"));
         assert!(source.contains("site.distance_m > 0"));
-        assert!(source.contains("!site.case_id.starts_with(\"incident:\")"));
+        assert!(source.contains(".strategic_incident()"));
+        assert!(source.contains(".id_key()"));
+        assert!(source.contains(".find(site.case_id.clone())"));
         assert!(source.contains("ActivityLocation::IneligibleNamedLocation"));
         assert!(
             immediate.find("validate_organization_schedule").unwrap()
@@ -3864,5 +3891,26 @@ mod tests {
         assert!(socializing < training);
         assert!(stationary.contains("realized_socializing_minutes == 0"));
         assert!(stationary.contains("realized_training_schedule.socializing_minutes = 0"));
+    }
+
+    #[test]
+    fn party_activity_uses_authoritative_current_case_site_occupancy() {
+        let source = crate::production_source(include_str!("time.rs"));
+        let synchronization = source
+            .split("pub fn synchronize_party_for_activity")
+            .nth(1)
+            .and_then(|tail| tail.split("/// Neutral/location-appropriate").next())
+            .expect("party activity synchronization");
+        assert!(synchronization.contains("party"));
+        assert!(synchronization.contains(".current_case_site_id"));
+        assert_eq!(
+            synchronization
+                .matches("current_character_case_site_occupancy")
+                .count(),
+            2
+        );
+        assert!(synchronization.contains("leader.case_site_id == *case_site_id"));
+        assert!(synchronization.contains("member.case_site_id == *case_site_id"));
+        assert!(synchronization.contains("characters_are_contextually_present"));
     }
 }

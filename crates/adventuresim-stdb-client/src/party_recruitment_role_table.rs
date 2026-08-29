@@ -3,7 +3,8 @@
 
 #![allow(unused, clippy::all)]
 use super::party_recruitment_role_type::PartyRecruitmentRole;
-use super::recruitment_requirements_type::RecruitmentRequirements;
+use super::recruitment_role_purpose_type::RecruitmentRolePurpose;
+use super::role_requirements_type::RoleRequirements;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `party_recruitment_role`.

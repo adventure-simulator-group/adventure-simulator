@@ -134,6 +134,20 @@ pub enum ResidenceTransitionKind {
     OccupantRemoved,
 }
 
+impl ResidenceTransitionKind {
+    const fn stable_id(self) -> &'static str {
+        match self {
+            Self::Acquired => "Acquired",
+            Self::Designated => "Designated",
+            Self::Relinquished => "Relinquished",
+            Self::Dormant => "Dormant",
+            Self::Recovered => "Recovered",
+            Self::OccupantAdmitted => "OccupantAdmitted",
+            Self::OccupantRemoved => "OccupantRemoved",
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 #[table(accessor = residence_transition)]
 pub struct ResidenceTransition {
@@ -371,7 +385,10 @@ fn transition_id(
     minute: u64,
     kind: ResidenceTransitionKind,
 ) -> String {
-    format!("residence-transition:{holding_id}:{affected_character_id}:{minute}:{kind:?}")
+    format!(
+        "residence-transition:{holding_id}:{affected_character_id}:{minute}:{}",
+        kind.stable_id()
+    )
 }
 
 fn record_transition(
@@ -1140,6 +1157,24 @@ pub fn settle_residence_billing(ctx: &ReducerContext, character_id: u64) -> Resu
 }
 
 /// Residence comfort is one fixed-duration, refreshable, bounded source.
+enum LeisureMoraleSourceId<'a> {
+    Spouse(&'a str),
+    Other,
+}
+
+impl<'a> LeisureMoraleSourceId<'a> {
+    fn parse(value: &'a str) -> Self {
+        value
+            .strip_prefix("spouse-leisure:")
+            .filter(|coordinate| !coordinate.is_empty())
+            .map_or(Self::Other, Self::Spouse)
+    }
+
+    const fn is_spouse(&self) -> bool {
+        matches!(self, Self::Spouse(_coordinate))
+    }
+}
+
 pub fn apply_residence_leisure_morale(
     ctx: &ReducerContext,
     character_id: u64,
@@ -1183,7 +1218,7 @@ pub fn apply_residence_leisure_morale(
             event
                 .source_id
                 .as_deref()
-                .is_some_and(|source| source.starts_with("spouse-leisure:"))
+                .is_some_and(|source| LeisureMoraleSourceId::parse(source).is_spouse())
         })
         .map_or(RefreshableMorale::default(), |event| RefreshableMorale {
             milli_points: (event.magnitude.max(0.0) * 1_000.0).round() as u32,
@@ -1207,7 +1242,7 @@ pub fn apply_residence_leisure_morale(
     let event = MoraleEvent {
         id: existing.as_ref().map_or(0, |event| event.id),
         character_id,
-        kind: "residence_leisure".into(),
+        kind: adventuresim_core::morale::MoraleEventKind::ResidenceLeisure,
         magnitude: refreshed.milli_points as f32 / 1_000.0,
         occurred_at_minute: now,
         expires_at_minute: refreshed.expires_at_minute,

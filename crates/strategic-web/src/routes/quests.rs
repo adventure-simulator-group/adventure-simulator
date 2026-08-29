@@ -27,15 +27,16 @@ use super::{
         populate_itinerary_forecasts, settlement_destination,
     },
 };
+use crate::medical::CorpseActionKind;
 use crate::session::Session;
 use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
-    AutoresolveReport, BackendCaseBattle, BackendCaseSitePin, BackendContextCharacter,
-    BackendCorpse, BackendHostileNegotiation, BackendHostileSurrender, BackendInvestigationAction,
-    BattleLootItem, BattleResult, Character, CharacterAttributes, CharacterLimbs, CharacterStats,
-    CharacterStrategicCondition, CharacterTime, CharacterTrainingSchedule, ContractPresentation,
-    ContractStatus, FoodLot, InventoryQuantityTarget, ItemDefinition, Party, PartyInventoryItem,
-    PartyStake, Settlement,
+    AutoresolveReport, BackendCaseSitePin, BackendContextCharacter, BackendContract, BackendCorpse,
+    BackendHostileNegotiation, BackendHostileSurrender, BackendInvestigationAction, BattleLootItem,
+    BattleResult, CaseBattleView, CatalogItemView, CharacterAttributes, CharacterLimbs,
+    CharacterStats, CharacterStrategicCondition, CharacterTime, CharacterTrainingSchedule,
+    CharacterView, ContractStatus, FoodLot, InventoryQuantityTarget, PartyInventoryItem,
+    PartyStake, PartyView, SettlementView,
 };
 use crate::templates::quest::{
     CaseSitePagePresentation, CaseSiteRecoveryNotice, HostileNegotiationPresentation,
@@ -95,12 +96,27 @@ struct HostileSurrenderForm {
     accept: Option<bool>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum HostileSurrenderOperation {
+    Demand,
+    AnswerOffer,
+}
+
+impl HostileSurrenderOperation {
+    const fn reducer(self) -> &'static str {
+        match self {
+            Self::Demand => "demand_hostile_surrender",
+            Self::AnswerOffer => "answer_hostile_surrender_offer",
+        }
+    }
+}
+
 async fn call_hostile_surrender(
     state: &AppState,
     actor_id: u64,
     case_site_id: &str,
     form: HostileSurrenderForm,
-    offer: bool,
+    operation: HostileSurrenderOperation,
 ) -> Response {
     let mut args = vec![
         json!(actor_id),
@@ -109,16 +125,11 @@ async fn call_hostile_surrender(
         json!(form.context_ref),
         json!(form.expected_revision),
     ];
-    if offer {
+    if operation == HostileSurrenderOperation::AnswerOffer {
         args.push(json!(form.accept.unwrap_or(false)));
     }
     args.push(json!(form.action_id));
-    let reducer = if offer {
-        "answer_hostile_surrender_offer"
-    } else {
-        "demand_hostile_surrender"
-    };
-    match state.db.call(reducer, &args).await {
+    match state.db.call(operation.reducer(), &args).await {
         Ok(()) => {
             Redirect::to(&format!("/locations/case-site/{case_site_id}/enemy")).into_response()
         }
@@ -135,7 +146,14 @@ async fn demand_hostile_surrender(
     let Some(actor_id) = session.character_id_u64() else {
         return Redirect::to("/characters").into_response();
     };
-    call_hostile_surrender(&state, actor_id, &case_site_id, form, false).await
+    call_hostile_surrender(
+        &state,
+        actor_id,
+        &case_site_id,
+        form,
+        HostileSurrenderOperation::Demand,
+    )
+    .await
 }
 
 async fn answer_hostile_surrender_offer(
@@ -154,7 +172,14 @@ async fn answer_hostile_surrender_offer(
         )
             .into_response();
     }
-    call_hostile_surrender(&state, actor_id, &case_site_id, form, true).await
+    call_hostile_surrender(
+        &state,
+        actor_id,
+        &case_site_id,
+        form,
+        HostileSurrenderOperation::AnswerOffer,
+    )
+    .await
 }
 
 #[derive(Deserialize)]
@@ -211,10 +236,7 @@ async fn accept_quest_api(
 ) -> Json<AcceptQuestResponse> {
     let title = state
         .db
-        .query::<ContractPresentation>(&format!(
-            "SELECT * FROM backend_contracts WHERE id = {}",
-            sql_string_literal(&id)
-        ))
+        .query_sats::<BackendContract>(&crate::spacetimedb::contract_by_id(&id))
         .await
         .unwrap_or_default()
         .into_iter()
@@ -275,10 +297,7 @@ async fn turn_in_quest_api(
 ) -> Json<TurnInQuestResponse> {
     let reward = state
         .db
-        .query::<ContractPresentation>(&format!(
-            "SELECT * FROM backend_contracts WHERE id = {}",
-            sql_string_literal(&id)
-        ))
+        .query_sats::<BackendContract>(&crate::spacetimedb::contract_by_id(&id))
         .await
         .unwrap_or_default()
         .into_iter()
@@ -315,12 +334,9 @@ async fn abandon_quest(
         return Redirect::to("/characters");
     };
 
-    let quests: Vec<ContractPresentation> = state
+    let quests: Vec<BackendContract> = state
         .db
-        .query(&format!(
-            "SELECT * FROM backend_contracts WHERE id = {}",
-            sql_string_literal(&id)
-        ))
+        .query_sats(&crate::spacetimedb::contract_by_id(&id))
         .await
         .unwrap_or_default();
     let settlement_id = quests.first().map(|quest| quest.settlement_id.clone());
@@ -533,7 +549,7 @@ enum QuestLocationTab {
 
 fn case_site_page_presentation(
     site: &BackendCaseSitePin,
-    manual_contract: Option<&ContractPresentation>,
+    manual_contract: Option<&BackendContract>,
 ) -> Option<CaseSitePagePresentation> {
     if site.generated_case {
         if site.display_title.is_empty() {
@@ -541,7 +557,7 @@ fn case_site_page_presentation(
         }
         Some(CaseSitePagePresentation {
             title: site.display_title.clone(),
-            action_id: site.case_site_id.clone(),
+            action_id: site.case_site_id.value.clone(),
             allow_tactical_combat: false,
         })
     } else {
@@ -556,7 +572,7 @@ fn case_site_page_presentation(
 
 fn case_site_combat_permitted(
     site: &BackendCaseSitePin,
-    manual_contract: Option<&ContractPresentation>,
+    manual_contract: Option<&BackendContract>,
     active_contract_id: Option<&str>,
     can_control: bool,
     party_ready: bool,
@@ -584,13 +600,21 @@ fn onsite_investigation_actions(
 ) -> Vec<BackendInvestigationAction> {
     actions
         .into_iter()
-        .filter(|action| action.available && action.required_case_site_id == case_site_id)
+        .filter(|action| {
+            matches!(
+                crate::spacetimedb::core_investigation_action_availability(&action.availability),
+                adventuresim_core::investigation_action::InvestigationActionAvailability::Available
+            ) && action
+                .required_case_site_id
+                .as_ref()
+                .is_some_and(|required_site| required_site.value == case_site_id)
+        })
         .collect()
 }
 
 fn character_and_party_are_at_case_site(
-    character: Option<&Character>,
-    party: Option<&Party>,
+    character: Option<&CharacterView>,
+    party: Option<&PartyView>,
     case_site_id: &str,
 ) -> bool {
     character
@@ -599,12 +623,12 @@ fn character_and_party_are_at_case_site(
             party
                 .current_case_site_id
                 .as_ref()
-                .is_some_and(|id| id.value == case_site_id)
+                .is_some_and(|id| id.as_str() == case_site_id)
         })
 }
 
 fn case_site_recovery_notice(
-    members: &[Character],
+    members: &[CharacterView],
     conditions: &[CharacterStrategicCondition],
     site_id: &str,
     nearest_settlement: Option<&TravelDestination>,
@@ -614,7 +638,7 @@ fn case_site_recovery_notice(
         .filter_map(|member| {
             let condition = conditions.iter().find(|row| {
                 row.character_id == member.id
-                    && row.status == adventuresim_core::morale::IncapacitationStatus::Incapacitated
+                    && row.status == adventuresim_stdb_client::IncapacitationStatus::Incapacitated
             })?;
             Some((member, condition))
         })
@@ -706,7 +730,7 @@ async fn quest_location_enemy(
 
 #[derive(serde::Deserialize)]
 struct CorpseActionForm {
-    action_kind: String,
+    action_kind: CorpseActionKind,
     discipline: String,
     stage: String,
     action_id: String,
@@ -725,8 +749,8 @@ async fn perform_corpse_action(
     let Some(actor_id) = session.character_id_u64() else {
         return Redirect::to("/characters");
     };
-    let result = match form.action_kind.as_str() {
-        "open" => {
+    let result = match form.action_kind {
+        CorpseActionKind::Open => {
             state
                 .db
                 .call(
@@ -741,7 +765,7 @@ async fn perform_corpse_action(
                 )
                 .await
         }
-        "exhume" => {
+        CorpseActionKind::Exhume => {
             state
                 .db
                 .call(
@@ -756,7 +780,7 @@ async fn perform_corpse_action(
                 )
                 .await
         }
-        "bury" => {
+        CorpseActionKind::Bury => {
             state
                 .db
                 .call(
@@ -770,7 +794,7 @@ async fn perform_corpse_action(
                 )
                 .await
         }
-        "burn" => {
+        CorpseActionKind::Burn => {
             state
                 .db
                 .call(
@@ -785,7 +809,7 @@ async fn perform_corpse_action(
                 )
                 .await
         }
-        _ => {
+        CorpseActionKind::Examine => {
             state
                 .db
                 .call(
@@ -902,7 +926,7 @@ async fn render_quest_location(
         .flatten();
     let known_site = state
         .db
-        .query_one::<BackendCaseSitePin>(&format!(
+        .query_one_sats::<BackendCaseSitePin>(&format!(
             "SELECT * FROM backend_case_site_pins WHERE owner_character_id = {character_id} AND case_site_id = {}",
             sql_string_literal(&case_site_id)
         ))
@@ -930,7 +954,7 @@ async fn render_quest_location(
     } else {
         state
             .db
-            .query::<ContractPresentation>(&format!(
+            .query_sats::<BackendContract>(&format!(
                 "SELECT * FROM backend_contracts WHERE case_id = {}",
                 sql_string_literal(&site.case_id)
             ))
@@ -958,7 +982,9 @@ async fn render_quest_location(
     let party = if let Some(party_id) = character.as_ref().and_then(|c| c.party_id.as_ref()) {
         state
             .db
-            .query::<Party>(&crate::spacetimedb::party_by_id(party_id))
+            .query_sats_into::<adventuresim_stdb_client::Party, PartyView>(
+                &crate::spacetimedb::party_by_id(party_id),
+            )
             .await
             .unwrap_or_default()
             .into_iter()
@@ -969,7 +995,7 @@ async fn render_quest_location(
     let is_at_location = character_and_party_are_at_case_site(
         character.as_ref(),
         party.as_ref(),
-        &site.case_site_id,
+        &site.case_site_id.value,
     );
     if !is_at_location {
         let return_href = character
@@ -992,9 +1018,11 @@ async fn render_quest_location(
         )
             .into_response();
     }
-    let settlements: Vec<Settlement> = state
+    let settlements: Vec<SettlementView> = state
         .db
-        .query("SELECT * FROM settlement")
+        .query_sats_into::<adventuresim_stdb_client::Settlement, SettlementView>(
+            "SELECT * FROM settlement",
+        )
         .await
         .unwrap_or_default();
     let mut nearby: Vec<TravelDestination> = settlements
@@ -1028,7 +1056,7 @@ async fn render_quest_location(
             destination,
             state.terrain.as_deref(),
             (latitude, longitude),
-            (settlement.coord_y, settlement.coord_x),
+            (settlement.latitude, settlement.longitude),
             terrain_profile,
         )
         .await;
@@ -1041,7 +1069,7 @@ async fn render_quest_location(
     let case_battle = if let Some(party) = party.as_ref() {
         state
             .db
-            .query::<BackendCaseBattle>(&format!(
+            .query_sats_into::<adventuresim_stdb_client::BackendCaseBattle, CaseBattleView>(&format!(
                 "SELECT * FROM backend_case_battles WHERE owner_character_id = {character_id} AND public_case_id = {} AND party_id = {}",
                 sql_string_literal(&site.case_id),
                 sql_string_literal(&party.id),
@@ -1049,7 +1077,7 @@ async fn render_quest_location(
             .await
             .unwrap_or_default()
             .into_iter()
-            .find(|battle| battle.case_site_id.value == site.case_site_id)
+            .find(|battle| battle.case_site_id.as_str() == site.case_site_id.value)
     } else {
         None
     };
@@ -1061,9 +1089,8 @@ async fn render_quest_location(
     let results: Vec<BattleResult> = if let Some(case_battle) = case_battle.as_ref() {
         state
             .db
-            .query(&format!(
-                "SELECT * FROM battle_result WHERE battle_id = {}",
-                sql_string_literal(&case_battle.battle_id)
+            .query_sats(&crate::spacetimedb::battle_result_by_battle_id(
+                &case_battle.battle_id,
             ))
             .await
             .unwrap_or_default()
@@ -1074,9 +1101,8 @@ async fn render_quest_location(
     let autoresolve_report = if let Some(case_battle) = case_battle.as_ref() {
         state
             .db
-            .query::<AutoresolveReport>(&format!(
-                "SELECT * FROM autoresolve_report WHERE battle_id = {}",
-                sql_string_literal(&case_battle.battle_id)
+            .query_sats::<AutoresolveReport>(&crate::spacetimedb::autoresolve_report_by_battle_id(
+                &case_battle.battle_id,
             ))
             .await
             .unwrap_or_default()
@@ -1088,7 +1114,7 @@ async fn render_quest_location(
     let loot: Vec<BattleLootItem> = if let Some(case_battle) = case_battle.as_ref() {
         state
             .db
-            .query(&format!(
+            .query_sats(&format!(
                 "SELECT * FROM battle_loot_item WHERE loot_battle_id = {}",
                 sql_string_literal(&case_battle.battle_id)
             ))
@@ -1100,7 +1126,7 @@ async fn render_quest_location(
     let pooled: Vec<PartyInventoryItem> = if let Some(party) = party.as_ref() {
         state
             .db
-            .query(&format!(
+            .query_sats(&format!(
                 "SELECT * FROM party_inventory_item WHERE party_id = {}",
                 sql_string_literal(&party.id)
             ))
@@ -1112,7 +1138,7 @@ async fn render_quest_location(
     let stakes: Vec<PartyStake> = if let Some(party) = party.as_ref() {
         state
             .db
-            .query(&format!(
+            .query_sats(&format!(
                 "SELECT * FROM party_stake WHERE party_id = {}",
                 sql_string_literal(&party.id)
             ))
@@ -1127,9 +1153,9 @@ async fn render_quest_location(
             .find(|stake| stake.character_id == character.id)
             .map_or(0, |stake| stake.value)
     });
-    let items: Vec<ItemDefinition> = state
+    let items: Vec<CatalogItemView> = state
         .db
-        .query("SELECT * FROM item")
+        .query_sats_into::<adventuresim_stdb_client::Item, CatalogItemView>("SELECT * FROM item")
         .await
         .unwrap_or_default();
     let targets = if let Some(party) = party.as_ref() {
@@ -1139,14 +1165,14 @@ async fn render_quest_location(
     };
     let food_lots: Vec<FoodLot> = state
         .db
-        .query("SELECT * FROM food_lot")
+        .query_sats("SELECT * FROM food_lot")
         .await
         .unwrap_or_default();
     let party_members = get_active_party_members(&state, character.as_ref()).await;
     let living_party_members = living_party_members(&party_members);
     let stats: Vec<CharacterStats> = state
         .db
-        .query("SELECT * FROM backend_character_stats")
+        .query_sats("SELECT * FROM backend_character_stats")
         .await
         .unwrap_or_default();
     let default_rest_minutes = living_party_members
@@ -1164,22 +1190,22 @@ async fn render_quest_location(
     if let Some(party) = party.as_ref() {
         let attributes: Vec<CharacterAttributes> = state
             .db
-            .query("SELECT * FROM backend_character_attributes")
+            .query_sats("SELECT * FROM backend_character_attributes")
             .await
             .unwrap_or_default();
         let limbs: Vec<CharacterLimbs> = state
             .db
-            .query("SELECT * FROM backend_character_limbs")
+            .query_sats("SELECT * FROM backend_character_limbs")
             .await
             .unwrap_or_default();
         let times: Vec<CharacterTime> = state
             .db
-            .query("SELECT * FROM backend_character_times")
+            .query_sats("SELECT * FROM backend_character_times")
             .await
             .unwrap_or_default();
         let schedules: Vec<CharacterTrainingSchedule> = state
             .db
-            .query("SELECT * FROM backend_character_training_schedules")
+            .query_sats("SELECT * FROM backend_character_training_schedules")
             .await
             .unwrap_or_default();
         let member_ids: Vec<_> = living_party_members
@@ -1215,7 +1241,7 @@ async fn render_quest_location(
     let recovery_notice = case_site_recovery_notice(
         &living_party_members,
         &strategic_conditions,
-        &site.case_site_id,
+        &site.case_site_id.value,
         nearby.first(),
     );
     let can_fight = case_site_combat_permitted(
@@ -1229,9 +1255,9 @@ async fn render_quest_location(
     );
     let context_memberships: Vec<BackendContextCharacter> = state
         .db
-        .query(&format!(
+        .query_sats(&format!(
             "SELECT * FROM backend_context_characters WHERE location_id = {} AND party_id = {}",
-            sql_string_literal(&site.case_site_id),
+            sql_string_literal(&site.case_site_id.value),
             sql_string_literal(party.as_ref().map_or("", |party| party.id.as_str()))
         ))
         .await
@@ -1254,7 +1280,7 @@ async fn render_quest_location(
     }
     let hostile_negotiation = state
         .db
-        .query::<BackendHostileNegotiation>(&format!(
+        .query_sats::<BackendHostileNegotiation>(&format!(
             "SELECT * FROM backend_hostile_negotiations WHERE owner_character_id = {character_id}"
         ))
         .await
@@ -1274,7 +1300,7 @@ async fn render_quest_location(
         });
     let hostile_surrender = state
         .db
-        .query::<BackendHostileSurrender>(&format!(
+        .query_sats::<BackendHostileSurrender>(&format!(
             "SELECT * FROM backend_hostile_surrenders WHERE owner_character_id = {character_id}"
         ))
         .await
@@ -1296,22 +1322,24 @@ async fn render_quest_location(
     let onsite_actions = onsite_investigation_actions(
         state
             .db
-            .query::<BackendInvestigationAction>(&format!(
+            .query_sats::<BackendInvestigationAction>(&format!(
                 "SELECT * FROM backend_investigation_actions WHERE owner_character_id = {character_id}"
             ))
             .await
             .unwrap_or_default(),
-        &site.case_site_id,
+        &site.case_site_id.value,
     );
     let corpses = state
         .db
-        .query::<BackendCorpse>(&format!(
+        .query_sats::<BackendCorpse>(&format!(
             "SELECT * FROM backend_corpses WHERE owner_character_id = {character_id}"
         ))
         .await
         .unwrap_or_default()
         .into_iter()
-        .filter(|corpse| corpse.case_site_id == site.case_site_id && corpse.location == "scene")
+        .filter(|corpse| {
+            corpse.case_site_id.as_ref() == Some(&site.case_site_id) && corpse.location == "scene"
+        })
         .collect::<Vec<_>>();
     let selected_corpse_coordinate = match &tab {
         QuestLocationTab::Enemy(query) => query.corpse.as_deref().and_then(|corpse_id| {
@@ -1395,7 +1423,7 @@ async fn render_quest_location(
 
 async fn party_readiness(
     state: &AppState,
-    members: &[Character],
+    members: &[CharacterView],
 ) -> (bool, Vec<CharacterStrategicCondition>) {
     let mut ready = true;
     let mut conditions = Vec::new();
@@ -1417,15 +1445,14 @@ async fn party_readiness(
         }
         let condition = state
             .db
-            .query_one::<CharacterStrategicCondition>(&format!(
-                "SELECT * FROM backend_character_strategic_conditions WHERE character_id = {}",
-                member.id
-            ))
+            .query_one_sats::<CharacterStrategicCondition>(
+                &crate::spacetimedb::character_strategic_condition_by_character_id(member.id),
+            )
             .await;
         match condition {
             Ok(Some(condition)) => {
                 ready &= condition.status
-                    != adventuresim_core::morale::IncapacitationStatus::Incapacitated;
+                    != adventuresim_stdb_client::IncapacitationStatus::Incapacitated;
                 conditions.push(condition);
             }
             _ => ready = false,
@@ -1437,7 +1464,9 @@ async fn party_readiness(
 async fn party_targets(state: &AppState, party_id: &str) -> Vec<InventoryQuantityTarget> {
     let party = state
         .db
-        .query::<Party>(&crate::spacetimedb::party_by_id(party_id))
+        .query_sats_into::<adventuresim_stdb_client::Party, PartyView>(
+            &crate::spacetimedb::party_by_id(party_id),
+        )
         .await
         .unwrap_or_default()
         .into_iter()
@@ -1445,7 +1474,7 @@ async fn party_targets(state: &AppState, party_id: &str) -> Vec<InventoryQuantit
     let Some(party) = party else {
         return Vec::new();
     };
-    state.db.query(&format!("SELECT * FROM inventory_quantity_target WHERE owner_character_id = {} AND party_scope = true", party.leader_id)).await.unwrap_or_default()
+    state.db.query_sats(&format!("SELECT * FROM inventory_quantity_target WHERE owner_character_id = {} AND party_scope = true", party.leader_id)).await.unwrap_or_default()
 }
 
 async fn autoresolve_quest(
@@ -1542,30 +1571,33 @@ pub(crate) fn offroad_journey_minutes(distance_m: u64) -> u64 {
 
 fn case_site_position(site: &BackendCaseSitePin) -> Option<(f64, f64)> {
     if site.coordinates_are_geographic {
-        Wgs84CoordinateE7::new(site.latitude_e7, site.longitude_e7)
+        Wgs84CoordinateE7::new(site.latitude_e_7, site.longitude_e_7)
             .map(Wgs84CoordinateE7::longitude_latitude_degrees)
     } else {
         Some((
-            UnboundedCoordinateE7::from_raw(site.longitude_e7).coordinate_units(),
-            UnboundedCoordinateE7::from_raw(site.latitude_e7).coordinate_units(),
+            UnboundedCoordinateE7::from_raw(site.longitude_e_7).coordinate_units(),
+            UnboundedCoordinateE7::from_raw(site.latitude_e_7).coordinate_units(),
         ))
     }
 }
 
-pub(crate) fn straight_line_distance_m(site: &BackendCaseSitePin, settlement: &Settlement) -> u64 {
+pub(crate) fn straight_line_distance_m(
+    site: &BackendCaseSitePin,
+    settlement: &SettlementView,
+) -> u64 {
     let Some((longitude, latitude)) = case_site_position(site) else {
         return u64::MAX;
     };
     if site.coordinates_are_geographic && settlement.source_node_id.is_some() {
         let lat1 = latitude.to_radians();
-        let lat2 = settlement.coord_y.to_radians();
-        let delta_lat = (settlement.coord_y - latitude).to_radians();
-        let delta_lon = (settlement.coord_x - longitude).to_radians();
+        let lat2 = settlement.latitude.to_radians();
+        let delta_lat = (settlement.latitude - latitude).to_radians();
+        let delta_lon = (settlement.longitude - longitude).to_radians();
         let a = (delta_lat / 2.0).sin().powi(2)
             + lat1.cos() * lat2.cos() * (delta_lon / 2.0).sin().powi(2);
         (6_371_000.0 * 2.0 * a.sqrt().atan2((1.0 - a).sqrt())).round() as u64
     } else {
-        (((longitude - settlement.coord_x).powi(2) + (latitude - settlement.coord_y).powi(2))
+        (((longitude - settlement.longitude).powi(2) + (latitude - settlement.latitude).powi(2))
             .sqrt()
             * 1_000.0)
             .round() as u64
@@ -1577,6 +1609,18 @@ mod quest_route_tests {
     use axum::http::header::LOCATION;
 
     use super::*;
+
+    #[test]
+    fn hostile_surrender_operations_have_fixed_reducer_names() {
+        assert_eq!(
+            [
+                HostileSurrenderOperation::Demand,
+                HostileSurrenderOperation::AnswerOffer,
+            ]
+            .map(HostileSurrenderOperation::reducer),
+            ["demand_hostile_surrender", "answer_hostile_surrender_offer"]
+        );
+    }
 
     fn redirect_location(redirect: Redirect) -> String {
         redirect
@@ -1593,13 +1637,15 @@ mod quest_route_tests {
         BackendCaseSitePin {
             owner_character_id: 7,
             case_id: "journal:case".into(),
-            case_site_id: "site:known".into(),
+            case_site_id: adventuresim_stdb_client::CaseSiteId {
+                value: "site:known".into(),
+            },
             origin_settlement_id: "settlement".into(),
             name: "a camp in the woods".into(),
             description: "A known place.".into(),
             scene_key: "forest".into(),
-            longitude_e7: 0,
-            latitude_e7: 0,
+            longitude_e_7: 0,
+            latitude_e_7: 0,
             coordinates_are_geographic: false,
             distance_m: 4_000,
             knowledge_stage: DestinationKnowledgeStage::Visited,
@@ -1613,8 +1659,8 @@ mod quest_route_tests {
         }
     }
 
-    fn accepted_contract() -> ContractPresentation {
-        ContractPresentation {
+    fn accepted_contract() -> BackendContract {
+        BackendContract {
             id: "contract:one".into(),
             case_id: "case:one".into(),
             title: "Manual bounty".into(),
@@ -1624,17 +1670,23 @@ mod quest_route_tests {
             xp_reward: 10,
             settlement_id: "settlement".into(),
             service_id: "tavern".into(),
-            issuer_resident_character_id: "npc:issuer".into(),
+            issuer_resident_character_id: 91,
             status: ContractStatus::Accepted,
             accepted_by: Some("party".into()),
             opposition_wording: "unknown opposition".into(),
             opposition_count_wording: "unknown number".into(),
+            opposition_count: 0,
+            opposition_combat_power: 0,
+            accepted_at_minute: None,
+            paid_at_minute: None,
+            distance_m: 0,
         }
     }
 
     fn onsite_action(site: &str, available: bool) -> BackendInvestigationAction {
         BackendInvestigationAction {
             owner_character_id: 7,
+            case_id: "case:one".into(),
             action_id: "action:inspect".into(),
             method: "inspect_site".into(),
             expected_version: 1,
@@ -1645,21 +1697,35 @@ mod quest_route_tests {
             uncertainty_bps: 2500,
             skill_contributions: "awareness".into(),
             weather_available: false,
-            required_case_site_id: site.into(),
-            available,
-            can_travel_to_required_site: false,
+            contact_character_id: None,
+            required_case_site_id: Some(adventuresim_stdb_client::CaseSiteId {
+                value: site.into(),
+            }),
+            availability: if available {
+                adventuresim_stdb_client::InvestigationActionAvailability::Available
+            } else {
+                adventuresim_stdb_client::InvestigationActionAvailability::Unavailable(
+                    adventuresim_stdb_client::InvestigationActionUnavailableFields {
+                        reason: adventuresim_stdb_client::InvestigationActionUnavailableReason::CharacterUnavailable,
+                        can_travel_to_required_site: false,
+                        wait_minutes: 0,
+                    },
+                )
+            },
             unavailable_reason: String::new(),
         }
     }
 
-    fn character_at(case_site_id: Option<&str>) -> Character {
-        Character {
+    fn character_at(case_site_id: Option<&str>) -> CharacterView {
+        CharacterView {
             id: 7,
             name: "Ada".into(),
             xp: 0,
             level: 1,
             current_settlement_id: None,
-            current_case_site_id: case_site_id.map(str::to_owned),
+            current_case_site_id: case_site_id.map(|value| {
+                crate::spacetimedb::CaseSiteId::try_new(value).expect("valid fixture case-site id")
+            }),
             party_id: Some("party".into()),
             age_years: 25,
             alive: true,
@@ -1669,14 +1735,15 @@ mod quest_route_tests {
         }
     }
 
-    fn party_at(case_site_id: Option<&str>) -> Party {
-        Party {
+    fn party_at(case_site_id: Option<&str>) -> PartyView {
+        PartyView {
             id: "party".into(),
+            gateway_bucket: 0,
             name: "Ada's party".into(),
             leader_id: 7,
             current_settlement_id: None,
-            current_case_site_id: case_site_id.map(|value| crate::spacetimedb::CaseSiteId {
-                value: value.to_owned(),
+            current_case_site_id: case_site_id.map(|value| {
+                crate::spacetimedb::CaseSiteId::try_new(value).expect("valid fixture case-site id")
             }),
             active_contract_id: None,
             is_solo: true,
@@ -1696,7 +1763,7 @@ mod quest_route_tests {
 
     fn strategic_condition(
         character_id: u64,
-        status: adventuresim_core::morale::IncapacitationStatus,
+        status: adventuresim_stdb_client::IncapacitationStatus,
         hunger: f32,
         thirst: f32,
         pain: f32,
@@ -1902,7 +1969,7 @@ mod quest_route_tests {
             std::slice::from_ref(&member),
             &[strategic_condition(
                 member.id,
-                adventuresim_core::morale::IncapacitationStatus::Incapacitated,
+                adventuresim_stdb_client::IncapacitationStatus::Incapacitated,
                 4.0,
                 26.0,
                 0.0,
@@ -1926,7 +1993,7 @@ mod quest_route_tests {
             std::slice::from_ref(&member),
             &[strategic_condition(
                 member.id,
-                adventuresim_core::morale::IncapacitationStatus::Incapacitated,
+                adventuresim_stdb_client::IncapacitationStatus::Incapacitated,
                 0.0,
                 0.0,
                 0.2,
@@ -1949,7 +2016,7 @@ mod quest_route_tests {
                 &[member],
                 &[strategic_condition(
                     7,
-                    adventuresim_core::morale::IncapacitationStatus::Ready,
+                    adventuresim_stdb_client::IncapacitationStatus::Ready,
                     0.0,
                     0.0,
                     0.0,
@@ -1976,7 +2043,7 @@ mod quest_route_tests {
         assert!(loader.contains("character_and_party_are_at_case_site("));
         assert!(loader.contains("if site.generated_case"));
         assert!(loader.contains("case_site_combat_permitted"));
-        assert!(loader.contains("battle.case_site_id.value == site.case_site_id"));
+        assert!(loader.contains("battle.case_site_id.as_str() == site.case_site_id.value"));
         assert!(!loader.contains("active_contract_id.as_deref() == Some(&presentation"));
         assert!(
             loader.contains("backend_context_characters WHERE location_id = {} AND party_id = {}")

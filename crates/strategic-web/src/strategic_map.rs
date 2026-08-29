@@ -20,7 +20,8 @@ use sha2::{Digest, Sha256};
 
 #[cfg(test)]
 use crate::spacetimedb::DestinationKnowledgeStage;
-use crate::spacetimedb::{BackendCaseSitePin, Settlement, SettlementCategory};
+use crate::spacetimedb::{BackendCaseSitePin, SettlementCategory, SettlementView};
+use crate::templates::prosperity_tier_label;
 
 const WIDTH: f64 = 1200.0;
 const HEIGHT: f64 = 800.0;
@@ -411,10 +412,10 @@ fn visible_tiles(view: ViewBox, tile_size: u32, zoom: u8) -> Vec<(u16, u16, f64,
     tiles
 }
 
-pub(crate) fn has_geographic_source(settlement: &Settlement) -> bool {
+pub(crate) fn has_geographic_source(settlement: &SettlementView) -> bool {
     settlement.source_node_id.is_some()
-        && settlement.coord_x.is_finite()
-        && settlement.coord_y.is_finite()
+        && settlement.longitude.is_finite()
+        && settlement.latitude.is_finite()
 }
 
 fn has_geographic_case_site(site: &BackendCaseSitePin) -> bool {
@@ -422,15 +423,15 @@ fn has_geographic_case_site(site: &BackendCaseSitePin) -> bool {
 }
 
 fn case_site_longitude_latitude(site: &BackendCaseSitePin) -> Option<(f64, f64)> {
-    Wgs84CoordinateE7::new(site.latitude_e7, site.longitude_e7)
+    Wgs84CoordinateE7::new(site.latitude_e_7, site.longitude_e_7)
         .map(Wgs84CoordinateE7::longitude_latitude_degrees)
 }
 
-fn has_geographic_source_in_bounds(settlement: &Settlement, bounds: [f64; 4]) -> bool {
+fn has_geographic_source_in_bounds(settlement: &SettlementView, bounds: [f64; 4]) -> bool {
     has_geographic_source(settlement)
         && adventuresim_world_schema::coordinates_in_bounds(
-            settlement.coord_x,
-            settlement.coord_y,
+            settlement.longitude,
+            settlement.latitude,
             bounds,
         )
 }
@@ -453,7 +454,7 @@ fn settlement_symbol_kind(category: &SettlementCategory) -> &'static str {
 }
 
 fn settlement_label_priority(
-    settlement: &Settlement,
+    settlement: &SettlementView,
     is_current: bool,
     is_connected: bool,
     is_selected: bool,
@@ -495,7 +496,7 @@ fn population_level_threshold(view_width: f64) -> i32 {
 )]
 pub fn strategic_map(
     map: &StrategicMap,
-    settlements: &[Settlement],
+    settlements: &[SettlementView],
     case_sites: &[BackendCaseSitePin],
     current_id: &str,
     connected_ids: &BTreeSet<&str>,
@@ -508,7 +509,7 @@ pub fn strategic_map(
         settlement.id == current_id && has_geographic_source_in_bounds(settlement, package.bounds)
     });
     let (origin_x, origin_y) = current.map_or((WIDTH / 2.0, HEIGHT / 2.0), |settlement| {
-        project(settlement.coord_x, settlement.coord_y, package.bounds)
+        project(settlement.longitude, settlement.latitude, package.bounds)
     });
     let settlement_destination = selected_id
         .and_then(|selected_id| {
@@ -517,11 +518,11 @@ pub fn strategic_map(
                     && has_geographic_source_in_bounds(settlement, package.bounds)
             })
         })
-        .map(|settlement| project(settlement.coord_x, settlement.coord_y, package.bounds));
+        .map(|settlement| project(settlement.longitude, settlement.latitude, package.bounds));
     let case_site_destination = selected_id
         .and_then(|selected_id| {
             case_sites.iter().find(|site| {
-                site.case_site_id == selected_id
+                site.case_site_id.value == selected_id
                     && has_geographic_case_site_in_bounds(site, package.bounds)
             })
         })
@@ -600,7 +601,7 @@ pub fn strategic_map(
                                 x2=(format!("{destination_x:.3}")) y2=(format!("{destination_y:.3}")) {}
                         }
                         @for settlement in settlements.iter().filter(|settlement| has_geographic_source_in_bounds(settlement, package.bounds)) {
-                            @let (x, y) = project(settlement.coord_x, settlement.coord_y, package.bounds);
+                            @let (x, y) = project(settlement.longitude, settlement.latitude, package.bounds);
                             @let is_current = settlement.id == current_id;
                             @let is_connected = connected_ids.contains(settlement.id.as_str());
                             @let is_selected = selected_id == Some(settlement.id.as_str());
@@ -609,7 +610,8 @@ pub fn strategic_map(
                             @let symbol_kind = settlement_symbol_kind(&settlement.category);
                             @let label_priority = settlement_label_priority(settlement, is_current, is_connected, is_selected);
                             @let label_width = (settlement.name.chars().count() as u16 * 7 + 8).clamp(44, 180);
-                            @let label = if is_current { format!("{}, {:?} prosperity, current settlement", settlement.name, settlement.economy.prosperity_tier) } else if is_connected { format!("{}, {:?} prosperity, direct route available", settlement.name, settlement.economy.prosperity_tier) } else { format!("{}, {:?} prosperity, no direct route", settlement.name, settlement.economy.prosperity_tier) };
+                            @let prosperity = prosperity_tier_label(settlement.economy.prosperity_tier);
+                            @let label = if is_current { format!("{}, {prosperity} prosperity, current settlement", settlement.name) } else if is_connected { format!("{}, {prosperity} prosperity, direct route available", settlement.name) } else { format!("{}, {prosperity} prosperity, no direct route", settlement.name) };
                             a href=(format!("{map_path}?destination={}", settlement.id))
                                 class="map-pin-link" aria-label=(&label) data-strategic-tooltip=(&label) aria-current=[is_selected.then_some("true")]
                                 data-map-pin data-map-settlement data-settlement-id=(&settlement.id) data-connected=(is_connected)
@@ -638,12 +640,12 @@ pub fn strategic_map(
                         @for site in case_sites.iter().filter(|site| has_geographic_case_site_in_bounds(site, package.bounds)) {
                             @let (longitude, latitude) = case_site_longitude_latitude(site).expect("in-bounds case site must have valid WGS84 coordinates");
                             @let (x, y) = project(longitude, latitude, package.bounds);
-                            @let is_selected = selected_id == Some(site.case_site_id.as_str());
+                            @let is_selected = selected_id == Some(site.case_site_id.value.as_str());
                             @let label = format!("Known case site: {}", site.name);
-                            a href=(format!("{map_path}?destination={}", site.case_site_id))
+                            a href=(format!("{map_path}?destination={}", site.case_site_id.value))
                                 class="map-pin-link map-quest-link" aria-label=(&label) data-strategic-tooltip=(&label)
                                 aria-current=[is_selected.then_some("true")]
-                                data-map-pin data-case-site-id=(&site.case_site_id) {
+                                data-map-pin data-case-site-id=(&site.case_site_id.value) {
                                 g class=(format!("map-pin map-quest active{}", if is_selected { " selected" } else { "" }))
                                     transform=(format!("translate({x:.3} {y:.3})")) {
                                     g data-map-pin-symbol transform=(format!("scale({initial_pin_scale:.5})")) {
@@ -661,7 +663,7 @@ pub fn strategic_map(
                         // to overlap them. The visible/accessibility link remains above; this
                         // transparent duplicate is mouse-only and is rendered last in SVG order.
                         @for settlement in settlements.iter().filter(|settlement| has_geographic_source_in_bounds(settlement, package.bounds)) {
-                            @let (x, y) = project(settlement.coord_x, settlement.coord_y, package.bounds);
+                            @let (x, y) = project(settlement.longitude, settlement.latitude, package.bounds);
                             @let is_essential = settlement.id == current_id || selected_id == Some(settlement.id.as_str());
                             @let initially_visible = is_essential || settlement.population_level >= population_level_threshold(initial_view.width);
                             a href=(format!("{map_path}?destination={}", settlement.id))
@@ -848,12 +850,12 @@ mod tests {
         ));
     }
 
-    fn settlement(id: &str, name: &str, longitude: f64, latitude: f64) -> Settlement {
-        Settlement {
+    fn settlement(id: &str, name: &str, longitude: f64, latitude: f64) -> SettlementView {
+        SettlementView {
             id: id.into(),
             name: name.into(),
-            coord_x: longitude,
-            coord_y: latitude,
+            longitude,
+            latitude,
             population_level: 4,
             population_estimate: 1_000,
             category: crate::spacetimedb::SettlementCategory::Town,
@@ -886,13 +888,13 @@ mod tests {
         BackendCaseSitePin {
             owner_character_id: 7,
             case_id: "quest-1".into(),
-            case_site_id: id.into(),
+            case_site_id: adventuresim_stdb_client::CaseSiteId { value: id.into() },
             origin_settlement_id: "origin".into(),
             name: title.into(),
             description: "A camp in the woods.".into(),
             scene_key: "forest".into(),
-            longitude_e7: coordinate.longitude().get(),
-            latitude_e7: coordinate.latitude().get(),
+            longitude_e_7: coordinate.longitude().get(),
+            latitude_e_7: coordinate.latitude().get(),
             coordinates_are_geographic: true,
             distance_m: 8_000,
             knowledge_stage: DestinationKnowledgeStage::ExactBelieved,

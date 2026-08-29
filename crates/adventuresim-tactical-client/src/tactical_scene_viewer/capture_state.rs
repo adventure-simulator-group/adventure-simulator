@@ -47,7 +47,7 @@ impl CapturePhase {
 }
 
 #[derive(Resource)]
-pub(super) struct CaptureState {
+pub(super) struct SceneCaptureState {
     pub(super) fixture: String,
     pub(super) input_path: PathBuf,
     pub(super) output: PathBuf,

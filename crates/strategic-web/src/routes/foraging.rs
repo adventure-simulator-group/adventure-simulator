@@ -23,9 +23,9 @@ use super::{
 use crate::{
     session::Session,
     spacetimedb::{
-        BackendCaseSitePin, BackendForageAttemptState, BackendForageReceipt, Character,
-        CharacterTime, OrganizationMembership, OrganizationMembershipStatus,
-        OrganizationPresentation, Party, PartyJourney, PartyJourneyRoute, Settlement,
+        BackendCaseSitePin, BackendForageAttemptState, BackendForageReceipt,
+        BackendOrganizationMembership, CharacterTime, CharacterView, OrganizationMembershipStatus,
+        OrganizationPresentation, PartyJourney, PartyJourneyRouteView, PartyView, SettlementView,
         sql_string_literal,
     },
 };
@@ -141,23 +141,23 @@ async fn advisory_privileges(
 ) -> BTreeSet<adventuresim_core::organization::Privilege> {
     let presentation = state
         .db
-        .query_one::<OrganizationPresentation>(&format!(
-            "SELECT * FROM organization_presentation WHERE character_id = {character_id}"
-        ))
+        .query_one_sats::<OrganizationPresentation>(
+            &crate::spacetimedb::organization_presentation_by_character_id(character_id),
+        )
         .await
         .ok()
         .flatten();
     let memberships = state
         .db
-        .query::<OrganizationMembership>(&format!(
+        .query_sats::<BackendOrganizationMembership>(&format!(
             "SELECT * FROM backend_organization_memberships WHERE character_id = {character_id}"
         ))
         .await
         .unwrap_or_default();
     let minute = state
         .db
-        .query_one::<CharacterTime>(&format!(
-            "SELECT * FROM backend_character_times WHERE character_id = {character_id}"
+        .query_one_sats::<CharacterTime>(&crate::spacetimedb::character_time_by_character_id(
+            character_id,
         ))
         .await
         .ok()
@@ -174,7 +174,7 @@ async fn advisory_privileges(
 
 fn advisory_privileges_for(
     presented_organization_id: Option<&str>,
-    memberships: &[OrganizationMembership],
+    memberships: &[BackendOrganizationMembership],
     minute: Option<u64>,
 ) -> BTreeSet<adventuresim_core::organization::Privilege> {
     let Some((presented_organization_id, minute)) = presented_organization_id.zip(minute) else {
@@ -240,17 +240,21 @@ fn source_rows(
     }
 }
 
-async fn vicinity(state: &AppState, character: &Character) -> Result<Vicinity, String> {
+async fn vicinity(state: &AppState, character: &CharacterView) -> Result<Vicinity, String> {
     if let Some(id) = character.current_settlement_id.as_deref() {
         let row = state
             .db
-            .query_one::<Settlement>(&crate::spacetimedb::settlement_by_id(id))
+            .query_one_sats_into::<adventuresim_stdb_client::Settlement, SettlementView>(
+                &crate::spacetimedb::settlement_by_id(id),
+            )
             .await
             .map_err(|error| error.to_string())?
             .ok_or("Current settlement not found")?;
-        let coordinate =
-            Wgs84CoordinateMicrodegrees::from_longitude_latitude_degrees(row.coord_x, row.coord_y)
-                .ok_or("persisted settlement coordinate is outside WGS84 bounds")?;
+        let coordinate = Wgs84CoordinateMicrodegrees::from_longitude_latitude_degrees(
+            row.longitude,
+            row.latitude,
+        )
+        .ok_or("persisted settlement coordinate is outside WGS84 bounds")?;
         let (longitude, latitude) = coordinate.longitude_latitude_degrees();
         return Ok(Vicinity {
             kind: "settlement".into(),
@@ -263,7 +267,7 @@ async fn vicinity(state: &AppState, character: &Character) -> Result<Vicinity, S
     if let Some(id) = character.current_case_site_id.as_deref() {
         let row = state
             .db
-            .query_one::<BackendCaseSitePin>(&format!(
+            .query_one_sats::<BackendCaseSitePin>(&format!(
                 "SELECT * FROM backend_case_site_pins WHERE owner_character_id = {} AND case_site_id = {}",
                 character.id,
                 sql_string_literal(id)
@@ -272,7 +276,7 @@ async fn vicinity(state: &AppState, character: &Character) -> Result<Vicinity, S
             .map_err(|error| error.to_string())?
             .ok_or("Current case site is not exact")?;
         let (latitude, longitude) =
-            wgs84_latitude_longitude_degrees(row.latitude_e7, row.longitude_e7)
+            wgs84_latitude_longitude_degrees(row.latitude_e_7, row.longitude_e_7)
                 .map_err(str::to_owned)?;
         return Ok(Vicinity {
             kind: "case_site".into(),
@@ -288,7 +292,9 @@ async fn vicinity(state: &AppState, character: &Character) -> Result<Vicinity, S
         .ok_or("Character has no stationary vicinity")?;
     let party = state
         .db
-        .query_one::<Party>(&crate::spacetimedb::party_by_id(party_id))
+        .query_one_sats_into::<adventuresim_stdb_client::Party, PartyView>(
+            &crate::spacetimedb::party_by_id(party_id),
+        )
         .await
         .map_err(|error| error.to_string())?
         .ok_or("Party not found")?;
@@ -297,19 +303,15 @@ async fn vicinity(state: &AppState, character: &Character) -> Result<Vicinity, S
     }
     let journey = state
         .db
-        .query_one::<PartyJourney>(&format!(
-            "SELECT * FROM party_journey WHERE party_id = {}",
-            sql_string_literal(party_id)
-        ))
+        .query_one_sats::<PartyJourney>(&crate::spacetimedb::party_journey_by_party_id(party_id))
         .await
         .map_err(|error| error.to_string())?
         .ok_or("Camp journey not found")?;
     let route = state
         .db
-        .query_one::<PartyJourneyRoute>(&format!(
-            "SELECT * FROM party_journey_route WHERE party_id = {}",
-            sql_string_literal(party_id)
-        ))
+        .query_one_sats_into::<adventuresim_stdb_client::PartyJourneyRoute, PartyJourneyRouteView>(
+            &crate::spacetimedb::party_journey_route_by_party_id(party_id),
+        )
         .await
         .map_err(|error| error.to_string())?
         .ok_or("Camp terrain route not found")?;
@@ -350,10 +352,6 @@ fn forage_receipt_query(character_id: u64, request_id: &str) -> String {
         "SELECT * FROM backend_forage_receipts WHERE character_id = {character_id} AND request_id = {}",
         sql_string_literal(request_id)
     )
-}
-
-fn forage_attempt_state_query(character_id: u64) -> String {
-    format!("SELECT * FROM backend_forage_attempt_states WHERE character_id = {character_id}")
 }
 
 fn valid_forage_request_id(request_id: &str) -> bool {
@@ -415,10 +413,12 @@ fn forage_receipt_status(receipt: &BackendForageReceipt) -> Markup {
     }
 }
 
-async fn character(state: &AppState, id: u64) -> Result<Character, String> {
+async fn character(state: &AppState, id: u64) -> Result<CharacterView, String> {
     state
         .db
-        .query_one::<Character>(&format!("SELECT * FROM backend_characters WHERE id = {id}"))
+        .query_one_sats_into::<adventuresim_stdb_client::Character, CharacterView>(
+            &crate::spacetimedb::character_by_id(id),
+        )
         .await
         .map_err(|error| error.to_string())?
         .ok_or("Character not found".into())
@@ -426,7 +426,7 @@ async fn character(state: &AppState, id: u64) -> Result<Character, String> {
 
 async fn environment(
     state: &AppState,
-    character: &Character,
+    character: &CharacterView,
 ) -> Result<
     (
         adventuresim_core::foraging::ForageEnvironment,
@@ -481,7 +481,7 @@ async fn environment(
 
 pub(crate) async fn activity_dialog(
     state: &AppState,
-    character: &Character,
+    character: &CharacterView,
     return_to: &str,
     receipt_id: Option<&str>,
     error_code: Option<&str>,
@@ -489,7 +489,7 @@ pub(crate) async fn activity_dialog(
     let receipt = if let Some(request_id) = receipt_id.filter(|id| valid_forage_request_id(id)) {
         state
             .db
-            .query_one::<BackendForageReceipt>(&forage_receipt_query(character.id, request_id))
+            .query_one_sats::<BackendForageReceipt>(&forage_receipt_query(character.id, request_id))
             .await
             .ok()
             .flatten()
@@ -585,7 +585,9 @@ async fn perform(
         let request_id = forage_request_id(character_id);
         let attempt_generation = state
             .db
-            .query_one::<BackendForageAttemptState>(&forage_attempt_state_query(character_id))
+            .query_one_sats::<BackendForageAttemptState>(
+                &crate::spacetimedb::forage_attempt_state_by_character_id(character_id),
+            )
             .await
             .map_err(|error| error.to_string())?
             .map_or(0, |row| row.next_generation);
@@ -609,7 +611,10 @@ async fn perform(
             .map_err(|error| error.to_string())?;
         let attempt = state
             .db
-            .query_one::<BackendForageReceipt>(&forage_receipt_query(character_id, &request_id))
+            .query_one_sats::<BackendForageReceipt>(&forage_receipt_query(
+                character_id,
+                &request_id,
+            ))
             .await
             .map_err(|error| error.to_string())?
             .ok_or("Foraging completed but its result is not visible yet")?;
@@ -721,8 +726,8 @@ mod tests {
         role_id: &str,
         status: OrganizationMembershipStatus,
         paid_through: u64,
-    ) -> OrganizationMembership {
-        OrganizationMembership {
+    ) -> BackendOrganizationMembership {
+        BackendOrganizationMembership {
             id: 1,
             character_id: 7,
             organization_id: "lodge_hart_king".into(),

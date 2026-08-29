@@ -737,31 +737,105 @@ fn personality_with_demographics(
 
 fn generated_personality(seed: &str, tier: StartingAgeTier, slot: u8) -> StartingPersonality {
     use StartingPersonalityTrait as Trait;
-    let axes: &[&[Trait]] = &[
-        &[Trait::Brave, Trait::Fearful],
-        &[Trait::Ambitious, Trait::Content],
-        &[Trait::Sanguine, Trait::Brooding],
-        &[Trait::Gregarious, Trait::Solitary],
-        &[Trait::Compassionate, Trait::Callous, Trait::Cruel],
-        &[Trait::Proud, Trait::Humble],
-        &[Trait::Zealous, Trait::Irreverent],
-        &[Trait::Slovenly, Trait::Cleanly],
-        &[Trait::Temperate, Trait::Drunkard],
-        &[Trait::Merry, Trait::Grave],
-        &[Trait::Amorous, Trait::Proper],
-        &[Trait::Open, Trait::Guarded],
-        &[Trait::Introspective, Trait::SelfDeceiving],
-    ];
-    let mut order: Vec<_> = (0..axes.len()).collect();
-    order.sort_by_key(|axis| tier_hash(&format!("personality-axis-{axis}"), seed, tier, slot));
+    #[derive(Clone, Copy)]
+    enum StartingPersonalityGenerationAxis {
+        Courage,
+        Ambition,
+        Temperament,
+        Sociability,
+        Compassion,
+        Pride,
+        Faith,
+        Cleanliness,
+        Sobriety,
+        Cheer,
+        Propriety,
+        Openness,
+        Introspection,
+    }
+
+    impl StartingPersonalityGenerationAxis {
+        const ALL: [Self; 13] = [
+            Self::Courage,
+            Self::Ambition,
+            Self::Temperament,
+            Self::Sociability,
+            Self::Compassion,
+            Self::Pride,
+            Self::Faith,
+            Self::Cleanliness,
+            Self::Sobriety,
+            Self::Cheer,
+            Self::Propriety,
+            Self::Openness,
+            Self::Introspection,
+        ];
+
+        const fn ordering_domain(self) -> &'static str {
+            match self {
+                Self::Courage => "personality-axis-0",
+                Self::Ambition => "personality-axis-1",
+                Self::Temperament => "personality-axis-2",
+                Self::Sociability => "personality-axis-3",
+                Self::Compassion => "personality-axis-4",
+                Self::Pride => "personality-axis-5",
+                Self::Faith => "personality-axis-6",
+                Self::Cleanliness => "personality-axis-7",
+                Self::Sobriety => "personality-axis-8",
+                Self::Cheer => "personality-axis-9",
+                Self::Propriety => "personality-axis-10",
+                Self::Openness => "personality-axis-11",
+                Self::Introspection => "personality-axis-12",
+            }
+        }
+
+        const fn value_domain(self) -> &'static str {
+            match self {
+                Self::Courage => "personality-value-0",
+                Self::Ambition => "personality-value-1",
+                Self::Temperament => "personality-value-2",
+                Self::Sociability => "personality-value-3",
+                Self::Compassion => "personality-value-4",
+                Self::Pride => "personality-value-5",
+                Self::Faith => "personality-value-6",
+                Self::Cleanliness => "personality-value-7",
+                Self::Sobriety => "personality-value-8",
+                Self::Cheer => "personality-value-9",
+                Self::Propriety => "personality-value-10",
+                Self::Openness => "personality-value-11",
+                Self::Introspection => "personality-value-12",
+            }
+        }
+
+        const fn values(self) -> &'static [Trait] {
+            match self {
+                Self::Courage => &[Trait::Brave, Trait::Fearful],
+                Self::Ambition => &[Trait::Ambitious, Trait::Content],
+                Self::Temperament => &[Trait::Sanguine, Trait::Brooding],
+                Self::Sociability => &[Trait::Gregarious, Trait::Solitary],
+                Self::Compassion => &[Trait::Compassionate, Trait::Callous, Trait::Cruel],
+                Self::Pride => &[Trait::Proud, Trait::Humble],
+                Self::Faith => &[Trait::Zealous, Trait::Irreverent],
+                Self::Cleanliness => &[Trait::Slovenly, Trait::Cleanly],
+                Self::Sobriety => &[Trait::Temperate, Trait::Drunkard],
+                Self::Cheer => &[Trait::Merry, Trait::Grave],
+                Self::Propriety => &[Trait::Amorous, Trait::Proper],
+                Self::Openness => &[Trait::Open, Trait::Guarded],
+                Self::Introspection => &[Trait::Introspective, Trait::SelfDeceiving],
+            }
+        }
+    }
+
+    let mut order = StartingPersonalityGenerationAxis::ALL.to_vec();
+    order.sort_by_key(|axis| tier_hash(axis.ordering_domain(), seed, tier, slot));
     let count = 2 + (tier_hash("personality-count", seed, tier, slot) % 3) as usize;
     let traits = order
         .into_iter()
         .take(count)
         .map(|axis| {
-            let values = axes[axis];
-            values[(tier_hash(&format!("personality-value-{axis}"), seed, tier, slot)
-                % values.len() as u64) as usize]
+            let values = axis.values();
+            values
+                [(tier_hash(axis.value_domain(), seed, tier, slot) % values.len() as u64) as usize]
         })
         .collect();
     personality_with_demographics(traits, seed, tier, slot)

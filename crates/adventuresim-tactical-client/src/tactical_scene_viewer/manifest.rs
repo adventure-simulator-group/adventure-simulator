@@ -159,7 +159,7 @@ pub(super) struct ValidationSummary {
 }
 
 #[derive(Serialize)]
-pub(super) struct CaptureManifest {
+pub(super) struct SceneCaptureManifest {
     pub(super) pipeline: &'static str,
     pub(super) fixture: String,
     pub(super) source_input: String,
@@ -197,12 +197,12 @@ pub(super) struct CaptureManifest {
     pub(super) validation: ValidationSummary,
 }
 
-pub(super) struct PendingCaptureManifest {
-    manifest: CaptureManifest,
+pub(super) struct PendingSceneCaptureManifest {
+    manifest: SceneCaptureManifest,
 }
 
-impl PendingCaptureManifest {
-    pub(super) fn new(manifest: CaptureManifest) -> Self {
+impl PendingSceneCaptureManifest {
+    pub(super) fn new(manifest: SceneCaptureManifest) -> Self {
         Self { manifest }
     }
 
@@ -210,7 +210,7 @@ impl PendingCaptureManifest {
         mut self,
         captures: &[CaptureRecord],
         views: &[CaptureViewSpec],
-    ) -> (CaptureManifest, bool) {
+    ) -> (SceneCaptureManifest, bool) {
         self.manifest.captures.clone_from_slice(captures);
         finalize_screenshot_validation(
             &self.manifest.fixture,
@@ -381,11 +381,24 @@ pub(super) struct ObservedPresentationFeatures {
     pub(super) camera_environment_map_allocated: bool,
     pub(super) camera_environment_map_intensity: Option<f32>,
     pub(super) camera_exposure_ev100: f32,
-    pub(super) camera_tonemapping: String,
+    pub(super) camera_tonemapping: CaptureTonemapping,
     pub(super) ambient_color: [f32; 4],
     pub(super) ambient_brightness: f32,
     pub(super) ambient_policy: &'static str,
     pub(super) expected_ambient_brightness: f32,
+}
+
+#[derive(Clone, Copy, Eq, PartialEq, Serialize)]
+pub(super) enum CaptureTonemapping {
+    None,
+    Reinhard,
+    ReinhardLuminance,
+    AcesFitted,
+    AgX,
+    SomewhatBoringDisplayTransform,
+    TonyMcMapface,
+    BlenderFilmic,
+    KhronosPbrNeutral,
 }
 
 pub(super) fn validation_passes(validation: &ValidationSummary) -> bool {
@@ -423,6 +436,35 @@ pub(super) fn validation_passes(validation: &ValidationSummary) -> bool {
 mod tests {
     use super::*;
     use crate::tactical_scene_viewer::view_specs::CapturePose;
+
+    #[test]
+    fn observed_presentation_capture_json_has_a_fixed_typed_vector() {
+        let features = ObservedPresentationFeatures {
+            settings: PresentationFeatureState {
+                shadows: true,
+                atmosphere: true,
+                celestial: true,
+                environment_light: true,
+                environment_map_size: 256,
+                max_vista_lods: 3,
+            },
+            camera_environment_map: true,
+            camera_environment_map_size: Some([256, 256]),
+            camera_environment_map_allocated: true,
+            camera_environment_map_intensity: Some(1_000.0),
+            camera_exposure_ev100: 7.5,
+            camera_tonemapping: CaptureTonemapping::AcesFitted,
+            ambient_color: [0.25, 0.5, 0.75, 1.0],
+            ambient_brightness: 125.0,
+            ambient_policy: "sky_handoff",
+            expected_ambient_brightness: 125.0,
+        };
+
+        assert_eq!(
+            serde_json::to_string(&features).unwrap(),
+            r#"{"settings":{"shadows":true,"atmosphere":true,"celestial":true,"environment_light":true,"environment_map_size":256,"max_vista_lods":3},"camera_environment_map":true,"camera_environment_map_size":[256,256],"camera_environment_map_allocated":true,"camera_environment_map_intensity":1000.0,"camera_exposure_ev100":7.5,"camera_tonemapping":"AcesFitted","ambient_color":[0.25,0.5,0.75,1.0],"ambient_brightness":125.0,"ambient_policy":"sky_handoff","expected_ambient_brightness":125.0}"#
+        );
+    }
 
     fn passing_validation() -> ValidationSummary {
         ValidationSummary {

@@ -9,17 +9,21 @@ pub(super) async fn settlement_map(
     Query(query): Query<LocationMapQuery>,
     session: Session,
 ) -> Html<String> {
-    let settlements: Vec<Settlement> = state
+    let settlements: Vec<SettlementView> = state
         .db
-        .query("SELECT * FROM settlement")
+        .query_sats_into::<adventuresim_stdb_client::Settlement, SettlementView>(
+            "SELECT * FROM settlement",
+        )
         .await
         .unwrap_or_default();
     let Some(settlement) = settlements.iter().find(|settlement| settlement.id == id) else {
         return Html("<h1>Settlement not found</h1>".to_string());
     };
-    let edges: Vec<TravelEdge> = state
+    let edges: Vec<TravelEdgeView> = state
         .db
-        .query("SELECT * FROM travel_edge")
+        .query_sats_into::<adventuresim_stdb_client::TravelEdge, TravelEdgeView>(
+            "SELECT * FROM travel_edge",
+        )
         .await
         .unwrap_or_default();
     let map_data_initialized = crate::strategic_map::has_geographic_source(settlement);
@@ -28,9 +32,9 @@ pub(super) async fn settlement_map(
     } else {
         Vec::new()
     };
-    let quests: Vec<ContractPresentation> = state
+    let quests: Vec<BackendContract> = state
         .db
-        .query("SELECT * FROM backend_contracts")
+        .query_sats("SELECT * FROM backend_contracts")
         .await
         .unwrap_or_default();
     let active_character = get_active_character(&state, session.character_id_u64()).await;
@@ -40,7 +44,7 @@ pub(super) async fn settlement_map(
     {
         state
             .db
-            .query::<Party>(&crate::spacetimedb::party_by_id(party_id))
+            .query_sats_into::<adventuresim_stdb_client::Party, PartyView>(&crate::spacetimedb::party_by_id(party_id))
             .await
             .unwrap_or_default()
             .into_iter()
@@ -56,7 +60,7 @@ pub(super) async fn settlement_map(
     let case_sites = if let Some(character_id) = session.character_id_u64() {
         state
             .db
-            .query::<BackendCaseSitePin>(&format!(
+            .query_sats::<BackendCaseSitePin>(&format!(
                 "SELECT * FROM backend_case_site_pins WHERE owner_character_id = {character_id}"
             ))
             .await
@@ -75,13 +79,13 @@ pub(super) async fn settlement_map(
         for site in &case_sites {
             let distance_m = crate::routes::quests::straight_line_distance_m(site, settlement);
             destinations.push(TravelDestination {
-                id: site.case_site_id.clone(),
+                id: site.case_site_id.value.clone(),
                 name: site.name.clone(),
                 description: site.description.clone(),
                 summary: CaseSiteKnowledgePresentation::from_stage(site.knowledge_stage)
                     .map(|knowledge| knowledge.label().to_string()),
-                travel_action: format!("/case-sites/{}/travel", site.case_site_id),
-                track_action: Some(format!("/case-sites/{}/track", site.case_site_id)),
+                travel_action: format!("/case-sites/{}/travel", site.case_site_id.value),
+                track_action: Some(format!("/case-sites/{}/track", site.case_site_id.value)),
                 tracked: site.tracked,
                 distance_m,
                 journey_minutes: crate::routes::quests::offroad_journey_minutes(distance_m),
@@ -115,18 +119,18 @@ pub(super) async fn settlement_map(
     {
         let goal = if let Some(site) = case_sites
             .iter()
-            .find(|site| site.case_site_id == destination.id)
+            .find(|site| site.case_site_id.value == destination.id)
         {
             super::super::wgs84_latitude_longitude_degrees(
-                site.latitude_e7,
-                site.longitude_e7,
+                site.latitude_e_7,
+                site.longitude_e_7,
             )
             .ok()
         } else {
             settlements
                 .iter()
                 .find(|candidate| candidate.id == destination.id)
-                .map(|candidate| (candidate.coord_y, candidate.coord_x))
+                .map(|candidate| (candidate.latitude, candidate.longitude))
         };
         if let Some(goal) = goal {
             let terrain_profile = if let Some((character, _)) = active_character.as_ref() {
@@ -140,7 +144,7 @@ pub(super) async fn settlement_map(
             crate::routes::travel::apply_terrain_route(
                 destination,
                 state.terrain.as_deref(),
-                (settlement.coord_y, settlement.coord_x),
+                (settlement.latitude, settlement.longitude),
                 goal,
                 terrain_profile,
             )
@@ -155,7 +159,7 @@ pub(super) async fn settlement_map(
     let living_party_members = living_party_members(&party_members);
     let stats: Vec<CharacterStats> = state
         .db
-        .query("SELECT * FROM backend_character_stats")
+        .query_sats("SELECT * FROM backend_character_stats")
         .await
         .unwrap_or_default();
     let default_rest_minutes = living_party_members
@@ -172,22 +176,22 @@ pub(super) async fn settlement_map(
     if can_travel && let Some(party) = active_party.as_ref() {
         let attributes: Vec<CharacterAttributes> = state
             .db
-            .query("SELECT * FROM backend_character_attributes")
+            .query_sats("SELECT * FROM backend_character_attributes")
             .await
             .unwrap_or_default();
         let limbs: Vec<CharacterLimbs> = state
             .db
-            .query("SELECT * FROM backend_character_limbs")
+            .query_sats("SELECT * FROM backend_character_limbs")
             .await
             .unwrap_or_default();
         let times: Vec<CharacterTime> = state
             .db
-            .query("SELECT * FROM backend_character_times")
+            .query_sats("SELECT * FROM backend_character_times")
             .await
             .unwrap_or_default();
         let schedules: Vec<CharacterTrainingSchedule> = state
             .db
-            .query("SELECT * FROM backend_character_training_schedules")
+            .query_sats("SELECT * FROM backend_character_training_schedules")
             .await
             .unwrap_or_default();
         let member_ids: Vec<_> = living_party_members
@@ -279,13 +283,13 @@ pub(super) fn settlement_html_travel_available(
 
 pub(super) fn case_site_has_active_contract(
     case_id: &str,
-    active_contract: Option<&ContractPresentation>,
+    active_contract: Option<&BackendContract>,
 ) -> bool {
     active_contract.is_some_and(|contract| contract.case_id == case_id)
 }
 
 pub(super) fn can_abandon_active_contract(
-    contract: &ContractPresentation,
+    contract: &BackendContract,
     current_case_site_id: Option<&str>,
 ) -> bool {
     contract.status == ContractStatus::Accepted && current_case_site_id.is_none()
@@ -316,8 +320,8 @@ mod map_quest_tests {
         assert!(!settlement_html_travel_available(true, false));
     }
 
-    fn quest(status: ContractStatus) -> ContractPresentation {
-        ContractPresentation {
+    fn quest(status: ContractStatus) -> BackendContract {
+        BackendContract {
             id: "active".into(),
             case_id: "case:active".into(),
             title: "Active quest".into(),
@@ -327,11 +331,16 @@ mod map_quest_tests {
             xp_reward: 1,
             settlement_id: "issuer".into(),
             service_id: "inn".into(),
-            issuer_resident_character_id: String::new(),
+            issuer_resident_character_id: 0,
             status,
             accepted_by: Some("party".into()),
             opposition_wording: "unknown opposition".into(),
             opposition_count_wording: "an unknown number of".into(),
+            opposition_count: 0,
+            opposition_combat_power: 0,
+            accepted_at_minute: None,
+            paid_at_minute: None,
+            distance_m: 0,
         }
     }
 

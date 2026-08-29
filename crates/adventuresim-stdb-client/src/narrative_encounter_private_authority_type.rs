@@ -4,6 +4,7 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::case_site_id_type::CaseSiteId;
 use super::narrative_encounter_origin_type::NarrativeEncounterOrigin;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
@@ -12,7 +13,7 @@ pub struct NarrativeEncounterPrivateAuthority {
     pub occurrence_id: String,
     pub origin: NarrativeEncounterOrigin,
     pub case_id: Option<String>,
-    pub finale_case_site_id: Option<String>,
+    pub finale_case_site_id: Option<CaseSiteId>,
     pub finale_hostile_group_id: Option<String>,
     pub reward_eligible: bool,
     pub reward_addendum: Option<String>,
@@ -31,7 +32,7 @@ pub struct NarrativeEncounterPrivateAuthorityCols {
         __sdk::__query_builder::Col<NarrativeEncounterPrivateAuthority, NarrativeEncounterOrigin>,
     pub case_id: __sdk::__query_builder::Col<NarrativeEncounterPrivateAuthority, Option<String>>,
     pub finale_case_site_id:
-        __sdk::__query_builder::Col<NarrativeEncounterPrivateAuthority, Option<String>>,
+        __sdk::__query_builder::Col<NarrativeEncounterPrivateAuthority, Option<CaseSiteId>>,
     pub finale_hostile_group_id:
         __sdk::__query_builder::Col<NarrativeEncounterPrivateAuthority, Option<String>>,
     pub reward_eligible: __sdk::__query_builder::Col<NarrativeEncounterPrivateAuthority, bool>,

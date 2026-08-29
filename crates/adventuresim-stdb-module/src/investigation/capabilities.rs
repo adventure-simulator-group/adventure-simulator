@@ -174,7 +174,7 @@ pub(crate) fn issue_investigation_action_capability(
             version: 0,
             target_kind,
             target_id,
-            target_terrain: format!("{target_terrain:?}").to_ascii_lowercase(),
+            target_terrain: target_terrain.stable_id().to_owned(),
             seed,
             evidence_age_origin_minute: character_strategic_minute(ctx, owner_character_id),
             uncertainty_bps,
@@ -542,7 +542,7 @@ fn capability_has_live_support_reducer(
             lead.destination_stage,
             &lead.corrected_by,
             &site.case_id,
-            &site.id.value,
+            site.id.as_str(),
             lead.latitude_e7 == site.latitude_e7 && lead.longitude_e7 == site.longitude_e7,
             generated_aliases.as_ref().map(|aliases| aliases.0.as_str()),
             generated_aliases.as_ref().map(|aliases| aliases.1.as_str()),
@@ -1010,7 +1010,7 @@ fn issue_rumor_action_graph(
                 cohort_id: target.cohort_id.clone(),
                 case_id: case_id.to_string(),
                 resident_character_id: target.resident_character_id,
-                demographic: format!("{:?}", target.demographic).to_ascii_lowercase(),
+                demographic: target.demographic.as_str().to_owned(),
                 age_band: target.age_band.clone(),
                 sex: target.sex.clone(),
                 profession: target.profession.clone(),
@@ -1191,7 +1191,7 @@ fn issue_rumor_action_graph(
     });
     let target_id = site
         .as_ref()
-        .map_or_else(|| area_id.clone(), |site| site.id.value.clone());
+        .map_or_else(|| area_id.clone(), |site| site.id.as_str().to_owned());
     let target_kind = if site.is_some() {
         action::InvestigationTargetKind::Site
     } else {

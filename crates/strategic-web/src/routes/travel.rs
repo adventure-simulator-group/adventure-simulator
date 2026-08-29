@@ -15,9 +15,9 @@ use adventuresim_core::{
 use serde::Deserialize;
 
 use crate::spacetimedb::{
-    CharacterAttributes, CharacterLimbs, CharacterStats, CharacterTime, CharacterTrainingSchedule,
-    ContractPresentation, DestinationKnowledgeStage, Party, ScheduleAllocation, Settlement,
-    TravelEdge,
+    BackendContract, CharacterAttributes, CharacterLimbs, CharacterStats, CharacterTime,
+    CharacterTrainingSchedule, DestinationKnowledgeStage, PartyView, ScheduleAllocation,
+    SettlementView, TravelEdgeView,
 };
 
 const TERRAIN_PLAN_TIMEOUT: Duration = Duration::from_secs(10);
@@ -198,14 +198,14 @@ fn river_or_wet_ground(center: adventuresim_terrain::Cell, water_samples: usize)
         || (1..4).contains(&water_samples)
 }
 
-pub(crate) fn active_contract_summary(contract: &ContractPresentation) -> String {
+pub(crate) fn active_contract_summary(contract: &BackendContract) -> String {
     format!(
         "Active quest · {} {}",
         contract.opposition_count_wording, contract.opposition_wording
     )
 }
 
-pub(crate) fn active_contract_tooltip(contract: &ContractPresentation) -> String {
+pub(crate) fn active_contract_tooltip(contract: &BackendContract) -> String {
     format!(
         "{}\n{}",
         contract.description,
@@ -310,7 +310,7 @@ impl TravelDestination {
 }
 
 pub(crate) fn settlement_destination(
-    settlement: Settlement,
+    settlement: SettlementView,
     distance_m: u64,
     journey_minutes: u64,
 ) -> TravelDestination {
@@ -420,7 +420,7 @@ pub(crate) struct ItineraryForecastSources<'a> {
     pub(crate) stats: &'a [CharacterStats],
     pub(crate) times: &'a [CharacterTime],
     pub(crate) schedules: &'a [CharacterTrainingSchedule],
-    pub(crate) party: &'a Party,
+    pub(crate) party: &'a PartyView,
 }
 
 pub(crate) fn populate_itinerary_forecasts(
@@ -486,9 +486,9 @@ pub(crate) fn populate_itinerary_forecasts(
 }
 
 pub(crate) fn connected_destinations(
-    origin: &Settlement,
-    settlements: &[Settlement],
-    edges: &[TravelEdge],
+    origin: &SettlementView,
+    settlements: &[SettlementView],
+    edges: &[TravelEdgeView],
 ) -> Vec<TravelDestination> {
     let Some(origin_node) = origin.source_node_id else {
         return settlements
@@ -496,8 +496,8 @@ pub(crate) fn connected_destinations(
             .filter(|settlement| settlement.id != origin.id)
             .cloned()
             .map(|settlement| {
-                let distance_km = ((origin.coord_x - settlement.coord_x).powi(2)
-                    + (origin.coord_y - settlement.coord_y).powi(2))
+                let distance_km = ((origin.longitude - settlement.longitude).powi(2)
+                    + (origin.latitude - settlement.latitude).powi(2))
                 .sqrt()
                 .ceil() as u64;
                 let distance_m = distance_km.saturating_mul(1_000);
@@ -509,7 +509,7 @@ pub(crate) fn connected_destinations(
         .iter()
         .filter_map(|settlement| settlement.source_node_id)
         .collect();
-    let settlements_by_node: HashMap<u64, &Settlement> = settlements
+    let settlements_by_node: HashMap<u64, &SettlementView> = settlements
         .iter()
         .filter_map(|settlement| settlement.source_node_id.map(|node| (node, settlement)))
         .collect();
@@ -622,12 +622,12 @@ mod tests {
         );
     }
 
-    fn settlement(id: &str, node: u64) -> Settlement {
-        Settlement {
+    fn settlement(id: &str, node: u64) -> SettlementView {
+        SettlementView {
             id: id.to_string(),
             name: id.to_string(),
-            coord_x: 0.0,
-            coord_y: 0.0,
+            longitude: 0.0,
+            latitude: 0.0,
             population_level: 0,
             population_estimate: 0,
             category: crate::spacetimedb::SettlementCategory::Unknown,
@@ -652,8 +652,8 @@ mod tests {
         }
     }
 
-    fn quest(id: &str, settlement_id: &str, status: ContractStatus) -> ContractPresentation {
-        ContractPresentation {
+    fn quest(id: &str, settlement_id: &str, status: ContractStatus) -> BackendContract {
+        BackendContract {
             id: id.to_string(),
             case_id: format!("case:{id}"),
             title: id.to_string(),
@@ -663,11 +663,16 @@ mod tests {
             xp_reward: 1,
             settlement_id: settlement_id.to_string(),
             service_id: "inn".into(),
-            issuer_resident_character_id: String::new(),
+            issuer_resident_character_id: 0,
             status,
             accepted_by: None,
             opposition_wording: "unknown opposition".into(),
             opposition_count_wording: "an unknown number of".into(),
+            opposition_count: 0,
+            opposition_combat_power: 0,
+            accepted_at_minute: None,
+            paid_at_minute: None,
+            distance_m: 0,
         }
     }
 

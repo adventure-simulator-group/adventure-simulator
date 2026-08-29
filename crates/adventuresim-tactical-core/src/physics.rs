@@ -1412,11 +1412,11 @@ mod tests {
         };
         let motor = &config.movement.motor;
         let turn_radius = ordinary_turn_radius(speed, agility_sprint_turn_radius(agility, motor));
-        let attributes = crate::player::Attributes {
+        let attributes = crate::player::TacticalAttributes(PlayerAttributeValues {
             left_leg_agility: agility,
             right_leg_agility: agility,
             ..default()
-        };
+        });
         let mut world = World::new();
         let entity = world
             .spawn((

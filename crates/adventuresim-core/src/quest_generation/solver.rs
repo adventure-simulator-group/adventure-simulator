@@ -82,8 +82,9 @@ fn solve_variables(
                                 relation_id: RelationId::new("relation.circumstance.npc_fact"),
                                 factor_ids: vec![FactorId::new("factor.witness.actual_schedule")],
                                 candidate_id: format!(
-                                    "{}:{circumstance:?}",
-                                    witness.resident_character_id
+                                    "{}:{}",
+                                    witness.resident_character_id,
+                                    circumstance.as_str()
                                 ),
                                 plausibility: 0,
                                 curation: 0,
@@ -108,7 +109,7 @@ fn solve_variables(
                                 module_id: ModuleId::new("module.description"),
                                 relation_id: RelationId::new("relation.description.cause"),
                                 factor_ids: vec![FactorId::new("factor.description.forward_check")],
-                                candidate_id: format!("{cause:?}"),
+                                candidate_id: cause.stable_variant_id(),
                                 plausibility: 0,
                                 curation: 0,
                                 accepted: false,
@@ -128,19 +129,19 @@ fn solve_variables(
                         for (module, id, bridge_id, factors) in [
                             (
                                 "module.template",
-                                format!("{family:?}"),
+                                family.stable_variant_id().into(),
                                 families[family_index].bridge,
                                 families[family_index].factors.clone(),
                             ),
                             (
                                 "module.cause",
-                                format!("{cause:?}"),
+                                cause.stable_variant_id(),
                                 causes[cause_index].bridge,
                                 causes[cause_index].factors.clone(),
                             ),
                             (
                                 "module.site",
-                                format!("{site:?}"),
+                                site.as_str().into(),
                                 sites[site_index].bridge,
                                 sites[site_index].factors.clone(),
                             ),
@@ -152,13 +153,13 @@ fn solve_variables(
                             ),
                             (
                                 "module.circumstance",
-                                format!("{circumstance:?}"),
+                                circumstance.as_str().into(),
                                 circumstances[circumstance_index].bridge,
                                 circumstances[circumstance_index].factors.clone(),
                             ),
                             (
                                 "module.description",
-                                format!("{:?}", descriptions[description_index].value),
+                                descriptions[description_index].value.as_str().into(),
                                 descriptions[description_index].bridge,
                                 descriptions[description_index].factors.clone(),
                             ),

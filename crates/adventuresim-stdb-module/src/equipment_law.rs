@@ -4,7 +4,7 @@ use adventuresim_core::organization::{Privilege, settlement_policy};
 use spacetimedb::ReducerContext;
 
 use crate::{
-    ItemKind,
+    PersistedItemKind,
     character::character,
     item::{inventory_item, item},
 };
@@ -37,15 +37,17 @@ pub fn require_item_legal(
         .find(&inventory.item_id)
         .ok_or("Item definition not found")?;
     let privilege = match definition.kind {
-        ItemKind::Weapon | ItemKind::Shield if policy.restrict_arms => Some(Privilege::BearArms),
-        ItemKind::Armor if policy.restrict_armor => Some(Privilege::WearArmor),
+        PersistedItemKind::Weapon | PersistedItemKind::Shield if policy.restrict_arms => {
+            Some(Privilege::BearArms)
+        }
+        PersistedItemKind::Armor if policy.restrict_armor => Some(Privilege::WearArmor),
         _ => None,
     };
     if privilege.is_some_and(|privilege| {
         !crate::organization::presented_privilege(ctx, character_id, &settlement_id, privilege)
     }) {
         return Err(match definition.kind {
-            ItemKind::Armor => format!(
+            PersistedItemKind::Armor => format!(
                 "{} restricts armor; present a recognized organization with the right to wear armor",
                 settlement_id
             ),

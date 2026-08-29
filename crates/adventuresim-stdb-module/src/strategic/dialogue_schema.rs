@@ -131,6 +131,50 @@ pub struct DialogueSession {
     pub created_micros: i64,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DialogueSessionState {
+    Active,
+}
+
+impl DialogueSessionState {
+    const fn stable_id(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+        }
+    }
+
+    fn parse(value: &str) -> Result<Self, String> {
+        match value {
+            "active" => Ok(Self::Active),
+            _ => Err("Dialogue session has an unknown state".into()),
+        }
+    }
+}
+
+struct ParsedDialogueSessionId<'a> {
+    owner_character_id: u64,
+    nonce: &'a str,
+}
+
+impl<'a> ParsedDialogueSessionId<'a> {
+    fn parse(value: &'a str) -> Result<Self, String> {
+        if value.len() > 160 || value.chars().any(char::is_control) {
+            return Err("Invalid dialogue session ID".into());
+        }
+        let mut parts = value.splitn(3, ':');
+        let domain = parts.next();
+        let owner_character_id = parts.next().and_then(|part| part.parse::<u64>().ok());
+        let nonce = parts.next().filter(|part| !part.is_empty());
+        match (domain, owner_character_id, nonce) {
+            (Some("dialogue"), Some(owner_character_id), Some(nonce)) => Ok(Self {
+                owner_character_id,
+                nonce,
+            }),
+            _ => Err("Invalid dialogue session ID".into()),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 #[table(accessor = dialogue_participant)]
 pub struct DialogueParticipant {
@@ -183,6 +227,101 @@ pub struct DialoguePrompt {
     pub state: String,
     pub resolved_choice_ids_json: String,
     pub source_refs_json: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DialoguePromptMode {
+    YesNo,
+    Single,
+    Multi,
+}
+
+impl DialoguePromptMode {
+    const fn stable_id(self) -> &'static str {
+        match self {
+            Self::YesNo => "YesNo",
+            Self::Single => "Single",
+            Self::Multi => "Multi",
+        }
+    }
+
+    fn from_authored(value: &adventuresim_dialogue::PromptMode) -> Self {
+        match value {
+            adventuresim_dialogue::PromptMode::YesNo => Self::YesNo,
+            adventuresim_dialogue::PromptMode::Single => Self::Single,
+            adventuresim_dialogue::PromptMode::Multi => Self::Multi,
+        }
+    }
+
+    fn parse(value: &str) -> Result<Self, String> {
+        match value {
+            "YesNo" => Ok(Self::YesNo),
+            "Single" => Ok(Self::Single),
+            "Multi" => Ok(Self::Multi),
+            _ => Err("Dialogue prompt has an unknown mode".into()),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DialogueResolutionPolicy {
+    FirstResponse,
+    Unanimous,
+    Majority,
+    AllRespondents,
+}
+
+impl DialogueResolutionPolicy {
+    const fn stable_id(self) -> &'static str {
+        match self {
+            Self::FirstResponse => "FirstResponse",
+            Self::Unanimous => "Unanimous",
+            Self::Majority => "Majority",
+            Self::AllRespondents => "AllRespondents",
+        }
+    }
+
+    fn from_authored(value: &adventuresim_dialogue::ResolutionPolicy) -> Self {
+        match value {
+            adventuresim_dialogue::ResolutionPolicy::FirstResponse => Self::FirstResponse,
+            adventuresim_dialogue::ResolutionPolicy::Unanimous => Self::Unanimous,
+            adventuresim_dialogue::ResolutionPolicy::Majority => Self::Majority,
+            adventuresim_dialogue::ResolutionPolicy::AllRespondents => Self::AllRespondents,
+        }
+    }
+
+    fn parse(value: &str) -> Result<Self, String> {
+        match value {
+            "FirstResponse" => Ok(Self::FirstResponse),
+            "Unanimous" => Ok(Self::Unanimous),
+            "Majority" => Ok(Self::Majority),
+            "AllRespondents" => Ok(Self::AllRespondents),
+            _ => Err("Dialogue prompt has an unknown resolution policy".into()),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DialoguePromptState {
+    Open,
+    Resolved,
+}
+
+impl DialoguePromptState {
+    const fn stable_id(self) -> &'static str {
+        match self {
+            Self::Open => "open",
+            Self::Resolved => "resolved",
+        }
+    }
+
+    fn parse(value: &str) -> Result<Self, String> {
+        match value {
+            "open" => Ok(Self::Open),
+            "resolved" => Ok(Self::Resolved),
+            _ => Err("Dialogue prompt has an unknown state".into()),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -556,14 +695,22 @@ fn require_live_dialogue_presence(
             character_id,
             minute,
         )
-        .ok_or("Dialogue NPC is not present at the session location and time")?;
+        .ok_or_else(|| {
+            adventuresim_core::reducer_error::coded_reducer_error(
+                adventuresim_core::reducer_error::ReducerErrorCode::DialogueContactUnavailable,
+                "Dialogue NPC is not present at the session location and time",
+            )
+        })?;
         if npc.home_settlement_id != session.settlement_id
             || !adventuresim_core::strategic_presence::are_co_present(
                 &actor_presence,
                 npc_presence.presence(),
             )
         {
-            return Err("Dialogue NPC is not present at the session location and time".into());
+            return Err(adventuresim_core::reducer_error::coded_reducer_error(
+                adventuresim_core::reducer_error::ReducerErrorCode::DialogueContactUnavailable,
+                "Dialogue NPC is not present at the session location and time",
+            ));
         }
         if (npc.organization_id.is_empty() && npc.conversation_id == "organization-representative")
             || (!npc.organization_id.is_empty()
@@ -617,4 +764,90 @@ fn require_navigable_npc_place(
     require_navigable_npc_location(ctx, settlement_id, location_id)?;
     crate::settlement_population::canonical_npc_place(settlement_id, location_id)
         .ok_or_else(|| "NPC location has no canonical strategic place".into())
+}
+
+#[cfg(test)]
+mod stable_dialogue_schema_tests {
+    use super::{
+        DialoguePromptMode, DialoguePromptState, DialogueResolutionPolicy, DialogueSessionState,
+        ParsedDialogueSessionId, CorpsePermissionTopicId,
+    };
+
+    #[test]
+    fn dialogue_session_id_and_state_are_exact_tagged_values() {
+        let parsed = ParsedDialogueSessionId::parse("dialogue:7:nonce:part").unwrap();
+        assert_eq!(parsed.owner_character_id, 7);
+        assert_eq!(parsed.nonce, "nonce:part");
+        assert!(ParsedDialogueSessionId::parse("dialogue:7:").is_err());
+        assert!(ParsedDialogueSessionId::parse("prefix-dialogue:7:nonce").is_err());
+        assert_eq!(
+            DialogueSessionState::parse("active").unwrap().stable_id(),
+            "active"
+        );
+        assert!(DialogueSessionState::parse("active-session").is_err());
+    }
+
+    #[test]
+    fn prompt_codes_reject_prose_and_suffix_matches() {
+        for (value, expected) in [
+            ("YesNo", DialoguePromptMode::YesNo),
+            ("Single", DialoguePromptMode::Single),
+            ("Multi", DialoguePromptMode::Multi),
+        ] {
+            assert_eq!(DialoguePromptMode::parse(value).unwrap(), expected);
+            assert_eq!(expected.stable_id(), value);
+        }
+        for value in ["yes/no", "PrefixYesNo", "SingleChoice", "MultiSuffix"] {
+            assert!(DialoguePromptMode::parse(value).is_err());
+        }
+        for (value, expected) in [
+            ("FirstResponse", DialogueResolutionPolicy::FirstResponse),
+            ("Unanimous", DialogueResolutionPolicy::Unanimous),
+            ("Majority", DialogueResolutionPolicy::Majority),
+            ("AllRespondents", DialogueResolutionPolicy::AllRespondents),
+        ] {
+            assert_eq!(DialogueResolutionPolicy::parse(value).unwrap(), expected);
+            assert_eq!(expected.stable_id(), value);
+        }
+        assert!(DialogueResolutionPolicy::parse("FirstResponseWins").is_err());
+        assert_eq!(
+            DialoguePromptState::parse("resolved")
+                .unwrap()
+                .stable_id(),
+            "resolved"
+        );
+        assert!(DialoguePromptState::parse("unresolved").is_err());
+    }
+
+    #[test]
+    fn corpse_permission_topics_parse_once_as_exact_tagged_coordinates() {
+        let parsed = CorpsePermissionTopicId::parse(
+            "corpse-permission:examination:request:corpse:character:7",
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            parsed.scope,
+            crate::corpse::CorpsePermissionScope::Examination
+        );
+        assert_eq!(parsed.approach, "request");
+        assert_eq!(parsed.corpse_id, "corpse:character:7");
+        assert!(CorpsePermissionTopicId::parse("ordinary-topic")
+            .unwrap()
+            .is_none());
+        assert!(
+            CorpsePermissionTopicId::parse(
+                "prefix-corpse-permission:examination:request:corpse:7"
+            )
+            .unwrap()
+            .is_none()
+        );
+        for malformed in [
+            "corpse-permission:unknown:request:corpse:7",
+            "corpse-permission:examination::corpse:7",
+            "corpse-permission:examination:request:",
+        ] {
+            assert!(CorpsePermissionTopicId::parse(malformed).is_err());
+        }
+    }
 }

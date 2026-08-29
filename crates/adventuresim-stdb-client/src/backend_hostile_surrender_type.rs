@@ -4,13 +4,14 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::case_site_id_type::CaseSiteId;
 use super::hostile_surrender_mode_type::HostileSurrenderMode;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct BackendHostileSurrender {
     pub owner_character_id: u64,
-    pub case_site_id: String,
+    pub case_site_id: CaseSiteId,
     pub spokesman_id: u64,
     pub context_ref: String,
     pub expected_revision: u32,
@@ -27,7 +28,7 @@ impl __sdk::InModule for BackendHostileSurrender {
 /// Provides typed access to columns for query building.
 pub struct BackendHostileSurrenderCols {
     pub owner_character_id: __sdk::__query_builder::Col<BackendHostileSurrender, u64>,
-    pub case_site_id: __sdk::__query_builder::Col<BackendHostileSurrender, String>,
+    pub case_site_id: __sdk::__query_builder::Col<BackendHostileSurrender, CaseSiteId>,
     pub spokesman_id: __sdk::__query_builder::Col<BackendHostileSurrender, u64>,
     pub context_ref: __sdk::__query_builder::Col<BackendHostileSurrender, String>,
     pub expected_revision: __sdk::__query_builder::Col<BackendHostileSurrender, u32>,

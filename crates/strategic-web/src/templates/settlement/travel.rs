@@ -9,17 +9,17 @@ use maud::{Markup, html};
 
 use super::{
     chrome::{
-        format_distance, format_journey_time, format_population, party_portrait_overlay,
-        settlement_description, visual_stage,
+        VisualStageKind, format_distance, format_journey_time, format_population,
+        party_portrait_overlay, settlement_description, visual_stage,
     },
     rest::{SoapRestPreview, party_rest_menu},
     social::settlement_chat_area,
 };
 use crate::routes::travel::{TravelDestination, TravelProvisionForecast};
 use crate::spacetimedb::{
-    BackendRoadChallenge, ChallengePresenterCatalogId, Character, ContractPresentation,
-    JourneyPrecipitation, JourneyTerrainKind, Party, PartyJourney, PartyJourneyRoute, Settlement,
-    StrategicEncounter, StrategicEncounterStatus,
+    BackendContract, BackendRoadChallenge, ChallengePresenterCatalogId, CharacterView,
+    JourneyEndpointExt, JourneyPrecipitation, JourneyTerrainKind, PartyJourney,
+    PartyJourneyRouteView, PartyView, SettlementView, StrategicEncounter, StrategicEncounterStatus,
 };
 use crate::templates::{
     camp_location_layout_with_session, decorative_game_icon, empty_state, game_icon,
@@ -31,22 +31,22 @@ use crate::templates::{
     reason = "the map page boundary composes independent settlement, route, quest, and session projections"
 )]
 pub fn settlement_map_page(
-    settlement: &Settlement,
-    settlements: &[Settlement],
+    settlement: &SettlementView,
+    settlements: &[SettlementView],
     case_sites: &[crate::spacetimedb::BackendCaseSitePin],
     strategic_map: Option<&crate::strategic_map::StrategicMap>,
     destinations: &[TravelDestination],
     selected_id: Option<&str>,
-    active_character: Option<&Character>,
-    active_party: Option<&Party>,
-    _party_members: &[Character],
+    active_character: Option<&CharacterView>,
+    active_party: Option<&PartyView>,
+    _party_members: &[CharacterView],
     default_rest_minutes: u64,
     soap_preview: SoapRestPreview,
     can_travel: bool,
     provision_forecast: Option<&TravelProvisionForecast>,
     provisioning_path: Option<&str>,
     is_current_settlement: bool,
-    abandonable_quest: Option<&ContractPresentation>,
+    abandonable_quest: Option<&BackendContract>,
     logged_in_as: Option<&str>,
 ) -> Markup {
     let selected = selected_id.and_then(|id| destinations.iter().find(|entry| entry.id == id));
@@ -239,7 +239,7 @@ fn map_destination_list_with_context(
     }
 }
 
-pub(crate) fn travel_preferences_form(party: &Party, action: &str) -> Markup {
+pub(crate) fn travel_preferences_form(party: &PartyView, action: &str) -> Markup {
     let walking_hours = f32::from(party.walking_minutes_per_day) / 60.0;
     let travel_at_night = party.travel_at_night;
     let departure_time = format!(
@@ -292,12 +292,12 @@ pub(crate) fn travel_preferences_form(party: &Party, action: &str) -> Markup {
 )]
 pub(crate) fn map_destination_detail(
     selected: Option<&TravelDestination>,
-    selected_settlement: Option<&Settlement>,
+    selected_settlement: Option<&SettlementView>,
     selected_is_current: bool,
     can_travel: bool,
     provisioning_path: Option<&str>,
     provision_forecast: Option<&TravelProvisionForecast>,
-    party: Option<&Party>,
+    party: Option<&PartyView>,
     can_configure_travel: bool,
     standalone_planner: Option<Markup>,
     map_path: &str,
@@ -475,7 +475,7 @@ pub(crate) fn travel_planner_bar_for(
     camp_forecasts: &str,
     camp_fatigue_percent: u8,
     journey: Option<&PartyJourney>,
-    journey_route: Option<&PartyJourneyRoute>,
+    journey_route: Option<&PartyJourneyRouteView>,
     provision_forecast: Option<&TravelProvisionForecast>,
     preview_departure_minute: u64,
     preview_elapsed_minutes: u64,
@@ -827,12 +827,12 @@ fn camp_forage_href(has_active_character: bool) -> Option<&'static str> {
     reason = "the camp page boundary composes independent journey, party, encounter, and session projections"
 )]
 pub fn camp_page(
-    party: &Party,
+    party: &PartyView,
     journey: Option<&PartyJourney>,
-    terrain_route: Option<&PartyJourneyRoute>,
+    terrain_route: Option<&PartyJourneyRouteView>,
     destination_name: &str,
-    active_character: Option<&Character>,
-    party_members: &[Character],
+    active_character: Option<&CharacterView>,
+    party_members: &[CharacterView],
     camp_destinations: &[CampTravelDestination],
     provision_forecast: Option<&TravelProvisionForecast>,
     default_rest_minutes: u64,
@@ -840,7 +840,7 @@ pub fn camp_page(
     planned_wake_minute: u16,
     continue_block_reason: Option<&str>,
     encounter: Option<&StrategicEncounter>,
-    counterparties: &[Character],
+    counterparties: &[CharacterView],
     trial: Option<(&str, &str, ChallengePresenterCatalogId)>,
     tactical_insight: Option<(&str, &str)>,
     road_trial: Option<&BackendRoadChallenge>,
@@ -895,7 +895,7 @@ pub fn camp_page(
             }
         }
         main class="center-content settlement-main settlement-overview" {
-            (party_portrait_overlay(party_members, active_character, "/camp", None, false))
+            (party_portrait_overlay(party_members, active_character, "/camp", None))
             @if active_character.is_some() {
                 nav class="scene-interactable-strip camp-interactable-strip" aria-label="Camp interactions" {
                     a class="scene-interactable scene-interactable--fixture fireplace-portrait" href="/camp/fireplace"
@@ -908,7 +908,7 @@ pub fn camp_page(
                     }
                 }
             }
-            (visual_stage("camp", "Camp", "A resting place beside the party's onward route"))
+            (visual_stage(VisualStageKind::Camp, "Camp", "A resting place beside the party's onward route"))
             @if let Some((finding, preparation)) = tactical_insight {
                 section class="strategic-notice" data-tactical-insight aria-label="Tactical insight" {
                     h3 { "Tactical insight" }
@@ -1091,7 +1091,7 @@ fn generic_road_encounter(challenge: &BackendRoadChallenge) -> Markup {
 
 fn strategic_encounter_panel(
     encounter: &StrategicEncounter,
-    counterparties: &[Character],
+    counterparties: &[CharacterView],
 ) -> Markup {
     let threat = encounter.archetype.parse::<ThreatId>().ok();
     let threat_name = threat
@@ -1174,7 +1174,7 @@ fn strategic_encounter_panel(
     }
 }
 
-fn journey_weather_status(route: &PartyJourneyRoute) -> Markup {
+fn journey_weather_status(route: &PartyJourneyRouteView) -> Markup {
     let (weather, icon) = match route.precipitation {
         JourneyPrecipitation::Clear => ("Clear", "sun"),
         JourneyPrecipitation::Rain => ("Rain", "water-drop"),
@@ -1203,7 +1203,7 @@ fn journey_weather_status(route: &PartyJourneyRoute) -> Markup {
     }
 }
 
-fn format_persisted_terrain_spans(route: Option<&PartyJourneyRoute>) -> String {
+fn format_persisted_terrain_spans(route: Option<&PartyJourneyRouteView>) -> String {
     route.map_or_else(String::new, |route| {
         route
             .spans
@@ -1249,8 +1249,9 @@ mod tests {
 
     #[test]
     fn weather_status_has_visible_and_accessible_ground_output() {
-        let route = PartyJourneyRoute {
+        let route = PartyJourneyRouteView {
             party_id: "party".into(),
+            gateway_bucket: 0,
             package_digest: "a".repeat(64),
             weather_rules_version: 1,
             weather_interval_start: 0,
@@ -1283,8 +1284,8 @@ mod tests {
             journey_movement_minute: 540,
             journey_elapsed_minute: 700,
             absolute_minute: 1_700,
-            longitude_e7: 1,
-            latitude_e7: 2,
+            longitude_e_7: 1,
+            latitude_e_7: 2,
             terrain: "road".into(),
             party_aware: false,
             enemy_aware: true,
@@ -1510,7 +1511,7 @@ mod tests {
             ),
             destination: crate::spacetimedb::JourneyEndpoint::CaseSite(
                 crate::spacetimedb::JourneyCaseSiteEndpoint {
-                    id: crate::spacetimedb::CaseSiteId {
+                    id: adventuresim_stdb_client::CaseSiteId {
                         value: "quest".into(),
                     },
                     name: "Quest".into(),

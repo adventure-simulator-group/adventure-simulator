@@ -33,15 +33,16 @@ mod capture_state;
 mod manifest;
 mod view_specs;
 use capture_state::{
-    CapturePhase, CaptureReadback, CaptureState, foliage_detail_pixel_bps, foreground_pixel_bps,
-    lighting_samples_stable, luminance_delta, mean_luminance, tree_canopy_pixel_bps,
+    CapturePhase, CaptureReadback, SceneCaptureState, foliage_detail_pixel_bps,
+    foreground_pixel_bps, lighting_samples_stable, luminance_delta, mean_luminance,
+    tree_canopy_pixel_bps,
 };
 use manifest::{
-    CaptureManifest, CaptureRecord, CelestialProvenance, FoliageSummary,
-    ObservedPresentationFeatures, ObstacleSummary, PendingCaptureManifest,
+    CaptureRecord, CaptureTonemapping, CelestialProvenance, FoliageSummary,
+    ObservedPresentationFeatures, ObstacleSummary, PendingSceneCaptureManifest,
     PresentationFeatureState, PresentationFeatures, RecursiveTreeLodSummary, RepairSummary,
-    TerrainSummary, TreeBakeCardSummary, TreeBakeSummary, ValidationSummary, VistaSummary,
-    validation_passes,
+    SceneCaptureManifest, TerrainSummary, TreeBakeCardSummary, TreeBakeSummary, ValidationSummary,
+    VistaSummary, validation_passes,
 };
 #[cfg(test)]
 use view_specs::TREE_BILLBOARD_TRANSITION_SCALES;
@@ -320,6 +321,21 @@ struct ScenePerformanceMode {
     hide_playable_trees: bool,
     hide_vista_trees: bool,
     hidden_scene_layers: u16,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ScenePerformanceModeIndex(usize);
+
+impl ScenePerformanceModeIndex {
+    const NATURAL_BASELINE: Self = Self(0);
+
+    const fn from_position(position: usize) -> Self {
+        Self(position)
+    }
+
+    const fn requires_gpu_cost_attribution(self) -> bool {
+        self.0 != Self::NATURAL_BASELINE.0
+    }
 }
 
 const HIDE_LITTER: u16 = 1 << 0;
@@ -638,6 +654,8 @@ impl ScenePerformanceBenchmarkState {
 
 #[derive(Serialize)]
 struct ScenePerformanceBenchmarkResult {
+    #[serde(skip)]
+    mode_index: ScenePerformanceModeIndex,
     mode: &'static str,
     mean_ms: f64,
     median_ms: f64,
@@ -913,7 +931,7 @@ pub(crate) fn run(
 fn capture_terrain_wireframe(
     mut commands: Commands,
     mut state: ResMut<TerrainWireframeCaptureState>,
-    capture: Option<Res<CaptureState>>,
+    capture: Option<Res<SceneCaptureState>>,
     mut camera: Single<
         (
             Entity,
@@ -1184,7 +1202,19 @@ fn observed_presentation_features(
         camera_environment_map_allocated: filtered_environment_map.is_some(),
         camera_environment_map_intensity: filtered_environment_map.map(|light| light.intensity),
         camera_exposure_ev100: exposure.ev100,
-        camera_tonemapping: format!("{tonemapping:?}"),
+        camera_tonemapping: match tonemapping {
+            Tonemapping::None => CaptureTonemapping::None,
+            Tonemapping::Reinhard => CaptureTonemapping::Reinhard,
+            Tonemapping::ReinhardLuminance => CaptureTonemapping::ReinhardLuminance,
+            Tonemapping::AcesFitted => CaptureTonemapping::AcesFitted,
+            Tonemapping::AgX => CaptureTonemapping::AgX,
+            Tonemapping::SomewhatBoringDisplayTransform => {
+                CaptureTonemapping::SomewhatBoringDisplayTransform
+            }
+            Tonemapping::TonyMcMapface => CaptureTonemapping::TonyMcMapface,
+            Tonemapping::BlenderFilmic => CaptureTonemapping::BlenderFilmic,
+            Tonemapping::KhronosPbrNeutral => CaptureTonemapping::KhronosPbrNeutral,
+        },
         ambient_color: ambient.color.to_linear().to_f32_array(),
         ambient_brightness: ambient.brightness,
         ambient_policy: if ambient_handoff.active {
@@ -1221,7 +1251,7 @@ fn observed_presentation_features(
         // may be between authored targets while the ECS observer settles.
         && observed.camera_exposure_ev100.is_finite()
         && (-1.35..=15.0).contains(&observed.camera_exposure_ev100)
-        && observed.camera_tonemapping.contains("AcesFitted")
+        && *tonemapping == Tonemapping::AcesFitted
         && observed.ambient_brightness.is_finite()
         && (observed.ambient_brightness - observed.expected_ambient_brightness).abs() <= 0.01;
     PresentationFeatures {
@@ -1299,6 +1329,21 @@ fn freeze_capture_clock(mut time: ResMut<Time<Virtual>>) {
 #[cfg(test)]
 mod capture_lighting_tests {
     use super::*;
+
+    #[test]
+    fn scene_performance_baseline_attribution_is_independent_of_label_wording() {
+        let renamed_baseline = ScenePerformanceMode {
+            name: "Renamed natural-mode presentation label",
+            ..SCENE_PERFORMANCE_MODES[0]
+        };
+
+        assert_ne!(renamed_baseline.name, SCENE_PERFORMANCE_MODES[0].name);
+        assert!(
+            !ScenePerformanceModeIndex::from_position(0).requires_gpu_cost_attribution(),
+            "the typed baseline index, not its presentation label, must control attribution"
+        );
+        assert!(ScenePerformanceModeIndex::from_position(1).requires_gpu_cost_attribution());
+    }
 
     #[test]
     fn forced_tree_lod_views_map_exactly_and_fail_closed() {
@@ -2101,7 +2146,7 @@ fn setup_scene(
         ),
         lods: input.vista.lods.clone(),
     });
-    commands.insert_resource(CaptureState {
+    commands.insert_resource(SceneCaptureState {
         fixture,
         input_path,
         output,
@@ -2209,7 +2254,7 @@ fn vista_metrics(input: &TacticalSceneInput) -> (f32, f32, f32, Vec3, Vec3) {
 
 fn benchmark_leaf_representations(
     mut state: Option<ResMut<LeafBenchmarkState>>,
-    capture: Option<Res<CaptureState>>,
+    capture: Option<Res<SceneCaptureState>>,
     time: Res<Time<Real>>,
     mut tree_lod_override: ResMut<TreeLodRenderOverride>,
     mut camera: Single<
@@ -2304,7 +2349,7 @@ fn apply_tree_lighting_mode(
 )]
 fn benchmark_tree_lighting(
     mut state: Option<ResMut<TreeLightingBenchmarkState>>,
-    capture: Option<Res<CaptureState>>,
+    capture: Option<Res<SceneCaptureState>>,
     time: Res<Time<Real>>,
     mut commands: Commands,
     mut leaf_materials: ResMut<Assets<TacticalTreeLeafCardMaterial>>,
@@ -2399,7 +2444,7 @@ fn benchmark_tree_lighting(
 )]
 fn benchmark_scene_performance(
     mut state: Option<ResMut<ScenePerformanceBenchmarkState>>,
-    capture: Option<Res<CaptureState>>,
+    capture: Option<Res<SceneCaptureState>>,
     time: Res<Time<Real>>,
     benchmark_diagnostics: ScenePerformanceDiagnostics,
     tree_asset_residency: Res<TreeAssetResidencyDiagnostics>,
@@ -2810,6 +2855,7 @@ fn benchmark_scene_performance(
         *visible_tree_entities.entry(name).or_default() += 1;
     }
     state.results.push(ScenePerformanceBenchmarkResult {
+        mode_index: ScenePerformanceModeIndex::from_position(state.mode),
         mode: mode.name,
         mean_ms,
         median_ms,
@@ -2850,11 +2896,12 @@ fn benchmark_scene_performance(
 
     let natural_diagnostics = state
         .results
-        .first()
+        .iter()
+        .find(|result| !result.mode_index.requires_gpu_cost_attribution())
         .map(|result| result.render_diagnostics.clone());
     if let Some(natural_diagnostics) = natural_diagnostics.as_ref() {
         for result in &mut state.results {
-            if result.mode == "Natural production LODs" {
+            if !result.mode_index.requires_gpu_cost_attribution() {
                 continue;
             }
             result.gpu_cost_attribution_vs_natural_ms = result
@@ -3203,7 +3250,7 @@ fn write_scene_performance_benchmark(output: &Path, report: &ScenePerformanceBen
 )]
 fn capture_views(
     mut commands: Commands,
-    mut state: Option<ResMut<CaptureState>>,
+    mut state: Option<ResMut<SceneCaptureState>>,
     mut tree_lod_override: ResMut<TreeLodRenderOverride>,
     mut camera: Single<
         (
@@ -3696,7 +3743,7 @@ fn capture_views(
             kind: CaptureReadback::Prime,
         };
         commands.spawn(Screenshot::primary_window()).observe(
-            |captured: On<ScreenshotCaptured>, mut state: ResMut<CaptureState>| {
+            |captured: On<ScreenshotCaptured>, mut state: ResMut<SceneCaptureState>| {
                 let CapturePhase::Readback {
                     view,
                     prime_readbacks,
@@ -3726,7 +3773,7 @@ fn capture_views(
             kind: CaptureReadback::Warmup,
         };
         commands.spawn(Screenshot::primary_window()).observe(
-            |_: On<ScreenshotCaptured>, mut state: ResMut<CaptureState>| {
+            |_: On<ScreenshotCaptured>, mut state: ResMut<SceneCaptureState>| {
                 if !matches!(
                     state.phase,
                     CapturePhase::Readback {
@@ -3797,7 +3844,7 @@ fn capture_views(
     };
     commands.spawn(Screenshot::primary_window()).observe(
         move |captured: On<ScreenshotCaptured>,
-              mut state: ResMut<CaptureState>,
+              mut state: ResMut<SceneCaptureState>,
               mut exit: MessageWriter<AppExit>| {
             let foreground_pixel_bps = foreground_pixel_bps(captured.image.data.as_deref());
             if !matches!(
@@ -3856,7 +3903,7 @@ fn focused_tree_lod_queued(
     })
 }
 
-fn camera_for_view(pose: CapturePose, state: &CaptureState) -> (Transform, Vec3) {
+fn camera_for_view(pose: CapturePose, state: &SceneCaptureState) -> (Transform, Vec3) {
     let half = state.terrain.width_metres.max(state.terrain.depth_metres) * 0.5;
     let (position, target, up) = match pose {
         CapturePose::Ground => (state.ground_eye_position, state.ground_eye_target, Vec3::Y),
@@ -4058,7 +4105,7 @@ fn camera_for_view(pose: CapturePose, state: &CaptureState) -> (Transform, Vec3)
 }
 
 fn animation_play_obstruction_camera(
-    state: &CaptureState,
+    state: &SceneCaptureState,
     spatial: &SpatialQuery,
     yaw_degrees: f32,
 ) -> (Transform, Vec3, Option<CameraObstructionObservation>) {
@@ -4108,7 +4155,7 @@ fn animation_play_obstruction_camera(
 }
 
 fn animation_play_boundary_camera(
-    _state: &CaptureState,
+    _state: &SceneCaptureState,
     terrain: &SceneTerrain,
     spatial: &SpatialQuery,
     player_x: f32,
@@ -4218,7 +4265,7 @@ struct CameraObstructionObservation {
     reason = "the capture manifest records independent scene populations and presentation observations from exact Bevy queries"
 )]
 fn build_manifest(
-    state: &CaptureState,
+    state: &SceneCaptureState,
     obstacles: &Query<(&SceneObstacle, Has<Collider>)>,
     presented_tree_roots: &Query<(), With<PresentedTree>>,
     rock_visuals: &Query<&Mesh3d, With<ProceduralRockVisual>>,
@@ -4230,7 +4277,7 @@ fn build_manifest(
     vistas: &Query<(&VistaTerrain, Has<Collider>)>,
     weather_particle_count: usize,
     presentation_features: PresentationFeatures,
-) -> PendingCaptureManifest {
+) -> PendingSceneCaptureManifest {
     // PresentedTree lives on the non-rendering root and means the complete
     // five-level presentation is cached and streamable. Counting transient
     // trunk/LOD children would incorrectly fail whenever the active camera is
@@ -4498,7 +4545,7 @@ fn build_manifest(
         note: "Semantic gates are automatic; beauty, scale, composition, and visual artifacts require image inspection.",
     };
     validation.passed = validation_passes(&validation);
-    PendingCaptureManifest::new(CaptureManifest {
+    PendingSceneCaptureManifest::new(SceneCaptureManifest {
         pipeline: "tactical_scene_native_capture_v6",
         fixture: state.fixture.clone(),
         source_input: state.input_path.display().to_string(),
@@ -4576,7 +4623,7 @@ fn capture_celestial(
     }
 }
 
-fn tree_lod_camera(state: &CaptureState, distance: f32) -> (Vec3, Vec3, Vec3) {
+fn tree_lod_camera(state: &SceneCaptureState, distance: f32) -> (Vec3, Vec3, Vec3) {
     state.tree_focus.map_or(
         (state.ground_eye_position, state.ground_eye_target, Vec3::Y),
         |tree| {
@@ -4590,7 +4637,7 @@ fn tree_lod_camera(state: &CaptureState, distance: f32) -> (Vec3, Vec3, Vec3) {
     )
 }
 
-fn tree_cold_traversal_camera(state: &CaptureState, distance: f32) -> (Vec3, Vec3, Vec3) {
+fn tree_cold_traversal_camera(state: &SceneCaptureState, distance: f32) -> (Vec3, Vec3, Vec3) {
     state.tree_focus.map_or(
         (state.ground_eye_position, state.ground_eye_target, Vec3::Y),
         |tree| {
@@ -4734,7 +4781,7 @@ fn debris_detail_camera(
 
 fn finish_capture(
     output: &Path,
-    manifest: &CaptureManifest,
+    manifest: &SceneCaptureManifest,
     valid: bool,
     exit: &mut MessageWriter<AppExit>,
 ) {
@@ -4762,7 +4809,7 @@ fn finish_capture(
     }
 }
 
-fn capture_index(manifest: &CaptureManifest) -> String {
+fn capture_index(manifest: &SceneCaptureManifest) -> String {
     let cards = manifest
         .captures
         .iter()

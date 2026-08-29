@@ -4,9 +4,10 @@ struct LiveRunner {
     character_ids: Vec<u64>,
     metrics: CoreLoopMetrics,
     trace: Vec<CoreLoopEvent>,
+    semantic_event_keys: Vec<CoreLoopEventSemanticKey>,
     sequence: u64,
     dialogue_nonce: u64,
-    last_semantic_event: Option<String>,
+    last_semantic_event: Option<CoreLoopEventSemanticKey>,
     recorded_deaths: HashSet<u64>,
     medically_paused_schedules: HashSet<u64>,
     generated_seen_cases: HashSet<(u64, String)>,
@@ -580,7 +581,8 @@ fn live_personality(character_id: u64, p: &core_personality::Personality) -> Cha
 }
 
 macro_rules! reducer_call {
-    ($runner:expr, $label:expr, $invoke:expr) => {{
+    ($runner:expr, $operation:expr, $invoke:expr) => {{
+        let operation = $operation;
         let (tx, rx) = mpsc::sync_channel(1);
         ($invoke)(
             move |_: &ReducerEventContext,
@@ -588,16 +590,28 @@ macro_rules! reducer_call {
                 Result<(), String>,
                 adventuresim_stdb_client::spacetimedb_sdk::__codegen::InternalError,
             >| {
-                let normalized = result
-                    .map_err(|error| error.to_string())
-                    .and_then(|module_result| module_result);
+                let normalized = match result {
+                    Ok(Ok(())) => Ok(()),
+                    Ok(Err(detail)) => Err(CoreLoopError::reducer_rejected(operation, detail)),
+                    Err(error) => Err(CoreLoopError::reducer_dispatch(
+                        operation,
+                        error.to_string(),
+                    )),
+                };
                 let _ = tx.send(normalized);
             },
         )
-        .map_err(|error| format!("could not send {}: {error}", $label))?;
-        match rx.recv_timeout(ACTION_TIMEOUT) {
-            Ok(result) => result.map_err(|error| format!("{} failed: {error}", $label)),
-            Err(_) => Err(format!("{} timed out after {:?}", $label, ACTION_TIMEOUT)),
-        }
+        .map_or_else(
+            |error| {
+                Err(CoreLoopError::reducer_dispatch(
+                    operation,
+                    error.to_string(),
+                ))
+            },
+            |()| match rx.recv_timeout(ACTION_TIMEOUT) {
+                Ok(result) => result,
+                Err(_) => Err(CoreLoopError::reducer_timed_out(operation)),
+            },
+        )
     }};
 }

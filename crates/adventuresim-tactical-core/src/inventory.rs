@@ -1,8 +1,7 @@
-use std::num::NonZeroU32;
-
 use adventuresim_core::{
     body::{BodyPart, BodySide},
     combat_style::MeleeAttackStyle,
+    inventory_measurement::ItemQuantity,
     item_catalog::{EquipmentChannel, EquipmentLocation},
     prelude::PlayerEquipment,
 };
@@ -22,19 +21,34 @@ use crate::animation::AttackHand;
 pub const TACTICAL_TERRAIN_LAYER: LayerMask = LayerMask(1 << 5);
 pub const TACTICAL_ITEM_LAYER: LayerMask = LayerMask(1 << 4);
 
-#[derive(Component, Serialize, Deserialize, Debug, Reflect, PartialEq, Eq, Deref, DerefMut)]
-#[reflect(Component)]
-pub struct ItemQuantity(pub NonZeroU32);
+#[derive(Component, Serialize, Deserialize, Debug, Reflect, PartialEq, Eq, Clone, Copy, Deref)]
+#[serde(transparent)]
+#[reflect(opaque)]
+#[reflect(Component, PartialEq, Clone, Serialize, Deserialize)]
+pub struct TacticalItemQuantity(pub ItemQuantity);
 
-impl Default for ItemQuantity {
+impl Default for TacticalItemQuantity {
     fn default() -> Self {
-        Self(NonZeroU32::new(1).unwrap())
+        Self(ItemQuantity::ONE)
+    }
+}
+
+impl TacticalItemQuantity {
+    pub const fn new(value: u32) -> Option<Self> {
+        match ItemQuantity::new(value) {
+            Some(quantity) => Some(Self(quantity)),
+            None => None,
+        }
+    }
+
+    pub const fn get(self) -> u32 {
+        self.0.get()
     }
 }
 
 #[derive(Component, Serialize, Deserialize, Debug, Reflect, PartialEq, Eq, Clone, MapEntities)]
 #[reflect(Component)]
-#[require(ItemProperties, ItemQuantity)]
+#[require(ItemProperties, TacticalItemQuantity)]
 #[relationship(relationship_target = InventoryItems)]
 pub struct ItemOf(#[entities] pub Entity);
 
@@ -188,7 +202,7 @@ pub enum TacticalEquipmentAnchor {
 }
 
 #[derive(Component, Reflect, Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
-pub struct EquipmentPhysical {
+pub struct TacticalEquipmentPhysical {
     pub dimensions_m: Vec3,
     pub grip_to_tip_m: f32,
     pub anchor_offset_m: Vec3,
@@ -199,7 +213,7 @@ pub struct EquipmentPhysical {
 /// The recipe uses the versioned `adventuresim-weapon-model` postcard wire
 /// format. Keeping the transport opaque here avoids coupling tactical combat
 /// state to render-only mesh types; the client validates and expands it into
-/// geometry, while the server continues to use [`EquipmentPhysical`] as its
+/// geometry, while the server continues to use [`TacticalEquipmentPhysical`] as its
 /// conservative interaction/collision proxy.
 #[derive(Component, Reflect, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct WeaponAppearance {
@@ -218,7 +232,7 @@ pub struct WeaponHolderAppearance {
     pub recipe: Vec<u8>,
 }
 
-impl EquipmentPhysical {
+impl TacticalEquipmentPhysical {
     pub fn is_valid(self) -> bool {
         self.dimensions_m.is_finite()
             && self.dimensions_m.cmpgt(Vec3::ZERO).all()
@@ -292,7 +306,7 @@ impl EquipSlot {
 #[derive(QueryData)]
 pub struct ItemQuery {
     pub entity: Entity,
-    pub quantity: &'static ItemQuantity,
+    pub quantity: &'static TacticalItemQuantity,
     pub properties: &'static ItemProperties,
     pub item_of: Option<&'static ItemOf>,
     pub slot: Option<&'static EquipSlot>,
@@ -895,5 +909,19 @@ mod tests {
             TacticalEquipmentAnchor::ItemAttachment { parent: found, .. }
                 if found == mapped_parent
         ));
+    }
+
+    #[test]
+    fn tactical_item_quantity_keeps_the_shared_transparent_boundary_shape() {
+        let quantity = TacticalItemQuantity::new(3).unwrap();
+        let wire = serde_json::to_value(quantity).unwrap();
+        assert_eq!(wire, serde_json::json!(3));
+        assert_eq!(
+            serde_json::from_value::<TacticalItemQuantity>(wire)
+                .unwrap()
+                .get(),
+            3
+        );
+        assert!(TacticalItemQuantity::new(0).is_none());
     }
 }

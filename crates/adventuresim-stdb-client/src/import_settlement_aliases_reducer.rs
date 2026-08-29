@@ -4,12 +4,12 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::settlement_alias_batch_row_type::SettlementAliasBatchRow;
+use super::settlement_alias_type::SettlementAlias;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct ImportSettlementAliasesArgs {
-    pub aliases: Vec<SettlementAliasBatchRow>,
+    pub aliases: Vec<SettlementAlias>,
 }
 
 impl From<ImportSettlementAliasesArgs> for super::Reducer {
@@ -35,10 +35,7 @@ pub trait import_settlement_aliases {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`import_settlement_aliases:import_settlement_aliases_then`] to run a callback after the reducer completes.
-    fn import_settlement_aliases(
-        &self,
-        aliases: Vec<SettlementAliasBatchRow>,
-    ) -> __sdk::Result<()> {
+    fn import_settlement_aliases(&self, aliases: Vec<SettlementAlias>) -> __sdk::Result<()> {
         self.import_settlement_aliases_then(aliases, |_, _| {})
     }
 
@@ -50,7 +47,7 @@ pub trait import_settlement_aliases {
     ///  and its status can be observed with the `callback`.
     fn import_settlement_aliases_then(
         &self,
-        aliases: Vec<SettlementAliasBatchRow>,
+        aliases: Vec<SettlementAlias>,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -63,7 +60,7 @@ pub trait import_settlement_aliases {
 impl import_settlement_aliases for super::RemoteReducers {
     fn import_settlement_aliases_then(
         &self,
-        aliases: Vec<SettlementAliasBatchRow>,
+        aliases: Vec<SettlementAlias>,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,

@@ -6,7 +6,7 @@ use super::{
     context::LocationView,
     trade::{item_name_with_food_lot, trade_inventory_table_header},
 };
-use crate::spacetimedb::{Character, FoodLot, InventoryItem};
+use crate::spacetimedb::{CharacterView, FoodLot, InventoryItem};
 use crate::templates::{
     SceneInteractableKind, SceneInteractableLink, decorative_game_icon, item_display_name,
     item_type_icon, scene_interactable_link, sidebar_section,
@@ -35,6 +35,21 @@ pub struct SocialPresentation {
 pub struct SocialFeedback {
     pub message: &'static str,
     pub is_error: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LocalChatKind {
+    Player,
+    Npc,
+}
+
+impl LocalChatKind {
+    const fn tag(self) -> &'static str {
+        match self {
+            Self::Player => "player",
+            Self::Npc => "npc",
+        }
+    }
 }
 
 fn casual_chat_action_id() -> String {
@@ -176,7 +191,10 @@ fn belief_tooltip(belief: &crate::spacetimedb::SocialBelief) -> String {
     format!(
         "Confidence: {:.0}%\n{}",
         belief.confidence.clamp(0.0, 1.0) * 100.0,
-        personality_reaction_hint(belief.axis, belief.perceived_value)
+        personality_reaction_hint(
+            crate::spacetimedb::core_personality_axis(belief.axis),
+            belief.perceived_value,
+        )
     )
 }
 
@@ -184,8 +202,8 @@ fn belief_tooltip(belief: &crate::spacetimedb::SocialBelief) -> String {
 /// beliefs rather than authoritative personality.
 pub fn party_social_dialog(
     location: &LocationView,
-    selected: &Character,
-    active_character: &Character,
+    selected: &CharacterView,
+    active_character: &CharacterView,
     morale_sources: &[crate::spacetimedb::CharacterMoraleSource],
     social: &SocialPresentation,
 ) -> Markup {
@@ -257,7 +275,7 @@ pub fn party_social_dialog(
                         } @else {
                           ul class="perceived-traits" aria-label="Perceived personality traits" {
                             @for belief in &social.beliefs {
-                              @let (axis, value) = perceived_trait(belief.axis, belief.perceived_value);
+                              @let (axis, value) = perceived_trait(crate::spacetimedb::core_personality_axis(belief.axis), belief.perceived_value);
                               li class="perceived-trait" style=(belief_style(belief.confidence)) tabindex="0"
                                 data-strategic-tooltip=(belief_tooltip(belief)) {
                                 strong { (value) }
@@ -334,7 +352,7 @@ pub fn party_social_dialog(
                 @if morale_sources.is_empty() { p class="text-muted" { "No current morale effects." } }
                 div class="social-source-list" {
                     @for source in morale_sources {
-                        @let topic = adventuresim_core::social::topic_for_source_kind(&source.kind);
+                        @let topic = adventuresim_core::social::topic_for_source_kind(crate::spacetimedb::core_morale_source_kind(source.kind));
                         @let addressed = source.magnitude < 0.0 && social.addressed_source_ids.contains(&source.id);
                         @let magnitude = source.magnitude.clamp(-5.0, 5.0);
                         @let topic_color = if magnitude < 0.0 {
@@ -351,8 +369,8 @@ pub fn party_social_dialog(
                                     p class="social-addressed-status" { "Addressed by you" }
                                 }
                                 @if let Some(axis) = topic.and_then(adventuresim_core::social::axis_for_topic) {
-                                    @if let Some(belief) = social.beliefs.iter().find(|belief| belief.axis == axis) {
-                                        @let (axis_name, value) = perceived_trait(belief.axis, belief.perceived_value);
+                                    @if let Some(belief) = social.beliefs.iter().find(|belief| crate::spacetimedb::core_personality_axis(belief.axis) == axis) {
+                                        @let (axis_name, value) = perceived_trait(crate::spacetimedb::core_personality_axis(belief.axis), belief.perceived_value);
                                         p class="belief-copy" style=(belief_style(belief.confidence))
                                             tabindex="0" data-strategic-tooltip=(belief_tooltip(belief)) {
                                             "You think their " (axis_name) " is " (value) "."
@@ -478,13 +496,16 @@ pub fn party_social_dialog(
 /// Shared chat panel. Local conversations are live; the remaining channel
 /// filters are present so their messages can join the same stream as their
 /// backends become available.
-pub(crate) fn settlement_chat_area(location: &str, active_character: Option<&Character>) -> Markup {
+pub(crate) fn settlement_chat_area(
+    location: &str,
+    active_character: Option<&CharacterView>,
+) -> Markup {
     chat_area(location, active_character, None, None, None, None, &[])
 }
 
 pub(crate) fn settlement_chat_area_with_info(
     location: &str,
-    active_character: Option<&Character>,
+    active_character: Option<&CharacterView>,
     info_messages: &[String],
 ) -> Markup {
     chat_area(
@@ -500,10 +521,10 @@ pub(crate) fn settlement_chat_area_with_info(
 
 pub(super) fn player_chat_area(
     location: &LocationView,
-    subject: &Character,
-    active_character: &Character,
+    subject: &CharacterView,
+    active_character: &CharacterView,
 ) -> Markup {
-    let context = ("player", subject.id.to_string());
+    let context = (LocalChatKind::Player, subject.id.to_string());
     chat_area(
         &subject.name,
         Some(active_character),
@@ -610,7 +631,7 @@ pub(super) fn forge_description_stage(name: &str, fallback: &str) -> Markup {
 
 pub(super) fn settlement_resident_chat_area(
     location: &str,
-    active_character: Option<&Character>,
+    active_character: Option<&CharacterView>,
     settlement_id: &str,
     location_id: &str,
     service_id: Option<&str>,
@@ -619,7 +640,7 @@ pub(super) fn settlement_resident_chat_area(
         location,
         active_character,
         Some((settlement_id, service_id.unwrap_or(""))),
-        Some(("npc", String::new())),
+        Some((LocalChatKind::Npc, String::new())),
         Some(location_id),
         None,
         &[],
@@ -628,15 +649,15 @@ pub(super) fn settlement_resident_chat_area(
 
 fn chat_area(
     location: &str,
-    active_character: Option<&Character>,
+    active_character: Option<&CharacterView>,
     service_context: Option<(&str, &str)>,
-    local_context: Option<(&str, String)>,
+    local_context: Option<(LocalChatKind, String)>,
     local_location_id: Option<&str>,
     party_social_href: Option<String>,
     info_messages: &[String],
 ) -> Markup {
     let is_self_chat = local_context.as_ref().is_some_and(|(kind, subject)| {
-        *kind == "player"
+        *kind == LocalChatKind::Player
             && active_character.is_some_and(|active| subject == &active.id.to_string())
     });
     html! {
@@ -647,7 +668,7 @@ fn chat_area(
             data-herbalist-exam-fee=[service_context
                 .filter(|context| context.1 == "herbalist")
                 .map(|_| adventuresim_core::strategic_economy::NPC_HERBALIST_EXAM_FEE)]
-            data-local-chat-kind=[local_context.as_ref().map(|context| context.0)]
+            data-local-chat-kind=[local_context.as_ref().map(|context| context.0.tag())]
             data-local-chat-subject=[local_context.as_ref().map(|context| context.1.as_str())]
             data-local-chat-location=[local_location_id]
             data-party-social-href=[party_social_href.as_deref()] {
@@ -741,9 +762,9 @@ pub(super) fn merchant_offers_rail(title: &str, unavailable_offers: &[&str]) -> 
 }
 
 pub(super) fn inventory_rail(
-    active_character: Option<&Character>,
+    active_character: Option<&CharacterView>,
     inventory: &[InventoryItem],
-    items: &[crate::spacetimedb::ItemDefinition],
+    items: &[crate::spacetimedb::CatalogItemView],
     food_lots: &[FoodLot],
     trade_action: Option<(&str, &str)>,
     _show_repair: bool,
@@ -803,6 +824,12 @@ mod tests {
     use super::*;
     use crate::spacetimedb::*;
     use crate::templates::settlement::settlement_resident_location_page;
+
+    #[test]
+    fn local_chat_kind_tags_are_fixed_boundary_values() {
+        assert_eq!(LocalChatKind::Player.tag(), "player");
+        assert_eq!(LocalChatKind::Npc.tag(), "npc");
+    }
     use crate::templates::settlement::test_support::*;
 
     #[test]
@@ -835,7 +862,7 @@ mod tests {
 
     #[test]
     fn companion_social_dialog_has_persisted_accessible_automation_control() {
-        let character = |id: u64, name: &str| Character {
+        let character = |id: u64, name: &str| CharacterView {
             id,
             name: name.into(),
             xp: 0,
@@ -871,7 +898,7 @@ mod tests {
         let source = crate::spacetimedb::CharacterMoraleSource {
             id: "concern".into(),
             character_id: target.id,
-            kind: "defeat".into(),
+            kind: adventuresim_stdb_client::MoraleSourceKind::Defeat,
             label: "Recent defeat".into(),
             magnitude: -2.0,
         };
@@ -914,7 +941,7 @@ mod tests {
             &[CharacterMoraleSource {
                 id: "self-concern".into(),
                 character_id: actor.id,
-                kind: "defeat".into(),
+                kind: adventuresim_stdb_client::MoraleSourceKind::Defeat,
                 label: "A private defeat".into(),
                 magnitude: -1.0,
             }],
@@ -951,7 +978,7 @@ mod tests {
         let response_source = CharacterMoraleSource {
             id: "fresh-concern".into(),
             character_id: target.id,
-            kind: "defeat".into(),
+            kind: adventuresim_stdb_client::MoraleSourceKind::Defeat,
             label: "Another defeat".into(),
             magnitude: -2.0,
         };
@@ -975,7 +1002,7 @@ mod tests {
         let injury_source = CharacterMoraleSource {
             id: "fresh-injury".into(),
             character_id: target.id,
-            kind: "injury".into(),
+            kind: adventuresim_stdb_client::MoraleSourceKind::Injury,
             label: "Painful injury".into(),
             magnitude: -2.0,
         };
@@ -1011,7 +1038,7 @@ mod tests {
 
     #[test]
     fn prayer_is_themed_and_disabled_with_an_accessible_reason() {
-        let character = |id: u64, name: &str| Character {
+        let character = |id: u64, name: &str| CharacterView {
             id,
             name: name.into(),
             xp: 0,
@@ -1037,7 +1064,7 @@ mod tests {
         let source = CharacterMoraleSource {
             id: "defeat".into(),
             character_id: 2,
-            kind: "defeat".into(),
+            kind: adventuresim_stdb_client::MoraleSourceKind::Defeat,
             label: "Recent defeat".into(),
             magnitude: -2.0,
         };
@@ -1142,7 +1169,7 @@ mod tests {
             id: "belief".into(),
             observer_id: 1,
             subject_id: 2,
-            axis: adventuresim_core::social::PersonalityAxis::SelfRegard,
+            axis: adventuresim_stdb_client::PersonalityAxis::SelfRegard,
             perceived_value: 1,
             confidence: 0.64,
             observed_at_minute: 0,
@@ -1261,7 +1288,7 @@ mod tests {
 
     #[test]
     fn non_service_locations_use_the_same_authoritative_npc_shell() {
-        let character = Character {
+        let character = CharacterView {
             id: 1,
             name: "Visitor".into(),
             xp: 0,

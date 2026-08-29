@@ -1,4 +1,3 @@
-use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
     env, fs,
@@ -7,6 +6,8 @@ use std::{
 
 #[path = "src/authoring_schema.rs"]
 mod authoring_schema;
+#[path = "src/catalog_revision.rs"]
+mod catalog_revision;
 use authoring_schema::{
     AuthoringDocument as BuildDocument, AuthoringEffect as BuildEffect,
     AuthoringFragment as BuildFragment, AuthoringResponse as BuildResponse,
@@ -534,7 +535,7 @@ fn main() {
     files.sort();
     let mut docs = Vec::new();
     let mut sources = Vec::new();
-    let mut digest = Sha256::new();
+    let mut revision_entries = Vec::new();
     let mut global_ids = BTreeSet::new();
     for (document, file) in files.into_iter().enumerate() {
         let text = fs::read_to_string(&file).unwrap();
@@ -543,13 +544,11 @@ fn main() {
             .unwrap()
             .to_string_lossy()
             .replace('\\', "/");
-        digest.update(relative.as_bytes());
-        digest.update([0]);
-        digest.update(text.as_bytes());
         // JSON is a strict, diff-friendly subset of YAML. Keeping the authoring format
         // to this subset gives serde_json's mature validation without shipping a parser.
         let value: serde_json::Value =
             serde_json::from_str(&text).unwrap_or_else(|e| panic!("invalid {relative}: {e}"));
+        revision_entries.push((relative.clone(), value.clone()));
         let typed: BuildDocument = serde_json::from_value(value.clone())
             .unwrap_or_else(|e| panic!("invalid dialogue schema {relative}: {e}"));
         validate_document(&typed, &relative, &mut global_ids);
@@ -569,7 +568,7 @@ fn main() {
     }
     let catalog = serde_json::to_string(&docs).unwrap();
     let source_map = serde_json::to_string(&sources).unwrap();
-    let digest = format!("{:x}", digest.finalize());
+    let digest = catalog_revision::catalog_revision(&revision_entries);
     let generated = format!(
         "pub const CATALOG_JSON: &str = {catalog:?};\npub const SOURCE_MAP_JSON: &str = {source_map:?};\npub const CATALOG_DIGEST: &str = {digest:?};\n"
     );

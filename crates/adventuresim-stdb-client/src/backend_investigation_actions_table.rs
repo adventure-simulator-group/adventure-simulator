@@ -3,6 +3,8 @@
 
 #![allow(unused, clippy::all)]
 use super::backend_investigation_action_type::BackendInvestigationAction;
+use super::case_site_id_type::CaseSiteId;
+use super::investigation_action_availability_type::InvestigationActionAvailability;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `backend_investigation_actions`.

@@ -1,13 +1,13 @@
 {
-  "version": 3,
+  "version": 4,
   "catalog_revision": "d5250dcd61bca62942280817c9ef3e371c92cead9fa128e2cca07a5037d7c243",
-  "generator_manifest_digest": "64875924d5d4da1f50254792b1bd44dfbc80dc3f1fb81f0ae75d32c8eef5296d",
+  "generator_manifest_digest": "b79494209a6ebe1b5c40c4510bc4c40a0b694e877c2dc207c1b79560922535c6",
   "seed": 41,
   "family": "recurring_depredation",
   "decisions": [
     {
-      "version": 3,
-      "choice_id": "choice:eb66c32c53fcd28794778eba",
+      "version": 4,
+      "choice_id": "choice:a71ed183f19ed4de45687bb7",
       "arguments": {
         "selection": null
       }

@@ -142,6 +142,17 @@ enum AttackPattern {
     Irregular,
 }
 
+impl AttackPattern {
+    const fn stable_variant_id(self) -> &'static str {
+        match self {
+            Self::Nightly => "Nightly",
+            Self::Roadside => "Roadside",
+            Self::VictimSpecific => "VictimSpecific",
+            Self::Irregular => "Irregular",
+        }
+    }
+}
+
 fn reliability_candidates(
     demographic: WitnessDemographic,
     circumstance: Circumstance,

@@ -10,7 +10,7 @@ use crate::character::{character, character_equipped_item, equipment_occupancy};
 use crate::item::{inventory_item, item};
 use crate::simulation::simulation_character;
 use crate::time::character_time;
-use crate::{InventoryItem, ItemKind, inventory_object};
+use crate::{InventoryItem, PersistedItemKind, inventory_object};
 
 pub const REPAIR_MINUTES_PER_FULL_ITEM: u64 = 2 * MINUTES_PER_DAY;
 
@@ -89,18 +89,21 @@ fn repair_service(value: &str) -> Result<adventuresim_core::durability::RepairSe
         .ok_or_else(|| "Unknown repair service".into())
 }
 
-fn repair_kind(kind: ItemKind) -> Option<adventuresim_core::durability::RepairItemKind> {
+fn repair_kind(kind: PersistedItemKind) -> Option<adventuresim_core::durability::RepairItemKind> {
     use adventuresim_core::durability::RepairItemKind;
     match kind {
-        ItemKind::Weapon => Some(RepairItemKind::Weapon),
-        ItemKind::Shield => Some(RepairItemKind::Shield),
-        ItemKind::Armor => Some(RepairItemKind::Armor),
-        ItemKind::Clothing => Some(RepairItemKind::Clothing),
+        PersistedItemKind::Weapon => Some(RepairItemKind::Weapon),
+        PersistedItemKind::Shield => Some(RepairItemKind::Shield),
+        PersistedItemKind::Armor => Some(RepairItemKind::Armor),
+        PersistedItemKind::Clothing => Some(RepairItemKind::Clothing),
         _ => None,
     }
 }
 
-fn service_matches(service: adventuresim_core::durability::RepairService, kind: ItemKind) -> bool {
+fn service_matches(
+    service: adventuresim_core::durability::RepairService,
+    kind: PersistedItemKind,
+) -> bool {
     repair_kind(kind).is_some_and(|kind| service.matches(kind))
 }
 
@@ -157,12 +160,16 @@ pub(crate) fn ensure_settlement_smith(
     })
 }
 
-fn service_skill(ctx: &ReducerContext, settlement_id: &str, kind: ItemKind) -> Result<u8, String> {
+fn service_skill(
+    ctx: &ReducerContext,
+    settlement_id: &str,
+    kind: PersistedItemKind,
+) -> Result<u8, String> {
     use adventuresim_world_schema::SettlementService as S;
     let specialist = match kind {
-        ItemKind::Weapon | ItemKind::Shield => S::Weaponsmith,
-        ItemKind::Armor => S::Armorer,
-        ItemKind::Clothing => S::Tailor,
+        PersistedItemKind::Weapon | PersistedItemKind::Shield => S::Weaponsmith,
+        PersistedItemKind::Armor => S::Armorer,
+        PersistedItemKind::Clothing => S::Tailor,
         _ => return Err("This service does not repair that item kind".into()),
     };
     if crate::strategic::require_settlement_service(ctx, settlement_id, specialist).is_err() {
@@ -170,9 +177,9 @@ fn service_skill(ctx: &ReducerContext, settlement_id: &str, kind: ItemKind) -> R
     }
     let service = ensure_settlement_smith(ctx, settlement_id);
     match kind {
-        ItemKind::Weapon | ItemKind::Shield => Ok(service.weaponsmith_skill),
-        ItemKind::Armor => Ok(service.armourer_skill),
-        ItemKind::Clothing => Ok(service.tailor_skill),
+        PersistedItemKind::Weapon | PersistedItemKind::Shield => Ok(service.weaponsmith_skill),
+        PersistedItemKind::Armor => Ok(service.armourer_skill),
+        PersistedItemKind::Clothing => Ok(service.tailor_skill),
         _ => Err("This service does not repair that item kind".into()),
     }
 }
@@ -572,7 +579,7 @@ pub(crate) fn field_repair(
             .find(id)
             .and_then(|inventory| ctx.db.item().id().find(&inventory.item_id))
             .map(|item| item.kind);
-        let eligible_skill = if item_kind == Some(ItemKind::Clothing) {
+        let eligible_skill = if item_kind == Some(PersistedItemKind::Clothing) {
             tailoring
         } else {
             smithing
@@ -695,9 +702,9 @@ mod tests {
 
     #[test]
     fn repair_service_kinds_remain_explicit() {
-        assert!(repair_kind(ItemKind::Clothing).is_some());
-        assert!(repair_kind(ItemKind::Weapon).is_some());
-        assert!(repair_kind(ItemKind::Medication).is_none());
+        assert!(repair_kind(PersistedItemKind::Clothing).is_some());
+        assert!(repair_kind(PersistedItemKind::Weapon).is_some());
+        assert!(repair_kind(PersistedItemKind::Medication).is_none());
     }
 
     #[test]
@@ -705,14 +712,14 @@ mod tests {
         let weapons = repair_service("weapons").unwrap();
         let armor = repair_service("armor").unwrap();
         let clothing = repair_service("clothing").unwrap();
-        assert!(service_matches(weapons, ItemKind::Weapon));
-        assert!(service_matches(weapons, ItemKind::Shield));
-        assert!(!service_matches(weapons, ItemKind::Armor));
-        assert!(!service_matches(weapons, ItemKind::Clothing));
-        assert!(service_matches(armor, ItemKind::Armor));
-        assert!(!service_matches(armor, ItemKind::Clothing));
-        assert!(service_matches(clothing, ItemKind::Clothing));
-        assert!(!service_matches(clothing, ItemKind::Weapon));
+        assert!(service_matches(weapons, PersistedItemKind::Weapon));
+        assert!(service_matches(weapons, PersistedItemKind::Shield));
+        assert!(!service_matches(weapons, PersistedItemKind::Armor));
+        assert!(!service_matches(weapons, PersistedItemKind::Clothing));
+        assert!(service_matches(armor, PersistedItemKind::Armor));
+        assert!(!service_matches(armor, PersistedItemKind::Clothing));
+        assert!(service_matches(clothing, PersistedItemKind::Clothing));
+        assert!(!service_matches(clothing, PersistedItemKind::Weapon));
         assert!(repair_service("smith").is_err());
     }
 

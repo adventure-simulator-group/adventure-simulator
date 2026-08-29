@@ -136,6 +136,7 @@ wasm-bindgen = "=0.2.108"
 web-time = "1.1.0"
 spacetimedb = "=2.6.1"
 spacetimedb-sdk = "=2.6.1"
+spacetimedb-sats = { version = "=2.6.1", features = ["serde"] }
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }

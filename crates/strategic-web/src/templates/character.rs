@@ -9,11 +9,11 @@ use super::settlement::{
 use super::{entry_layout, item_display_name, item_type_icon, panel, sidebar_section};
 use crate::medical::MedicalPresentation;
 use crate::spacetimedb::{
-    BackendDevelopmentScenario, Character, CharacterAttributes, CharacterCapability,
-    CharacterLimbs, CharacterPersonality, CharacterSkills, Conscience, Conviction, Courtship,
-    Drive, Hygiene, Inclination, Mirth, Nerve, OrganizationMembership,
-    OrganizationMembershipStatus, OrganizationPresentation, Outlook, Presentation, SelfKnowledge,
-    SelfRegard, Sex, Sociability, Temperance, Transparency,
+    BackendDevelopmentScenario, BackendOrganizationMembership, CharacterAttributes,
+    CharacterCapability, CharacterLimbs, CharacterSkills, CharacterView, Conscience, Conviction,
+    Courtship, Drive, Hygiene, Inclination, Mirth, Nerve, OrganizationMembershipStatus,
+    OrganizationPresentation, Outlook, Personality, Presentation, SelfKnowledge, SelfRegard, Sex,
+    Sociability, Temperance, Transparency,
 };
 use adventuresim_core::starting_character::{
     StartingAgeTier, StartingCharacterSpec, StartingInclination, StartingPersonalityTrait,
@@ -27,7 +27,7 @@ use adventuresim_core::{
 
 /// List all characters and select the adventurer who enters the strategic layer.
 pub fn characters_list_page(
-    characters: &[Character],
+    characters: &[CharacterView],
     scenarios: &[BackendDevelopmentScenario],
     current_character_id: Option<u64>,
 ) -> Markup {
@@ -115,7 +115,7 @@ pub fn characters_list_page(
 }
 
 pub fn character_switcher_options(
-    characters: &[Character],
+    characters: &[CharacterView],
     current_character_id: Option<u64>,
 ) -> Markup {
     html! {
@@ -152,11 +152,11 @@ pub fn character_switcher_options(
 #[cfg(test)]
 mod tests {
     use super::{character_switcher_options, characters_list_page};
-    use crate::spacetimedb::Character;
+    use crate::spacetimedb::CharacterView;
 
     #[test]
     fn dead_character_is_labeled_and_uses_view_wording() {
-        let character = Character {
+        let character = CharacterView {
             id: 7,
             name: "Fallen Adventurer".into(),
             xp: 0,
@@ -181,7 +181,7 @@ mod tests {
 
     #[test]
     fn switcher_lists_remembered_characters_before_creation_link() {
-        let character = |id, name: &str| Character {
+        let character = |id, name: &str| CharacterView {
             id,
             name: name.into(),
             xp: 0,
@@ -396,21 +396,21 @@ fn starting_slot_label(slot: StartingSlot) -> &'static str {
 }
 
 struct CandidatePresentation {
-    character: Character,
+    character: CharacterView,
     attributes: CharacterAttributes,
     capability: CharacterCapability,
     limbs: CharacterLimbs,
-    personality: CharacterPersonality,
+    personality: Personality,
     skills: CharacterSkills,
     religion_id: Option<String>,
-    organization_memberships: Vec<OrganizationMembership>,
+    organization_memberships: Vec<BackendOrganizationMembership>,
     organization_presentation: Option<OrganizationPresentation>,
     combat_profile: CombatTrainingProfile,
 }
 
 impl From<&StartingCharacterSpec> for CandidatePresentation {
     fn from(spec: &StartingCharacterSpec) -> Self {
-        let character = Character {
+        let character = CharacterView {
             id: spec.id,
             name: spec.name.clone(),
             xp: 0,
@@ -463,9 +463,9 @@ impl From<&StartingCharacterSpec> for CandidatePresentation {
             physiology_hours: spec.skills.physiology,
             cooking_hours: spec.skills.cooking,
             herbalism_hours: spec.skills.herbalism,
-            religion_hours: spec.skills.religion,
-            oral_languages: Default::default(),
-            written_languages: Default::default(),
+            religion_hours: crate::spacetimedb::religion_hours_from_core(&spec.skills.religion),
+            oral_languages: crate::spacetimedb::empty_oral_language_hours(),
+            written_languages: crate::spacetimedb::empty_written_language_hours(),
             stealth_hours: spec.skills.stealth,
             balance_hours: spec.skills.balance,
             terrain_plains_hours: spec.skills.terrain_plains,
@@ -474,7 +474,7 @@ impl From<&StartingCharacterSpec> for CandidatePresentation {
             terrain_wetlands_hours: spec.skills.terrain_wetlands,
             terrain_urban_hours: spec.skills.terrain_urban,
             terrain_snow_hours: spec.skills.terrain_snow,
-            bestiary_hours: spec.skills.bestiary,
+            bestiary_hours: crate::spacetimedb::bestiary_hours_from_core(&spec.skills.bestiary),
             surgery_hours: spec.skills.surgery,
             tailoring_hours: spec.skills.tailoring,
             smithing_hours: spec.skills.smithing,
@@ -685,7 +685,7 @@ impl From<&StartingCharacterSpec> for CandidatePresentation {
                             u64::from(dues.interval_days)
                                 * adventuresim_core::strategic_time::MINUTES_PER_DAY
                         });
-                OrganizationMembership {
+                BackendOrganizationMembership {
                     id: 0,
                     character_id: spec.id,
                     organization_id: organization.organization_id.clone(),
@@ -729,10 +729,8 @@ impl From<&StartingCharacterSpec> for CandidatePresentation {
     }
 }
 
-fn candidate_personality(spec: &StartingCharacterSpec) -> CharacterPersonality {
-    let mut personality = CharacterPersonality {
-        character_id: spec.id,
-        projection_character_id: spec.id,
+fn candidate_personality(spec: &StartingCharacterSpec) -> Personality {
+    let mut personality = Personality {
         nerve: Nerve::Neutral,
         drive: Drive::Neutral,
         outlook: Outlook::Neutral,

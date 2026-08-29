@@ -4,10 +4,52 @@ use maud::{Markup, html};
 
 use super::trade::service_page;
 use crate::spacetimedb::{
-    Character, CharacterCondition, CharacterLimbs, CharacterStats, FoodLot, InventoryItem,
-    Settlement,
+    CharacterCondition, CharacterLimbs, CharacterStats, CharacterView, FoodLot, InventoryItem,
+    SettlementView,
 };
 use crate::templates::decorative_game_icon;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum RestServiceKind {
+    Inn,
+    Temple,
+    Residence,
+}
+
+impl RestServiceKind {
+    pub(crate) fn parse(value: &str) -> Option<Self> {
+        match value {
+            "inn" => Some(Self::Inn),
+            "temple" => Some(Self::Temple),
+            "residence" => Some(Self::Residence),
+            _ => None,
+        }
+    }
+
+    pub(crate) const fn tag(self) -> &'static str {
+        match self {
+            Self::Inn => "inn",
+            Self::Temple => "temple",
+            Self::Residence => "residence",
+        }
+    }
+
+    pub(crate) const fn page_path(self) -> &'static str {
+        match self {
+            Self::Inn => "inn",
+            Self::Temple => "religion",
+            Self::Residence => "places/residences",
+        }
+    }
+
+    pub(crate) const fn public_service(self) -> Option<SettlementActionService> {
+        match self {
+            Self::Inn => Some(SettlementActionService::Inn),
+            Self::Temple => Some(SettlementActionService::Temple),
+            Self::Residence => None,
+        }
+    }
+}
 
 pub struct RestSummary {
     pub minutes: u64,
@@ -126,12 +168,12 @@ fn soap_wash_preview(preview: SoapRestPreview) -> Markup {
     reason = "the rest result page boundary composes independent inventory, party, and recovery projections"
 )]
 pub fn rest_result_page(
-    settlement: &Settlement,
-    active_character: Option<&Character>,
+    settlement: &SettlementView,
+    active_character: Option<&CharacterView>,
     inventory: &[InventoryItem],
-    items: &[crate::spacetimedb::ItemDefinition],
+    items: &[crate::spacetimedb::CatalogItemView],
     food_lots: &[FoodLot],
-    party_members: &[Character],
+    party_members: &[CharacterView],
     logged_in_as: Option<&str>,
     public_service: Option<SettlementActionService>,
     summary: &RestSummary,
@@ -170,7 +212,7 @@ pub fn rest_result_page(
 pub(crate) fn rest_service_menu(
     location: &str,
     settlement_id: &str,
-    kind: &str,
+    kind: RestServiceKind,
     default_minutes: Option<u64>,
     summary: Option<&RestSummary>,
     soap_preview: SoapRestPreview,
@@ -179,18 +221,18 @@ pub(crate) fn rest_service_menu(
     section class="rest-service-menu" aria-label=(format!("{} rest service", location))
         data-live-refresh-url=(format!(
             "/settlements/{settlement_id}/{}",
-            if kind == "inn" { "inn" } else if kind == "residence" { "places/residences" } else { "religion" }
+            kind.page_path()
         ))
-        title=(if kind == "inn" { "A bed costs 1 coin per day. Injuries are tended before downtime." } else if kind == "residence" { "An active local residence provides full board through its recurring upkeep." } else { "Sanctuary is free. Injuries are tended before downtime." }) {
+        title=(match kind { RestServiceKind::Inn => "A bed costs 1 coin per day. Injuries are tended before downtime.", RestServiceKind::Residence => "An active local residence provides full board through its recurring upkeep.", RestServiceKind::Temple => "Sanctuary is free. Injuries are tended before downtime." }) {
         div class="rest-service-heading" { strong { "Rest" } }
-        @if kind == "inn" {
+        @if kind == RestServiceKind::Inn {
             p class="rest-service-copy" { "2 coin / day · meals + water + treatment included" }
-        } @else if kind == "residence" {
+        } @else if kind == RestServiceKind::Residence {
             p class="rest-service-copy" { "Home provides meals, water, and treatment." }
         } @else {
             p class="rest-service-copy" { "Free · treatment included" }
         }
-        form action=(format!("/settlements/{settlement_id}/rest/{kind}")) method="post" {
+        form action=(format!("/settlements/{settlement_id}/rest/{}", kind.tag())) method="post" {
                 @let minutes = default_minutes.unwrap_or(0);
                 @let unit = if minutes >= MINUTES_PER_DAY { "days" } else { "hours" };
                 @let initial_minutes = if minutes == 0 { MINUTES_PER_DAY } else { minutes.max(MINUTES_PER_DAY) };
@@ -207,7 +249,7 @@ pub(crate) fn rest_service_menu(
                 section class="rest-summary" {
                     div class="rest-summary-heading" {
                         strong id="rest-summary-title" { "Rest summary" }
-                        a href=(format!("/settlements/{settlement_id}/{}", if kind == "inn" { "inn" } else { "religion" })) class="rest-summary-close" aria-label="Close rest summary" { "×" }
+                        a href=(format!("/settlements/{settlement_id}/{}", if kind == RestServiceKind::Inn { "inn" } else { "religion" })) class="rest-summary-close" aria-label="Close rest summary" { "×" }
                     }
                     p { (format_rest_duration(summary.minutes)) " passed." }
                     @if summary.full_board_gold_spent > 0 {
@@ -395,8 +437,12 @@ mod tests {
             trained: Vec::new(),
         };
         for (location, kind, expected) in [
-            ("Inn", "inn", "/settlements/riverdale/inn"),
-            ("Church", "temple", "/settlements/riverdale/religion"),
+            ("Inn", RestServiceKind::Inn, "/settlements/riverdale/inn"),
+            (
+                "Church",
+                RestServiceKind::Temple,
+                "/settlements/riverdale/religion",
+            ),
         ] {
             for rest_summary in [Some(&summary), None] {
                 let markup = rest_service_menu(
@@ -412,6 +458,28 @@ mod tests {
                 assert!(!markup.contains("data-live-refresh-url=\"/settlements/riverdale/rest/"));
             }
         }
+    }
+
+    #[test]
+    fn rest_service_tags_and_paths_are_fixed_vectors() {
+        assert_eq!(
+            [
+                RestServiceKind::Inn,
+                RestServiceKind::Temple,
+                RestServiceKind::Residence,
+            ]
+            .map(|kind| (kind.tag(), kind.page_path())),
+            [
+                ("inn", "inn"),
+                ("temple", "religion"),
+                ("residence", "places/residences"),
+            ]
+        );
+        assert_eq!(
+            RestServiceKind::parse("temple"),
+            Some(RestServiceKind::Temple)
+        );
+        assert_eq!(RestServiceKind::parse("religion"), None);
     }
 
     #[test]

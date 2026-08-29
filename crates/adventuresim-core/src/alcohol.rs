@@ -1,6 +1,9 @@
 //! Deterministic fixed-point alcohol rules shared by strategic simulation and UI.
 
-use crate::strategic_time::{DAYS_PER_YEAR, MINUTES_PER_DAY};
+use crate::{
+    morale::MoraleEventKind,
+    strategic_time::{DAYS_PER_YEAR, MINUTES_PER_DAY},
+};
 use adventuresim_world_schema::BASIS_POINTS_PER_WHOLE;
 
 pub const EVENING_BOUNDARY_MINUTE: u64 = 18 * 60;
@@ -47,7 +50,7 @@ pub const fn morale_change(
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct NightlyMoraleEffect {
-    pub kind: &'static str,
+    pub kind: MoraleEventKind,
     pub magnitude: i8,
     pub occurred_at_minute: u64,
 }
@@ -67,9 +70,9 @@ pub const fn nightly_morale_effect(
     };
     Some(NightlyMoraleEffect {
         kind: if magnitude > 0 {
-            "alcohol_satisfied"
+            MoraleEventKind::AlcoholSatisfied
         } else {
-            "alcohol_unsatisfied"
+            MoraleEventKind::AlcoholUnsatisfied
         },
         magnitude,
         occurred_at_minute,
@@ -511,7 +514,7 @@ mod tests {
         sources.insert(NIGHTLY_MORALE_SOURCE_ID, satisfied);
         assert_eq!(sources.len(), 1);
         let source = sources[NIGHTLY_MORALE_SOURCE_ID];
-        assert_eq!(source.kind, "alcohol_satisfied");
+        assert_eq!(source.kind, MoraleEventKind::AlcoholSatisfied);
         assert_eq!(source.magnitude, 5);
         assert_eq!(source.occurred_at_minute, evening_boundary(3).unwrap());
     }

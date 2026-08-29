@@ -5,6 +5,7 @@ mod departure_invariant_tests {
         JourneyRoutePlan, JourneyRoutePoint, JourneySettlementEndpoint, JourneyTerrainKind,
         JourneyTerrainSpan, JourneyTerrainWeights, Party, PartyJourneyRoute,
         DEFAULT_JOURNEY_START_MINUTE_OF_DAY, DEFAULT_WALKING_MINUTES_PER_DAY,
+        authoritative_case_route_binding_digest,
         authoritative_straight_line_case_route, common_movement_prefix, core_encounter_terrain,
         departure_requires_ready_party, departure_snapshot_allows_travel,
         encode_position_e7, journey_elapsed_after_delay, party_can_continue_travel,
@@ -14,6 +15,29 @@ mod departure_invariant_tests {
         validate_journey_route_payload, validate_route_departure_weather_interval,
         zero_boundary_requires_settlement,
     };
+
+    #[test]
+    fn authoritative_case_route_binding_has_a_fixed_versioned_vector() {
+        let origin = JourneyRoutePoint {
+            latitude_e7: 530_000_000,
+            longitude_e7: 100_000_000,
+        };
+        let destination = JourneyRoutePoint {
+            latitude_e7: 531_250_000,
+            longitude_e7: 101_750_000,
+        };
+        assert_eq!(
+            authoritative_case_route_binding_digest(
+                1_234,
+                &origin,
+                &destination,
+                true,
+                42_000,
+                360,
+            ),
+            "6bbf6e74c8096ae00fc6cd747d4d6e5ae544ed2ba230a6c35224e289402f0a85"
+        );
+    }
 
     #[test]
     fn journey_delay_preserves_remaining_elapsed_forecast() {
@@ -119,7 +143,7 @@ mod departure_invariant_tests {
         assert!(arrival.contains("set_character_case_site(ctx, traveler.id, None)"));
         assert!(arrival.contains("if rest_temporary_companions"));
         assert!(arrival.contains("incident.party_id == party.id"));
-        assert!(arrival.contains("incident.case_site_id.value == site_id"));
+        assert!(arrival.contains("incident.case_site_id.as_str() == site_id"));
         assert!(arrival.contains("incident.status == IncidentStatus::Pending"));
         assert!(arrival.contains("IncidentStatus::Avoided"));
     }
@@ -150,7 +174,7 @@ mod departure_invariant_tests {
         for exact_gate in [
             "membership.character_id == character_id",
             "party.current_case_site_id",
-            "incident.case_site_id.value == case_site_id",
+            "incident.case_site_id.as_str() == case_site_id",
         ] {
             assert!(provenance.contains(exact_gate));
         }
@@ -198,7 +222,7 @@ mod departure_invariant_tests {
             })
             .expect("terminal incident site provenance");
         assert!(!provenance.contains("IncidentStatus::Pending"));
-        assert!(provenance.contains("incident.case_site_id.value == case_site_id"));
+        assert!(provenance.contains("incident.case_site_id.as_str() == case_site_id"));
     }
 
     #[test]
@@ -266,8 +290,28 @@ mod departure_invariant_tests {
     }
 
     #[test]
+    fn camp_continuation_uses_the_canonical_journey_clock() {
+        let source = crate::production_source(include_str!("journey_camp.rs"));
+        let next_leg = source
+            .split("fn party_next_walking_minutes")
+            .nth(1)
+            .and_then(|tail| tail.split("fn party_itinerary_members").next())
+            .expect("next walking leg projection");
+        assert!(next_leg.contains("party_wilderness_environment_minutes(&party)"));
+        assert!(!next_leg.contains("character_time()"));
+    }
+
+    #[test]
     fn canonical_camp_identity_requires_coherent_current_journey_authority() {
         let camp_source = crate::production_source(include_str!("journey_camp.rs"));
+        let active = camp_source
+            .split("fn party_journey_is_active")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("pub(crate) fn party_journey_is_current_camp")
+                    .next()
+            })
+            .expect("active journey predicate");
         let predicate = camp_source
             .split("pub(crate) fn party_journey_is_current_camp")
             .nth(1)
@@ -276,13 +320,22 @@ mod departure_invariant_tests {
                     .next()
             })
             .expect("current camp predicate");
-        assert!(predicate.contains("camp_destination.as_ref() == Some(&journey.destination)"));
+        assert!(active.contains("camp_destination.as_ref() == Some(&journey.destination)"));
         assert!(
-            predicate
-                .contains("journey.completed_movement_minutes < journey.total_movement_minutes")
+            active.contains("journey.completed_movement_minutes < journey.total_movement_minutes")
         );
+        assert!(predicate.contains("party_journey_is_active"));
         assert!(predicate.contains("reached_camp_movement_minutes"));
         assert!(!predicate.contains("forecast_camp_intervals"));
+
+        let between = camp_source
+            .split("pub(crate) fn party_journey_is_between_camps")
+            .nth(1)
+            .and_then(|tail| tail.split("pub(crate) fn current_journey_camp_place").next())
+            .expect("between-camps journey predicate");
+        assert!(between.contains("party_journey_is_active"));
+        assert!(between.contains("!journey"));
+        assert!(between.contains("reached_camp_movement_minutes"));
 
         let travel_source = crate::production_source(include_str!("travel_reducers.rs"));
         let continuation = travel_source
@@ -296,6 +349,7 @@ mod departure_invariant_tests {
             .find("refresh_party_journey_forecast")
             .expect("journey forecast refresh");
         assert!(custody < refresh);
+        assert!(continuation.contains("party_journey_is_between_camps"));
     }
 
     #[test]

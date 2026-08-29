@@ -788,11 +788,12 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
     let canonical_events = vec![CanonicalEvent {
         id: scoped_id(&prefix, "event", "incident"),
         proposition_id: scoped_id(&prefix, "proposition", "truth"),
-        subject: format!("{cause:?}"),
+        subject: cause.stable_variant_id(),
         predicate: "caused".into(),
         object: format!(
-            "{attack_pattern:?}:{:?}",
-            consequence(cause, template).symptom
+            "{}:{}",
+            attack_pattern.stable_variant_id(),
+            consequence(cause, template).symptom.stable_variant_id()
         ),
         occurred_at: context.now_minute.saturating_sub(180),
     }]
@@ -1184,15 +1185,19 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
     let remediation_ref = format!(
         "outbreak-remediation:{}",
         match &remediation {
-            OutbreakRemediation::Sanitation { action } => format!("sanitation:{action:?}"),
-            OutbreakRemediation::Behavior { action } => format!("behavior:{action:?}"),
-            OutbreakRemediation::RemoveEnvironmentalSource { reservoir } =>
-                format!("environment:{reservoir:?}"),
+            OutbreakRemediation::Sanitation { action } => {
+                format!("sanitation:{}", action.stable_compact_id())
+            }
+            OutbreakRemediation::Behavior { action } => {
+                format!("behavior:{}", action.stable_compact_id())
+            }
+            OutbreakRemediation::RemoveEnvironmentalSource { reservoir } => {
+                format!("environment:{}", reservoir.stable_compact_id())
+            }
             OutbreakRemediation::ResolveCarrierThreat {
                 hostile_group_id, ..
             } => format!("carrier:{hostile_group_id}"),
         }
-        .to_ascii_lowercase()
     );
     let physical_remediation = ActionId::new(scoped_id(&prefix, "action", "remediate-physical"));
     let social_remediation = ActionId::new(scoped_id(&prefix, "action", "remediate-social"));
@@ -1425,7 +1430,11 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
             module_id: ModuleId::new("module.outbreak"),
             relation_id: RelationId::new("relation.outbreak.disease-source"),
             factor_ids: vec![FactorId::new("factor.outbreak.compatibility")],
-            candidate_id: format!("{disease:?}:{transmission_route:?}"),
+            candidate_id: format!(
+                "{}:{}",
+                disease.stable_variant_id(),
+                transmission_route.stable_variant_id()
+            ),
             plausibility: 100,
             curation: 100,
             accepted: true,

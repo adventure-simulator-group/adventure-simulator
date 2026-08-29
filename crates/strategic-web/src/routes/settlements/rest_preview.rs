@@ -16,29 +16,29 @@ fn soap_uses(fraction_micros: u32) -> u32 {
 
 pub(crate) async fn soap_rest_preview(
     state: &AppState,
-    members: &[Character],
+    members: &[CharacterView],
     party_id: Option<&str>,
 ) -> SoapRestPreview {
     let (filth, personal, shared, personal_amounts, party_amounts, definitions, personalities) = tokio::join!(
         state
             .db
-            .query::<CharacterFilth>("SELECT * FROM character_filth"),
+            .query_sats::<CharacterFilth>("SELECT * FROM character_filth"),
         state
             .db
-            .query::<InventoryItem>("SELECT * FROM inventory_item"),
+            .query_sats::<InventoryItem>("SELECT * FROM inventory_item"),
         state
             .db
-            .query::<PartyInventoryItem>("SELECT * FROM party_inventory_item"),
+            .query_sats::<PartyInventoryItem>("SELECT * FROM party_inventory_item"),
         state
             .db
-            .query::<InventoryItemAmount>("SELECT * FROM inventory_item_amount"),
+            .query_sats::<InventoryItemAmount>("SELECT * FROM inventory_item_amount"),
         state
             .db
-            .query::<PartyItemAmount>("SELECT * FROM party_item_amount"),
-        state.db.query::<ItemDefinition>("SELECT * FROM item"),
-        state
-            .db
-            .query::<CharacterPersonality>("SELECT * FROM backend_character_personalities"),
+            .query_sats::<PartyItemAmount>("SELECT * FROM party_item_amount"),
+        state.db.query_sats_into::<adventuresim_stdb_client::Item, CatalogItemView>("SELECT * FROM item"),
+        state.db.query_sats::<adventuresim_stdb_client::CharacterPersonality>(
+            "SELECT * FROM backend_character_personalities",
+        ),
     );
     let personal = personal.unwrap_or_default();
     let shared = shared.unwrap_or_default();
@@ -53,6 +53,11 @@ pub(crate) async fn soap_rest_preview(
         &party_amounts,
         party_id,
     );
+    let personalities = personalities
+        .unwrap_or_default()
+        .into_iter()
+        .map(|row| (row.character_id, crate::spacetimedb::core_personality(&row)))
+        .collect::<Vec<_>>();
     calculate_rest_supply_availability(&mut preview, RestSupplySources {
         members,
         personal: &personal,
@@ -60,20 +65,20 @@ pub(crate) async fn soap_rest_preview(
         personal_amounts: &personal_amounts,
         party_amounts: &party_amounts,
         definitions: &definitions.unwrap_or_default(),
-        personalities: &personalities.unwrap_or_default(),
+        personalities: &personalities,
         party_id,
     });
     preview
 }
 
 pub(super) struct RestSupplySources<'a> {
-    pub(super) members: &'a [Character],
+    pub(super) members: &'a [CharacterView],
     pub(super) personal: &'a [InventoryItem],
     pub(super) shared: &'a [PartyInventoryItem],
     pub(super) personal_amounts: &'a [InventoryItemAmount],
     pub(super) party_amounts: &'a [PartyItemAmount],
-    pub(super) definitions: &'a [ItemDefinition],
-    pub(super) personalities: &'a [CharacterPersonality],
+    pub(super) definitions: &'a [CatalogItemView],
+    pub(super) personalities: &'a [(u64, Personality)],
     pub(super) party_id: Option<&'a str>,
 }
 
@@ -99,8 +104,8 @@ pub(super) fn calculate_rest_supply_availability(
     let is_temperate = |character_id| {
         personalities
             .iter()
-            .find(|personality| personality.character_id == character_id)
-            .is_some_and(|personality| {
+            .find(|(id, _)| *id == character_id)
+            .is_some_and(|(_, personality)| {
                 personality.temperance == crate::spacetimedb::Temperance::Temperate
             })
     };
@@ -175,7 +180,7 @@ pub(super) fn calculate_rest_supply_availability(
 }
 
 pub(super) fn calculate_soap_rest_preview(
-    members: &[Character],
+    members: &[CharacterView],
     filth: &[CharacterFilth],
     personal: &[InventoryItem],
     shared: &[PartyInventoryItem],

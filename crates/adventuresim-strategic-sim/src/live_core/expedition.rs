@@ -15,7 +15,7 @@ pub(super) fn select_affordable_authority_surrender_action(
         .into_iter()
         .filter(|action| {
             action.party_id == party_id
-                && action.case_site_id == current_site_id
+                && action.case_site_id.value == current_site_id
                 && action.affordable
                 && controlled_character_ids.contains(&action.instigator_id)
         })
@@ -502,10 +502,10 @@ impl LiveRunner {
     ) -> Result<(), String> {
         let (character_id, operation) = match actor {
             ExpeditionRecoveryRestActor::Actionable(actor) => {
-                (actor.character_id, "expedition_recovery_rest")
+                (actor.character_id, ReducerOperation::ExpeditionRecoveryRest)
             }
             ExpeditionRecoveryRestActor::PassiveNoActionable(actor) => {
-                (actor.leader_id, "passive_no_actionable_rest")
+                (actor.leader_id, ReducerOperation::PassiveNoActionableRest)
             }
         };
         self.rest_at_camp_with_party_shelter(
@@ -537,7 +537,7 @@ impl LiveRunner {
             .party()
             .iter()
             .find(|party| party.id == party_id)?;
-        let current_site = party.current_case_site_id.as_ref()?.value.as_str();
+        let current_site = party.current_case_site_id.as_ref()?;
         let member_ids = self
             .connection
             .db
@@ -552,7 +552,7 @@ impl LiveRunner {
             .backend_case_site_pins()
             .iter()
             .filter(|pin| {
-                member_ids.contains(&pin.owner_character_id) && pin.case_site_id == current_site
+                member_ids.contains(&pin.owner_character_id) && &pin.case_site_id == current_site
             })
             .map(|pin| pin.origin_settlement_id)
             .collect::<Vec<_>>();
@@ -567,7 +567,7 @@ impl LiveRunner {
         observed_activity_return_origin(
             &self.observed_activity_site_origins,
             party_id,
-            Some(current_site),
+            Some(&current_site.value),
         )
     }
 
@@ -594,10 +594,7 @@ impl LiveRunner {
         party_id: &str,
     ) -> Result<Option<ExpeditionRecoveryOutcome>, String> {
         let party = self.party_by_id(party_id)?;
-        let Some(current_site_id) = party
-            .current_case_site_id
-            .as_ref()
-            .map(|site| site.value.clone())
+        let Some(current_site_id) = party.current_case_site_id.clone()
         else {
             return Ok(None);
         };
@@ -622,7 +619,8 @@ impl LiveRunner {
             .backend_case_site_pins()
             .iter()
             .filter(|pin| {
-                member_ids.contains(&pin.owner_character_id) && pin.case_site_id == current_site_id
+                member_ids.contains(&pin.owner_character_id)
+                    && pin.case_site_id == current_site_id
             })
             .collect::<Vec<_>>();
         if pins
@@ -655,7 +653,7 @@ impl LiveRunner {
             && observed_activity_return_origin(
                 &self.observed_activity_site_origins,
                 party_id,
-                Some(&current_site_id),
+                Some(&current_site_id.value),
             )
             .as_deref()
                 == Some(return_settlement.as_str());
@@ -711,7 +709,7 @@ impl LiveRunner {
             )?;
             return Ok(Some(ExpeditionRecoveryOutcome::Held));
         };
-        let result = reducer_call!(self, "idle_case_site_return", |cb| self
+        let result = reducer_call!(self, ReducerOperation::IdleCaseSiteReturn, |cb| self
             .connection
             .reducers
             .travel_to_settlement_then(return_actor_id, return_settlement.clone(), cb));
@@ -722,7 +720,7 @@ impl LiveRunner {
             format!(
                 "party={};phase=idle_case_site_return;case_site={};destination={};reason=public_idle_site_return",
                 bounded_event_field(party_id),
-                bounded_event_field(&current_site_id),
+                bounded_event_field(&current_site_id.value),
                 bounded_event_field(&return_settlement),
             ),
         );
@@ -798,7 +796,7 @@ impl LiveRunner {
         let origin_settlement_id = action.origin_settlement_id;
         let instigator_id = action.instigator_id;
         let fine = action.fine;
-        let result = reducer_call!(self, "surrender_to_authority", |cb| self
+        let result = reducer_call!(self, ReducerOperation::SurrenderToAuthority, |cb| self
             .connection
             .reducers
             .surrender_to_authority_then(instigator_id, action_token.clone(), cb));
@@ -811,7 +809,7 @@ impl LiveRunner {
             .any(|action| {
                 action.action_token == action_token
                     && action.party_id == party_id
-                    && action.case_site_id == current_site_id
+                    && action.case_site_id.value == current_site_id
             });
         let party_remains = self
             .party_by_id(party_id)?
@@ -1166,7 +1164,7 @@ impl LiveRunner {
                         .backend_case_site_pins()
                         .iter()
                         .find(|pin| {
-                            pin.case_site_id == site.value
+                            &pin.case_site_id == site
                                 && pin.origin_settlement_id == return_settlement
                         })
                 })
@@ -1210,7 +1208,7 @@ impl LiveRunner {
             },
         );
         if !self.public_journey_is_evacuation(party_id) {
-            let result = reducer_call!(self, "expedition_health_evacuation", |cb| self
+            let result = reducer_call!(self, ReducerOperation::ExpeditionHealthEvacuation, |cb| self
                 .connection
                 .reducers
                 .travel_to_settlement_then(evacuation_actor_id, return_settlement.clone(), cb));

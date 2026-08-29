@@ -4,6 +4,7 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::case_site_id_type::CaseSiteId;
 use super::destination_knowledge_stage_type::DestinationKnowledgeStage;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
@@ -11,7 +12,7 @@ use super::destination_knowledge_stage_type::DestinationKnowledgeStage;
 pub struct BackendCaseSitePin {
     pub owner_character_id: u64,
     pub case_id: String,
-    pub case_site_id: String,
+    pub case_site_id: CaseSiteId,
     pub origin_settlement_id: String,
     pub name: String,
     pub description: String,
@@ -40,7 +41,7 @@ impl __sdk::InModule for BackendCaseSitePin {
 pub struct BackendCaseSitePinCols {
     pub owner_character_id: __sdk::__query_builder::Col<BackendCaseSitePin, u64>,
     pub case_id: __sdk::__query_builder::Col<BackendCaseSitePin, String>,
-    pub case_site_id: __sdk::__query_builder::Col<BackendCaseSitePin, String>,
+    pub case_site_id: __sdk::__query_builder::Col<BackendCaseSitePin, CaseSiteId>,
     pub origin_settlement_id: __sdk::__query_builder::Col<BackendCaseSitePin, String>,
     pub name: __sdk::__query_builder::Col<BackendCaseSitePin, String>,
     pub description: __sdk::__query_builder::Col<BackendCaseSitePin, String>,
