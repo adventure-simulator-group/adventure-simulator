@@ -216,7 +216,7 @@ pub(crate) fn update_attack_facing_targets(
     mut attackers: Query<(Entity, &mut AttackFacing)>,
     targets: Query<&Transform>,
 ) {
-    let tick = (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64;
+    let tick = (time.elapsed_secs_f64() * locomotion_sample_hz() as f64).round() as u64;
     for (entity, mut facing) in &mut attackers {
         if tick > facing.contact_tick {
             commands.entity(entity).remove::<AttackFacing>();
@@ -1571,7 +1571,7 @@ fn apply_dive_launch_velocity(
 }
 
 fn combat_seconds_to_ticks(seconds: f32) -> u64 {
-    (seconds * LOCOMOTION_SAMPLE_HZ).round().max(1.0) as u64
+    (seconds * locomotion_sample_hz()).round().max(1.0) as u64
 }
 
 fn roll_transition(body: BodyState, direction: RollDirection) -> Option<PostureTransitionKind> {
@@ -1718,7 +1718,7 @@ pub(crate) fn update_skeleton_locomotion(
             let lowered = authoritative_weapon_guard(skeleton.weapon_guard(), true);
             set_weapon_guard(&mut skeleton, lowered);
         }
-        let tick = (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64;
+        let tick = (time.elapsed_secs_f64() * locomotion_sample_hz() as f64).round() as u64;
         let posture_transitioning = posture_transition_locks_body_facing(&skeleton);
         if posture_transitioning {
             // Authored transitions own their direction relative to a fixed
@@ -1750,7 +1750,7 @@ pub(crate) fn update_skeleton_locomotion(
             skeleton.set_downed_turning(false);
             transform.rotation = if let Some(attack_facing) = attack_facing {
                 let remaining_seconds =
-                    attack_facing.contact_tick.saturating_sub(tick) as f32 / LOCOMOTION_SAMPLE_HZ;
+                    attack_facing.contact_tick.saturating_sub(tick) as f32 / locomotion_sample_hz();
                 let desired_forward = attack_facing.target_position - transform.translation;
                 let turn_speed = body_turn_speed_for_deadline(
                     transform.rotation,

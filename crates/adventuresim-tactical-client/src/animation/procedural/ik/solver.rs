@@ -1,16 +1,10 @@
 use super::*;
 
-const MAX_PLANT_DISCONTINUITY: f32 = 2.0;
 // Preserve a little margin below the viewer's 2 cm pelvis-step contract.
-const PELVIS_CORRECTION_SPEED: f32 = 1.2;
-pub(in crate::animation::procedural) const MAX_PELVIS_CORRECTION_STEP: f32 = 0.05;
-const MIN_KNEE_FLEXION: f32 = 20.0_f32.to_radians();
 // Keep the normal knee reserve while a landing visibly carries weight, then
 // release it before the pelvis reaches the authored height. The released reach
 // remains capped at the authored leg extension, preventing a final
 // recovery-frame foot lift or snap without introducing a straight-leg target.
-const LANDING_KNEE_RESERVE_RELEASE_COMPRESSION: f32 = 0.012;
-const LANDING_KNEE_RESERVE_FULL_COMPRESSION: f32 = 0.04;
 
 pub(in crate::animation::procedural) fn plant_is_continuous(
     plant: Vec3,
@@ -18,7 +12,7 @@ pub(in crate::animation::procedural) fn plant_is_continuous(
 ) -> bool {
     plant.is_finite()
         && current_foot.is_finite()
-        && plant.distance(current_foot) <= MAX_PLANT_DISCONTINUITY
+        && plant.distance(current_foot) <= ik_tuning().maximum_plant_discontinuity_metres
 }
 
 pub(in crate::animation::procedural) fn advance_pelvis_shift(
@@ -26,15 +20,19 @@ pub(in crate::animation::procedural) fn advance_pelvis_shift(
     desired: f32,
     delta_seconds: f32,
 ) -> f32 {
-    let maximum_step =
-        (PELVIS_CORRECTION_SPEED * delta_seconds.max(0.0)).min(MAX_PELVIS_CORRECTION_STEP);
+    let maximum_step = (ik_tuning().pelvis_correction_speed_metres_per_second
+        * delta_seconds.max(0.0))
+    .min(maximum_pelvis_correction_step_metres());
     current + (desired - current).clamp(-maximum_step, maximum_step)
 }
 
 pub(in crate::animation::procedural) fn maximum_reach(upper_length: f32, lower_length: f32) -> f32 {
     (upper_length * upper_length
         + lower_length * lower_length
-        + 2.0 * upper_length * lower_length * MIN_KNEE_FLEXION.cos())
+        + 2.0
+            * upper_length
+            * lower_length
+            * ik_tuning().minimum_knee_flexion_degrees.to_radians().cos())
     .sqrt()
 }
 
@@ -48,8 +46,8 @@ pub(in crate::animation::procedural) fn landing_maximum_reach(
     let full_reach = upper_length + lower_length - 0.0001;
     let released_reach = authored_reach.clamp(reserved_reach, full_reach);
     let reserve_weight = smoothstep(
-        LANDING_KNEE_RESERVE_RELEASE_COMPRESSION,
-        LANDING_KNEE_RESERVE_FULL_COMPRESSION,
+        ik_tuning().landing_knee_reserve_release_compression_metres,
+        ik_tuning().landing_knee_reserve_full_compression_metres,
         compression,
     );
     released_reach.lerp(reserved_reach, reserve_weight)

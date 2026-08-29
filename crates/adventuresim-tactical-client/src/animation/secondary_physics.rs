@@ -13,14 +13,9 @@ use super::{
     procedural::{BoneRole, HumanoidBone},
 };
 
-const MOTOR_FREQUENCY_HZ: f32 = 4.25;
-const MOTOR_DAMPING_RATIO: f32 = 0.78;
-const MAX_ANGULAR_SPEED_RADIANS_PER_SECOND: f32 = 18.0;
-const IMPACT_ANGULAR_SPEED_PER_METRE_PER_SECOND: f32 = 0.85;
-const MAX_LOCOMOTION_ACCELERATION_METRES_PER_SECOND_SQUARED: f32 = 24.0;
-const RAGDOLL_MOTOR_FREQUENCY_HZ: f32 = 0.7;
-const RAGDOLL_GRAVITY_TORQUE: f32 = 8.0;
-const WEIGHT_RESPONSE_PER_SECOND: f32 = 12.0;
+fn secondary_tuning() -> SecondaryPhysicsConfig {
+    runtime_animation_config().secondary_physics
+}
 
 #[derive(Component, Debug, Clone, Copy)]
 pub(super) struct SecondaryBoneDynamics {
@@ -175,8 +170,9 @@ fn locomotion_inertial_acceleration(
         _ => 0.0,
     };
     let local = owner_rotation.inverse() * world_acceleration;
-    let local = Vec3::new(local.x, 0.0, local.z)
-        .clamp_length_max(MAX_LOCOMOTION_ACCELERATION_METRES_PER_SECOND_SQUARED);
+    let local = Vec3::new(local.x, 0.0, local.z).clamp_length_max(
+        secondary_tuning().maximum_locomotion_acceleration_metres_per_second_squared,
+    );
     // Horizontal acceleration produces the opposite apparent lean: local +X
     // drives +Z-side lag (roll), while local +Z drives -Z-side lag (pitch).
     Vec3::new(-local.z, 0.0, local.x) * gain
@@ -274,7 +270,7 @@ pub(super) fn apply_secondary_bone_physics(
             dynamics.angular_velocity += tumble_axis
                 * impact.velocity_change.length()
                 * impact_affinity(impact.body_part, bone.role)
-                * IMPACT_ANGULAR_SPEED_PER_METRE_PER_SECOND;
+                * secondary_tuning().impact_angular_speed_per_metre_per_second;
         }
         dynamics.previous_impact_remaining = impact.map_or(0.0, |impact| impact.remaining);
 
@@ -282,13 +278,14 @@ pub(super) fn apply_secondary_bone_physics(
             let error = (target * dynamics.simulated_rotation.inverse()).to_scaled_axis();
             let ragdolled = skeleton.body() == BodyState::Ragdolled;
             let motor_frequency = if ragdolled {
-                RAGDOLL_MOTOR_FREQUENCY_HZ
+                secondary_tuning().ragdoll_motor_frequency_hz
             } else {
-                MOTOR_FREQUENCY_HZ
+                secondary_tuning().motor_frequency_hz
             };
             let omega = std::f32::consts::TAU * motor_frequency;
             let mut acceleration = error * omega * omega
-                - dynamics.angular_velocity * (2.0 * MOTOR_DAMPING_RATIO * omega);
+                - dynamics.angular_velocity
+                    * (2.0 * secondary_tuning().motor_damping_ratio * omega);
             if !ragdolled {
                 let inertial_acceleration = locomotion_inertial_acceleration(
                     skeleton.world_acceleration,
@@ -302,11 +299,11 @@ pub(super) fn apply_secondary_bone_physics(
             }
             if ragdolled && !matches!(bone.role, BoneRole::Root | BoneRole::Pelvis) {
                 let gravity_local = owner_transform.rotation.inverse() * Vec3::NEG_Y;
-                acceleration +=
-                    Vec3::new(gravity_local.z, 0.0, -gravity_local.x) * RAGDOLL_GRAVITY_TORQUE;
+                acceleration += Vec3::new(gravity_local.z, 0.0, -gravity_local.x)
+                    * secondary_tuning().ragdoll_gravity_torque;
             }
             dynamics.angular_velocity = (dynamics.angular_velocity + acceleration * delta_seconds)
-                .clamp_length_max(MAX_ANGULAR_SPEED_RADIANS_PER_SECOND);
+                .clamp_length_max(secondary_tuning().maximum_angular_speed_radians_per_second);
             dynamics.simulated_rotation =
                 (Quat::from_scaled_axis(dynamics.angular_velocity * delta_seconds)
                     * dynamics.simulated_rotation)
@@ -325,7 +322,8 @@ pub(super) fn apply_secondary_bone_physics(
             combat.map_or(0.0, |combat| combat.incapacitation),
             is_above_pelvis(bone.role),
         );
-        let weight_response = 1.0 - (-WEIGHT_RESPONSE_PER_SECOND * delta_seconds).exp();
+        let weight_response =
+            1.0 - (-secondary_tuning().weight_response_per_second * delta_seconds).exp();
         dynamics.blend_weight += (target_weight - dynamics.blend_weight) * weight_response;
         transform.rotation = target
             .slerp(dynamics.simulated_rotation, dynamics.blend_weight)

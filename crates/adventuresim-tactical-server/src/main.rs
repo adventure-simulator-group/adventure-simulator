@@ -161,6 +161,24 @@ mod tests {
             .expect("committed tactical combat config should remain valid");
         assert_eq!(loaded, TacticalCombatConfig::default());
     }
+
+    #[test]
+    fn combat_tuning_is_read_from_the_runtime_yaml_file() {
+        let canonical = std::fs::read_to_string(default_combat_config_path())
+            .expect("committed tactical combat config should be readable");
+        let modified = canonical.replacen("{ walk: 1.7,", "{ walk: 1.8,", 1);
+        assert_ne!(modified, canonical, "test must modify the walk speed");
+        let path = std::env::temp_dir().join(format!(
+            "fabelgeist-combat-config-runtime-{}.yaml",
+            std::process::id()
+        ));
+        std::fs::write(&path, modified).expect("temporary combat config should be writable");
+        let loaded = load_combat_config(&path).expect("modified runtime YAML should load");
+        std::fs::remove_file(&path).expect("temporary combat config should be removable");
+
+        assert_eq!(loaded.movement.speeds_metres_per_second.walk, 1.8);
+        assert_ne!(loaded, TacticalCombatConfig::default());
+    }
 }
 
 fn main() {
@@ -194,6 +212,9 @@ fn main() {
             std::process::exit(2);
         }
     };
+    combat_config
+        .install_runtime_snapshot()
+        .expect("loaded tactical combat config was validated");
     let combat_config_digest = combat_config
         .digest()
         .expect("loaded tactical combat config was validated");

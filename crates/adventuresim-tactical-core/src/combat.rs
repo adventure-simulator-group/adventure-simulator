@@ -4,13 +4,15 @@ use bevy::{
 };
 use bevy_enhanced_input::prelude::InputAction;
 
-/// Melee attacks already this close to their ordinary interaction range do not
-/// spend movement correcting the final few centimetres.
-pub const MELEE_LUNGE_RANGE_WINDOW_METRES: f32 = 0.10;
-/// Gaps beyond this distance use quickstep-speed movement instead of ordinary
-/// forward movement.
-pub const MELEE_LUNGE_QUICKSTEP_THRESHOLD_METRES: f32 = 0.50;
 const MELEE_LUNGE_DISTANCE_EPSILON_METRES: f32 = 1.0e-5;
+
+pub fn melee_lunge_range_window_metres() -> f32 {
+    crate::combat_config::runtime_melee_authority_config().lunge_range_window_metres
+}
+
+pub fn melee_lunge_quickstep_threshold_metres() -> f32 {
+    crate::combat_config::runtime_melee_authority_config().lunge_quickstep_threshold_metres
+}
 #[must_use]
 pub fn melee_interaction_range(arm_reach: f32, weapon_reach: f32) -> f32 {
     arm_reach.max(0.0) + weapon_reach.max(0.0)
@@ -89,7 +91,7 @@ pub fn melee_lunge_delay_seconds(
     forward_acceleration_metres_per_second_squared: f32,
     quickstep_duration_seconds: f32,
 ) -> f32 {
-    let fixed_tick_safety = 1.0 / crate::animation::LOCOMOTION_SAMPLE_HZ;
+    let fixed_tick_safety = 1.0 / crate::animation::locomotion_sample_hz();
     match lunge {
         MeleeLunge::None => 0.0,
         MeleeLunge::Forward { distance_metres } => {
@@ -132,11 +134,11 @@ pub fn melee_lunge(
         return MeleeLunge::None;
     }
     let gap = (separation_metres - melee_interaction_range(arm_reach, weapon_reach)).max(0.0);
-    if gap <= MELEE_LUNGE_RANGE_WINDOW_METRES + MELEE_LUNGE_DISTANCE_EPSILON_METRES
+    if gap <= melee_lunge_range_window_metres() + MELEE_LUNGE_DISTANCE_EPSILON_METRES
         || gap > quickstep_distance_metres.max(0.0) + MELEE_LUNGE_DISTANCE_EPSILON_METRES
     {
         MeleeLunge::None
-    } else if gap > MELEE_LUNGE_QUICKSTEP_THRESHOLD_METRES + MELEE_LUNGE_DISTANCE_EPSILON_METRES {
+    } else if gap > melee_lunge_quickstep_threshold_metres() + MELEE_LUNGE_DISTANCE_EPSILON_METRES {
         MeleeLunge::Quickstep {
             distance_metres: gap,
         }
@@ -247,8 +249,8 @@ mod tests {
                 4.0,
                 4.0,
                 0.5,
-            ) - ((0.2_f32).sqrt() + 1.0 / crate::animation::LOCOMOTION_SAMPLE_HZ))
-                .abs()
+            ) - ((0.2_f32).sqrt() + 1.0 / crate::animation::locomotion_sample_hz()))
+            .abs()
                 < 1.0e-6
         );
         assert!(
@@ -259,8 +261,8 @@ mod tests {
                 4.0,
                 4.0,
                 0.5,
-            ) - (0.5 + 1.0 / crate::animation::LOCOMOTION_SAMPLE_HZ))
-                .abs()
+            ) - (0.5 + 1.0 / crate::animation::locomotion_sample_hz()))
+            .abs()
                 < 1.0e-6
         );
         let config = crate::combat_config::TacticalCombatConfig::default();

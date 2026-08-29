@@ -39,10 +39,37 @@ struct Args {
     /// Capture only one named scenario (for example `steady-walk-2.0`).
     #[arg(long)]
     scenario: Option<String>,
+
+    /// Runtime tactical combat and animation tuning YAML.
+    #[arg(long, default_value = "content/tactical/combat.yaml")]
+    combat_config: PathBuf,
 }
 
 fn main() {
     let args = Args::parse();
+    let combat_config_path = if args.combat_config.is_absolute() {
+        args.combat_config.clone()
+    } else {
+        std::env::current_dir()
+            .expect("animation viewer needs a working directory")
+            .join(&args.combat_config)
+    };
+    let combat_config_text = std::fs::read_to_string(&combat_config_path).unwrap_or_else(|error| {
+        panic!(
+            "could not read animation tuning {}: {error}",
+            combat_config_path.display()
+        )
+    });
+    let combat_config: adventuresim_tactical_core::combat_config::TacticalCombatConfig =
+        serde_saphyr::from_str(&combat_config_text).unwrap_or_else(|error| {
+            panic!(
+                "{} is not valid tactical combat YAML: {error}",
+                combat_config_path.display()
+            )
+        });
+    combat_config
+        .install_runtime_snapshot()
+        .unwrap_or_else(|error| panic!("{}: {error}", combat_config_path.display()));
     let asset_root = if args.asset_root.is_absolute() {
         args.asset_root
     } else {
@@ -55,6 +82,7 @@ fn main() {
         asset_root,
         args.frames_per_sample.max(1),
         args.scenario.as_deref(),
+        combat_config,
     );
     if let bevy::app::AppExit::Error(code) = exit {
         std::process::exit(code.get() as i32);

@@ -2,15 +2,9 @@
 
 use super::*;
 
-pub(in crate::animation::procedural) const MIN_INTER_FOOT_SEPARATION: f32 = 0.16;
 // Cascadeur's final ankle bones sit about 15 mm inside analytic targets after
 // the complete hierarchy solve. Keep a measured planning allowance so the
 // rendered bones, not merely abstract targets, retain the 0.16 m contract.
-pub(in crate::animation::procedural) const FOOT_TRACK_INNER: f32 = MIN_INTER_FOOT_SEPARATION * 0.5;
-const FOOT_TRACK_OUTER: f32 = 0.55;
-pub(super) const GUARD_REACH_PELVIS_DROP_METRES: f32 = 0.12;
-const STATIONARY_TURN_FOOT_LIMIT_METRES: f32 = 0.14;
-const STATIONARY_TURN_STEP_SECONDS: f32 = 0.22;
 
 /// A world-space rendering of one server-authored guard swing.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -187,10 +181,10 @@ pub(in crate::animation::procedural) fn advance_stationary_turn_step(
             // Pose-buffer/terrain settling may move the requested ankle height
             // after touchdown; treating that vertical correction as another
             // reach violation immediately relaunches the foot that just landed.
-            let left_exceeded =
-                left.xz().distance(desired_left.xz()) > STATIONARY_TURN_FOOT_LIMIT_METRES;
-            let right_exceeded =
-                right.xz().distance(desired_right.xz()) > STATIONARY_TURN_FOOT_LIMIT_METRES;
+            let left_exceeded = left.xz().distance(desired_left.xz())
+                > ik_tuning().stationary_turn_foot_limit_metres;
+            let right_exceeded = right.xz().distance(desired_right.xz())
+                > ik_tuning().stationary_turn_foot_limit_metres;
             let swing = match (left_exceeded, right_exceeded, next) {
                 (false, false, _) => return GuardStepState::Stationary { left, right, next },
                 (true, false, _) => LeadFoot::Left,
@@ -221,7 +215,8 @@ pub(in crate::animation::procedural) fn advance_stationary_turn_step(
             mut left,
         } => {
             left.end = desired_left;
-            left.progress = (left.progress + delta_seconds.max(0.0) / STATIONARY_TURN_STEP_SECONDS)
+            left.progress = (left.progress
+                + delta_seconds.max(0.0) / ik_tuning().stationary_turn_step_seconds)
                 .clamp(0.0, 1.0);
             if left.progress >= 1.0 {
                 GuardStepState::Stationary {
@@ -242,7 +237,7 @@ pub(in crate::animation::procedural) fn advance_stationary_turn_step(
         } => {
             right.end = desired_right;
             right.progress = (right.progress
-                + delta_seconds.max(0.0) / STATIONARY_TURN_STEP_SECONDS)
+                + delta_seconds.max(0.0) / ik_tuning().stationary_turn_step_seconds)
                 .clamp(0.0, 1.0);
             if right.progress >= 1.0 {
                 GuardStepState::Stationary {
@@ -381,7 +376,10 @@ pub(in crate::animation::procedural) fn constrain_foot_to_track(
     side: f32,
 ) -> Vec3 {
     let mut local = rig_rotation.inverse() * (world - rig_origin);
-    let signed_x = (local.x * side).clamp(FOOT_TRACK_INNER, FOOT_TRACK_OUTER);
+    let signed_x = (local.x * side).clamp(
+        foot_track_inner_metres(),
+        ik_tuning().outer_foot_track_metres,
+    );
     local.x = signed_x * side;
     rig_origin + rig_rotation * local
 }
@@ -390,7 +388,7 @@ pub(in crate::animation::procedural) fn terrain_conformed_guard_target(
     terrain_height: Option<f32>,
 ) -> Vec3 {
     if let Some(height) = terrain_height {
-        flat_target.y = height + MEASURED_ANKLE_SOLE_OFFSET_METRES;
+        flat_target.y = height + measured_ankle_sole_offset_metres();
     }
     flat_target
 }

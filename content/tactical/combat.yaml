@@ -1,4 +1,4 @@
-schema_version: 2
+schema_version: 3
 
 realtime_authority:
   defense: { reflex_window_seconds: 0.5, roll_dodge_effectiveness: 0.35 }
@@ -8,6 +8,8 @@ realtime_authority:
     range_latency_tolerance_metres: 0.25
     windup_jitter_fraction: 0.10
     maximum_windup_jitter_seconds: 0.025
+    lunge_range_window_metres: 0.10
+    lunge_quickstep_threshold_metres: 0.50
   ranged:
     cooldown_seconds: 0.6
     completion_allowance_seconds: 1.0
@@ -113,3 +115,134 @@ presentation:
     overshoot_span: 0.38
     maximum_drawback: 0.65
     maximum_overshoot: 0.55
+
+animation:
+  locomotion:
+    sample_hz: 64.0
+    landing: { compression_per_metre_per_second: 0.012, minimum_compression_metres: 0.04, maximum_compression_metres: 0.08, recovery_seconds: 0.16 }
+    walk: { reference_speed_metres_per_second: 2.0, step_distance_metres: 1.22, support_phase_radius: 0.28, bounce_metres: 0.04, flight_apex_metres: 0.0 }
+    run: { reference_speed_metres_per_second: 5.5, step_distance_metres: 1.78, support_phase_radius: 0.175, bounce_metres: 0.0, flight_apex_metres: 0.12 }
+    raised_guard: { reference_speed_metres_per_second: 2.0, step_distance_metres: 0.38, support_phase_radius: 0.25, bounce_metres: 0.03, flight_apex_metres: 0.0 }
+    prone: { reference_speed_metres_per_second: 1.0, step_distance_metres: 0.60, support_phase_radius: 0.30, bounce_metres: 0.0, flight_apex_metres: 0.0 }
+    supine: { reference_speed_metres_per_second: 0.8, step_distance_metres: 1.028, support_phase_radius: 0.30, bounce_metres: 0.0, flight_apex_metres: 0.0 }
+    blend_speed: 0.75
+  guard_footwork:
+    default_half_width_metres: 0.15
+    contact_margin_metres: 0.08
+    minimum_step_seconds: 0.10
+    maximum_step_seconds: 0.32
+    planning_reach_metres: 0.80
+    reference_leg_length_metres: 0.840348
+    maximum_unsupported_contact_seconds: 0.35
+  state_transitions:
+    dive_root_handoff_start_fraction: 0.18
+    downed_facing_sector_half_width: 0.25
+    downed_facing_edge_stickiness: 0.055555556
+  playback:
+    frames_per_second: 30.0
+    player_visual_y_offset_metres: -0.95
+    velocity_response_per_second: 18.0
+    phase_correction_rate_per_second: 0.05
+    phase_drift_deadband: 0.04
+    phase_drift_measurement_blend: 0.15
+    phase_snap_error: 0.20
+    maximum_source_gap_ticks: 32
+    maximum_authored_step_cadence_per_second: 5.0
+    maximum_authored_stance_slip_metres: 0.03
+    authored_cadence_cap_transition_width: 1.0
+    maximum_coalesced_events: 8
+  pose_buffer:
+    sample_hz: 30.0
+    inertial_halflife_seconds: 0.10
+    cull_distance_metres: 100.0
+    cull_radius_metres: 2.0
+    authored_contact_plant_limit_metres: 0.14
+    authored_contact_height_fraction: 0.12
+    authored_contact_minimum_height_window_metres: 0.015
+    authored_contact_maximum_height_window_metres: 0.05
+  procedural:
+    guarded_look_joint_limit_degrees: 22.5
+    guarded_look_joint_count: 3.0
+    dive_pelvis_lean_degrees: 40.0
+    height_transition_speed_metres_per_second: 0.4
+    locomotion_stop_height_speed_metres_per_second: 0.8
+    authored_ordinary_passing_rise_metres: 0.033
+    body_response:
+      maximum_presentation_sample_gap_ticks: 32
+      steady_travel_lean_degrees: 16.0
+      forward_acceleration_lean_degrees: 10.0
+      lateral_acceleration_lean_degrees: 6.4
+      startup_inertial_lean_scale: 0.25
+      sustained_inertial_lean_scale: 0.18
+      degrees_per_second: 128.0
+      smooth_time_seconds: 0.10
+      acceleration_attack_response_per_second: 16.0
+      acceleration_release_response_per_second: 7.0
+      maximum_frame_seconds: 0.033333335
+  secondary_physics:
+    motor_frequency_hz: 4.25
+    motor_damping_ratio: 0.78
+    maximum_angular_speed_radians_per_second: 18.0
+    impact_angular_speed_per_metre_per_second: 0.85
+    maximum_locomotion_acceleration_metres_per_second_squared: 24.0
+    ragdoll_motor_frequency_hz: 0.7
+    ragdoll_gravity_torque: 8.0
+    weight_response_per_second: 12.0
+  inverse_kinematics:
+    minimum_inter_foot_separation_metres: 0.16
+    outer_foot_track_metres: 0.55
+    maximum_plant_discontinuity_metres: 2.0
+    maximum_owner_translation_per_tick_metres: 0.5
+    maximum_owner_rotation_per_tick_degrees: 120.0
+    maximum_knee_target_amplification: 2.05
+    maximum_knee_step_metres: 0.10
+    continuity_sample_hz: 64.0
+    run_airborne_owner_step_metres: 0.0875
+    run_first_release_owner_step_metres: 0.094
+    airborne_release_step_metres: 0.04780488
+    raised_settle_pelvis_knee_budget_metres: 0.02
+    raised_settle_step_metres: 0.0382439
+    guard_reach_pelvis_drop_metres: 0.12
+    stationary_turn_foot_limit_metres: 0.14
+    stationary_turn_step_seconds: 0.22
+    knee_pole_maximum_foot_facing_offset_degrees: 22.5
+    airborne_foot_rotation_speed_degrees_per_second: 576.0
+    first_run_release_foot_rotation_speed_degrees_per_second: 0.0
+    maximum_retained_plant_reach_correction_metres: 0.015
+    pelvis_correction_speed_metres_per_second: 1.2
+    run_pelvis_correction_speed_metres_per_second: 0.4
+    maximum_pelvis_correction_step_metres: 0.05
+    terrain_blend_speed_per_second: 4.0
+    minimum_knee_flexion_degrees: 20.0
+    minimum_terrain_knee_flexion_degrees: 12.0
+    landing_knee_reserve_release_compression_metres: 0.012
+    landing_knee_reserve_full_compression_metres: 0.04
+    measured_ankle_sole_offset_metres: 0.085
+    sole_contact_tolerance_metres: 0.01
+    swing_sole_clearance_metres: 0.02
+    run_swing_sole_clearance_metres: 0.08
+    terrain_transition_flight_toe_clearance_metres: 0.011
+    terrain_contact_toe_clearance_metres: -0.009
+    run_swing_minimum_sole_clearance_metres: 0.051
+    run_contact_approach_phase: 0.95
+    run_contact_chain_settle_phase: 0.18
+    run_maximum_planned_reach_pelvis_drop_metres: 0.25
+    late_run_contact_plan_phase: 0.5
+    maximum_run_swing_root_relative_step_metres: 0.068
+    settle_step_seconds: 0.28
+    settle_step_clearance_metres: 0.10
+    settle_capture_point_margin_metres: 0.12
+    assumed_center_of_mass_height_metres: 1.0
+    maximum_settle_capture_speed_metres_per_second: 1.1
+    maximum_hip_drop_metres: 0.18
+    sole_contact_margin_metres: 0.001
+  full_ragdoll:
+    pelvis: { radius_metres: 0.18, length_metres: 0.24 }
+    chest: { radius_metres: 0.18, length_metres: 0.28 }
+    head: { radius_metres: 0.15, length_metres: 0.16 }
+    thigh: { radius_metres: 0.10, length_metres: 0.36 }
+    shin: { radius_metres: 0.085, length_metres: 0.34 }
+    foot: { radius_metres: 0.09, length_metres: 0.20 }
+    upper_arm: { radius_metres: 0.075, length_metres: 0.27 }
+    forearm: { radius_metres: 0.065, length_metres: 0.25 }
+    hand: { radius_metres: 0.07, length_metres: 0.14 }

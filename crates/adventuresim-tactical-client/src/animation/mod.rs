@@ -53,20 +53,26 @@ mod procedural;
 pub(crate) use procedural::{
     ArmIkState, BoneRole, HandIkTarget, HandSide, HeldWeaponConstraint, HumanoidBone,
     HumanoidIkTargets, HumanoidRig, LegIkDiagnostics, LegIkState, LocomotionBodyResponseState,
-    LocomotionHeightState, MEASURED_ANKLE_SOLE_OFFSET_METRES, MhrBone, ProceduralAnimationClock,
-    RaisedFootworkState, SOLE_CONTACT_TOLERANCE_METRES, authored_bind_global,
-    locomotion_support_weights,
+    LocomotionHeightState, MhrBone, ProceduralAnimationClock, RaisedFootworkState,
+    authored_bind_global, locomotion_support_weights, measured_ankle_sole_offset_metres,
+    sole_contact_tolerance_metres,
 };
 const HUMANOID_UNARMED_PACK: &str = "humanoid_unarmed";
 const HUMANOID_2H_CLOSE_PACK: &str = "humanoid_2h_close";
 const BIPED_BASE_GLB: &str = "animations/biped/unarmed/base.glb";
 const BIPED_GRIP_HILT_GLB: &str = "animations/biped/grip_hilt.glb";
 const BIPED_GRIP_POLEARM_GLB: &str = "animations/biped/grip_polearm.glb";
-const ANIMATION_FPS: f32 = 30.0;
+fn animation_frames_per_second() -> f32 {
+    runtime_animation_config().playback.frames_per_second
+}
 // Player transforms sit at the center of the 1.9 m server collider, while
 // authored rigs use a floor-level origin. Keep visual feet on the collider's
 // lower face so the first-person camera lands at the authored head.
-const PLAYER_VISUAL_Y_OFFSET: f32 = -0.95;
+fn player_visual_y_offset_metres() -> f32 {
+    runtime_animation_config()
+        .playback
+        .player_visual_y_offset_metres
+}
 
 mod diagnostics;
 use diagnostics::log_animation_diagnostics;
@@ -185,8 +191,9 @@ impl AuthoredLocomotionStrides {
 
     fn ordinary(&self, speed: f32) -> Option<AuthoredStrideMeasurement> {
         let walk = self.walk?;
-        let blend = ((speed - WALK_LOCOMOTION_PROFILE.reference_speed)
-            / (RUN_LOCOMOTION_PROFILE.reference_speed - WALK_LOCOMOTION_PROFILE.reference_speed))
+        let blend = ((speed - walk_locomotion_profile().reference_speed)
+            / (run_locomotion_profile().reference_speed
+                - walk_locomotion_profile().reference_speed))
             .clamp(0.0, 1.0);
         if blend <= f32::EPSILON {
             Some(walk)
@@ -622,7 +629,7 @@ fn semantic_foot_ik_weights(evaluation: &AnimationEvaluation) -> Vec2 {
                 PoseSampling::Timeline { .. },
             ) => Vec2::ZERO,
             (SemanticPose::WalkContact, PoseSampling::Cycle { phase }) => {
-                let (left, right) = gait_support_weights(WALK_LOCOMOTION_PROFILE, phase);
+                let (left, right) = gait_support_weights(walk_locomotion_profile(), phase);
                 Vec2::new(left, right)
             }
             (SemanticPose::RunContact, PoseSampling::Cycle { phase }) => {
@@ -631,7 +638,7 @@ fn semantic_foot_ik_weights(evaluation: &AnimationEvaluation) -> Vec2 {
                 // the authored contact itself, after the foot has descended.
                 let contact_profile = LocomotionProfile {
                     support_phase_radius: 0.11,
-                    ..RUN_LOCOMOTION_PROFILE
+                    ..run_locomotion_profile()
                 };
                 let (left, right) = gait_support_weights(contact_profile, phase);
                 Vec2::new(left, right)
@@ -1062,8 +1069,10 @@ impl PoseSampleResolver<'_> {
             }
             PoseSampling::CurveSpan { end, coordinate } => {
                 let end_pose = end;
-                let coordinate =
-                    coordinate.clamp(-AttackCurve::MAX_DRAWBACK, 1.0 + AttackCurve::MAX_OVERSHOOT);
+                let coordinate = coordinate.clamp(
+                    -AttackCurve::maximum_drawback(),
+                    1.0 + AttackCurve::maximum_overshoot(),
+                );
                 let Some(end) = resolve_anchor(runtime, catalog, pack, end_pose) else {
                     append_weighted_anchor(
                         weighted,
@@ -1185,7 +1194,7 @@ pub fn spawn_fallback_t_pose(
         .spawn((
             Name::new("Fallback bind-pose T rig"),
             FallbackAnimationRig(owner),
-            Transform::from_xyz(0.0, PLAYER_VISUAL_Y_OFFSET, 0.0),
+            Transform::from_xyz(0.0, player_visual_y_offset_metres(), 0.0),
             Visibility::Inherited,
         ))
         .with_children(|rig| {

@@ -352,7 +352,7 @@ mod contract_tests {
                 tick: 1,
             },
         );
-        let expected = gait_cycle_phase_delta(SUPINE_LOCOMOTION_PROFILE, 1.6, 0.25);
+        let expected = gait_cycle_phase_delta(supine_locomotion_profile(), 1.6, 0.25);
         assert!((state.gait_phase - expected).abs() < 0.000_01);
         let evaluation = AnimationEvaluation::from_skeleton(&state);
         assert!(
@@ -493,7 +493,7 @@ mod contract_tests {
                 orientation: Quat::IDENTITY,
                 linear_velocity: Vec3::ZERO,
                 grounded: true,
-                delta_seconds: 1.0 / LOCOMOTION_SAMPLE_HZ,
+                delta_seconds: 1.0 / locomotion_sample_hz(),
                 tick: 1,
             },
         );

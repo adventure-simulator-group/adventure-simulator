@@ -5,15 +5,6 @@ use super::*;
 // Returning the raised pelvis consumes about 2 cm of the knee's 10 cm frame
 // budget. Reserve that motion only for the raised-to-settle handoff; ordinary
 // swing and settle targets retain the faster general cap.
-pub(super) const RAISED_SETTLE_PELVIS_KNEE_BUDGET_METRES: f32 = 0.02;
-pub(super) const RAISED_SETTLE_TARGET_SPEED: f32 =
-    (MAX_KNEE_STEP_METRES - RAISED_SETTLE_PELVIS_KNEE_BUDGET_METRES) * CONTINUITY_SAMPLE_HZ
-        / MAX_KNEE_TARGET_AMPLIFICATION
-        * 0.98;
-pub(super) const SETTLE_STEP_SECONDS: f32 = 0.28;
-pub(super) const SETTLE_CAPTURE_POINT_MARGIN_METRES: f32 = 0.12;
-pub(super) const ASSUMED_COM_HEIGHT_METRES: f32 = 1.0;
-pub(super) const MAX_SETTLE_CAPTURE_SPEED: f32 = 1.1;
 
 pub(in crate::animation::procedural) fn preserve_raised_handoff_targets(
     memory: &mut LegIkMemory,
@@ -55,15 +46,15 @@ pub(in crate::animation::procedural) fn advance_settle_state(
 ) -> LocomotionSettleState {
     let delta_seconds = delta_seconds.max(0.0);
     settle.elapsed_seconds += delta_seconds;
-    settle.progress = (settle.progress + delta_seconds / SETTLE_STEP_SECONDS).min(1.0);
+    settle.progress = (settle.progress + delta_seconds / ik_tuning().settle_step_seconds).min(1.0);
     settle
 }
 
 pub(in crate::animation::procedural) fn settle_target_speed(settle: LocomotionSettleState) -> f32 {
     if settle.raised_handoff {
-        RAISED_SETTLE_TARGET_SPEED
+        ik_tuning().raised_settle_step_metres * ik_tuning().continuity_sample_hz
     } else {
-        AIRBORNE_RELEASE_TARGET_SPEED
+        ik_tuning().airborne_release_step_metres * ik_tuning().continuity_sample_hz
     }
 }
 
@@ -210,8 +201,8 @@ pub(in crate::animation::procedural) fn prepare_terminal_settle_contacts(
     else {
         return false;
     };
-    left.y = left_height + MEASURED_ANKLE_SOLE_OFFSET_METRES;
-    right.y = right_height + MEASURED_ANKLE_SOLE_OFFSET_METRES;
+    left.y = left_height + measured_ankle_sole_offset_metres();
+    right.y = right_height + measured_ankle_sole_offset_metres();
     memory.left_foot_world_target = Some(left);
     memory.right_foot_world_target = Some(right);
     memory.left_foot_target = Some(rig_rotation.inverse() * (left - rig_origin));
@@ -251,7 +242,7 @@ pub(in crate::animation::procedural) fn terminal_settle_contacts_are_rendered(
             .is_some_and(|((rendered, target), toe)| {
                 rendered.xz().distance(target.xz()) <= 0.01
                     && terrain_height_at(rendered.xz()).is_some_and(|height| {
-                        (rendered.y - height - MEASURED_ANKLE_SOLE_OFFSET_METRES).abs() <= 0.01
+                        (rendered.y - height - measured_ankle_sole_offset_metres()).abs() <= 0.01
                     })
                     && terrain_height_at(toe.xz()).is_some_and(|height| {
                         let clearance = toe.y - height;
@@ -373,8 +364,8 @@ pub(in crate::animation::procedural) fn sole_is_at_contact(
     ankle_y: f32,
     terrain_height: f32,
 ) -> bool {
-    (ankle_y - terrain_height - MEASURED_ANKLE_SOLE_OFFSET_METRES).abs()
-        <= SOLE_CONTACT_TOLERANCE_METRES
+    (ankle_y - terrain_height - measured_ankle_sole_offset_metres()).abs()
+        <= sole_contact_tolerance_metres()
 }
 
 pub(in crate::animation::procedural) fn raised_support_is_actual(
@@ -457,15 +448,16 @@ pub(in crate::animation::procedural) fn plan_settle_landing(
         .with_y(0.0)
         .try_normalize()
         .unwrap_or(rig_rotation * Vec3::NEG_Z);
-    let lateral = rig_rotation * Vec3::X * (FOOT_TRACK_INNER + 0.04) * side.signum();
-    let mut target = capture_point.with_y(rig_origin.y + MEASURED_ANKLE_SOLE_OFFSET_METRES)
-        + direction * SETTLE_CAPTURE_POINT_MARGIN_METRES
+    let lateral = rig_rotation * Vec3::X * (foot_track_inner_metres() + 0.04) * side.signum();
+    let mut target = capture_point.with_y(rig_origin.y + measured_ankle_sole_offset_metres())
+        + direction * ik_tuning().settle_capture_point_margin_metres
         + lateral;
     // The capture-point requirement is stronger than the anatomical track
     // correction, so restore its forward margin if the corridor clamp erodes
     // it during diagonal movement.
     target = constrain_foot_to_track(target, rig_origin, rig_rotation, side);
-    let shortfall = SETTLE_CAPTURE_POINT_MARGIN_METRES - (target - capture_point).dot(direction);
+    let shortfall =
+        ik_tuning().settle_capture_point_margin_metres - (target - capture_point).dot(direction);
     if shortfall > 0.0 {
         target += direction * shortfall;
     }

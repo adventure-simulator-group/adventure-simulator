@@ -493,7 +493,7 @@ pub(super) fn drive_sequence(
         let delta_seconds = if frame.scenario_frame == 0 {
             0.0
         } else {
-            1.0 / SAMPLE_HZ
+            1.0 / locomotion_sample_hz()
         };
         procedural_clock.fixed_tick = Some((sequence.simulation_tick, delta_seconds.max(0.0)));
         let horizontal = transform.translation.xz() + world_velocity.xz() * delta_seconds;

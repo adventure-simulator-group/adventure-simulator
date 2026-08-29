@@ -7,7 +7,7 @@ use bevy_ahoy::{
 };
 
 use crate::{
-    animation::{LOCOMOTION_SAMPLE_HZ, SkeletonState, WeaponGuardState},
+    animation::{SkeletonState, WeaponGuardState, locomotion_sample_hz},
     player::{CharacterDimensions, TacticalPlayerViewer},
 };
 
@@ -288,7 +288,7 @@ pub fn quickstep_push_seconds(
     (motor.reference_quickstep_push_seconds
         - (leg_agility - motor.reference_leg_agility)
             * motor.quickstep_push_seconds_reduction_per_agility)
-        .max(1.0 / LOCOMOTION_SAMPLE_HZ)
+        .max(1.0 / locomotion_sample_hz())
 }
 
 pub fn quickstep_peak_horizontal_force_newtons(
@@ -425,7 +425,7 @@ pub fn quickstep_tracking_force_newtons(
 /// expected by the shared symmetric dodge timeline. Keeping this conversion
 /// in one place prevents a contact duration from accidentally being doubled.
 pub fn quickstep_action_contact_ticks(duration_seconds: f32) -> u64 {
-    let total_ticks = (duration_seconds.max(2.0 / LOCOMOTION_SAMPLE_HZ) * LOCOMOTION_SAMPLE_HZ)
+    let total_ticks = (duration_seconds.max(2.0 / locomotion_sample_hz()) * locomotion_sample_hz())
         .round()
         .max(2.0) as u64;
     (total_ticks / 2).max(1)
@@ -759,7 +759,7 @@ fn apply_character_motor(
                 .map_or(push.start_tick, |skeleton| skeleton.locomotion_sample_tick)
                 .saturating_sub(push.start_tick);
             let action_duration = movement_config.maneuvers.quickstep_duration_seconds;
-            let action_ticks = (action_duration * LOCOMOTION_SAMPLE_HZ).round().max(1.0) as u64;
+            let action_ticks = (action_duration * locomotion_sample_hz()).round().max(1.0) as u64;
             let forward_velocity = velocity.xz().dot(world_direction);
             let bounded_recovery = !quickstep_action
                 && elapsed_ticks <= action_ticks + 2
@@ -829,7 +829,7 @@ fn apply_character_motor(
 
                 let support_duration = quickstep_push_seconds(leg_agility, motor);
                 let support_ticks =
-                    (support_duration * LOCOMOTION_SAMPLE_HZ).ceil().max(1.0) as u64;
+                    (support_duration * locomotion_sample_hz()).ceil().max(1.0) as u64;
                 let length_scale = target_displacement
                     / motor
                         .reference_quickstep_target_displacement_metres
@@ -1196,7 +1196,7 @@ mod tests {
             motor.gravity_metres_per_second_squared * motor.traction_coefficient;
         let predicted_acceleration = crate::combat::conservative_forward_lunge_acceleration(motor);
         let run_speed = config.movement.speeds_metres_per_second.run;
-        let dt = 1.0 / LOCOMOTION_SAMPLE_HZ;
+        let dt = 1.0 / locomotion_sample_hz();
 
         for distance in [0.101, 0.404, 0.441, 0.499] {
             let predicted_seconds = crate::combat::melee_lunge_delay_seconds(
@@ -1207,7 +1207,7 @@ mod tests {
                 predicted_acceleration,
                 config.movement.maneuvers.quickstep_duration_seconds,
             );
-            let ticks = (predicted_seconds * LOCOMOTION_SAMPLE_HZ).ceil() as usize;
+            let ticks = (predicted_seconds * locomotion_sample_hz()).ceil() as usize;
             let mut velocity = Vec2::ZERO;
             let mut displacement = 0.0;
             for _ in 0..ticks {
@@ -1440,9 +1440,9 @@ mod tests {
                 attributes,
             ))
             .id();
-        let delta_seconds = 1.0 / LOCOMOTION_SAMPLE_HZ;
+        let delta_seconds = 1.0 / locomotion_sample_hz();
         world.insert_resource(config);
-        let mut fixed_time = Time::<Fixed>::from_hz(LOCOMOTION_SAMPLE_HZ as f64);
+        let mut fixed_time = Time::<Fixed>::from_hz(locomotion_sample_hz() as f64);
         fixed_time.advance_by(std::time::Duration::from_secs_f32(delta_seconds));
         world.insert_resource(fixed_time);
         let mut schedule = Schedule::default();
@@ -1511,7 +1511,7 @@ mod tests {
                     "Agility {agility:.0} at {speed:.2} m/s measured {measured_radius:.3} m instead of {expected_radius:.3} m"
                 );
                 assert!(
-                    maximum_radius_error < speed / LOCOMOTION_SAMPLE_HZ + 0.01,
+                    maximum_radius_error < speed / locomotion_sample_hz() + 0.01,
                     "Agility {agility:.0} at {speed:.2} m/s radius error was {maximum_radius_error:.3} m"
                 );
                 measured_radii[agility_index][speed_index] = measured_radius;
@@ -1535,7 +1535,7 @@ mod tests {
     #[test]
     fn stop_and_exact_reversal_still_brake_before_accelerating_backward() {
         let speed = REFERENCE_SPRINT_SPEED_METRES_PER_SECOND;
-        let delta_seconds = 1.0 / LOCOMOTION_SAMPLE_HZ;
+        let delta_seconds = 1.0 / locomotion_sample_hz();
         let braking_acceleration = 9.0;
         let limits = GroundVelocityLimits {
             drive_acceleration: 9.0,
@@ -1598,10 +1598,10 @@ mod tests {
         assert!((quickstep_push_seconds(5.0, motor) - 0.36).abs() < 1.0e-6);
 
         let duration = quickstep_push_seconds(4.0, motor);
-        let ticks = (duration * LOCOMOTION_SAMPLE_HZ).ceil() as u64;
+        let ticks = (duration * locomotion_sample_hz()).ceil() as u64;
         let force_time = (0..ticks)
             .map(|tick| {
-                quickstep_force_curve((tick as f32 + 0.5) / ticks as f32) / LOCOMOTION_SAMPLE_HZ
+                quickstep_force_curve((tick as f32 + 0.5) / ticks as f32) / locomotion_sample_hz()
             })
             .sum::<f32>();
         let unburdened_speed = john_force * force_time / 70.0;
@@ -1620,8 +1620,8 @@ mod tests {
             motor,
         );
         let duration = config.movement.maneuvers.quickstep_duration_seconds;
-        let ticks = (duration * LOCOMOTION_SAMPLE_HZ).round() as usize;
-        let delta_seconds = 1.0 / LOCOMOTION_SAMPLE_HZ;
+        let ticks = (duration * locomotion_sample_hz()).round() as usize;
+        let delta_seconds = 1.0 / locomotion_sample_hz();
         let maximum_force = quickstep_peak_horizontal_force_newtons(70.0, 3.0, motor);
         let mut displacement = 0.0;
         let mut velocity = 0.0;
@@ -1667,8 +1667,8 @@ mod tests {
         let config = crate::combat_config::TacticalCombatConfig::default();
         let motor = &config.movement.motor;
         let duration = config.movement.maneuvers.quickstep_duration_seconds;
-        let ticks = (duration * LOCOMOTION_SAMPLE_HZ).round() as usize;
-        let delta_seconds = 1.0 / LOCOMOTION_SAMPLE_HZ;
+        let ticks = (duration * locomotion_sample_hz()).round() as usize;
+        let delta_seconds = 1.0 / locomotion_sample_hz();
         let maximum_force = quickstep_peak_horizontal_force_newtons(70.0, 3.0, motor);
         let maximum_gap = quickstep_target_displacement_metres(
             motor.reference_quickstep_leg_length_metres,
@@ -1709,8 +1709,8 @@ mod tests {
         let config = crate::combat_config::TacticalCombatConfig::default();
         let motor = &config.movement.motor;
         let duration = config.movement.maneuvers.quickstep_duration_seconds;
-        let ticks = (duration * LOCOMOTION_SAMPLE_HZ).round() as usize;
-        let delta_seconds = 1.0 / LOCOMOTION_SAMPLE_HZ;
+        let ticks = (duration * locomotion_sample_hz()).round() as usize;
+        let delta_seconds = 1.0 / locomotion_sample_hz();
         let mass_kg = 70.0;
         let maximum_force = quickstep_peak_horizontal_force_newtons(mass_kg, 3.0, motor);
         let target = quickstep_motion_target(

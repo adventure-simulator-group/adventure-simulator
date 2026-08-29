@@ -35,84 +35,91 @@ pub struct LandingProfile {
     pub recovery_seconds: f32,
 }
 
-pub const HUMANOID_LANDING_PROFILE: LandingProfile = LandingProfile {
-    compression_per_metre_per_second: 0.012,
-    minimum_compression_metres: 0.04,
-    maximum_compression_metres: 0.08,
-    recovery_seconds: 0.16,
-};
+fn landing_profile() -> LandingProfile {
+    let config = crate::combat_config::runtime_animation_config()
+        .locomotion
+        .landing;
+    LandingProfile {
+        compression_per_metre_per_second: config.compression_per_metre_per_second,
+        minimum_compression_metres: config.minimum_compression_metres,
+        maximum_compression_metres: config.maximum_compression_metres,
+        recovery_seconds: config.recovery_seconds,
+    }
+}
 
-pub const LOCOMOTION_SAMPLE_HZ: f32 = 64.0;
+fn gait_profile(
+    gait: LocomotionGait,
+    config: crate::combat_config::AnimationGaitConfig,
+) -> LocomotionProfile {
+    LocomotionProfile {
+        gait,
+        reference_speed: config.reference_speed_metres_per_second,
+        step_distance: config.step_distance_metres,
+        support_phase_radius: config.support_phase_radius,
+        bounce_metres: config.bounce_metres,
+        flight_apex_metres: config.flight_apex_metres,
+        landing: landing_profile(),
+    }
+}
 
-pub const WALK_LOCOMOTION_PROFILE: LocomotionProfile = LocomotionProfile {
-    gait: LocomotionGait::Walk,
-    reference_speed: 2.0,
-    step_distance: 1.22,
-    support_phase_radius: 0.28,
-    bounce_metres: 0.04,
-    flight_apex_metres: 0.0,
-    landing: HUMANOID_LANDING_PROFILE,
-};
-pub const RUN_LOCOMOTION_PROFILE: LocomotionProfile = LocomotionProfile {
-    gait: LocomotionGait::Run,
-    reference_speed: 5.5,
-    step_distance: 1.78,
-    support_phase_radius: 0.175,
-    bounce_metres: 0.0,
-    // The authored ordinary passing rise contributes about 3.3 cm and is
-    // normalized out by presentation. Twelve centimetres here therefore
-    // leaves a visible flight response near nine centimetres: 50% stronger
-    // than the earlier six-centimetre result.
-    flight_apex_metres: 0.12,
-    landing: HUMANOID_LANDING_PROFILE,
-};
-pub const RAISED_GUARD_LOCOMOTION_PROFILE: LocomotionProfile = LocomotionProfile {
-    gait: LocomotionGait::RaisedGuard,
-    reference_speed: 2.0,
-    step_distance: 0.38,
-    support_phase_radius: 0.25,
-    bounce_metres: 0.03,
-    flight_apex_metres: 0.0,
-    landing: HUMANOID_LANDING_PROFILE,
-};
-pub const PRONE_LOCOMOTION_PROFILE: LocomotionProfile = LocomotionProfile {
-    gait: LocomotionGait::Downed,
-    reference_speed: 1.0,
-    // The authored contact hand and knee retract about 0.50 m and 0.69 m
-    // respectively over a half-cycle. A 0.60 m contact step balances their
-    // residual world-space drift instead of dragging them through the former
-    // 1.06 m of controller travel.
-    step_distance: 0.60,
-    support_phase_radius: 0.30,
-    bounce_metres: 0.0,
-    flight_apex_metres: 0.0,
-    landing: HUMANOID_LANDING_PROFILE,
-};
-pub const SUPINE_LOCOMOTION_PROFILE: LocomotionProfile = LocomotionProfile {
-    gait: LocomotionGait::Downed,
-    reference_speed: 0.8,
-    step_distance: 1.028,
-    support_phase_radius: 0.30,
-    bounce_metres: 0.0,
-    flight_apex_metres: 0.0,
-    landing: HUMANOID_LANDING_PROFILE,
-};
+pub fn locomotion_sample_hz() -> f32 {
+    crate::combat_config::runtime_animation_config()
+        .locomotion
+        .sample_hz
+}
+
+pub fn walk_locomotion_profile() -> LocomotionProfile {
+    let config = crate::combat_config::runtime_animation_config()
+        .locomotion
+        .walk;
+    gait_profile(LocomotionGait::Walk, config)
+}
+
+pub fn run_locomotion_profile() -> LocomotionProfile {
+    let config = crate::combat_config::runtime_animation_config()
+        .locomotion
+        .run;
+    gait_profile(LocomotionGait::Run, config)
+}
+
+pub fn raised_guard_locomotion_profile() -> LocomotionProfile {
+    let config = crate::combat_config::runtime_animation_config()
+        .locomotion
+        .raised_guard;
+    gait_profile(LocomotionGait::RaisedGuard, config)
+}
+
+pub fn prone_locomotion_profile() -> LocomotionProfile {
+    let config = crate::combat_config::runtime_animation_config()
+        .locomotion
+        .prone;
+    gait_profile(LocomotionGait::Downed, config)
+}
+
+pub fn supine_locomotion_profile() -> LocomotionProfile {
+    let config = crate::combat_config::runtime_animation_config()
+        .locomotion
+        .supine;
+    gait_profile(LocomotionGait::Downed, config)
+}
 
 pub fn locomotion_profile(state: &SkeletonState) -> LocomotionProfile {
     let speed = state.animation_speed();
     match state.body() {
-        BodyState::Prone => return PRONE_LOCOMOTION_PROFILE,
-        BodyState::Supine => return SUPINE_LOCOMOTION_PROFILE,
+        BodyState::Prone => return prone_locomotion_profile(),
+        BodyState::Supine => return supine_locomotion_profile(),
         _ => {}
     }
     if state.weapon_guard() == WeaponGuardState::Raised && !state.guarded_sprint_locomotion() {
         return LocomotionProfile {
             step_distance: guard_step_length(speed),
-            ..RAISED_GUARD_LOCOMOTION_PROFILE
+            ..raised_guard_locomotion_profile()
         };
     }
-    let run = ((speed - WALK_LOCOMOTION_PROFILE.reference_speed)
-        / (RUN_LOCOMOTION_PROFILE.reference_speed - WALK_LOCOMOTION_PROFILE.reference_speed))
+    let walk = walk_locomotion_profile();
+    let run_profile = run_locomotion_profile();
+    let run = ((speed - walk.reference_speed)
+        / (run_profile.reference_speed - walk.reference_speed))
         .clamp(0.0, 1.0);
     LocomotionProfile {
         gait: if run >= 0.5 {
@@ -120,16 +127,14 @@ pub fn locomotion_profile(state: &SkeletonState) -> LocomotionProfile {
         } else {
             LocomotionGait::Walk
         },
-        reference_speed: WALK_LOCOMOTION_PROFILE
-            .reference_speed
-            .lerp(RUN_LOCOMOTION_PROFILE.reference_speed, run),
+        reference_speed: walk.reference_speed.lerp(run_profile.reference_speed, run),
         step_distance: ordinary_step_distance(speed),
-        support_phase_radius: WALK_LOCOMOTION_PROFILE
+        support_phase_radius: walk
             .support_phase_radius
-            .lerp(RUN_LOCOMOTION_PROFILE.support_phase_radius, run),
-        bounce_metres: WALK_LOCOMOTION_PROFILE.bounce_metres * (1.0 - run),
-        flight_apex_metres: RUN_LOCOMOTION_PROFILE.flight_apex_metres * run,
-        landing: HUMANOID_LANDING_PROFILE,
+            .lerp(run_profile.support_phase_radius, run),
+        bounce_metres: walk.bounce_metres * (1.0 - run),
+        flight_apex_metres: run_profile.flight_apex_metres * run,
+        landing: landing_profile(),
     }
 }
 
@@ -137,18 +142,14 @@ pub fn locomotion_profile(state: &SkeletonState) -> LocomotionProfile {
 /// replaces duplicated cadence arithmetic without changing current timing.
 pub fn ordinary_step_distance(speed: f32) -> f32 {
     let speed = speed.max(0.0);
-    if speed <= WALK_LOCOMOTION_PROFILE.reference_speed {
-        0.9_f32.lerp(
-            WALK_LOCOMOTION_PROFILE.step_distance,
-            speed / WALK_LOCOMOTION_PROFILE.reference_speed,
-        )
+    let walk = walk_locomotion_profile();
+    let run = run_locomotion_profile();
+    if speed <= walk.reference_speed {
+        0.9_f32.lerp(walk.step_distance, speed / walk.reference_speed)
     } else {
-        let blend = ((speed - WALK_LOCOMOTION_PROFILE.reference_speed)
-            / (RUN_LOCOMOTION_PROFILE.reference_speed - WALK_LOCOMOTION_PROFILE.reference_speed))
+        let blend = ((speed - walk.reference_speed) / (run.reference_speed - walk.reference_speed))
             .clamp(0.0, 1.0);
-        WALK_LOCOMOTION_PROFILE
-            .step_distance
-            .lerp(RUN_LOCOMOTION_PROFILE.step_distance, blend)
+        walk.step_distance.lerp(run.step_distance, blend)
     }
 }
 

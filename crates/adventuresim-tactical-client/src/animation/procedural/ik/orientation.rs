@@ -2,13 +2,10 @@
 
 use super::*;
 
-pub(super) const KNEE_POLE_MAX_FOOT_FACING_OFFSET_RADIANS: f32 = std::f32::consts::FRAC_PI_8;
 // A 576 degree/second cap is nine degrees at the 64 Hz presentation cadence,
 // retaining numeric margin below the ten-degree review gate. Contact and swing
 // orientation share this boundary so terrain alignment can never introduce
 // the old one-frame ankle snap.
-pub(super) const AIRBORNE_FOOT_ROTATION_SPEED_DEGREES: f32 = 576.0;
-pub(super) const FIRST_RUN_RELEASE_FOOT_ROTATION_SPEED_DEGREES: f32 = 0.0;
 
 pub(in crate::animation::procedural) fn authored_knee_pole_world(
     hip: Vec3,
@@ -107,7 +104,9 @@ pub(in crate::animation::procedural) fn stabilized_knee_pole(
                 selected,
                 next_end_direction,
                 facing,
-                KNEE_POLE_MAX_FOOT_FACING_OFFSET_RADIANS,
+                ik_tuning()
+                    .knee_pole_maximum_foot_facing_offset_degrees
+                    .to_radians(),
             )
         })
         .or(Some(selected))
@@ -170,7 +169,9 @@ pub(in crate::animation::procedural) fn constrain_rendered_leg_pole(
                 pole,
                 target - hip,
                 facing,
-                KNEE_POLE_MAX_FOOT_FACING_OFFSET_RADIANS,
+                ik_tuning()
+                    .knee_pole_maximum_foot_facing_offset_degrees
+                    .to_radians(),
             )
         })
         // Sparse/non-humanoid rigs may not expose a toe direction. Preserve
@@ -443,9 +444,9 @@ pub(in crate::animation::procedural) fn finalize_leg_rotation_chains(
                 let angular_speed = if locomotion_profile(skeleton).gait == LocomotionGait::Run
                     && airborne_just_released[leg_index]
                 {
-                    FIRST_RUN_RELEASE_FOOT_ROTATION_SPEED_DEGREES
+                    ik_tuning().first_run_release_foot_rotation_speed_degrees_per_second
                 } else {
-                    AIRBORNE_FOOT_ROTATION_SPEED_DEGREES
+                    ik_tuning().airborne_foot_rotation_speed_degrees_per_second
                 };
                 let bounded_world = advance_airborne_foot_rotation(
                     previous_world,

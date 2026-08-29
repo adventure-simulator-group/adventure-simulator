@@ -21,15 +21,13 @@ use bevy::{
 use super::*;
 use crate::presentation::TacticalGameplayCamera;
 
-const SAMPLE_HZ: f32 = 30.0;
-const SAMPLE_DT: f32 = 1.0 / SAMPLE_HZ;
-const INERTIAL_HALFLIFE_SECONDS: f32 = 0.10;
-const CULL_DISTANCE_METRES: f32 = 100.0;
-const CULL_RADIUS_METRES: f32 = 2.0;
-const AUTHORED_CONTACT_PLANT_LIMIT_METRES: f32 = 0.14;
-const AUTHORED_CONTACT_HEIGHT_FRACTION: f32 = 0.12;
-const AUTHORED_CONTACT_MINIMUM_HEIGHT_WINDOW_METRES: f32 = 0.015;
-const AUTHORED_CONTACT_MAXIMUM_HEIGHT_WINDOW_METRES: f32 = 0.05;
+fn pose_tuning() -> PoseBufferConfig {
+    runtime_animation_config().pose_buffer
+}
+
+fn pose_sample_seconds() -> f32 {
+    pose_tuning().sample_hz.recip()
+}
 
 #[derive(Resource, Default, Debug, Clone, Copy, serde::Serialize)]
 pub(crate) struct PoseBufferMetrics {
@@ -136,8 +134,10 @@ impl LocalPose {
     }
 
     fn extrapolate(self, next: Self, coordinate: f32) -> Self {
-        let coordinate =
-            coordinate.clamp(-AttackCurve::MAX_DRAWBACK, 1.0 + AttackCurve::MAX_OVERSHOOT);
+        let coordinate = coordinate.clamp(
+            -AttackCurve::maximum_drawback(),
+            1.0 + AttackCurve::maximum_overshoot(),
+        );
         let relative = shortest_rotation(next.rotation * self.rotation.inverse());
         Self {
             translation: self.translation + (next.translation - self.translation) * coordinate,
@@ -212,11 +212,12 @@ impl PoseBufferRig {
 
     fn displayed_velocity(&self, joint: usize) -> (Vec3, Vec3) {
         (
-            (self.next[joint].translation - self.previous[joint].translation) / SAMPLE_DT,
+            (self.next[joint].translation - self.previous[joint].translation)
+                / pose_sample_seconds(),
             quaternion_angular_velocity(
                 self.next[joint].rotation,
                 self.previous[joint].rotation,
-                SAMPLE_DT,
+                pose_sample_seconds(),
             ),
         )
     }
@@ -261,13 +262,13 @@ impl JointInertialOffset {
         decay_spring_vec3(
             &mut self.translation,
             &mut self.translation_velocity,
-            INERTIAL_HALFLIFE_SECONDS,
+            pose_tuning().inertial_halflife_seconds,
             delta_seconds,
         );
         decay_spring_quaternion(
             &mut self.rotation,
             &mut self.angular_velocity,
-            INERTIAL_HALFLIFE_SECONDS,
+            pose_tuning().inertial_halflife_seconds,
             delta_seconds,
         );
         self.peek(input)
@@ -437,11 +438,11 @@ pub(super) fn update_pose_buffers(
         let position = owner_transform.translation();
         let frozen = camera.is_some_and(|(camera_transform, frustum)| {
             position.distance_squared(camera_transform.translation())
-                > CULL_DISTANCE_METRES * CULL_DISTANCE_METRES
+                > pose_tuning().cull_distance_metres * pose_tuning().cull_distance_metres
                 || !frustum.intersects_sphere(
                     &Sphere {
                         center: position.into(),
-                        radius: CULL_RADIUS_METRES,
+                        radius: pose_tuning().cull_radius_metres,
                     },
                     false,
                 )
@@ -543,12 +544,14 @@ pub(super) fn update_pose_buffers(
             if due > 0 {
                 rig.previous = rig.next.clone();
                 rig.next = target;
-                rig.sample_accumulator = (rig.sample_accumulator - SAMPLE_DT * due as f32).max(0.0);
+                rig.sample_accumulator =
+                    (rig.sample_accumulator - pose_sample_seconds() * due as f32).max(0.0);
             }
             // Terrain IK has already modified `next`. Interpolate local joint
             // transforms from the preceding solved sample to that upcoming
             // solved sample; no post-interpolation contact toggle is needed.
-            rig.interpolation_alpha = (rig.sample_accumulator / SAMPLE_DT).clamp(0.0, 1.0);
+            rig.interpolation_alpha =
+                (rig.sample_accumulator / pose_sample_seconds()).clamp(0.0, 1.0);
         }
     }
 }
@@ -969,7 +972,7 @@ fn conform_upcoming_pose_to_terrain(
                 reference_foot_world.with_y(
                     reference_foot_world
                         .y
-                        .max(height + MEASURED_ANKLE_SOLE_OFFSET_METRES),
+                        .max(height + measured_ankle_sole_offset_metres()),
                 )
             })
             .unwrap_or(reference_foot_world);
@@ -994,8 +997,8 @@ fn conform_upcoming_pose_to_terrain(
             let reference_rotation_world = owner.rotation() * plant.reference_owner_rotation;
             let displacement = reference_world.xz() - plant.position_world.xz();
             let distance = displacement.length();
-            if distance > AUTHORED_CONTACT_PLANT_LIMIT_METRES {
-                let excess = distance - AUTHORED_CONTACT_PLANT_LIMIT_METRES;
+            if distance > pose_tuning().authored_contact_plant_limit_metres {
+                let excess = distance - pose_tuning().authored_contact_plant_limit_metres;
                 plant.position_world +=
                     Vec3::new(displacement.x, 0.0, displacement.y).normalize_or_zero() * excess;
                 plant.rotation_world = hemisphere_slerp(
@@ -1010,7 +1013,7 @@ fn conform_upcoming_pose_to_terrain(
                 plant.position_world.y = plant
                     .position_world
                     .y
-                    .max(plant_height + MEASURED_ANKLE_SOLE_OFFSET_METRES);
+                    .max(plant_height + measured_ankle_sole_offset_metres());
             }
             plants[index] = Some(plant);
         }
@@ -1184,7 +1187,7 @@ fn get_or_bake(
 
 fn bake_clip(clip: &AnimationClip, definition: &RigDefinition) -> BakedClip {
     let duration = clip.duration().max(0.001);
-    let frames = (duration / SAMPLE_DT).ceil() as usize + 1;
+    let frames = (duration / pose_sample_seconds()).ceil() as usize + 1;
     let translation_field = animated_field!(Transform::translation);
     let rotation_field = animated_field!(Transform::rotation);
     let scale_field = animated_field!(Transform::scale);
@@ -1192,7 +1195,7 @@ fn bake_clip(clip: &AnimationClip, definition: &RigDefinition) -> BakedClip {
         .joints
         .iter()
         .map(|joint| {
-            let sample_time = |frame: usize| (frame as f32 * SAMPLE_DT).min(duration);
+            let sample_time = |frame: usize| (frame as f32 * pose_sample_seconds()).min(duration);
             let translations = (0..frames)
                 .map(|frame| {
                     clip.sample_clamped(translation_field.clone(), joint.target, sample_time(frame))
@@ -1221,7 +1224,7 @@ fn bake_clip(clip: &AnimationClip, definition: &RigDefinition) -> BakedClip {
         .collect();
     BakedClip {
         duration,
-        frame_dt: SAMPLE_DT,
+        frame_dt: pose_sample_seconds(),
         frames,
         tracks,
     }
@@ -1320,7 +1323,7 @@ pub(super) fn calibrate_authored_locomotion_strides(
             maximum_stance_slip_metres = stride.maximum_stance_slip,
             "Measured authored locomotion stride"
         );
-        if stride.maximum_stance_slip > presentation::MAX_AUTHORED_STANCE_SLIP_METRES {
+        if stride.maximum_stance_slip > presentation::maximum_authored_stance_slip_metres() {
             warn!(
                 motion,
                 stride_metres = stride.step_distance,
@@ -1388,10 +1391,11 @@ fn measure_authored_contact_step_distance(
             .iter()
             .map(|(_, position)| position.y)
             .reduce(f32::max)?;
-        let height_window = ((maximum_height - minimum_height) * AUTHORED_CONTACT_HEIGHT_FRACTION)
+        let height_window = ((maximum_height - minimum_height)
+            * pose_tuning().authored_contact_height_fraction)
             .clamp(
-                AUTHORED_CONTACT_MINIMUM_HEIGHT_WINDOW_METRES,
-                AUTHORED_CONTACT_MAXIMUM_HEIGHT_WINDOW_METRES,
+                pose_tuning().authored_contact_minimum_height_window_metres,
+                pose_tuning().authored_contact_maximum_height_window_metres,
             );
         let supported = samples
             .iter()
@@ -1755,7 +1759,7 @@ fn sanitize_pose(pose: LocalPose, fallback: LocalPose) -> LocalPose {
 }
 
 fn samples_due(accumulator: f32) -> u32 {
-    (accumulator.max(0.0) / SAMPLE_DT).floor() as u32
+    (accumulator.max(0.0) / pose_sample_seconds()).floor() as u32
 }
 
 fn hemisphere_slerp(first: Quat, mut second: Quat, alpha: f32) -> Quat {
@@ -1925,14 +1929,14 @@ mod tests {
     #[test]
     fn angular_velocity_uses_the_short_quaternion_hemisphere() {
         let rotation = Quat::from_rotation_x(0.4);
-        let velocity = quaternion_angular_velocity(-rotation, rotation, SAMPLE_DT);
+        let velocity = quaternion_angular_velocity(-rotation, rotation, pose_sample_seconds());
         assert!(velocity.length() < 0.0001);
     }
 
     #[test]
     fn large_frame_gaps_are_bounded_but_consume_sampler_debt() {
         assert_eq!(samples_due(0.0), 0);
-        assert_eq!(samples_due(SAMPLE_DT * 3.2), 3);
+        assert_eq!(samples_due(pose_sample_seconds() * 3.2), 3);
         assert_eq!(samples_due(0.1), 3);
     }
 
@@ -2094,7 +2098,7 @@ mod tests {
         assert!(
             misleading.is_none_or(|measurement| {
                 measurement.stride.maximum_stance_slip
-                    > presentation::MAX_AUTHORED_STANCE_SLIP_METRES
+                    > presentation::maximum_authored_stance_slip_metres()
             }),
             "a visibly low wrong-way approach must make the fit unrepresentable"
         );
@@ -2176,7 +2180,7 @@ mod tests {
         .translation;
         assert!(displayed_foot.y > 0.0);
         assert!(displayed_foot.y < next_foot.y);
-        assert!((next_foot.y - (0.5 + MEASURED_ANKLE_SOLE_OFFSET_METRES)).abs() < 0.001);
+        assert!((next_foot.y - (0.5 + measured_ankle_sole_offset_metres())).abs() < 0.001);
     }
 
     #[test]
@@ -2283,7 +2287,7 @@ mod tests {
 
         let after =
             local_pose_global(&definition, &next, 3, &mut vec![None; next.len()]).translation;
-        assert!(before.y > MEASURED_ANKLE_SOLE_OFFSET_METRES);
+        assert!(before.y > measured_ankle_sole_offset_metres());
         assert!(after.distance(before) < 0.0001);
     }
 
@@ -2479,7 +2483,7 @@ mod tests {
         assert!(slid.position_world.distance(acquired.position_world) > 0.001);
         assert!(
             slid.position_world.xz().distance(far_authored_world.xz())
-                <= AUTHORED_CONTACT_PLANT_LIMIT_METRES + 0.0001
+                <= pose_tuning().authored_contact_plant_limit_metres + 0.0001
         );
     }
 

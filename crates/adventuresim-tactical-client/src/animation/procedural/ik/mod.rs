@@ -43,10 +43,7 @@ pub(super) use orientation::{
 pub(crate) use raised_footwork::RaisedFootworkState;
 use raised_footwork::*;
 #[cfg(test)]
-pub(super) use raised_footwork::{
-    FOOT_TRACK_INNER, MIN_INTER_FOOT_SEPARATION, constrain_foot_to_track,
-    terrain_conformed_guard_target,
-};
+pub(super) use raised_footwork::{constrain_foot_to_track, terrain_conformed_guard_target};
 use settle::*;
 #[cfg(test)]
 pub(super) use settle::{
@@ -56,20 +53,35 @@ pub(super) use settle::{
 pub(super) use solver::*;
 use state::*;
 pub(crate) use state::{ArmIkState, LegIkDiagnostics, LegIkState};
+pub(crate) use terrain_contacts::locomotion_support_weights;
 #[cfg(test)]
 pub(super) use terrain_contacts::settle_swing_target;
 pub(super) use terrain_contacts::smoothstep;
 use terrain_contacts::*;
-pub(crate) use terrain_contacts::{
-    MEASURED_ANKLE_SOLE_OFFSET_METRES, SOLE_CONTACT_TOLERANCE_METRES, locomotion_support_weights,
-};
 
-const MAX_OWNER_TRANSLATION_PER_TICK: f32 = 0.5;
-// A player can legitimately snap-turn by 90 degrees in one input sample. Only
-// discard retained plants for rotations that are unmistakably teleport-like.
-const MAX_OWNER_ROTATION_PER_TICK_DEGREES: f32 = 120.0;
-const RUN_PELVIS_CORRECTION_SPEED: f32 = 0.4;
-const TERRAIN_IK_BLEND_SPEED: f32 = 4.0;
+fn ik_tuning() -> InverseKinematicsConfig {
+    runtime_animation_config().inverse_kinematics
+}
+
+pub(super) fn minimum_inter_foot_separation_metres() -> f32 {
+    ik_tuning().minimum_inter_foot_separation_metres
+}
+
+pub(super) fn foot_track_inner_metres() -> f32 {
+    minimum_inter_foot_separation_metres() * 0.5
+}
+
+pub(super) fn maximum_pelvis_correction_step_metres() -> f32 {
+    ik_tuning().maximum_pelvis_correction_step_metres
+}
+
+pub(crate) fn measured_ankle_sole_offset_metres() -> f32 {
+    ik_tuning().measured_ankle_sole_offset_metres
+}
+
+pub(crate) fn sole_contact_tolerance_metres() -> f32 {
+    ik_tuning().sole_contact_tolerance_metres
+}
 
 /// Places the planted foot on the terrain with an analytic two-bone solve,
 /// then lowers the hips by the bounded residual. Existing weapon/hand
@@ -231,8 +243,8 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 0.0
             };
             memory.terrain_blend += (desired - memory.terrain_blend).clamp(
-                -TERRAIN_IK_BLEND_SPEED * state_delta_seconds,
-                TERRAIN_IK_BLEND_SPEED * state_delta_seconds,
+                -ik_tuning().terrain_blend_speed_per_second * state_delta_seconds,
+                ik_tuning().terrain_blend_speed_per_second * state_delta_seconds,
             );
         }
         let terrain_blend = memory.terrain_blend.clamp(0.0, 1.0);
@@ -251,10 +263,11 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
         if state_delta_seconds > 0.0 {
             let previous_rig_origin = memory.rig_origin;
             let owner_discontinuous = previous_rig_origin.is_some_and(|previous| {
-                previous.distance(rig_origin) > MAX_OWNER_TRANSLATION_PER_TICK
+                previous.distance(rig_origin)
+                    > ik_tuning().maximum_owner_translation_per_tick_metres
             }) || memory.rig_rotation.is_some_and(|previous| {
                 previous.angle_between(rig_rotation).to_degrees()
-                    > MAX_OWNER_ROTATION_PER_TICK_DEGREES
+                    > ik_tuning().maximum_owner_rotation_per_tick_degrees
             });
             memory.measured_owner_planar_speed = update_measured_owner_planar_speed(
                 memory.measured_owner_planar_speed,
@@ -384,10 +397,10 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 let capture_point = if has_recent_velocity {
                     projected_capture_point(
                         projected_com,
-                        memory
-                            .recent_movement_velocity
-                            .clamp_length_max(MAX_SETTLE_CAPTURE_SPEED),
-                        ASSUMED_COM_HEIGHT_METRES,
+                        memory.recent_movement_velocity.clamp_length_max(
+                            ik_tuning().maximum_settle_capture_speed_metres_per_second,
+                        ),
+                        ik_tuning().assumed_center_of_mass_height_metres,
                     )
                 } else {
                     projected_com
@@ -497,7 +510,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
         // support foot to slide. This moves the body, never either contact.
         if state_delta_seconds > 0.0 {
             let desired = if raised_guard_follower {
-                -GUARD_REACH_PELVIS_DROP_METRES
+                -ik_tuning().guard_reach_pelvis_drop_metres
             } else {
                 0.0
             };
@@ -1206,7 +1219,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
             };
             let position = foot_snapshot.global.translation();
             if let Some(height) = terrain.height_at(position.xz()) {
-                let desired_ankle = height + MEASURED_ANKLE_SOLE_OFFSET_METRES;
+                let desired_ankle = height + measured_ankle_sole_offset_metres();
                 desired_hip_shift = desired_hip_shift
                     .min(((desired_ankle - position.y) * weight).clamp(-0.18, 0.0));
             }
@@ -1235,9 +1248,9 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 let phase_to_contact = phase_to_next_contact(skeleton.gait_phase, left);
                 run_contact_approach_progress(
                     phase_to_contact,
-                    planned_phase_start.unwrap_or(RUN_CONTACT_APPROACH_PHASE),
+                    planned_phase_start.unwrap_or(ik_tuning().run_contact_approach_phase),
                     locomotion_profile(skeleton).support_phase_radius
-                        + RUN_CONTACT_CHAIN_SETTLE_PHASE,
+                        + ik_tuning().run_contact_chain_settle_phase,
                 )
             } else {
                 0.0
@@ -1265,7 +1278,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
             let Some(height) = terrain.height_at(horizontal_target.xz()) else {
                 continue;
             };
-            let target_y = height + MEASURED_ANKLE_SOLE_OFFSET_METRES;
+            let target_y = height + measured_ankle_sole_offset_metres();
             let upper_length = upper_snapshot
                 .global
                 .translation()
@@ -1289,8 +1302,10 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
             // bounded contact-phase drop reinforces the two existing minima;
             // it cannot add the earlier free-running terrain wave or move the
             // authoritative controller.
-            desired_hip_shift =
-                desired_hip_shift.clamp(-RUN_MAXIMUM_PLANNED_REACH_PELVIS_DROP, 0.0);
+            desired_hip_shift = desired_hip_shift.clamp(
+                -ik_tuning().run_maximum_planned_reach_pelvis_drop_metres,
+                0.0,
+            );
         }
         let terminal_root_correction =
             settle_is_terminal(&memory) && memory.terminal_contacts_prepared;
@@ -1320,7 +1335,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                         memory.pelvis_shift,
                         desired_hip_shift,
                         state_delta_seconds,
-                        RUN_PELVIS_CORRECTION_SPEED,
+                        ik_tuning().run_pelvis_correction_speed_metres_per_second,
                     )
                 } else {
                     advance_pelvis_shift(
@@ -1461,7 +1476,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 let Some(height) = terrain.height_at(frozen_plant.xz()) else {
                     continue;
                 };
-                let target = frozen_plant.with_y(height + MEASURED_ANKLE_SOLE_OFFSET_METRES);
+                let target = frozen_plant.with_y(height + measured_ankle_sole_offset_metres());
                 let canonical_world = pole_to_world(rig_rotation, canonical_knee_pole(side));
                 let (remembered_pole, previous_end_direction) = if left {
                     (
@@ -1645,7 +1660,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
             {
                 let retained_target = Vec3::new(
                     retained_plant.x,
-                    height + MEASURED_ANKLE_SOLE_OFFSET_METRES,
+                    height + measured_ankle_sole_offset_metres(),
                     retained_plant.z,
                 );
                 let reachable_target = constrain_target_to_reach(
@@ -1808,7 +1823,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     );
                     let approach_window =
                         if locomotion_profile(skeleton).gait == LocomotionGait::Run {
-                            RUN_CONTACT_APPROACH_PHASE
+                            ik_tuning().run_contact_approach_phase
                         } else {
                             0.12
                         };
@@ -1841,7 +1856,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                                     skeleton.animation_speed(),
                                     phase_to_contact,
                                     locomotion_profile(skeleton).support_phase_radius
-                                        + RUN_CONTACT_CHAIN_SETTLE_PHASE,
+                                        + ik_tuning().run_contact_chain_settle_phase,
                                     terrain_maximum_reach(upper_length, lower_length),
                                     |xz| terrain.height_at(xz),
                                 )
@@ -1864,7 +1879,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                                 skeleton.animation_speed(),
                                 phase_to_contact,
                                 locomotion_profile(skeleton).support_phase_radius
-                                    + RUN_CONTACT_CHAIN_SETTLE_PHASE,
+                                    + ik_tuning().run_contact_chain_settle_phase,
                             )
                         } else {
                             contact
@@ -1887,7 +1902,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                                 phase_to_contact,
                                 planned_phase_start.unwrap_or(approach_window),
                                 locomotion_profile(skeleton).support_phase_radius
-                                    + RUN_CONTACT_CHAIN_SETTLE_PHASE,
+                                    + ik_tuning().run_contact_chain_settle_phase,
                             )
                         } else {
                             smoothstep(approach_window, 0.0, phase_to_contact)
@@ -1895,7 +1910,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     let mut desired_target =
                         planned_contact.map_or(foot_position, |mut contact| {
                             if let Some(height) = terrain.height_at(contact.xz()) {
-                                contact.y = height + MEASURED_ANKLE_SOLE_OFFSET_METRES;
+                                contact.y = height + measured_ankle_sole_offset_metres();
                             }
                             planned_start
                                 .unwrap_or(foot_position)
@@ -1910,7 +1925,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                         );
                         desired_target.y = desired_target
                             .y
-                            .max(height + MEASURED_ANKLE_SOLE_OFFSET_METRES + clearance);
+                            .max(height + measured_ankle_sole_offset_metres() + clearance);
                     }
                     let desired_owner_target =
                         rig_rotation.inverse() * (desired_target - rig_origin);
@@ -1981,7 +1996,8 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                                     previous_world_target,
                                     desired_target,
                                     state_delta_seconds,
-                                    AIRBORNE_RELEASE_TARGET_SPEED,
+                                    ik_tuning().airborne_release_step_metres
+                                        * ik_tuning().continuity_sample_hz,
                                 )
                             };
                         let owner_target = rig_rotation.inverse() * (world_target - rig_origin);
@@ -1993,7 +2009,9 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                             || previous_support.is_some_and(|support| support > 0.5)
                             || previous_owner_target.is_some_and(|previous| {
                                 previous.distance(desired_owner_target)
-                                    > AIRBORNE_RELEASE_TARGET_SPEED * state_delta_seconds.max(0.0)
+                                    > (ik_tuning().airborne_release_step_metres
+                                        * ik_tuning().continuity_sample_hz)
+                                        * state_delta_seconds.max(0.0)
                                         + 0.001
                             });
                         let release_goal = if was_releasing {
@@ -2006,7 +2024,8 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                                 previous_owner_target,
                                 release_goal,
                                 state_delta_seconds,
-                                AIRBORNE_RELEASE_TARGET_SPEED,
+                                ik_tuning().airborne_release_step_metres
+                                    * ik_tuning().continuity_sample_hz,
                             )
                         } else {
                             desired_owner_target
@@ -2063,7 +2082,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                         );
                         target.y = run_clearance_target_height(
                             target.y,
-                            height + MEASURED_ANKLE_SOLE_OFFSET_METRES + clearance,
+                            height + measured_ankle_sole_offset_metres() + clearance,
                             support_eligible_for_descent,
                         );
                         owner_target = rig_rotation.inverse() * (target - rig_origin);
@@ -2110,7 +2129,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                             ),
                             |xz| {
                                 terrain.height_at(xz).map(|height| {
-                                    height + MEASURED_ANKLE_SOLE_OFFSET_METRES + clearance
+                                    height + measured_ankle_sole_offset_metres() + clearance
                                 })
                             },
                         );
@@ -2264,9 +2283,9 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     settle_swing_target(settle.swing_start, settle.landing_target, settle.progress);
                 if let Some(height) = terrain.height_at(desired_target.xz()) {
                     let minimum_ankle_y = height
-                        + MEASURED_ANKLE_SOLE_OFFSET_METRES
-                        + (SWING_SOLE_CLEARANCE_METRES * (1.0 - settle.progress))
-                            .max(TERRAIN_TRANSITION_FLIGHT_TOE_CLEARANCE_METRES);
+                        + measured_ankle_sole_offset_metres()
+                        + (ik_tuning().swing_sole_clearance_metres * (1.0 - settle.progress))
+                            .max(ik_tuning().terrain_transition_flight_toe_clearance_metres);
                     desired_target.y = desired_target
                         .y
                         .max(foot_position.y.lerp(minimum_ankle_y, terrain_blend));
@@ -2308,8 +2327,8 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     |xz| {
                         let sole_minimum = terrain.height_at(xz).map(|height| {
                             height
-                                + MEASURED_ANKLE_SOLE_OFFSET_METRES
-                                + TERRAIN_TRANSITION_FLIGHT_TOE_CLEARANCE_METRES
+                                + measured_ankle_sole_offset_metres()
+                                + ik_tuning().terrain_transition_flight_toe_clearance_metres
                         });
                         let toe_minimum =
                             rendered_ankle_and_toe.and_then(|(rendered_ankle, rendered_toe)| {
@@ -2520,7 +2539,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 })
             });
             let plant_local = rig_rotation.inverse() * (horizontal_target - rig_origin);
-            if plant_local.x * side < FOOT_TRACK_INNER {
+            if plant_local.x * side < foot_track_inner_metres() {
                 // A retained world plant can rotate through the body's center
                 // during an exact reversal. Move only the offending lateral
                 // component back to its anatomical corridor; target velocity
@@ -2532,7 +2551,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
             let Some(height) = terrain.height_at(horizontal_target.xz()) else {
                 continue;
             };
-            let sole_offset = MEASURED_ANKLE_SOLE_OFFSET_METRES;
+            let sole_offset = measured_ankle_sole_offset_metres();
             let mut planted_target = Vec3::new(
                 horizontal_target.x,
                 height + sole_offset,
@@ -2563,7 +2582,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     rendered_ankle,
                     rendered_toe,
                     planted_target.xz(),
-                    TERRAIN_CONTACT_TOE_CLEARANCE_METRES,
+                    ik_tuning().terrain_contact_toe_clearance_metres,
                     |xz| terrain.height_at(xz),
                 )
             {
@@ -2581,10 +2600,9 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
             // Once contact is reported, solve directly to the frozen world
             // plant; a stance foot is stationary or released, never skated.
             let solve_weight = smoothstep(0.05, 0.9, weight) * terrain_blend;
-            let release_target_speed = memory
-                .settle
-                .map(settle_target_speed)
-                .unwrap_or(AIRBORNE_RELEASE_TARGET_SPEED);
+            let release_target_speed = memory.settle.map(settle_target_speed).unwrap_or(
+                ik_tuning().airborne_release_step_metres * ik_tuning().continuity_sample_hz,
+            );
             let support_run_airborne_budget = uses_run_airborne_motion_budget(
                 locomotion_profile(skeleton).gait,
                 planar_velocity
@@ -2695,7 +2713,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 let acquisition_clearance = if contact_reachable {
                     0.0
                 } else {
-                    RUN_SWING_MINIMUM_SOLE_CLEARANCE_METRES
+                    ik_tuning().run_swing_minimum_sole_clearance_metres
                 };
 
                 advance_run_airborne_world_target(
@@ -2704,10 +2722,10 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     rig_origin,
                     rig_rotation,
                     state_delta_seconds,
-                    RUN_AIRBORNE_OWNER_TARGET_SPEED,
+                    ik_tuning().run_airborne_owner_step_metres * ik_tuning().continuity_sample_hz,
                     |xz| {
                         terrain.height_at(xz).map(|height| {
-                            height + MEASURED_ANKLE_SOLE_OFFSET_METRES + acquisition_clearance
+                            height + measured_ankle_sole_offset_metres() + acquisition_clearance
                         })
                     },
                 )
@@ -2747,7 +2765,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 |xz| {
                     terrain
                         .height_at(xz)
-                        .map(|height| height + MEASURED_ANKLE_SOLE_OFFSET_METRES)
+                        .map(|height| height + measured_ankle_sole_offset_metres())
                 },
             );
             if memory.settle.is_some() && !plant_acquired {
@@ -2768,7 +2786,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     |xz| {
                         terrain
                             .height_at(xz)
-                            .map(|height| height + MEASURED_ANKLE_SOLE_OFFSET_METRES)
+                            .map(|height| height + measured_ankle_sole_offset_metres())
                     },
                 );
                 let contact_reachable = contact_candidate.distance_squared(planted_target)
@@ -2788,8 +2806,8 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                         |xz| {
                             let sole_minimum = terrain.height_at(xz).map(|height| {
                                 height
-                                    + MEASURED_ANKLE_SOLE_OFFSET_METRES
-                                    + TERRAIN_TRANSITION_FLIGHT_TOE_CLEARANCE_METRES
+                                    + measured_ankle_sole_offset_metres()
+                                    + ik_tuning().terrain_transition_flight_toe_clearance_metres
                             });
                             let toe_minimum = rendered_ankle_and_toe.and_then(
                                 |(rendered_ankle, rendered_toe)| {
