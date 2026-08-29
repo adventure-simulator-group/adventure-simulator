@@ -840,14 +840,21 @@ fn setup_stdb_callbacks(conn: Res<SpacetimeDb>) {
 fn on_scene_terrain_added(
     event: On<Add, SceneTerrain>,
     mut commands: Commands,
-    query: Query<&SceneTerrain>,
+    query: Query<(&SceneTerrain, Option<&FaultScarpRecipe>)>,
 ) -> Result {
-    let terrain = query.get(event.entity)?;
+    let (terrain, recipe) = query.get(event.entity)?;
+    let collider = if let Some(recipe) = recipe {
+        let patch = fault_scarp_patch(terrain, *recipe)
+            .map_err(|reason| BevyError::from(reason.to_owned()))?;
+        patch.collider_with_terrain(terrain)
+    } else {
+        terrain.collider()
+    };
     commands.entity(event.entity).insert((
         Replicated,
         RigidBody::Static,
         CollisionLayers::new(TACTICAL_TERRAIN_LAYER, LayerMask::ALL),
-        terrain.collider(),
+        collider,
     ));
     Ok(())
 }
@@ -892,6 +899,7 @@ fn on_server_started(
         );
         let scene_id = input.scene_key.clone();
         let terrain = generated.terrain;
+        let terrain_patch = generated.terrain_patch;
         let ground = generated.ground;
         let environment = input.environment_snapshot(generated.digest);
         let obstacles = generated.obstacles;
@@ -934,7 +942,10 @@ fn on_server_started(
                 Transform::from_xyz(x, y, z).with_rotation(Quat::from_rotation_y(yaw)),
             ));
         }
-        let terrain_collider = terrain.collider();
+        let terrain_collider = terrain_patch.as_ref().map_or_else(
+            || terrain.collider(),
+            |patch| patch.collider_with_terrain(&terrain),
+        );
         let mut scene = commands.spawn((
             Replicated,
             SceneId(scene_id),
@@ -946,6 +957,9 @@ fn on_server_started(
             Transform::default(),
         ));
         scene.insert(environment);
+        if let Some(recipe) = input.fault_scarp {
+            scene.insert(recipe);
+        }
     }
     commands.spawn((
         RigidBody::Static,

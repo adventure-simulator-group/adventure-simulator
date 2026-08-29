@@ -14,6 +14,7 @@ struct Fixture {
     environment: fn(f32, f32) -> EnvironmentalSample,
     weather: WeatherSnapshot,
     vista: VistaKind,
+    fault_scarp: Option<FaultScarpRecipe>,
 }
 
 #[derive(Clone, Copy)]
@@ -48,7 +49,7 @@ fn main() {
     }
 }
 
-fn fixtures() -> [Fixture; 13] {
+fn fixtures() -> [Fixture; 14] {
     [
         fixture(
             "flat-dry-grassland",
@@ -66,6 +67,25 @@ fn fixtures() -> [Fixture; 13] {
             rocky_open,
             clear(),
         ),
+        Fixture {
+            name: "fault-scarp-cliff",
+            scene_key: "fault-scarp",
+            seed: 47_114,
+            terrain: rolling,
+            environment: rocky_open,
+            weather: clear(),
+            vista: VistaKind::Ordinary,
+            fault_scarp: Some(FaultScarpRecipe {
+                seed: 47_114,
+                origin_cm: [0, 0],
+                tangent_permyriad: [10_000, 0],
+                throw_cm: 800,
+                half_length_cm: 4_500,
+                half_width_cm: 1_800,
+                collar_cm: 400,
+                lod: FaultScarpLod::Detail,
+            }),
+        },
         fixture(
             "dense-woodland",
             "woodland",
@@ -179,6 +199,7 @@ const fn fixture(
         environment,
         weather,
         vista: VistaKind::Ordinary,
+        fault_scarp: None,
     }
 }
 
@@ -195,6 +216,7 @@ fn build_fixture(fixture: Fixture) -> TacticalSceneInput {
         lunar_phase_minute: fixture.weather.interval_start_minute,
         absolute_elevation_metres: 42,
         playable: grid(9, 9, 12.5, fixture.terrain, fixture.environment),
+        fault_scarp: fixture.fault_scarp,
         vista: vista(
             fixture.vista,
             fixture.environment,

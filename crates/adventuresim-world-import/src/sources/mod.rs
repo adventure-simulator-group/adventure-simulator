@@ -5,6 +5,7 @@ pub mod drought;
 pub mod economies;
 pub mod elevation;
 pub mod environment_synthesis;
+pub mod faults;
 pub mod forest_cover;
 pub mod geology;
 pub mod hydrology;

@@ -18,10 +18,13 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
-use crate::scene::{GroundCover, GroundSubstrate, GroundSurface, SceneGround, SceneTerrain};
+use crate::{
+    scene::{GroundCover, GroundSubstrate, GroundSurface, SceneGround, SceneTerrain},
+    volumetric_terrain::{FaultScarpRecipe, SceneTerrainPatch, fault_scarp_patch},
+};
 
-pub const TACTICAL_SCENE_SCHEMA_VERSION: u16 = 3;
-pub const TACTICAL_SCENE_GENERATION_VERSION: u16 = 10;
+pub const TACTICAL_SCENE_SCHEMA_VERSION: u16 = 4;
+pub const TACTICAL_SCENE_GENERATION_VERSION: u16 = 18;
 pub const MAX_SCENE_INPUT_BYTES: u64 = 32 * 1024 * 1024;
 pub const TREE_TRUNK_RADIUS_METRES: f32 = 0.35;
 pub const TREE_TRUNK_HEIGHT_METRES: f32 = 5.0;
@@ -128,6 +131,7 @@ pub struct TacticalSceneInput {
     pub lunar_phase_minute: u64,
     pub absolute_elevation_metres: i16,
     pub playable: TerrainSampleGrid,
+    pub fault_scarp: Option<FaultScarpRecipe>,
     pub vista: VistaSample,
     pub weather: WeatherSnapshot,
 }
@@ -264,6 +268,7 @@ pub struct GeneratedTacticalScene {
     pub terrain: SceneTerrain,
     pub ground: SceneGround,
     pub obstacles: Vec<GeneratedObstacle>,
+    pub terrain_patch: Option<SceneTerrainPatch>,
     pub repairs: SceneRepairReport,
 }
 
@@ -329,6 +334,18 @@ impl TacticalSceneInput {
             return invalid("geographic origin is out of bounds");
         }
         validate_grid(&self.playable, MAX_PLAYABLE_SIDE, "playable")?;
+        if let Some(recipe) = self.fault_scarp {
+            let terrain = SceneTerrain::from_heightmap(
+                usize::from(self.playable.width),
+                usize::from(self.playable.depth),
+                self.playable.spacing_metres,
+                self.playable.heights_metres.clone(),
+            )
+            .ok_or_else(|| SceneInputError::Validation("playable heightmap is invalid".into()))?;
+            recipe
+                .validate(&terrain)
+                .map_err(|reason| SceneInputError::Validation(reason.into()))?;
+        }
         if self.vista.lods.len() > MAX_VISTA_LEVELS {
             return invalid("vista has too many LOD levels");
         }
@@ -462,11 +479,17 @@ impl TacticalSceneInput {
             self.playable.spacing_metres,
             self.weather.ground_moisture_bps,
         )?;
+        let terrain_patch = self
+            .fault_scarp
+            .map(|recipe| fault_scarp_patch(&terrain, recipe))
+            .transpose()
+            .map_err(|reason| SceneInputError::Validation(reason.into()))?;
         Ok(GeneratedTacticalScene {
             digest: self.digest()?,
             terrain,
             ground,
             obstacles,
+            terrain_patch,
             repairs,
         })
     }
@@ -1363,6 +1386,7 @@ mod tests {
                 heights_metres: vec![0.0, 0.1, 0.0, 0.1, 0.2, 0.1, 0.0, 0.1, 0.0],
                 environment,
             },
+            fault_scarp: None,
             vista: VistaSample::default(),
             weather: weather_at(42, 123_456, 53_500_000, 10_000_000, 80),
         }

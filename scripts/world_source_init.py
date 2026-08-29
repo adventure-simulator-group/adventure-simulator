@@ -77,6 +77,10 @@ CONTRACTS = {
         "target/world-data-sources/raw/geology", ("GeologicUnitView.gpkg",), "EPSG:3034", "1:1,000,000",
         "modern mapped geology", "export indexed GeologicUnitView GeoPackage from the EGDI service",
         "the accepted aggregate lacks a committed exact byte size and SHA-256"),
+    "hike": Contract("hike-fault-db-v17b", "17b", "anonymous", "contributor-specific terms; conservative rights-reserved aggregate",
+        "https://data.geus.dk/egdidatasets/hike/hikefaultdbv17b.gpkg", None,
+        "target/world-data-sources/raw/faults", ("hikefaultdbv17b.gpkg",), "EPSG:3034", "1:25,000 to 1:2,500,000",
+        "modern mapped fault traces", "consume the pinned HIKE v17b GeoPackage and clip it to the playable bounds", None),
     "eu-hydro": Contract("copernicus-eu-hydro-1-3", "1.3", "authenticated", "Copernicus full, free and open data policy",
         "https://doi.org/10.2909/393359a7-7ebd-4a52-80ac-1a18d5f3db9c", "10.2909/393359a7-7ebd-4a52-80ac-1a18d5f3db9c",
         "target/world-data-sources/raw/hydrology", (), "EPSG:3035", "vector river network",
@@ -88,6 +92,11 @@ TREES_FILE = {
     "name": "EU-Trees4F_ens-clim.zip",
     "size": 73_796_217,
     "sha256": "be115f771e5598e6fd180621e1a32922880cf7ac8e2cb59ba0eabd7f15bfeda4",
+}
+HIKE_FILE = {
+    "name": "hikefaultdbv17b.gpkg",
+    "size": 112_406_528,
+    "sha256": "b8ee4e324da7466df090d1d9530ce76e5f1037d45104267cc8fc538bb089144f",
 }
 RELIGION_FILE = Path("assets/world-data/ieg-religion-1544.csv")
 RELIGION_SIZE = 977
@@ -103,6 +112,12 @@ FOREST_NAME = re.compile(r"(TCD|DLT)_(([NS])(\d{2})_([EW])(\d{3}))\.tif\Z")
 class RedirectPolicy(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, request, fp, code, message, headers, new_url):
         validate_url(new_url, {"ies-ows.jrc.ec.europa.eu"}, "/efdac/download/EU-Trees4F/")
+        return super().redirect_request(request, fp, code, message, headers, new_url)
+
+
+class HikeRedirectPolicy(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, fp, code, message, headers, new_url):
+        validate_url(new_url, {"data.geus.dk"}, "/egdidatasets/hike/")
         return super().redirect_request(request, fp, code, message, headers, new_url)
 
 
@@ -206,7 +221,8 @@ def credential_status(contract: Contract) -> str:
 
 
 def plan(contract: Contract) -> dict[str, object]:
-    files = ([TREES_FILE] if contract.source == "eu-trees4f-v2" else [{"name": name, "size": None, "sha256": None} for name in contract.expected_names])
+    pinned = {"eu-trees4f-v2": TREES_FILE, "hike-fault-db-v17b": HIKE_FILE}
+    files = ([pinned[contract.source]] if contract.source in pinned else [{"name": name, "size": None, "sha256": None} for name in contract.expected_names])
     result = canonical_manifest(contract, files, "ready" if contract.blocked_reason is None else "release-blocked", contract.blocked_reason)
     result["credential_preflight"] = credential_status(contract)
     result["output"] = contract.output
@@ -306,12 +322,12 @@ def set_remaining_timeout(response: object, seconds: float) -> None:
 def deadline_read(response: object, size: int, deadline: float) -> bytes:
     before = time.monotonic()
     if before >= deadline:
-        raise RuntimeError("EU-Trees4F retrieval exceeded its total deadline")
+        raise RuntimeError("source retrieval exceeded its total deadline")
     set_remaining_timeout(response, deadline - before)
     reader = getattr(response, "read1", None)
     block = reader(size) if callable(reader) else response.read(size)
     if time.monotonic() > deadline:
-        raise RuntimeError("EU-Trees4F retrieval exceeded its total deadline")
+        raise RuntimeError("source retrieval exceeded its total deadline")
     return block
 
 
@@ -385,6 +401,42 @@ def verify_trees(directory: Path) -> None:
         raise RuntimeError("EU-Trees4F archive is absent or differs from the pinned identity")
 
 
+def download_hike(directory: Path, *, force: bool = False) -> None:
+    contract = CONTRACTS["hike"]
+    validate_url(contract.canonical_url, {"data.geus.dk"}, "/egdidatasets/hike/")
+    directory.mkdir(parents=True, exist_ok=True)
+    current = safe_child(directory, HIKE_FILE["name"])
+    if current.is_file() and current.stat().st_size == HIKE_FILE["size"] and sha256(current) == HIKE_FILE["sha256"]:
+        write_atomic(directory / "source-manifest.json", canonical_manifest(contract, [HIKE_FILE], "verified"))
+        return
+    if current.exists() and not force:
+        raise RuntimeError("existing HIKE GeoPackage is invalid; pass --force to replace it after verification")
+    handle, name = tempfile.mkstemp(prefix=".hikefaultdbv17b.", suffix=".part", dir=directory)
+    os.close(handle)
+    temporary = Path(name)
+    deadline = time.monotonic() + TOTAL_TIMEOUT_SECONDS
+    try:
+        request = urllib.request.Request(contract.canonical_url, headers={"User-Agent": USER_AGENT})
+        with urllib.request.build_opener(HikeRedirectPolicy).open(request, timeout=CONNECT_TIMEOUT_SECONDS) as response, temporary.open("wb") as output:
+            validate_url(response.geturl(), {"data.geus.dk"}, "/egdidatasets/hike/")
+            while block := deadline_read(response, 64 * 1024, deadline):
+                output.write(block)
+                if output.tell() > HIKE_FILE["size"]:
+                    raise RuntimeError("HIKE retrieval exceeded its pinned byte size")
+        if temporary.stat().st_size != HIKE_FILE["size"] or sha256(temporary) != HIKE_FILE["sha256"]:
+            raise RuntimeError("HIKE GeoPackage checksum or size mismatch")
+        os.replace(temporary, current)
+        write_atomic(directory / "source-manifest.json", canonical_manifest(contract, [HIKE_FILE], "verified"))
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def verify_hike(directory: Path) -> None:
+    path = safe_child(directory, HIKE_FILE["name"])
+    if not path.is_file() or path.stat().st_size != HIKE_FILE["size"] or sha256(path) != HIKE_FILE["sha256"]:
+        raise RuntimeError("HIKE GeoPackage is absent or differs from the pinned identity")
+
+
 def verify_religion(path: Path = RELIGION_FILE) -> None:
     if path.is_symlink() or not path.is_file() or path.stat().st_size != RELIGION_SIZE or sha256(path) != RELIGION_SHA256:
         raise RuntimeError("curated religion CSV revision digest/size mismatch")
@@ -433,10 +485,18 @@ def main() -> None:
     elif args.init:
         if contract.blocked_reason is not None:
             raise RuntimeError(f"acquisition refused: {contract.blocked_reason}; commit a checked inventory before enabling network preparation")
-        download_trees(directory, force=args.force)
+        if contract.source == "eu-trees4f-v2":
+            download_trees(directory, force=args.force)
+        elif contract.source == "hike-fault-db-v17b":
+            download_hike(directory, force=args.force)
+        else:
+            raise RuntimeError("source has no enabled network acquisition implementation")
         print(f"{contract.source} initialized and verified")
     elif contract.source == "eu-trees4f-v2":
         verify_trees(directory)
+        print(f"{contract.source} verified")
+    elif contract.source == "hike-fault-db-v17b":
+        verify_hike(directory)
         print(f"{contract.source} verified")
     else:
         entries = verify_inventory(directory, contract)

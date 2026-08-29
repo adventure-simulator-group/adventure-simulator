@@ -1826,6 +1826,7 @@ fn setup_scene(
         ground,
         obstacles,
         repairs,
+        terrain_patch,
     } = generated;
     let terrain_summary = TerrainSummary {
         width_metres: terrain.width(),
@@ -1938,7 +1939,10 @@ fn setup_scene(
         ));
     }
 
-    let terrain_collider = terrain.collider();
+    let terrain_collider = terrain_patch.as_ref().map_or_else(
+        || terrain.collider(),
+        |patch| patch.collider_with_terrain(&terrain),
+    );
     let mut obstacle_focus = if obstacle_count == 0 {
         Vec3::ZERO
     } else {
@@ -2124,17 +2128,22 @@ fn setup_scene(
                 .id(),
         );
     }
-    commands.spawn((
-        Name::new("Captured tactical terrain"),
-        SceneId(input.scene_key.clone()),
-        environment,
-        ground,
-        RigidBody::Static,
-        CollisionLayers::new(TACTICAL_TERRAIN_LAYER, LayerMask::ALL),
-        terrain_collider,
-        terrain,
-        Transform::default(),
-    ));
+    let terrain_entity = commands
+        .spawn((
+            Name::new("Captured tactical terrain"),
+            SceneId(input.scene_key.clone()),
+            environment,
+            ground,
+            RigidBody::Static,
+            CollisionLayers::new(TACTICAL_TERRAIN_LAYER, LayerMask::ALL),
+            terrain_collider,
+            terrain,
+            Transform::default(),
+        ))
+        .id();
+    if let Some(fault_scarp) = input.fault_scarp {
+        commands.entity(terrain_entity).insert(fault_scarp);
+    }
     commands.trigger(SceneVistaBundle {
         scene_digest: digest.clone(),
         playable_half_extent_metres: Vec2::new(
@@ -3997,6 +4006,12 @@ fn camera_for_view(pose: CapturePose, state: &SceneCaptureState) -> (Transform, 
                 Vec3::Y,
             )
         }
+        CapturePose::FaultScarp => (Vec3::new(0.0, 8.0, 24.0), Vec3::new(0.0, 2.0, 0.0), Vec3::Y),
+        CapturePose::FaultScarpSeam => (
+            Vec3::new(24.0, 5.0, 18.0),
+            Vec3::new(16.5, 1.8, 7.0),
+            Vec3::Y,
+        ),
         CapturePose::GrassSeam => {
             let target = state.obstacle_focus - Vec3::Y * 1.30;
             (target + Vec3::new(-3.4, 1.25, 3.4), target, Vec3::Y)

@@ -30,13 +30,16 @@ class CaptureTacticalScenesTests(unittest.TestCase):
 
     def test_default_matrix_is_compact_and_environment_only(self):
         matrix = MODULE.selected_matrix(None, None)
-        self.assertEqual(len(matrix), 12)
-        self.assertLessEqual(sum(len(case.views) for case, _, _ in matrix), 54)
+        self.assertEqual(len(matrix), 15)
+        self.assertLessEqual(sum(len(case.views) for case, _, _ in matrix), 60)
         self.assertNotIn("heavy-rain-high-wind", {case.fixture for case, _, _ in matrix})
         sparse = [(case, time_name) for case, time_name, _ in matrix if case.fixture == "sparse-woodland"]
         for expected_time in ("morning", "grazing"):
             case = next(case for case, time_name in sparse if time_name == expected_time)
             self.assertIn("forest-floor-debris-detail", case.views)
+        fault = next(case for case, _, _ in matrix if case.fixture == "fault-scarp-cliff")
+        self.assertIn("fault-scarp", fault.views)
+        self.assertIn("fault-scarp-seam", fault.views)
 
     def test_fixture_and_named_time_filters_cross_product(self):
         matrix = MODULE.selected_matrix(["steep-open-hillside"], ["noon", "moonlit"])

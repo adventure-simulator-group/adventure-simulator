@@ -10,10 +10,12 @@ use serde::{Deserialize, Serialize};
 pub mod coordinates;
 mod language;
 pub use language::*;
-pub const WORLD_SCHEMA_VERSION: u32 = 26;
+pub const WORLD_SCHEMA_VERSION: u32 = 28;
 pub const CURRENT_INFERENCE_RULES_VERSION: u32 = 10;
 pub const MAX_EDGE_GEOMETRY_POINTS: usize = 512;
 pub const MAX_WORLD_GEOMETRY_POINTS: usize = 200_000;
+pub const MAX_FAULT_GEOMETRY_POINTS: usize = 100_000;
+pub const MAX_FAULT_LINE_POINTS: usize = 4_096;
 pub const MAX_SOURCES_MARKDOWN_CHARS: usize = 32_768;
 /// The basis-point representation of one whole (100%).
 pub const BASIS_POINTS_PER_WHOLE: u16 = 10_000;
@@ -4614,6 +4616,9 @@ pub struct WorldBuildReport {
     pub geology_features_read: usize,
     pub geology_samples: usize,
     pub geology_fallback_samples: usize,
+    pub fault_features_read: usize,
+    pub fault_traces_imported: usize,
+    pub fault_geometry_points: usize,
     pub religion_regions_read: usize,
     pub religion_samples: usize,
     pub religion_fallback_samples: usize,
@@ -4666,7 +4671,44 @@ pub struct CompiledWorld {
     pub settlements: Vec<SettlementImport>,
     pub settlement_aliases: Vec<SettlementAliasImport>,
     pub settlement_descriptions: Vec<SettlementDescriptionImport>,
+    /// Bounded mapped features consumed by terrain generation and spatial
+    /// presentation. These are source observations, not historical claims.
+    pub terrain_features: Vec<TerrainFeature>,
     pub report: WorldBuildReport,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub enum TerrainFeature {
+    MappedFault(MappedFault),
+}
+
+impl TerrainFeature {
+    pub fn id(&self) -> &str {
+        match self {
+            Self::MappedFault(fault) => &fault.id,
+        }
+    }
+
+    pub fn geometry(&self) -> &[TravelGeometryPoint] {
+        match self {
+            Self::MappedFault(fault) => &fault.trace,
+        }
+    }
+}
+
+/// Modern mapped fault evidence retained as a terrain-generation prior. The
+/// source activity fields do not imply historical activity in the game year.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct MappedFault {
+    /// Stable source-qualified identifier.
+    pub id: String,
+    pub local_name: Option<String>,
+    pub classification: Option<String>,
+    pub mapped_active: bool,
+    pub mapped_capable: bool,
+    pub trace: Vec<TravelGeometryPoint>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

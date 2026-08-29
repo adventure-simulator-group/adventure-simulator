@@ -33,6 +33,8 @@ pub(super) enum CapturePose {
     BranchJunction,
     Rock,
     TerrainGrazing,
+    FaultScarp,
+    FaultScarpSeam,
     GrassSeam,
     Debris,
     GroundCover,
@@ -474,7 +476,7 @@ pub(super) const CAPTURE_VIEWS: [CaptureViewSpec; 32] = [
     .overlay(),
 ];
 
-pub(super) const ENVIRONMENT_REVIEW_VIEWS: [CaptureViewSpec; 12] = [
+pub(super) const ENVIRONMENT_REVIEW_VIEWS: [CaptureViewSpec; 14] = [
     v!(
         "warmup",
         "Render-pipeline warmup",
@@ -532,6 +534,23 @@ pub(super) const ENVIRONMENT_REVIEW_VIEWS: [CaptureViewSpec; 12] = [
         "Ground material under grazing light",
         CapturePose::TerrainGrazing,
         42.0,
+        1000
+    )
+    .suppress_grass()
+    .detail(DetailRequirement::GrassSuppressed),
+    v!(
+        "fault-scarp",
+        "Fault-scarp cliff face",
+        CapturePose::FaultScarp,
+        45.0,
+        1000
+    )
+    .suppress_grass(),
+    v!(
+        "fault-scarp-seam",
+        "Fault-scarp patch and heightfield seam",
+        CapturePose::FaultScarpSeam,
+        44.0,
         1000
     )
     .suppress_grass()

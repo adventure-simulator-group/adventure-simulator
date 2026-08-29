@@ -220,6 +220,7 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         &package,
         wetland.polygons.clone(),
         wetland.source_sha256.clone(),
+        Vec::new(),
     );
     if args.base_only {
         let terrain = adventuresim_terrain::builder::build(
@@ -288,7 +289,12 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
                 .collect(),
         })
         .collect();
-    let mut terrain_features = terrain_features(&package, wetland.polygons, wetland.source_sha256);
+    let mut terrain_features = terrain_features(
+        &package,
+        wetland.polygons,
+        wetland.source_sha256,
+        world.terrain_features.clone(),
+    );
     terrain_features.cultivated = cultivated;
     terrain_features.cultivation_source_sha256 = cultivation_source_sha256;
     let terrain = adventuresim_terrain::builder::build(
@@ -410,6 +416,7 @@ fn terrain_features(
     package: &Package,
     wetlands: Vec<Vec<Vec<[f64; 2]>>>,
     wetland_source_sha256: String,
+    terrain_features: Vec<adventuresim_world_schema::TerrainFeature>,
 ) -> adventuresim_terrain::builder::Features {
     adventuresim_terrain::builder::Features {
         roads: package
@@ -434,6 +441,7 @@ fn terrain_features(
         cultivation_source_sha256: format!("{:x}", Sha256::digest(b"no-cultivation")),
         cultivation_rules_version:
             adventuresim_world_import::cultivation::CULTIVATION_RULES_VERSION,
+        terrain_features,
     }
 }
 
@@ -1390,7 +1398,7 @@ mod tests {
         let routing = package.routing_roads.last().unwrap();
         assert_eq!(visible, routing);
         assert_eq!(package.roads.last().unwrap().kind, "inferred");
-        let features = terrain_features(&package, Vec::new(), "0".repeat(64));
+        let features = terrain_features(&package, Vec::new(), "0".repeat(64), Vec::new());
         assert_eq!(
             features.roads.last().unwrap(),
             &routing.iter().map(|point| point.0).collect::<Vec<_>>()

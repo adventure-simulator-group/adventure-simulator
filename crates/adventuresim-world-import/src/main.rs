@@ -48,6 +48,8 @@ struct Args {
     soilgrids_dir: PathBuf,
     #[arg(long, default_value_os_t = default_geology_geopackage())]
     geology_geopackage: PathBuf,
+    #[arg(long, default_value_os_t = default_fault_geopackage())]
+    fault_geopackage: PathBuf,
     #[arg(long, default_value_os_t = default_religion_regions())]
     religion_regions: PathBuf,
     #[arg(long, default_value_os_t = default_drought_netcdf())]
@@ -169,6 +171,7 @@ fn run(args: Args) -> Result<()> {
                 tree_species: &args.tree_species_archive,
                 soilgrids: &args.soilgrids_dir,
                 geology: &args.geology_geopackage,
+                faults: &args.fault_geopackage,
                 religion_regions: &args.religion_regions,
                 drought: &args.drought_netcdf,
                 hydrology: &args.hydrology_dir,
@@ -1374,6 +1377,10 @@ fn default_geology_geopackage() -> PathBuf {
     repository_root().join("target/world-data-sources/raw/geology/GeologicUnitView.gpkg")
 }
 
+fn default_fault_geopackage() -> PathBuf {
+    repository_root().join("target/world-data-sources/raw/faults/hikefaultdbv17b.gpkg")
+}
+
 fn default_religion_regions() -> PathBuf {
     repository_root().join("assets/world-data/ieg-religion-1544.csv")
 }
@@ -1450,6 +1457,7 @@ mod tests {
             settlements: Vec::new(),
             settlement_aliases: Vec::new(),
             settlement_descriptions: Vec::new(),
+            terrain_features: Vec::new(),
             report: WorldBuildReport::default(),
         };
         let default_bytes = serde_json::to_vec(&world(1_000)).unwrap();
@@ -1498,6 +1506,7 @@ mod tests {
             settlements: vec![],
             settlement_aliases: vec![],
             settlement_descriptions: vec![],
+            terrain_features: vec![],
             report: WorldBuildReport::default(),
         };
         let audit = manifest_audit_markdown(&world).unwrap();
@@ -1554,6 +1563,7 @@ mod tests {
                 settlements: vec![],
                 settlement_aliases: vec![],
                 settlement_descriptions: vec![],
+                terrain_features: vec![],
                 report: WorldBuildReport::default(),
             },
             &"b".repeat(64),
@@ -1577,6 +1587,7 @@ mod tests {
                 settlements: vec![],
                 settlement_aliases: vec![],
                 settlement_descriptions: vec![],
+                terrain_features: vec![],
                 report: WorldBuildReport::default(),
             },
             &"b".repeat(64),
@@ -1600,6 +1611,7 @@ mod tests {
                 settlements: vec![],
                 settlement_aliases: vec![],
                 settlement_descriptions: vec![],
+                terrain_features: vec![],
                 report: WorldBuildReport::default(),
             },
             &"b".repeat(64),

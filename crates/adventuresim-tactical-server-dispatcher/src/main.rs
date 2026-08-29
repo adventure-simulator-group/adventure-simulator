@@ -89,7 +89,6 @@ fn main() {
         "Loaded final terrain pack once for tactical sampling"
     );
     let terrain = Arc::new(terrain);
-
     // Shared state for tracking spawned missions and port allocation
     let spawned: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
     let next_port: Arc<Mutex<u16>> = Arc::new(Mutex::new(args.base_port));
@@ -159,12 +158,14 @@ fn main() {
             let enemy_combat_scale_bps = request.enemy_combat_scale_bps.to_string();
             let scene_input = match scene_input::build_imported_scene(
                 &terrain_clone,
-                &mission_id,
-                &scene_key,
-                request.latitude_e_7,
-                request.longitude_e_7,
-                request.absolute_minute,
-                request.lunar_phase_minute,
+                scene_input::ImportedSceneRequest {
+                    mission_id: &mission_id,
+                    scene_key: &scene_key,
+                    latitude_e7: request.latitude_e_7,
+                    longitude_e7: request.longitude_e_7,
+                    absolute_minute: request.absolute_minute,
+                    lunar_phase_minute: request.lunar_phase_minute,
+                },
             )
             .and_then(|input| {
                 scene_input::materialize_scene_input(&scene_input_dir, &mission_id, &input)

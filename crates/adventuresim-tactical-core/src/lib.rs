@@ -12,6 +12,7 @@ pub mod physics;
 pub mod player;
 pub mod scene;
 pub mod scene_input;
+pub mod volumetric_terrain;
 
 pub use avian3d;
 
@@ -77,7 +78,7 @@ pub mod prelude {
     };
     pub use crate::scene::{
         GroundCover, GroundSubstrate, GroundSurface, SceneGround, SceneId, SceneTerrain,
-        TerrainGenerator,
+        TerrainGenerator, TerrainTransitionCollar,
     };
     pub use crate::scene_input::{
         EnvironmentalSample, GeneratedObstacle, GeneratedTacticalScene, ROCK_RADIUS_METRES,
@@ -86,6 +87,9 @@ pub mod prelude {
         TACTICAL_SCENE_GENERATION_VERSION, TACTICAL_SCENE_SCHEMA_VERSION,
         TREE_CANOPY_GROUND_RADIUS_METRES, TREE_TRUNK_HEIGHT_METRES, TREE_TRUNK_RADIUS_METRES,
         TacticalSceneInput, TacticalSurface, TerrainSampleGrid, VistaLod, VistaSample,
+    };
+    pub use crate::volumetric_terrain::{
+        FaultScarpLod, FaultScarpRecipe, SceneTerrainPatch, fault_scarp_patch,
     };
     pub use adventuresim_core::item_catalog;
     pub use adventuresim_core::item_catalog::{EquipmentChannel, EquipmentLocation};

@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use adventuresim_tactical_core::prelude::TACTICAL_SCENE_GENERATION_VERSION;
 use adventuresim_tactical_server_dispatcher::scene_input::{
-    build_imported_scene, materialize_scene_input,
+    ImportedSceneRequest, build_imported_scene, materialize_scene_input,
 };
 use adventuresim_terrain::{TerrainPack, TerrainPurpose};
 use adventuresim_world_schema::coordinates::{LatitudeE7, LongitudeE7};
@@ -36,7 +36,6 @@ struct Args {
     /// Final compressed terrain pack paired with terrain-manifest.
     #[arg(long, default_value = "target/strategic-map/terrain-routing-v3.pack")]
     terrain_pack: PathBuf,
-
     /// Directory for immutable coordinate-derived scene documents.
     #[arg(long, default_value = "target/tactical-real-world-scenes")]
     output_dir: PathBuf,
@@ -65,12 +64,14 @@ fn main() -> Result<(), String> {
     );
     let input = build_imported_scene(
         &terrain,
-        &mission_id,
-        &args.scene_key,
-        latitude_e7,
-        longitude_e7,
-        args.absolute_minute,
-        args.absolute_minute,
+        ImportedSceneRequest {
+            mission_id: &mission_id,
+            scene_key: &args.scene_key,
+            latitude_e7,
+            longitude_e7,
+            absolute_minute: args.absolute_minute,
+            lunar_phase_minute: args.absolute_minute,
+        },
     )?;
     let path = materialize_scene_input(&args.output_dir, &mission_id, &input)?;
     println!(

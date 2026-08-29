@@ -73,3 +73,34 @@ fn foliage_uses_hardware_multisample_coverage() {
         AlphaMode::AlphaToCoverage
     );
 }
+
+#[test]
+fn volumetric_patch_footprint_suppresses_all_heightfield_scatter() {
+    let ground = SceneGround::from_samples(9, 9, 1.0, vec![GroundSurface::default(); 81]).unwrap();
+    let collar = TerrainTransitionCollar::irregular_ellipse(
+        Vec2::ZERO,
+        Vec2::X,
+        2.0,
+        2.0,
+        0.5,
+        17,
+        0.2,
+        1_000,
+    )
+    .unwrap();
+    let masked = scatter_ground_without_patch(&ground, collar);
+
+    for z in 0..masked.grid_depth() {
+        for x in 0..masked.grid_width() {
+            let point = Vec2::new(x as f32 - 4.0, z as f32 - 4.0);
+            let sample = masked.samples()[z * masked.grid_width() + x];
+            if collar.contains(point) {
+                assert_eq!(sample.cover, GroundCover::Bare);
+                assert_eq!(sample.substrate, GroundSubstrate::Water);
+                assert_eq!(sample.cover_density_bps, 0);
+            } else {
+                assert_eq!(sample, GroundSurface::default());
+            }
+        }
+    }
+}

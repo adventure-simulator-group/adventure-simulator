@@ -186,6 +186,7 @@ pub(in crate::presentation) fn present_pending_terrain(
             &SceneTerrain,
             &SceneEnvironment,
             Option<&SceneGround>,
+            Option<&FaultScarpRecipe>,
         ),
         With<PendingTerrainPresentation>,
     >,
@@ -215,7 +216,8 @@ pub(in crate::presentation) fn present_pending_terrain(
     mut startup: Option<ResMut<crate::presentation::ClientStartupTiming>>,
 ) {
     let mut prepared_first_terrain = false;
-    for (entity, id, terrain, environment, ground) in &query {
+    for (entity, id, terrain, environment, ground, fault_scarp) in &query {
+        let transition_collar = fault_scarp.map(|recipe| recipe.transition_collar());
         let presented = if let (
             Some((_, handle)),
             Some((_, detail_handle, mut patch, mesh_handle, mut triangle_count)),
@@ -244,8 +246,13 @@ pub(in crate::presentation) fn present_pending_terrain(
                     .get_mut(&detail_handle.0)
                     .expect("checked detail terrain material") = detail_material;
                 if let Some(mut mesh) = meshes.get_mut(&mesh_handle.0) {
-                    let replacement =
-                        terrain_detail_patch_mesh(terrain, environment, &vista, patch.centre);
+                    let replacement = terrain_detail_patch_mesh(
+                        terrain,
+                        environment,
+                        &vista,
+                        patch.centre,
+                        transition_collar,
+                    );
                     triangle_count.0 = mesh_triangle_count(&replacement);
                     *mesh = replacement;
                     patch.vista_revision = vista.revision();
@@ -267,9 +274,24 @@ pub(in crate::presentation) fn present_pending_terrain(
             let mut detail_material = material.clone();
             detail_material.base.depth_bias = DETAIL_PATCH_DEPTH_BIAS;
             detail_material.extension.detail_patch.x = 0.0;
+            let fault_patch =
+                fault_scarp.and_then(|recipe| fault_scarp_patch(terrain, *recipe).ok());
+            let fault_material = fault_patch.as_ref().map(|_| {
+                let mut fault_material = material.clone();
+                // The volumetric mesh already includes its own zero-offset
+                // transition rim. Treat it as refined terrain so the coarse
+                // material's camera-local discard does not expose the
+                // triangle-by-triangle heightfield cutout underneath it.
+                fault_material.extension.detail_patch.x = 0.0;
+                fault_material.base.depth_bias = 1.0;
+                materials.add(fault_material)
+            });
             let material = materials.add(material);
             let detail_material = materials.add(detail_material);
-            let playable_mesh = terrain.coarse_mesh();
+            let playable_mesh = transition_collar.map_or_else(
+                || terrain.coarse_mesh(),
+                |collar| terrain.coarse_mesh_with_transition(collar),
+            );
             let playable_triangle_count = mesh_triangle_count(&playable_mesh);
             commands.spawn((
                 Name::new(format!("{} terrain mesh", id.0)),
@@ -279,8 +301,19 @@ pub(in crate::presentation) fn present_pending_terrain(
                 Mesh3d(meshes.add(playable_mesh)),
                 MeshMaterial3d(material.clone()),
             ));
+            if let Some(patch) = fault_patch {
+                let triangle_count = patch.triangle_count();
+                commands.spawn((
+                    Name::new(format!("{} fault scarp mesh", id.0)),
+                    ScenePresentationOf(entity),
+                    TerrainTriangleCount(triangle_count),
+                    Mesh3d(meshes.add(terrain_patch_mesh(patch, terrain))),
+                    MeshMaterial3d(fault_material.expect("fault recipe created its material")),
+                ));
+            }
             let centre = Vec2::ZERO;
-            let detail_mesh = terrain_detail_patch_mesh(terrain, environment, &vista, centre);
+            let detail_mesh =
+                terrain_detail_patch_mesh(terrain, environment, &vista, centre, transition_collar);
             let detail_triangle_count = mesh_triangle_count(&detail_mesh);
             commands.spawn((
                 Name::new(format!("{} camera-local terrain detail patch", id.0)),
@@ -308,13 +341,35 @@ pub(in crate::presentation) fn present_pending_terrain(
     }
 }
 
+fn terrain_patch_mesh(patch: SceneTerrainPatch, terrain: &SceneTerrain) -> Mesh {
+    let uvs = patch
+        .positions
+        .iter()
+        .map(|position| {
+            [
+                position[0] / terrain.width() + 0.5,
+                position[2] / terrain.depth() + 0.5,
+            ]
+        })
+        .collect::<Vec<_>>();
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+    );
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, patch.positions);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, patch.normals);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+    mesh.insert_indices(Indices::U32(patch.indices));
+    mesh
+}
+
 /// Moves the bounded high-resolution patch in one-metre increments. All
 /// heights are sampled in world space, so snapping changes only the fully
 /// morphed transition ring rather than making the surface swim under the player.
 pub(in crate::presentation) fn update_terrain_detail_patch(
     camera: Single<&GlobalTransform, With<TacticalGameplayCamera>>,
     active: Res<ActiveTacticalScene>,
-    scenes: Query<(&SceneTerrain, &SceneEnvironment)>,
+    scenes: Query<(&SceneTerrain, &SceneEnvironment, Option<&FaultScarpRecipe>)>,
     mut patches: Query<(
         &ScenePresentationOf,
         &mut TerrainDetailPatch,
@@ -335,13 +390,19 @@ pub(in crate::presentation) fn update_terrain_detail_patch(
         {
             continue;
         }
-        let Ok((terrain, environment)) = scenes.get(source.0) else {
+        let Ok((terrain, environment, fault_scarp)) = scenes.get(source.0) else {
             continue;
         };
         let Some(mut mesh) = meshes.get_mut(&mesh_handle.0) else {
             continue;
         };
-        let replacement = terrain_detail_patch_mesh(terrain, environment, &vista, desired_centre);
+        let replacement = terrain_detail_patch_mesh(
+            terrain,
+            environment,
+            &vista,
+            desired_centre,
+            fault_scarp.map(|recipe| recipe.transition_collar()),
+        );
         triangle_count.0 = mesh_triangle_count(&replacement);
         *mesh = replacement;
         patch.centre = desired_centre;
@@ -354,6 +415,7 @@ fn terrain_detail_patch_mesh(
     environment: &SceneEnvironment,
     vista: &ActiveVistaSurface,
     centre: Vec2,
+    transition_collar: Option<TerrainTransitionCollar>,
 ) -> Mesh {
     let diameter_steps =
         (DETAIL_PATCH_RADIUS_METRES * 2.0 / DETAIL_PATCH_SPACING_METRES).round() as usize;
@@ -390,24 +452,30 @@ fn terrain_detail_patch_mesh(
     let mut indices = Vec::with_capacity(diameter_steps * diameter_steps * 6);
     for z in 0..diameter_steps {
         for x in 0..diameter_steps {
-            let cell_centre = minimum
-                + (Vec2::new(x as f32, z as f32) + Vec2::splat(0.5)) * DETAIL_PATCH_SPACING_METRES;
-            if cell_centre.distance(centre) > DETAIL_PATCH_RADIUS_METRES {
-                continue;
-            }
             let i = z * width + x;
             if !valid[i] || !valid[i + 1] || !valid[i + width] || !valid[i + width + 1] {
                 continue;
             }
             let i = i as u32;
-            indices.extend_from_slice(&[
-                i,
-                i + width as u32,
-                i + 1,
-                i + 1,
-                i + width as u32,
-                i + width as u32 + 1,
-            ]);
+            let cell_triangles = [
+                [i, i + width as u32, i + 1],
+                [i + 1, i + width as u32, i + width as u32 + 1],
+            ];
+            for triangle in cell_triangles {
+                let triangle_centre = triangle
+                    .iter()
+                    .map(|&index| {
+                        let position = positions[index as usize];
+                        Vec2::new(position[0], position[2])
+                    })
+                    .sum::<Vec2>()
+                    / 3.0;
+                if triangle_centre.distance(centre) <= DETAIL_PATCH_RADIUS_METRES
+                    && !transition_collar.is_some_and(|collar| collar.cuts_out(triangle_centre))
+                {
+                    indices.extend_from_slice(&triangle);
+                }
+            }
         }
     }
 
@@ -1350,8 +1418,8 @@ mod tests {
             .unwrap();
         let environment = SceneEnvironmentFixture::TemperateHills.snapshot("detail-patch");
         let vista = ActiveVistaSurface::default();
-        let first = terrain_detail_patch_mesh(&terrain, &environment, &vista, Vec2::ZERO);
-        let repeated = terrain_detail_patch_mesh(&terrain, &environment, &vista, Vec2::ZERO);
+        let first = terrain_detail_patch_mesh(&terrain, &environment, &vista, Vec2::ZERO, None);
+        let repeated = terrain_detail_patch_mesh(&terrain, &environment, &vista, Vec2::ZERO, None);
         let positions = match first.attribute(Mesh::ATTRIBUTE_POSITION).unwrap() {
             VertexAttributeValues::Float32x3(values) => values,
             other => panic!("unexpected positions {other:?}"),
@@ -1440,6 +1508,46 @@ mod tests {
             }
             let expected = terrain.coarse_height_at(point).unwrap();
             assert!((position[1] - expected).abs() < 0.000_01);
+        }
+    }
+
+    #[test]
+    fn camera_local_detail_patch_respects_a_volumetric_transition_cutout() {
+        let terrain = SceneTerrain::new(64, 64, 1.0, |_| 0.0);
+        let environment = SceneEnvironmentFixture::TemperateHills.snapshot("detail-cutout");
+        let vista = ActiveVistaSurface::default();
+        let collar = TerrainTransitionCollar::irregular_ellipse(
+            Vec2::ZERO,
+            Vec2::X,
+            3.0,
+            3.0,
+            1.0,
+            0,
+            0.0,
+            0,
+        )
+        .unwrap();
+        let mesh =
+            terrain_detail_patch_mesh(&terrain, &environment, &vista, Vec2::ZERO, Some(collar));
+        let positions = match mesh.attribute(Mesh::ATTRIBUTE_POSITION).unwrap() {
+            VertexAttributeValues::Float32x3(values) => values,
+            other => panic!("unexpected positions {other:?}"),
+        };
+        let indices = match mesh.indices().unwrap() {
+            Indices::U32(indices) => indices,
+            other => panic!("unexpected indices {other:?}"),
+        };
+
+        for triangle in indices.as_chunks::<3>().0 {
+            let centre = triangle
+                .iter()
+                .map(|&index| {
+                    let position = positions[index as usize];
+                    Vec2::new(position[0], position[2])
+                })
+                .sum::<Vec2>()
+                / 3.0;
+            assert!(!collar.cuts_out(centre));
         }
     }
 

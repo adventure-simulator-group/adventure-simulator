@@ -2,10 +2,11 @@ use std::collections::{HashMap, HashSet};
 
 use adventuresim_world_schema::{
     CURRENT_INFERENCE_RULES_VERSION, CompiledWorld, DerivedHistoricalVegetationMethod,
-    DroughtProfile, HistoricalVegetation, MAX_EDGE_GEOMETRY_POINTS, MAX_WORLD_GEOMETRY_POINTS,
-    PLAYABLE_BOUNDS, SettlementHydrology, SettlementImport, SoilEvidence, SurfaceGeology,
-    TravelEdgeProvenance, TravelRoute, TreeSpeciesProfile, WORLD_SCHEMA_VERSION,
-    historical_vegetation_matches_context, valid_sources_markdown,
+    DroughtProfile, HistoricalVegetation, MAX_EDGE_GEOMETRY_POINTS, MAX_FAULT_GEOMETRY_POINTS,
+    MAX_FAULT_LINE_POINTS, MAX_WORLD_GEOMETRY_POINTS, PLAYABLE_BOUNDS, SettlementHydrology,
+    SettlementImport, SoilEvidence, SurfaceGeology, TravelEdgeProvenance, TravelRoute,
+    TreeSpeciesProfile, WORLD_SCHEMA_VERSION, historical_vegetation_matches_context,
+    valid_sources_markdown,
 };
 use sha2::{Digest, Sha256};
 
@@ -132,6 +133,7 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
         (report.tree_species_rasters_read > 0, "eu-trees4f-v2"),
         (report.soil_rasters_read > 0, "soilgrids-v2-rolling"),
         (report.geology_features_read > 0, "egdi-surface-geology-1m"),
+        (report.fault_features_read > 0, "hike-fault-db-v17b"),
         (
             report.religion_regions_read > 0,
             "ieg-religion-1544-curated",
@@ -160,6 +162,39 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
         return Err(Error::Validation(format!(
             "canonical source manifest set does not match build evidence (expected {expected:?}, got {actual:?})"
         )));
+    }
+
+    let [west, south, east, north] = PLAYABLE_BOUNDS;
+    let fault_points = world
+        .terrain_features
+        .iter()
+        .map(|feature| feature.geometry().len())
+        .sum::<usize>();
+    if world.terrain_features.len() != report.fault_traces_imported
+        || fault_points != report.fault_geometry_points
+        || fault_points > MAX_FAULT_GEOMETRY_POINTS
+        || world
+            .terrain_features
+            .windows(2)
+            .any(|pair| pair[0].id() >= pair[1].id())
+        || world.terrain_features.iter().any(|feature| {
+            feature.id().is_empty()
+                || feature.id().len() > 256
+                || feature.geometry().len() < 2
+                || feature.geometry().len() > MAX_FAULT_LINE_POINTS
+                || feature.geometry().windows(2).any(|pair| pair[0] == pair[1])
+                || feature.geometry().iter().any(|point| {
+                    point.longitude() < west
+                        || point.longitude() > east
+                        || point.latitude() < south
+                        || point.latitude() > north
+                })
+        })
+    {
+        return Err(Error::Validation(
+            "fault geometry is unbounded, non-canonical, or inconsistent with the build report"
+                .into(),
+        ));
     }
 
     let node_ids: HashSet<_> = world.nodes.iter().map(|node| node.id).collect();
@@ -898,6 +933,7 @@ mod tests {
             settlements: Vec::new(),
             settlement_aliases: Vec::new(),
             settlement_descriptions: Vec::new(),
+            terrain_features: Vec::new(),
             report: WorldBuildReport::default(),
         }
     }

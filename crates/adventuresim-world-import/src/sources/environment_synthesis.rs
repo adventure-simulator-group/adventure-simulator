@@ -132,6 +132,7 @@ pub(crate) fn finalize(mut draft: FinalizedSoilWorldDraft) -> Result<CompiledWor
         settlements,
         settlement_aliases: draft.settlement_aliases,
         settlement_descriptions: draft.settlement_descriptions,
+        terrain_features: Vec::new(),
         report: draft.report,
     })
 }

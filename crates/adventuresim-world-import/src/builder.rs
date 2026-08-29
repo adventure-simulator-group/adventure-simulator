@@ -8,9 +8,9 @@ use adventuresim_world_schema::{
 use crate::{
     Result,
     sources::{
-        drought, economies, elevation, environment_synthesis, forest_cover, geology, hydrology,
-        industries, land_use, potential_vegetation, religion, road_inference, route_terrain, soil,
-        tree_species, viabundus,
+        drought, economies, elevation, environment_synthesis, faults, forest_cover, geology,
+        hydrology, industries, land_use, potential_vegetation, religion, road_inference,
+        route_terrain, soil, tree_species, viabundus,
     },
     validation,
 };
@@ -32,6 +32,7 @@ pub struct WorldSourcePaths<'a> {
     pub tree_species: &'a Path,
     pub soilgrids: &'a Path,
     pub geology: &'a Path,
+    pub faults: &'a Path,
     pub religion_regions: &'a Path,
     pub drought: &'a Path,
     pub hydrology: &'a Path,
@@ -108,6 +109,7 @@ impl WorldBuilder {
             tree_species,
             soilgrids,
             geology,
+            faults: fault_geopackage,
             religion_regions,
             drought,
             hydrology,
@@ -125,6 +127,11 @@ impl WorldBuilder {
         let draft = hydrology::enrich(draft, hydrology)?;
         let draft = soil::finalize(draft)?;
         let world = environment_synthesis::finalize(draft)?;
+        let world = faults::enrich(
+            world,
+            fault_geopackage,
+            self.bounds.unwrap_or(PLAYABLE_BOUNDS),
+        )?;
         let world = if let Some(terrain) = base_terrain {
             road_inference::enrich(world, terrain)?
         } else {

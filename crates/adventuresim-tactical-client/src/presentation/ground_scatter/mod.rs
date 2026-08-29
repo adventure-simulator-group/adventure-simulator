@@ -1,4 +1,7 @@
-use adventuresim_tactical_core::prelude::{SceneEnvironment, SceneGround, SceneId, SceneTerrain};
+use adventuresim_tactical_core::prelude::{
+    FaultScarpRecipe, GroundCover, GroundSubstrate, GroundSurface, SceneEnvironment, SceneGround,
+    SceneId, SceneTerrain, TerrainTransitionCollar,
+};
 use bevy::{
     color::{ColorToComponents, LinearRgba},
     ecs::change_detection::DetectChanges,
@@ -303,12 +306,16 @@ pub(super) fn spawn_ground_foliage(
     terrain: &SceneTerrain,
     ground: &SceneGround,
     environment: &SceneEnvironment,
+    transition_collar: Option<TerrainTransitionCollar>,
     graphics: &TacticalGraphicsSettings,
     #[cfg(all(feature = "instanced-grass", not(target_family = "wasm")))]
     shrub_bark_materials: &mut Assets<TacticalShrubBarkInstancedMaterial>,
     #[cfg(all(feature = "instanced-grass", not(target_family = "wasm")))]
     shrub_leaf_materials: &mut Assets<TacticalShrubLeafInstancedMaterial>,
 ) {
+    let masked_ground =
+        transition_collar.map(|collar| scatter_ground_without_patch(ground, collar));
+    let ground = masked_ground.as_ref().unwrap_or(ground);
     #[cfg(all(feature = "instanced-grass", not(target_family = "wasm")))]
     let _ = graphics;
     let canopy = bps(environment.canopy_bps);
@@ -633,16 +640,7 @@ fn foliage_transform(
     reason = "Bevy injects independently borrowed scene, asset, cache, and procedural-resource state"
 )]
 pub(super) fn present_ground_scatter(
-    scenes: Query<
-        (
-            Entity,
-            &SceneId,
-            &SceneTerrain,
-            &SceneGround,
-            &SceneEnvironment,
-        ),
-        Without<GroundScatterPresented>,
-    >,
+    scenes: GroundScatterSceneQuery,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut foliage_materials: ResMut<Assets<TacticalFoliageMaterial>>,
@@ -660,7 +658,7 @@ pub(super) fn present_ground_scatter(
     #[cfg(all(feature = "instanced-grass", not(target_family = "wasm")))]
     mut shrub_leaf_materials: ResMut<Assets<TacticalShrubLeafInstancedMaterial>>,
 ) {
-    for (entity, scene_id, terrain, ground, environment) in &scenes {
+    for (entity, scene_id, terrain, ground, environment, fault_scarp) in &scenes {
         let started = web_time::Instant::now();
         tracing::info!("Generating tactical ground scatter");
         spawn_ground_foliage(
@@ -679,6 +677,7 @@ pub(super) fn present_ground_scatter(
             terrain,
             ground,
             environment,
+            fault_scarp.map(|recipe| recipe.transition_collar()),
             &graphics,
             #[cfg(all(feature = "instanced-grass", not(target_family = "wasm")))]
             &mut shrub_bark_materials,
@@ -691,6 +690,48 @@ pub(super) fn present_ground_scatter(
         );
         commands.entity(entity).insert(GroundScatterPresented);
     }
+}
+
+type GroundScatterSceneQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        Entity,
+        &'static SceneId,
+        &'static SceneTerrain,
+        &'static SceneGround,
+        &'static SceneEnvironment,
+        Option<&'static FaultScarpRecipe>,
+    ),
+    Without<GroundScatterPresented>,
+>;
+
+pub(super) fn scatter_ground_without_patch(
+    ground: &SceneGround,
+    collar: TerrainTransitionCollar,
+) -> SceneGround {
+    let half_size = Vec2::new(ground.width(), ground.depth()) * 0.5;
+    let mut samples = ground.samples().to_vec();
+    for z in 0..ground.grid_depth() {
+        for x in 0..ground.grid_width() {
+            let point = Vec2::new(x as f32, z as f32) * ground.grid_scale() - half_size;
+            if collar.contains(point) {
+                samples[z * ground.grid_width() + x] = GroundSurface {
+                    substrate: GroundSubstrate::Water,
+                    cover: GroundCover::Bare,
+                    cover_density_bps: 0,
+                    cover_height_cm: 0,
+                };
+            }
+        }
+    }
+    SceneGround::from_samples(
+        ground.grid_width(),
+        ground.grid_depth(),
+        ground.grid_scale(),
+        samples,
+    )
+    .expect("masking scatter preserves the validated ground grid")
 }
 
 fn ensure_understory_presentations(

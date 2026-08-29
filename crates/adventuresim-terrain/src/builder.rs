@@ -1,6 +1,7 @@
 //! Offline GLO-30/CLMS pack compiler. This module is not linked into servers.
 
 use crate::{CHUNK_SIDE, Entry, Manifest, SCHEMA, Surface, TerrainPurpose, hex_sha};
+use adventuresim_world_schema::TerrainFeature;
 use flate2::{Compression, write::DeflateEncoder};
 use sha2::{Digest, Sha256};
 use std::{
@@ -20,6 +21,7 @@ pub struct Features {
     pub cultivated: Vec<Vec<Vec<[f64; 2]>>>,
     pub cultivation_source_sha256: String,
     pub cultivation_rules_version: u16,
+    pub terrain_features: Vec<TerrainFeature>,
 }
 
 pub fn build(
@@ -199,6 +201,7 @@ pub fn build(
         cultivation_source_sha256: features.cultivation_source_sha256.clone(),
         cultivated_square_count: features.cultivated.len() as u64,
         cultivated_native_cells,
+        terrain_features: features.terrain_features.clone(),
         entries,
         package_sha256: "0".repeat(64),
     };

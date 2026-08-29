@@ -57,7 +57,7 @@ def write_fixture(root: Path, blocked: bool = False) -> None:
         },
     }
     terrain_manifest = {
-        "schema": 6,
+        "schema": 7,
         "purpose": "final",
         "content_sha256": terrain_digest,
         "package_sha256": terrain_package,

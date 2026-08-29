@@ -9,9 +9,124 @@ use bevy::{
     asset::RenderAssetUsages,
     mesh::{Indices, PrimitiveTopology},
 };
+use fabelgeist_determinism::{inclusive_unit_f32, splitmix64};
 use noiz::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::hash::BuildHasher;
+
+/// Bounded implicit footprint where a volumetric terrain patch takes ownership
+/// from the heightfield. The volumetric surface owns the whole footprint and
+/// blends back to the heightfield through the collar before both meet at its
+/// irregular outer contour.
+#[derive(Component, Clone, Copy, Debug, PartialEq, Reflect, Serialize, Deserialize)]
+#[reflect(Component)]
+#[component(immutable)]
+pub struct TerrainTransitionCollar {
+    origin: Vec2,
+    tangent: Vec2,
+    half_length_metres: f32,
+    half_width_metres: f32,
+    width_metres: f32,
+    seed: u64,
+    wander_metres: f32,
+    width_variation_bps: u16,
+}
+
+impl TerrainTransitionCollar {
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the constructor validates every independent parameter of the implicit footprint"
+    )]
+    pub fn irregular_ellipse(
+        origin: Vec2,
+        tangent: Vec2,
+        half_length_metres: f32,
+        half_width_metres: f32,
+        width_metres: f32,
+        seed: u64,
+        wander_metres: f32,
+        width_variation_bps: u16,
+    ) -> Option<Self> {
+        if !origin.is_finite()
+            || !tangent.is_finite()
+            || !(0.98..=1.02).contains(&tangent.length())
+            || !half_length_metres.is_finite()
+            || !half_width_metres.is_finite()
+            || !width_metres.is_finite()
+            || !wander_metres.is_finite()
+            || half_length_metres <= width_metres
+            || half_width_metres <= width_metres
+            || width_metres <= 0.0
+            || wander_metres < 0.0
+            || width_variation_bps > 5_000
+        {
+            return None;
+        }
+        Some(Self {
+            origin,
+            tangent: tangent.normalize(),
+            half_length_metres,
+            half_width_metres,
+            width_metres,
+            seed,
+            wander_metres,
+            width_variation_bps,
+        })
+    }
+
+    pub fn cuts_out(self, point: Vec2) -> bool {
+        self.radial_coordinate(point).0 < 1.0
+    }
+
+    pub fn contains(self, point: Vec2) -> bool {
+        self.radial_coordinate(point).0 <= 1.0
+    }
+
+    pub(crate) fn blend_weight(self, point: Vec2) -> f32 {
+        let (radial, minimum_extent) = self.radial_coordinate(point);
+        let inner = 1.0 - self.width_metres / minimum_extent;
+        smoothstep01((1.0 - radial) / (1.0 - inner))
+    }
+
+    pub(crate) fn local_coordinates(self, point: Vec2) -> Vec2 {
+        let normal = Vec2::new(-self.tangent.y, self.tangent.x);
+        let relative = point - self.origin;
+        let along = relative.dot(self.tangent);
+        let clamped_along = along.clamp(-self.half_length_metres, self.half_length_metres);
+        let wander = smooth_value_noise(self.seed ^ 0x7275_7074_7572_6501, clamped_along / 5.5)
+            * 0.72
+            + smooth_value_noise(self.seed ^ 0x7275_7074_7572_6502, clamped_along / 1.8) * 0.28;
+        Vec2::new(along, relative.dot(normal) - wander * self.wander_metres)
+    }
+
+    fn radial_coordinate(self, point: Vec2) -> (f32, f32) {
+        let local = self.local_coordinates(point);
+        let variation = f32::from(self.width_variation_bps) / BASIS_POINTS_PER_WHOLE as f32;
+        let width_noise =
+            smooth_value_noise(self.seed ^ 0x7769_6474_6800_0001, local.x / 4.2) * 0.5 + 0.5;
+        let local_half_width = self.half_width_metres * (1.0 - variation + width_noise * variation);
+        let radial = Vec2::new(
+            local.x / self.half_length_metres,
+            local.y / local_half_width,
+        )
+        .length();
+        (radial, self.half_length_metres.min(local_half_width))
+    }
+}
+
+fn smooth_value_noise(seed: u64, coordinate: f32) -> f32 {
+    let cell = coordinate.floor() as i64;
+    let fraction = smoothstep01(coordinate - coordinate.floor());
+    let sample = |offset: i64| {
+        inclusive_unit_f32(splitmix64(seed ^ cell.wrapping_add(offset) as u64)) * 2.0 - 1.0
+    };
+    sample(0).lerp(sample(1), fraction)
+}
+
+fn smoothstep01(value: f32) -> f32 {
+    let value = value.clamp(0.0, 1.0);
+    value * value * (3.0 - 2.0 * value)
+}
 
 /// Terrain generator shared by the authoritative server and deterministic
 /// presentation fixtures. Keeping the implementation here prevents animation
@@ -500,6 +615,22 @@ impl SceneTerrain {
         Collider::heightfield(heights, Vec3::new(self.width(), 1.0, self.depth()))
     }
 
+    pub(crate) fn collider_mesh_with_transition(
+        &self,
+        collar: TerrainTransitionCollar,
+    ) -> (Vec<Vec3>, Vec<[u32; 3]>) {
+        let (positions, indices, _) = self.mesh_components_with_stride_and_transition(1, collar);
+        (
+            positions.into_iter().map(Vec3::from_array).collect(),
+            indices
+                .as_chunks::<3>()
+                .0
+                .iter()
+                .map(|triangle| [triangle[0], triangle[1], triangle[2]])
+                .collect(),
+        )
+    }
+
     fn collider_height_matrix(&self) -> Vec<Vec<f32>> {
         // Avian flattens this nested Vec directly into Parry's column-major
         // Array2. Supply X-major values while retaining Z rows and X columns
@@ -526,9 +657,36 @@ impl SceneTerrain {
     }
 
     #[cfg(feature = "meshgen")]
+    pub fn coarse_mesh_with_transition(&self, collar: TerrainTransitionCollar) -> Mesh {
+        self.mesh_with_stride_and_transition(self.coarse_stride.max(1), collar)
+    }
+
+    #[cfg(feature = "meshgen")]
     fn mesh_with_stride(&self, stride: usize) -> Mesh {
         let (positions, indices, uvs) = self.mesh_components_with_stride(stride);
 
+        self.mesh_from_components(positions, indices, uvs)
+    }
+
+    #[cfg(feature = "meshgen")]
+    fn mesh_with_stride_and_transition(
+        &self,
+        stride: usize,
+        collar: TerrainTransitionCollar,
+    ) -> Mesh {
+        let (positions, indices, uvs) =
+            self.mesh_components_with_stride_and_transition(stride, collar);
+
+        self.mesh_from_components(positions, indices, uvs)
+    }
+
+    #[cfg(feature = "meshgen")]
+    fn mesh_from_components(
+        &self,
+        positions: Vec<[f32; 3]>,
+        indices: Vec<u32>,
+        uvs: Vec<[f32; 2]>,
+    ) -> Mesh {
         let mut mesh = Mesh::new(
             PrimitiveTopology::TriangleList,
             RenderAssetUsages::RENDER_WORLD,
@@ -549,6 +707,22 @@ impl SceneTerrain {
     fn mesh_components_with_stride(
         &self,
         stride: usize,
+    ) -> (Vec<[f32; 3]>, Vec<u32>, Vec<[f32; 2]>) {
+        self.mesh_components_with_stride_filtered(stride, |_| true)
+    }
+
+    fn mesh_components_with_stride_and_transition(
+        &self,
+        stride: usize,
+        collar: TerrainTransitionCollar,
+    ) -> (Vec<[f32; 3]>, Vec<u32>, Vec<[f32; 2]>) {
+        self.mesh_components_with_stride_filtered(stride, |point| !collar.cuts_out(point))
+    }
+
+    fn mesh_components_with_stride_filtered(
+        &self,
+        stride: usize,
+        keep_cell: impl Fn(Vec2) -> bool,
     ) -> (Vec<[f32; 3]>, Vec<u32>, Vec<[f32; 2]>) {
         let stride = stride.max(1);
         let xs = (0..self.grid_width()).step_by(stride).collect::<Vec<_>>();
@@ -586,15 +760,23 @@ impl SceneTerrain {
         for x in 0..xs.len() - 1 {
             for z in 0..zs.len() - 1 {
                 let i = (z * xs.len() + x) as u32;
-
-                indices.extend_from_slice(&[
-                    i,
-                    i + xs.len() as u32,
-                    i + 1,
-                    i + 1,
-                    i + xs.len() as u32,
-                    i + xs.len() as u32 + 1,
-                ]);
+                let cell_triangles = [
+                    [i, i + xs.len() as u32, i + 1],
+                    [i + 1, i + xs.len() as u32, i + xs.len() as u32 + 1],
+                ];
+                for triangle in cell_triangles {
+                    let centre = triangle
+                        .iter()
+                        .map(|&index| {
+                            let position = positions[index as usize];
+                            Vec2::new(position[0], position[2])
+                        })
+                        .sum::<Vec2>()
+                        / 3.0;
+                    if keep_cell(centre) {
+                        indices.extend_from_slice(&triangle);
+                    }
+                }
             }
         }
 
@@ -605,6 +787,40 @@ impl SceneTerrain {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn transition_collar_removes_only_the_heightfield_interior() {
+        let terrain = SceneTerrain::new(10, 10, 1.0, |_| 0.0);
+        let collar = TerrainTransitionCollar::irregular_ellipse(
+            Vec2::ZERO,
+            Vec2::X,
+            3.0,
+            3.0,
+            1.0,
+            0,
+            0.0,
+            0,
+        )
+        .unwrap();
+        let (_, full_indices, _) = terrain.mesh_components_with_stride(1);
+        let (positions, cut_indices, _) =
+            terrain.mesh_components_with_stride_and_transition(1, collar);
+
+        assert!(cut_indices.len() < full_indices.len());
+        for triangle in cut_indices.as_chunks::<3>().0 {
+            let centre = triangle
+                .iter()
+                .map(|&index| Vec3::from_array(positions[index as usize]))
+                .sum::<Vec3>()
+                / 3.0;
+            assert!(!collar.cuts_out(Vec2::new(centre.x, centre.z)));
+        }
+        assert!(collar.cuts_out(Vec2::ZERO));
+        assert!(collar.cuts_out(Vec2::new(2.5, 0.0)));
+        assert!(!collar.cuts_out(Vec2::new(3.0, 0.0)));
+        assert!(collar.contains(Vec2::new(2.5, 0.0)));
+        assert!(!collar.contains(Vec2::splat(2.5)));
+    }
 
     #[test]
     fn ground_grid_queries_discrete_centered_samples_and_rejects_invalid_data() {
