@@ -27,15 +27,15 @@ grass:
   enabled: true
   density_scale: 1.0
   placement:
-    playable_patch_spacing_m: 3.2
-    vista_patch_spacing_m: 6.4
+    playable_patch_spacing_m: 1.81
+    vista_patch_spacing_m: 3.62
     jitter_fraction: 0.09
   blade:
     width_m: 0.076
   lod:
     near:
       fade_in_m: [0.0, 0.001]
-      fade_out_m: [4.0, 6.0]
+      fade_out_m: [6.0, 8.0]
       ribbon_rows: [0.0, 0.22, 0.45, 0.68, 0.9]
       native_tufts_per_cell_side: 12
       native_blades_per_tuft_side: 8
@@ -43,8 +43,8 @@ grass:
       width_compensation: 1.0
       width_compensation_limit: null
     near_edge:
-      fade_in_m: [4.0, 6.0]
-      fade_out_m: [7.0, 14.0]
+      fade_in_m: [6.0, 8.0]
+      fade_out_m: [10.0, 20.0]
       ribbon_rows: [0.0, 0.30, 0.58, 0.83]
       native_tufts_per_cell_side: 12
       native_blades_per_tuft_side: 6
@@ -52,8 +52,8 @@ grass:
       width_compensation: 1.3333334
       width_compensation_limit: null
     far:
-      fade_in_m: [7.0, 14.0]
-      fade_out_m: [36.0, 44.0]
+      fade_in_m: [10.0, 20.0]
+      fade_out_m: [48.0, 60.0]
       ribbon_rows: [0.0, 0.45, 0.82]
       native_tufts_per_cell_side: 4
       native_blades_per_tuft_side: 10
@@ -61,8 +61,8 @@ grass:
       width_compensation: null
       width_compensation_limit: 1.65
     vista:
-      fade_in_m: [34.0, 42.0]
-      fade_out_m: [42.0, 50.0]
+      fade_in_m: [46.0, 56.0]
+      fade_out_m: [60.0, 72.0]
       ribbon_rows: [0.0, 0.62]
       native_tufts_per_cell_side: 2
       native_blades_per_tuft_side: 12
