@@ -1,7 +1,5 @@
 //! Bounded implicit terrain patches and deterministic marching tetrahedra.
 
-use std::collections::HashMap;
-
 use bevy::{
     math::{FloatExt, Vec2, Vec3, Vec3Swizzles},
     prelude::{Component, Reflect, ReflectComponent},
@@ -10,7 +8,8 @@ use fabelgeist_determinism::{inclusive_unit_f32, splitmix64};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::scene::{SceneTerrain, TerrainTransitionCollar};
+use crate::marching_tetrahedra::marching_tetrahedra;
+use crate::{scene::SceneTerrain, terrain_transition::TerrainTransitionCollar};
 
 #[derive(Component, Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[component(immutable)]
@@ -285,6 +284,39 @@ fn simulate_fault_scarp(
             *base_height = terrain_height_extended_to_edge(terrain, point);
         });
 
+    erode_surface(
+        &mut offsets,
+        &masks,
+        &base_heights,
+        recipe,
+        collar,
+        side,
+        spacing,
+        minimum,
+    );
+
+    Ok(SimulatedScarpSurface {
+        minimum,
+        spacing,
+        side,
+        offsets,
+    })
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the erosion grid inputs are independent"
+)]
+fn erode_surface(
+    offsets: &mut [f32],
+    masks: &[f32],
+    base_heights: &[f32],
+    recipe: FaultScarpRecipe,
+    collar: TerrainTransitionCollar,
+    side: usize,
+    spacing: f32,
+    minimum: Vec2,
+) {
     let mut horizontal_transfers = vec![0.0; offsets.len()];
     let mut vertical_transfers = vec![0.0; offsets.len()];
     for _ in 0..SCARP_EROSION_STEPS {
@@ -348,13 +380,6 @@ fn simulate_fault_scarp(
                 *offset += transfer;
             });
     }
-
-    Ok(SimulatedScarpSurface {
-        minimum,
-        spacing,
-        side,
-        offsets,
-    })
 }
 
 fn terrain_height_extended_to_edge(terrain: &SceneTerrain, point: Vec2) -> f32 {
@@ -413,171 +438,6 @@ fn scarp_gully_strength(seed: u64, along: f32, half_length: f32) -> f32 {
 fn smoothstep01(value: f32) -> f32 {
     let value = value.clamp(0.0, 1.0);
     value * value * (3.0 - 2.0 * value)
-}
-
-fn marching_tetrahedra(
-    dimensions: [usize; 3],
-    position_at: impl Fn([usize; 3]) -> Vec3 + Sync,
-    field: impl Fn(Vec3) -> f32 + Sync,
-    transition_collar: TerrainTransitionCollar,
-) -> Result<SceneTerrainPatch, &'static str> {
-    const CUBE: [[usize; 3]; 8] = [
-        [0, 0, 0],
-        [1, 0, 0],
-        [0, 1, 0],
-        [1, 1, 0],
-        [0, 0, 1],
-        [1, 0, 1],
-        [0, 1, 1],
-        [1, 1, 1],
-    ];
-    const TETS: [[usize; 4]; 6] = [
-        [0, 1, 3, 7],
-        [0, 3, 2, 7],
-        [0, 2, 6, 7],
-        [0, 6, 4, 7],
-        [0, 4, 5, 7],
-        [0, 5, 1, 7],
-    ];
-    let sample_count = dimensions[0]
-        .checked_mul(dimensions[1])
-        .and_then(|n| n.checked_mul(dimensions[2]))
-        .ok_or("fault patch sample count overflow")?;
-    let samples = (0..sample_count)
-        .into_par_iter()
-        .map(|index| {
-            let x = index % dimensions[0];
-            let yz = index / dimensions[0];
-            let y = yz % dimensions[1];
-            let z = yz / dimensions[1];
-            let position = position_at([x, y, z]);
-            let value = field(position);
-            if !position.is_finite() || !value.is_finite() {
-                return Err("fault patch field is not finite");
-            }
-            Ok((position, value))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let (positions, values): (Vec<_>, Vec<_>) = samples.into_iter().unzip();
-    let sample_id = |x: usize, y: usize, z: usize| (z * dimensions[1] + y) * dimensions[0] + x;
-    let mut mesh_positions = Vec::<Vec3>::new();
-    let mut indices = Vec::<u32>::new();
-    let mut edge_vertices = HashMap::<(usize, usize), u32>::new();
-    {
-        let mut vertex_on_edge = |a: usize, b: usize| -> Result<u32, &'static str> {
-            let key = if a < b { (a, b) } else { (b, a) };
-            if let Some(&index) = edge_vertices.get(&key) {
-                return Ok(index);
-            }
-            let denominator = values[a] - values[b];
-            let fraction = if denominator.abs() < 1e-7 {
-                0.5
-            } else {
-                values[a] / denominator
-            }
-            .clamp(0.0, 1.0);
-            let point = positions[a].lerp(positions[b], fraction);
-            let index = u32::try_from(mesh_positions.len())
-                .map_err(|_| "fault patch has too many vertices")?;
-            mesh_positions.push(point);
-            edge_vertices.insert(key, index);
-            Ok(index)
-        };
-        for z in 0..dimensions[2] - 1 {
-            for y in 0..dimensions[1] - 1 {
-                for x in 0..dimensions[0] - 1 {
-                    let cube =
-                        CUBE.map(|offset| sample_id(x + offset[0], y + offset[1], z + offset[2]));
-                    for tet in TETS {
-                        let vertices = tet.map(|corner| cube[corner]);
-                        let inside = vertices
-                            .iter()
-                            .copied()
-                            .filter(|&index| values[index] <= 0.0)
-                            .collect::<Vec<_>>();
-                        let outside = vertices
-                            .iter()
-                            .copied()
-                            .filter(|&index| values[index] > 0.0)
-                            .collect::<Vec<_>>();
-                        match (inside.len(), outside.len()) {
-                            (1, 3) => {
-                                let triangle = outside
-                                    .iter()
-                                    .map(|&b| vertex_on_edge(inside[0], b))
-                                    .collect::<Result<Vec<_>, _>>()?;
-                                indices.extend(triangle);
-                            }
-                            (3, 1) => {
-                                let triangle = inside
-                                    .iter()
-                                    .map(|&a| vertex_on_edge(a, outside[0]))
-                                    .collect::<Result<Vec<_>, _>>()?;
-                                indices.extend([triangle[0], triangle[2], triangle[1]]);
-                            }
-                            (2, 2) => {
-                                let ac = vertex_on_edge(inside[0], outside[0])?;
-                                let ad = vertex_on_edge(inside[0], outside[1])?;
-                                let bc = vertex_on_edge(inside[1], outside[0])?;
-                                let bd = vertex_on_edge(inside[1], outside[1])?;
-                                indices.extend([ac, bc, ad, ad, bc, bd]);
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-            }
-        }
-    }
-    let oriented_triangles = indices
-        .par_chunks_exact(3)
-        .map(|source_triangle| {
-            let mut triangle = [source_triangle[0], source_triangle[1], source_triangle[2]];
-            let a = mesh_positions[triangle[0] as usize];
-            let b = mesh_positions[triangle[1] as usize];
-            let c = mesh_positions[triangle[2] as usize];
-            let mut normal = (b - a).cross(c - a);
-            if normal.length_squared() < 1e-10 {
-                return None;
-            }
-            let centre = (a + b + c) / 3.0;
-            let epsilon = 0.02;
-            let gradient = Vec3::new(
-                field(centre + Vec3::X * epsilon) - field(centre - Vec3::X * epsilon),
-                field(centre + Vec3::Y * epsilon) - field(centre - Vec3::Y * epsilon),
-                field(centre + Vec3::Z * epsilon) - field(centre - Vec3::Z * epsilon),
-            );
-            if normal.dot(gradient) < 0.0 {
-                triangle.swap(1, 2);
-                normal = -normal;
-            }
-            Some((triangle, normal))
-        })
-        .collect::<Vec<_>>();
-    let mut normals = vec![Vec3::ZERO; mesh_positions.len()];
-    let mut oriented_indices = Vec::with_capacity(indices.len());
-    for (triangle, normal) in oriented_triangles.into_iter().flatten() {
-        for &index in triangle.iter() {
-            normals[index as usize] += normal;
-        }
-        oriented_indices.extend(triangle);
-    }
-    let normals = normals
-        .into_iter()
-        .map(|normal| normal.normalize_or_zero().to_array())
-        .collect();
-    if oriented_indices.is_empty() {
-        return Err("fault patch extraction produced no surface");
-    }
-    Ok(SceneTerrainPatch {
-        transition_collar,
-        positions: mesh_positions
-            .into_iter()
-            .map(|position| position.to_array())
-            .collect(),
-        normals,
-        indices: oriented_indices,
-    })
 }
 
 #[cfg(test)]

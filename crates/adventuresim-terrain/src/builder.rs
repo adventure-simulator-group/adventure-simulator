@@ -1,7 +1,6 @@
 //! Offline GLO-30/CLMS pack compiler. This module is not linked into servers.
 
 use crate::{CHUNK_SIDE, Entry, Manifest, SCHEMA, Surface, TerrainPurpose, hex_sha};
-use adventuresim_world_schema::TerrainFeature;
 use flate2::{Compression, write::DeflateEncoder};
 use sha2::{Digest, Sha256};
 use std::{
@@ -12,17 +11,8 @@ use std::{
 };
 use tiff::decoder::{Decoder, DecodingResult};
 
-#[derive(Default)]
-pub struct Features {
-    pub roads: Vec<Vec<[f64; 2]>>,
-    pub water: Vec<Vec<Vec<[f64; 2]>>>,
-    pub wetlands: Vec<Vec<Vec<[f64; 2]>>>,
-    pub wetland_source_sha256: String,
-    pub cultivated: Vec<Vec<Vec<[f64; 2]>>>,
-    pub cultivation_source_sha256: String,
-    pub cultivation_rules_version: u16,
-    pub terrain_features: Vec<TerrainFeature>,
-}
+mod features;
+pub use features::Features;
 
 pub fn build(
     elevation_dir: &Path,
@@ -45,8 +35,7 @@ pub fn build(
         east.ceil() as i16,
         north.ceil() as i16,
     ];
-    let mut entries = Vec::new();
-    let mut pack = Vec::new();
+    let (mut entries, mut pack) = (Vec::new(), Vec::new());
     let mut cultivated_native_cells = 0_u64;
     for south in source_bounds[1]..source_bounds[3] {
         for west in source_bounds[0]..source_bounds[2] {

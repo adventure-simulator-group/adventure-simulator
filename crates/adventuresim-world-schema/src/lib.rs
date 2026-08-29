@@ -9,13 +9,15 @@ use serde::{Deserialize, Serialize};
 
 pub mod coordinates;
 mod language;
+mod terrain_feature;
+mod world_build_report;
 pub use language::*;
+pub use terrain_feature::*;
+pub use world_build_report::*;
 pub const WORLD_SCHEMA_VERSION: u32 = 28;
 pub const CURRENT_INFERENCE_RULES_VERSION: u32 = 10;
 pub const MAX_EDGE_GEOMETRY_POINTS: usize = 512;
 pub const MAX_WORLD_GEOMETRY_POINTS: usize = 200_000;
-pub const MAX_FAULT_GEOMETRY_POINTS: usize = 100_000;
-pub const MAX_FAULT_LINE_POINTS: usize = 4_096;
 pub const MAX_SOURCES_MARKDOWN_CHARS: usize = 32_768;
 /// The basis-point representation of one whole (100%).
 pub const BASIS_POINTS_PER_WHOLE: u16 = 10_000;
@@ -4578,91 +4580,6 @@ impl SourceContentIdentity {
     }
 }
 
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
-pub struct WorldBuildReport {
-    pub nodes: usize,
-    pub edges: usize,
-    pub settlements: usize,
-    pub settlement_aliases: usize,
-    pub settlement_descriptions: usize,
-    pub deferred_settlement_descriptions: std::collections::BTreeMap<String, usize>,
-    pub settlements_connected_to_road_network: usize,
-    pub route_crossings: usize,
-    pub toll_edges: usize,
-    pub contradictory_feature_dates: usize,
-    pub elevation_tiles_read: usize,
-    pub elevation_samples: usize,
-    pub elevation_fallback_samples: usize,
-    pub land_use_rasters_read: usize,
-    pub land_use_samples: usize,
-    pub land_use_fallback_samples: usize,
-    pub land_use_normalized_samples: usize,
-    pub forest_tiles_read: usize,
-    pub forest_samples: usize,
-    pub forest_fallback_samples: usize,
-    pub potential_vegetation_raster_files_read: usize,
-    pub potential_vegetation_samples: usize,
-    pub potential_vegetation_posterior_samples: usize,
-    pub potential_vegetation_categorical_samples: usize,
-    pub potential_vegetation_inferred_samples: usize,
-    pub tree_species_rasters_read: usize,
-    pub tree_species_samples: usize,
-    pub tree_species_fallback_samples: usize,
-    pub tree_species_candidates: usize,
-    pub soil_rasters_read: usize,
-    pub soil_depth_layers_read: usize,
-    pub soil_samples: usize,
-    pub soil_fallback_samples: usize,
-    pub geology_features_read: usize,
-    pub geology_samples: usize,
-    pub geology_fallback_samples: usize,
-    pub fault_features_read: usize,
-    pub fault_traces_imported: usize,
-    pub fault_geometry_points: usize,
-    pub religion_regions_read: usize,
-    pub religion_samples: usize,
-    pub religion_fallback_samples: usize,
-    pub drought_grid_cells_read: usize,
-    pub drought_samples: usize,
-    pub drought_neighbor_samples: usize,
-    pub drought_fallback_samples: usize,
-    pub hydrology_files_read: usize,
-    pub hydrology_features_read: usize,
-    pub hydrology_settlement_samples: usize,
-    pub hydrology_landlocked_settlements: usize,
-    pub hydrology_edge_crossings: usize,
-    pub hydrology_inferred_ferry_waterways: usize,
-    pub historical_vegetation_direct_samples: usize,
-    pub historical_vegetation_derived_samples: usize,
-    pub historical_vegetation_fallback_samples: usize,
-    pub historical_vegetation_tie_breaks: usize,
-    pub route_terrain_edges: usize,
-    pub route_terrain_dem_samples: usize,
-    pub route_terrain_dem_fallbacks: usize,
-    pub route_terrain_water_adjacencies: usize,
-    pub route_terrain_landforms: usize,
-    pub route_terrain_seasonal_risks: usize,
-    pub route_terrain_encounter_tags: usize,
-    pub industry_settlements: usize,
-    pub industry_derived_outputs: usize,
-    pub industry_fallback_settlements: usize,
-    pub industry_fallback_outputs: usize,
-    pub industry_agriculture_outputs: usize,
-    pub industry_fishing_outputs: usize,
-    pub industry_quarrying_outputs: usize,
-    pub industry_mining_outputs: usize,
-    pub industry_pottery_outputs: usize,
-    pub industry_peat_outputs: usize,
-    pub industry_forestry_outputs: usize,
-    pub industry_charcoal_outputs: usize,
-    pub industry_saltmaking_outputs: usize,
-    pub industry_construction_outputs: usize,
-    pub base_terrain_package_sha256: String,
-    pub inferred_road_edges: usize,
-    pub inferred_road_geometry_sha256: String,
-    pub excluded_edges: std::collections::BTreeMap<String, usize>,
-}
-
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct CompiledWorld {
     pub metadata: WorldMetadata,
@@ -4675,40 +4592,6 @@ pub struct CompiledWorld {
     /// presentation. These are source observations, not historical claims.
     pub terrain_features: Vec<TerrainFeature>,
     pub report: WorldBuildReport,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub enum TerrainFeature {
-    MappedFault(MappedFault),
-}
-
-impl TerrainFeature {
-    pub fn id(&self) -> &str {
-        match self {
-            Self::MappedFault(fault) => &fault.id,
-        }
-    }
-
-    pub fn geometry(&self) -> &[TravelGeometryPoint] {
-        match self {
-            Self::MappedFault(fault) => &fault.trace,
-        }
-    }
-}
-
-/// Modern mapped fault evidence retained as a terrain-generation prior. The
-/// source activity fields do not imply historical activity in the game year.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct MappedFault {
-    /// Stable source-qualified identifier.
-    pub id: String,
-    pub local_name: Option<String>,
-    pub classification: Option<String>,
-    pub mapped_active: bool,
-    pub mapped_capable: bool,
-    pub trace: Vec<TravelGeometryPoint>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

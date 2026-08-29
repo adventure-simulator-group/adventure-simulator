@@ -4,9 +4,7 @@
 //! consumers decompress only a bounded LRU and never put the continental grid
 //! in SpacetimeDB or in one allocation.
 
-use adventuresim_world_schema::{
-    BASIS_POINTS_PER_WHOLE, MAX_FAULT_GEOMETRY_POINTS, MAX_FAULT_LINE_POINTS, TerrainFeature,
-};
+use adventuresim_world_schema::{BASIS_POINTS_PER_WHOLE, TerrainFeature};
 use flate2::read::DeflateDecoder;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -20,6 +18,8 @@ use std::{
     sync::{Arc, Mutex},
     time::Instant,
 };
+
+mod terrain_feature;
 
 pub const SCHEMA: u32 = 7;
 pub const CHUNK_SIDE: u16 = 256;
@@ -424,13 +424,6 @@ impl TerrainPack {
     pub fn cultivation_source_sha256(&self) -> &str {
         &self.manifest.cultivation_source_sha256
     }
-    pub const fn cultivated_square_count(&self) -> u64 {
-        self.manifest.cultivated_square_count
-    }
-    pub fn terrain_features(&self) -> &[TerrainFeature] {
-        &self.manifest.terrain_features
-    }
-
     pub fn digest(&self) -> &str {
         &self.manifest.package_sha256
     }
@@ -978,34 +971,7 @@ fn validate_manifest(manifest: &Manifest) -> Result<()> {
     {
         return Err(Error::Validation("invalid terrain feature identity".into()));
     }
-    let terrain_feature_points = manifest
-        .terrain_features
-        .iter()
-        .map(|feature| feature.geometry().len())
-        .sum::<usize>();
-    if terrain_feature_points > MAX_FAULT_GEOMETRY_POINTS
-        || manifest
-            .terrain_features
-            .windows(2)
-            .any(|pair| pair[0].id() >= pair[1].id())
-        || manifest.terrain_features.iter().any(|feature| {
-            feature.id().is_empty()
-                || feature.id().len() > 256
-                || feature.geometry().len() < 2
-                || feature.geometry().len() > MAX_FAULT_LINE_POINTS
-                || feature.geometry().windows(2).any(|pair| pair[0] == pair[1])
-                || feature.geometry().iter().any(|point| {
-                    point.longitude() < west
-                        || point.longitude() > east
-                        || point.latitude() < south
-                        || point.latitude() > north
-                })
-        })
-    {
-        return Err(Error::Validation(
-            "terrain feature geometry is unbounded or non-canonical".into(),
-        ));
-    }
+    terrain_feature::validate(&manifest.terrain_features, [west, south, east, north])?;
     for entry in &manifest.entries {
         if ![1_800, 2_400, 3_600].contains(&entry.tile_width)
             || entry.tile_height != 3_600

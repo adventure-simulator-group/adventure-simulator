@@ -3,6 +3,9 @@ use std::{fs, path::PathBuf};
 use adventuresim_core::weather::{Precipitation, WEATHER_RULES_VERSION, WeatherSnapshot};
 use adventuresim_tactical_core::prelude::*;
 
+#[path = "generate_scene_fixtures/fault.rs"]
+mod fault;
+
 const DEFAULT_TEST_MINUTE: u64 = 339_840 + 10 * 60;
 
 #[derive(Clone, Copy)]
@@ -51,14 +54,7 @@ fn main() {
 
 fn fixtures() -> [Fixture; 14] {
     [
-        fixture(
-            "flat-dry-grassland",
-            "grassland",
-            47_101,
-            flat,
-            dry_open,
-            clear(),
-        ),
+        fault::flat_fixture(),
         fixture(
             "steep-open-hillside",
             "hillside",
@@ -67,25 +63,7 @@ fn fixtures() -> [Fixture; 14] {
             rocky_open,
             clear(),
         ),
-        Fixture {
-            name: "fault-scarp-cliff",
-            scene_key: "fault-scarp",
-            seed: 47_114,
-            terrain: rolling,
-            environment: rocky_open,
-            weather: clear(),
-            vista: VistaKind::Ordinary,
-            fault_scarp: Some(FaultScarpRecipe {
-                seed: 47_114,
-                origin_cm: [0, 0],
-                tangent_permyriad: [10_000, 0],
-                throw_cm: 800,
-                half_length_cm: 4_500,
-                half_width_cm: 1_800,
-                collar_cm: 400,
-                lod: FaultScarpLod::Detail,
-            }),
-        },
+        fault::fixture(),
         fixture(
             "dense-woodland",
             "woodland",

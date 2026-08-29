@@ -10,6 +10,7 @@ pub mod error;
 mod manifest;
 mod sources;
 pub mod spatial;
+mod terrain_feature_validation;
 mod validation;
 
 pub use builder::{WorldBuilder, WorldSourcePaths};

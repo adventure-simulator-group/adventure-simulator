@@ -2,11 +2,10 @@ use std::collections::{HashMap, HashSet};
 
 use adventuresim_world_schema::{
     CURRENT_INFERENCE_RULES_VERSION, CompiledWorld, DerivedHistoricalVegetationMethod,
-    DroughtProfile, HistoricalVegetation, MAX_EDGE_GEOMETRY_POINTS, MAX_FAULT_GEOMETRY_POINTS,
-    MAX_FAULT_LINE_POINTS, MAX_WORLD_GEOMETRY_POINTS, PLAYABLE_BOUNDS, SettlementHydrology,
-    SettlementImport, SoilEvidence, SurfaceGeology, TravelEdgeProvenance, TravelRoute,
-    TreeSpeciesProfile, WORLD_SCHEMA_VERSION, historical_vegetation_matches_context,
-    valid_sources_markdown,
+    DroughtProfile, HistoricalVegetation, MAX_EDGE_GEOMETRY_POINTS, MAX_WORLD_GEOMETRY_POINTS,
+    PLAYABLE_BOUNDS, SettlementHydrology, SettlementImport, SoilEvidence, SurfaceGeology,
+    TravelEdgeProvenance, TravelRoute, TreeSpeciesProfile, WORLD_SCHEMA_VERSION,
+    historical_vegetation_matches_context, valid_sources_markdown,
 };
 use sha2::{Digest, Sha256};
 
@@ -80,8 +79,6 @@ fn validate_inferred_geometry(
 }
 
 pub fn validate(world: &CompiledWorld) -> Result<()> {
-    crate::sources::industries::validate_semantics(world)?;
-    crate::sources::economies::validate_semantics(world)?;
     if world.metadata.schema_version != WORLD_SCHEMA_VERSION {
         return Err(Error::Validation(format!(
             "schema version {} is not supported (expected {WORLD_SCHEMA_VERSION})",
@@ -164,38 +161,7 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
         )));
     }
 
-    let [west, south, east, north] = PLAYABLE_BOUNDS;
-    let fault_points = world
-        .terrain_features
-        .iter()
-        .map(|feature| feature.geometry().len())
-        .sum::<usize>();
-    if world.terrain_features.len() != report.fault_traces_imported
-        || fault_points != report.fault_geometry_points
-        || fault_points > MAX_FAULT_GEOMETRY_POINTS
-        || world
-            .terrain_features
-            .windows(2)
-            .any(|pair| pair[0].id() >= pair[1].id())
-        || world.terrain_features.iter().any(|feature| {
-            feature.id().is_empty()
-                || feature.id().len() > 256
-                || feature.geometry().len() < 2
-                || feature.geometry().len() > MAX_FAULT_LINE_POINTS
-                || feature.geometry().windows(2).any(|pair| pair[0] == pair[1])
-                || feature.geometry().iter().any(|point| {
-                    point.longitude() < west
-                        || point.longitude() > east
-                        || point.latitude() < south
-                        || point.latitude() > north
-                })
-        })
-    {
-        return Err(Error::Validation(
-            "fault geometry is unbounded, non-canonical, or inconsistent with the build report"
-                .into(),
-        ));
-    }
+    crate::terrain_feature_validation::validate_world_semantics(world)?;
 
     let node_ids: HashSet<_> = world.nodes.iter().map(|node| node.id).collect();
     let node_coordinates = world

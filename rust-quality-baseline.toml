@@ -2676,11 +2676,6 @@ ceiling = 126
 
 [[functions]]
 path = "crates/adventuresim-world-import/src/sources/environment_synthesis.rs"
-item = "finalize"
-ceiling = 102
-
-[[functions]]
-path = "crates/adventuresim-world-import/src/sources/environment_synthesis.rs"
 item = "synthesize"
 ceiling = 158
 

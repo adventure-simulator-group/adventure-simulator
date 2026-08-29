@@ -31,6 +31,8 @@ use serde::Serialize;
 
 mod capture_state;
 mod manifest;
+mod terrain_setup;
+mod view_camera;
 mod view_specs;
 use capture_state::{
     CapturePhase, CaptureReadback, SceneCaptureState, foliage_detail_pixel_bps,
@@ -1939,10 +1941,6 @@ fn setup_scene(
         ));
     }
 
-    let terrain_collider = terrain_patch.as_ref().map_or_else(
-        || terrain.collider(),
-        |patch| patch.collider_with_terrain(&terrain),
-    );
     let mut obstacle_focus = if obstacle_count == 0 {
         Vec3::ZERO
     } else {
@@ -2128,22 +2126,14 @@ fn setup_scene(
                 .id(),
         );
     }
-    let terrain_entity = commands
-        .spawn((
-            Name::new("Captured tactical terrain"),
-            SceneId(input.scene_key.clone()),
-            environment,
-            ground,
-            RigidBody::Static,
-            CollisionLayers::new(TACTICAL_TERRAIN_LAYER, LayerMask::ALL),
-            terrain_collider,
-            terrain,
-            Transform::default(),
-        ))
-        .id();
-    if let Some(fault_scarp) = input.fault_scarp {
-        commands.entity(terrain_entity).insert(fault_scarp);
-    }
+    terrain_setup::spawn(
+        &mut commands,
+        &input,
+        environment,
+        ground,
+        terrain,
+        terrain_patch.as_ref(),
+    );
     commands.trigger(SceneVistaBundle {
         scene_digest: digest.clone(),
         playable_half_extent_metres: Vec2::new(
@@ -4006,12 +3996,7 @@ fn camera_for_view(pose: CapturePose, state: &SceneCaptureState) -> (Transform, 
                 Vec3::Y,
             )
         }
-        CapturePose::FaultScarp => (Vec3::new(0.0, 8.0, 24.0), Vec3::new(0.0, 2.0, 0.0), Vec3::Y),
-        CapturePose::FaultScarpSeam => (
-            Vec3::new(24.0, 5.0, 18.0),
-            Vec3::new(16.5, 1.8, 7.0),
-            Vec3::Y,
-        ),
+        CapturePose::FaultScarp | CapturePose::FaultScarpSeam => pose.fault_camera().unwrap(),
         CapturePose::GrassSeam => {
             let target = state.obstacle_focus - Vec3::Y * 1.30;
             (target + Vec3::new(-3.4, 1.25, 3.4), target, Vec3::Y)
@@ -4090,25 +4075,7 @@ fn camera_for_view(pose: CapturePose, state: &SceneCaptureState) -> (Transform, 
             target.y = target.y.clamp(position.y - 80.0, position.y - 8.0);
             (position, target, Vec3::Y)
         }
-        CapturePose::VistaValley => {
-            let direction = (state.valley_target.xz() - state.obstacle_focus.xz())
-                .try_normalize()
-                .unwrap_or(-Vec2::X);
-            let safe_height = state
-                .terrain
-                .maximum_height_metres
-                .max(state.vista_peak_metres)
-                + 18.0;
-            let mut position = state.obstacle_focus
-                - Vec3::new(direction.x, 0.0, direction.y) * (half * 0.62)
-                + Vec3::Y * 8.0;
-            position.y = position.y.max(safe_height);
-            let mut target = state.obstacle_focus
-                + Vec3::new(direction.x, 0.0, direction.y) * (half * 5.0)
-                + Vec3::Y * 2.0;
-            target.y = target.y.clamp(position.y - 80.0, position.y - 8.0);
-            (position, target, Vec3::Y)
-        }
+        CapturePose::VistaValley => view_camera::vista_valley(state, half),
     };
     (
         Transform::from_translation(position).looking_at(target, up),

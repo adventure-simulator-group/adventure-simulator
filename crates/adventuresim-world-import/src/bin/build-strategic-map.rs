@@ -12,6 +12,8 @@ use sha2::{Digest, Sha256};
 
 #[path = "build-strategic-map/raster.rs"]
 mod raster;
+#[path = "build-strategic-map/terrain_features.rs"]
+mod terrain_features;
 #[path = "build-strategic-map/tiles.rs"]
 mod tiles;
 
@@ -216,11 +218,10 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
                 .collect(),
         })
         .collect();
-    let base_features = terrain_features(
+    let base_features = terrain_features::build(
         &package,
         wetland.polygons.clone(),
         wetland.source_sha256.clone(),
-        Vec::new(),
     );
     if args.base_only {
         let terrain = adventuresim_terrain::builder::build(
@@ -276,27 +277,14 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
             .then_with(|| point_order(&a.points, &b.points))
     });
     package.routing_roads.sort_by(|a, b| point_order(a, b));
-    let CultivatedLand {
-        polygons: cultivated,
-        source_sha256: cultivation_source_sha256,
-    } = cultivated_land(&args.hyde_dir, &base, &package, &world)?;
-    package.cultivated = cultivated
-        .iter()
-        .map(|rings| WaterPolygon {
-            rings: rings
-                .iter()
-                .map(|ring| ring.iter().copied().map(Point).collect())
-                .collect(),
-        })
-        .collect();
-    let mut terrain_features = terrain_features(
-        &package,
+    let cultivated = cultivated_land(&args.hyde_dir, &base, &package, &world)?;
+    let terrain_features = terrain_features::finalize(
+        &mut package,
         wetland.polygons,
         wetland.source_sha256,
-        world.terrain_features.clone(),
+        cultivated,
+        &world,
     );
-    terrain_features.cultivated = cultivated;
-    terrain_features.cultivation_source_sha256 = cultivation_source_sha256;
     let terrain = adventuresim_terrain::builder::build(
         &args.elevation_dir,
         &args.forest_cover_dir,
@@ -409,39 +397,6 @@ fn append_inferred_geometry(
             importance: 4,
             points,
         });
-    }
-}
-
-fn terrain_features(
-    package: &Package,
-    wetlands: Vec<Vec<Vec<[f64; 2]>>>,
-    wetland_source_sha256: String,
-    terrain_features: Vec<adventuresim_world_schema::TerrainFeature>,
-) -> adventuresim_terrain::builder::Features {
-    adventuresim_terrain::builder::Features {
-        roads: package
-            .routing_roads
-            .iter()
-            .map(|line| line.iter().map(|point| point.0).collect())
-            .collect(),
-        water: package
-            .water
-            .iter()
-            .map(|polygon| {
-                polygon
-                    .rings
-                    .iter()
-                    .map(|ring| ring.iter().map(|point| point.0).collect())
-                    .collect()
-            })
-            .collect(),
-        wetlands,
-        wetland_source_sha256,
-        cultivated: Vec::new(),
-        cultivation_source_sha256: format!("{:x}", Sha256::digest(b"no-cultivation")),
-        cultivation_rules_version:
-            adventuresim_world_import::cultivation::CULTIVATION_RULES_VERSION,
-        terrain_features,
     }
 }
 

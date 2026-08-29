@@ -1,8 +1,4 @@
-use std::{
-    fs::{self, File},
-    io::{BufReader, Read},
-    path::Path,
-};
+use std::{fs, path::Path};
 
 use adventuresim_world_schema::{
     CURRENT_INFERENCE_RULES_VERSION, SourceAccess, SourceContentIdentity, SourceLicense,
@@ -13,6 +9,11 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::{Error, Result};
+
+mod fault;
+mod hash;
+pub(crate) use fault::source as faults;
+use hash::{sha256_file, sha256_json};
 
 const MAX_TEXT: usize = 4_096;
 const MAX_NOTICES: usize = 12;
@@ -42,31 +43,6 @@ struct ViabundusFile {
     sha256: String,
     url: String,
     size: u64,
-}
-
-pub(crate) fn sha256_file(path: &Path) -> Result<String> {
-    let mut reader = BufReader::new(File::open(path)?);
-    let mut digest = Sha256::new();
-    let mut buffer = [0_u8; 64 * 1024];
-    loop {
-        let read = reader.read(&mut buffer)?;
-        if read == 0 {
-            break;
-        }
-        digest.update(&buffer[..read]);
-    }
-    Ok(format!("{:x}", digest.finalize()))
-}
-
-fn sha256_json(path: &Path) -> Result<String> {
-    let value: serde_json::Value = serde_json::from_slice(&fs::read(path)?).map_err(|error| {
-        Error::Validation(format!(
-            "invalid source manifest {}: {error}",
-            path.display()
-        ))
-    })?;
-    let canonical = serde_json::to_vec(&value)?;
-    Ok(format!("{:x}", Sha256::digest(canonical)))
 }
 
 #[expect(
@@ -511,37 +487,6 @@ pub(crate) fn geology(_path: &Path) -> SourceProvenance {
         },
         "[EGDI Surface Geology](https://metadata.europe-geology.eu/record/full/5729ffdf-2558-48fc-a5d2-645a0a010855), modified into gameplay classes; Malta notice applies.",
     )
-}
-
-pub(crate) fn faults(path: &Path) -> Result<SourceProvenance> {
-    Ok(source(
-        "hike-fault-db-v17b",
-        "HIKE European Fault Database",
-        SourceRelease::Immutable {
-            version: "17b".into(),
-            released: "2021-10-26".into(),
-        },
-        "https://egdi.geology.cz/record/basic/5edf7bd4-9270-4188-b69d-7ddd0a010833",
-        None,
-        SourceLicense::RightsReserved,
-        &[
-            "Attribute the HIKE project, EGDI, BGR, and the contributing national geological surveys under their contributor-specific terms.",
-            "Fabelgeist clips, deduplicates, and simplifies source fault traces into a terrain-generation prior; the result does not represent seismic hazard.",
-        ],
-        SourceAccess::AnonymousDownload,
-        SourceSpatialCoverage::Geographic {
-            crs: "EPSG:3034".into(),
-            resolution: "contributor scales from 1:25,000 to 1:2,500,000".into(),
-            coverage: "European fault database clipped to the playable bounds".into(),
-        },
-        SourceTemporalCoverage::Timeless,
-        "hike-fault-geopackage-clip",
-        1,
-        SourceContentIdentity::RawSha256 {
-            sha256: sha256_file(path)?,
-        },
-        "HIKE European Fault Database v17b, clipped and normalized for deterministic terrain generation.",
-    ))
 }
 
 pub(crate) fn religion(path: &Path) -> Result<SourceProvenance> {

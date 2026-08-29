@@ -1,5 +1,7 @@
 use super::*;
-use adventuresim_tactical_core::prelude::SceneEnvironmentFixture;
+use adventuresim_tactical_core::prelude::{
+    GroundCover, GroundSubstrate, GroundSurface, SceneEnvironmentFixture,
+};
 use bevy::{
     color::ColorToComponents,
     prelude::{App, Update},

@@ -82,91 +82,15 @@ fn read(path: &Path, bounds: [f64; 4]) -> Result<(Vec<TerrainFeature>, usize)> {
     let mut unique = BTreeMap::<Vec<(i32, i32)>, TerrainFeature>::new();
     let mut features_read = 0;
     for source in SOURCES {
-        validate_source_table(&connection, path, &source)?;
-        let sql = format!(
-            "SELECT g.fid, g.geom, g.ID, a.LOCAL_NAME, a.FAULT_TYPE, a.ACTIVE, a.CAPABLE \
-             FROM {geometry} g \
-             JOIN rtree_{geometry}_geom r ON r.id = g.fid \
-             LEFT JOIN {attributes} a ON a.ID = g.ID \
-             WHERE r.maxx >= ?1 AND r.minx <= ?2 AND r.maxy >= ?3 AND r.miny <= ?4 \
-             ORDER BY g.fid",
-            geometry = source.geometry,
-            attributes = source.attributes,
-        );
-        let mut statement = connection.prepare(&sql).map_err(|error| {
-            Error::Validation(format!(
-                "cannot query HIKE source table {}: {error}",
-                source.geometry
-            ))
-        })?;
-        let mut rows = statement
-            .query(params![
-                projected[0],
-                projected[2],
-                projected[1],
-                projected[3]
-            ])
-            .map_err(|error| {
-                Error::Validation(format!("cannot query HIKE fault bounds: {error}"))
-            })?;
-        while let Some(row) = rows
-            .next()
-            .map_err(|error| Error::Validation(format!("cannot read HIKE fault row: {error}")))?
-        {
-            features_read += 1;
-            let fid: i64 = row.get(0).map_err(sql_error)?;
-            let blob: Vec<u8> = row.get(1).map_err(sql_error)?;
-            let source_id: Option<String> = row.get(2).map_err(sql_error)?;
-            let local_name: Option<String> = row.get(3).map_err(sql_error)?;
-            let fault_type: Option<String> = row.get(4).map_err(sql_error)?;
-            let active: Option<String> = row.get(5).map_err(sql_error)?;
-            let capable: Option<String> = row.get(6).map_err(sql_error)?;
-            let geometry: Geometry<f64> = GpkgWkb(&blob).to_geo().map_err(|error| {
-                Error::Validation(format!(
-                    "invalid HIKE geometry {}:{fid}: {error}",
-                    source.country
-                ))
-            })?;
-            for (part, line) in line_strings(&geometry).into_iter().enumerate() {
-                for (fragment, clipped) in clip_line(line, projected).into_iter().enumerate() {
-                    let mut points = Vec::with_capacity(clipped.0.len());
-                    for coordinate in clipped.0 {
-                        let (longitude, latitude) =
-                            projection.unproject(coordinate.x, coordinate.y)?;
-                        let point = TravelGeometryPoint::new(
-                            longitude.clamp(bounds[0], bounds[2]),
-                            latitude.clamp(bounds[1], bounds[3]),
-                        )
-                        .map_err(Error::Validation)?;
-                        if points.last() != Some(&point) {
-                            points.push(point);
-                        }
-                    }
-                    if points.len() < 2 {
-                        continue;
-                    }
-                    simplify_to_bound(&mut points);
-                    let key = points
-                        .iter()
-                        .map(|point| (point.longitude_e7, point.latitude_e7))
-                        .collect::<Vec<_>>();
-                    unique.entry(key).or_insert_with(|| {
-                        TerrainFeature::MappedFault(MappedFault {
-                            id: format!(
-                                "{}:{}:{part}:{fragment}",
-                                source.country,
-                                source_id.as_deref().unwrap_or("unnamed")
-                            ),
-                            local_name: clean_text(local_name.as_deref()),
-                            classification: clean_text(fault_type.as_deref()),
-                            mapped_active: yes(active.as_deref()),
-                            mapped_capable: yes(capable.as_deref()),
-                            trace: points,
-                        })
-                    });
-                }
-            }
-        }
+        features_read += read_source(
+            &connection,
+            path,
+            &source,
+            &projection,
+            projected,
+            bounds,
+            &mut unique,
+        )?;
     }
     let mut lines = unique.into_values().collect::<Vec<_>>();
     lines.sort_by(|a, b| a.id().cmp(b.id()));
@@ -180,6 +104,99 @@ fn read(path: &Path, bounds: [f64; 4]) -> Result<(Vec<TerrainFeature>, usize)> {
         )));
     }
     Ok((lines, features_read))
+}
+
+fn read_source(
+    connection: &Connection,
+    path: &Path,
+    source: &FaultSource,
+    projection: &Projection,
+    projected: [f64; 4],
+    bounds: [f64; 4],
+    unique: &mut BTreeMap<Vec<(i32, i32)>, TerrainFeature>,
+) -> Result<usize> {
+    validate_source_table(connection, path, source)?;
+    let sql = format!(
+        "SELECT g.fid, g.geom, g.ID, a.LOCAL_NAME, a.FAULT_TYPE, a.ACTIVE, a.CAPABLE \
+         FROM {geometry} g JOIN rtree_{geometry}_geom r ON r.id = g.fid \
+         LEFT JOIN {attributes} a ON a.ID = g.ID \
+         WHERE r.maxx >= ?1 AND r.minx <= ?2 AND r.maxy >= ?3 AND r.miny <= ?4 ORDER BY g.fid",
+        geometry = source.geometry,
+        attributes = source.attributes,
+    );
+    let mut statement = connection.prepare(&sql).map_err(|error| {
+        Error::Validation(format!(
+            "cannot query HIKE source table {}: {error}",
+            source.geometry
+        ))
+    })?;
+    let mut rows = statement
+        .query(params![
+            projected[0],
+            projected[2],
+            projected[1],
+            projected[3]
+        ])
+        .map_err(|error| Error::Validation(format!("cannot query HIKE fault bounds: {error}")))?;
+    let mut features_read = 0;
+    while let Some(row) = rows
+        .next()
+        .map_err(|error| Error::Validation(format!("cannot read HIKE fault row: {error}")))?
+    {
+        features_read += 1;
+        let fid: i64 = row.get(0).map_err(sql_error)?;
+        let blob: Vec<u8> = row.get(1).map_err(sql_error)?;
+        let source_id: Option<String> = row.get(2).map_err(sql_error)?;
+        let local_name: Option<String> = row.get(3).map_err(sql_error)?;
+        let fault_type: Option<String> = row.get(4).map_err(sql_error)?;
+        let active: Option<String> = row.get(5).map_err(sql_error)?;
+        let capable: Option<String> = row.get(6).map_err(sql_error)?;
+        let geometry: Geometry<f64> = GpkgWkb(&blob).to_geo().map_err(|error| {
+            Error::Validation(format!(
+                "invalid HIKE geometry {}:{fid}: {error}",
+                source.country
+            ))
+        })?;
+        for (part, line) in line_strings(&geometry).into_iter().enumerate() {
+            for (fragment, clipped) in clip_line(line, projected).into_iter().enumerate() {
+                let mut points = Vec::with_capacity(clipped.0.len());
+                for coordinate in clipped.0 {
+                    let (longitude, latitude) = projection.unproject(coordinate.x, coordinate.y)?;
+                    let point = TravelGeometryPoint::new(
+                        longitude.clamp(bounds[0], bounds[2]),
+                        latitude.clamp(bounds[1], bounds[3]),
+                    )
+                    .map_err(Error::Validation)?;
+                    if points.last() != Some(&point) {
+                        points.push(point);
+                    }
+                }
+                if points.len() < 2 {
+                    continue;
+                }
+                simplify_to_bound(&mut points);
+                let key = points
+                    .iter()
+                    .map(|point| (point.longitude_e7, point.latitude_e7))
+                    .collect::<Vec<_>>();
+                unique.entry(key).or_insert_with(|| {
+                    TerrainFeature::MappedFault(MappedFault {
+                        id: format!(
+                            "{}:{}:{part}:{fragment}",
+                            source.country,
+                            source_id.as_deref().unwrap_or("unnamed")
+                        ),
+                        local_name: clean_text(local_name.as_deref()),
+                        classification: clean_text(fault_type.as_deref()),
+                        mapped_active: yes(active.as_deref()),
+                        mapped_capable: yes(capable.as_deref()),
+                        trace: points,
+                    })
+                });
+            }
+        }
+    }
+    Ok(features_read)
 }
 
 fn sql_error(error: rusqlite::Error) -> Error {

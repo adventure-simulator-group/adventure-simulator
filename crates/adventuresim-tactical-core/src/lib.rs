@@ -8,10 +8,15 @@ pub mod animation;
 pub mod combat;
 pub mod combat_config;
 pub mod inventory;
+mod marching_tetrahedra;
 pub mod physics;
 pub mod player;
 pub mod scene;
+mod scene_fault;
+mod scene_ground;
 pub mod scene_input;
+mod scene_transition_mesh;
+mod terrain_transition;
 pub mod volumetric_terrain;
 
 pub use avian3d;
@@ -78,7 +83,7 @@ pub mod prelude {
     };
     pub use crate::scene::{
         GroundCover, GroundSubstrate, GroundSurface, SceneGround, SceneId, SceneTerrain,
-        TerrainGenerator, TerrainTransitionCollar,
+        TerrainGenerator,
     };
     pub use crate::scene_input::{
         EnvironmentalSample, GeneratedObstacle, GeneratedTacticalScene, ROCK_RADIUS_METRES,
@@ -88,6 +93,7 @@ pub mod prelude {
         TREE_CANOPY_GROUND_RADIUS_METRES, TREE_TRUNK_HEIGHT_METRES, TREE_TRUNK_RADIUS_METRES,
         TacticalSceneInput, TacticalSurface, TerrainSampleGrid, VistaLod, VistaSample,
     };
+    pub use crate::terrain_transition::TerrainTransitionCollar;
     pub use crate::volumetric_terrain::{
         FaultScarpLod, FaultScarpRecipe, SceneTerrainPatch, fault_scarp_patch,
     };

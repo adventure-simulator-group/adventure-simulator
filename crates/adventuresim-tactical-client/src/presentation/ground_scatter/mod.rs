@@ -1,6 +1,5 @@
 use adventuresim_tactical_core::prelude::{
-    FaultScarpRecipe, GroundCover, GroundSubstrate, GroundSurface, SceneEnvironment, SceneGround,
-    SceneId, SceneTerrain, TerrainTransitionCollar,
+    SceneEnvironment, SceneGround, SceneId, SceneTerrain, TerrainTransitionCollar,
 };
 use bevy::{
     color::{ColorToComponents, LinearRgba},
@@ -42,7 +41,10 @@ mod instanced_grass;
 mod instanced_understory;
 mod litter;
 mod loose_stone;
+mod scene_mask;
 mod understory;
+
+use scene_mask::{GroundScatterSceneQuery, scatter_ground_without_patch};
 
 #[cfg(all(feature = "instanced-grass", not(target_family = "wasm")))]
 pub(in crate::presentation) use instanced_grass::InstancedGrassPlugin;
@@ -306,16 +308,12 @@ pub(super) fn spawn_ground_foliage(
     terrain: &SceneTerrain,
     ground: &SceneGround,
     environment: &SceneEnvironment,
-    transition_collar: Option<TerrainTransitionCollar>,
     graphics: &TacticalGraphicsSettings,
     #[cfg(all(feature = "instanced-grass", not(target_family = "wasm")))]
     shrub_bark_materials: &mut Assets<TacticalShrubBarkInstancedMaterial>,
     #[cfg(all(feature = "instanced-grass", not(target_family = "wasm")))]
     shrub_leaf_materials: &mut Assets<TacticalShrubLeafInstancedMaterial>,
 ) {
-    let masked_ground =
-        transition_collar.map(|collar| scatter_ground_without_patch(ground, collar));
-    let ground = masked_ground.as_ref().unwrap_or(ground);
     #[cfg(all(feature = "instanced-grass", not(target_family = "wasm")))]
     let _ = graphics;
     let canopy = bps(environment.canopy_bps);
@@ -661,6 +659,9 @@ pub(super) fn present_ground_scatter(
     for (entity, scene_id, terrain, ground, environment, fault_scarp) in &scenes {
         let started = web_time::Instant::now();
         tracing::info!("Generating tactical ground scatter");
+        let masked_ground = fault_scarp
+            .map(|recipe| scatter_ground_without_patch(ground, recipe.transition_collar()));
+        let ground = masked_ground.as_ref().unwrap_or(ground);
         spawn_ground_foliage(
             &mut commands,
             &mut meshes,
@@ -677,7 +678,6 @@ pub(super) fn present_ground_scatter(
             terrain,
             ground,
             environment,
-            fault_scarp.map(|recipe| recipe.transition_collar()),
             &graphics,
             #[cfg(all(feature = "instanced-grass", not(target_family = "wasm")))]
             &mut shrub_bark_materials,
@@ -690,48 +690,6 @@ pub(super) fn present_ground_scatter(
         );
         commands.entity(entity).insert(GroundScatterPresented);
     }
-}
-
-type GroundScatterSceneQuery<'w, 's> = Query<
-    'w,
-    's,
-    (
-        Entity,
-        &'static SceneId,
-        &'static SceneTerrain,
-        &'static SceneGround,
-        &'static SceneEnvironment,
-        Option<&'static FaultScarpRecipe>,
-    ),
-    Without<GroundScatterPresented>,
->;
-
-pub(super) fn scatter_ground_without_patch(
-    ground: &SceneGround,
-    collar: TerrainTransitionCollar,
-) -> SceneGround {
-    let half_size = Vec2::new(ground.width(), ground.depth()) * 0.5;
-    let mut samples = ground.samples().to_vec();
-    for z in 0..ground.grid_depth() {
-        for x in 0..ground.grid_width() {
-            let point = Vec2::new(x as f32, z as f32) * ground.grid_scale() - half_size;
-            if collar.contains(point) {
-                samples[z * ground.grid_width() + x] = GroundSurface {
-                    substrate: GroundSubstrate::Water,
-                    cover: GroundCover::Bare,
-                    cover_density_bps: 0,
-                    cover_height_cm: 0,
-                };
-            }
-        }
-    }
-    SceneGround::from_samples(
-        ground.grid_width(),
-        ground.grid_depth(),
-        ground.grid_scale(),
-        samples,
-    )
-    .expect("masking scatter preserves the validated ground grid")
 }
 
 fn ensure_understory_presentations(

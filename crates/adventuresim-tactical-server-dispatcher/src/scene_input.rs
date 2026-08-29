@@ -80,21 +80,16 @@ struct GridSampleRequest {
     seed: u64,
 }
 
-#[derive(Clone, Copy)]
-pub struct ImportedSceneRequest<'a> {
-    pub mission_id: &'a str,
-    pub scene_key: &'a str,
-    pub latitude_e7: i32,
-    pub longitude_e7: i32,
-    pub absolute_minute: u64,
-    pub lunar_phase_minute: u64,
-}
-
 pub fn build_imported_scene(
     pack: &TerrainPack,
-    request: ImportedSceneRequest<'_>,
+    mission_id: &str,
+    scene_key: &str,
+    latitude_e7: i32,
+    longitude_e7: i32,
+    absolute_minute: u64,
+    lunar_phase_minute: u64,
 ) -> Result<TacticalSceneInput, String> {
-    let coordinates = Wgs84CoordinateE7::new(request.latitude_e7, request.longitude_e7)
+    let coordinates = Wgs84CoordinateE7::new(latitude_e7, longitude_e7)
         .ok_or("mission coordinate is outside the WGS84 bounds")?;
     let center = pack
         .cell(
@@ -103,7 +98,7 @@ pub fn build_imported_scene(
         )
         .map_err(|error| error.to_string())?
         .ok_or("mission coordinate is outside the final terrain pack")?;
-    let seed = deterministic_seed(request.mission_id);
+    let seed = deterministic_seed(mission_id);
     let playable = sample_grid(
         pack,
         GridSampleRequest {
@@ -150,19 +145,19 @@ pub fn build_imported_scene(
         schema_version: TACTICAL_SCENE_SCHEMA_VERSION,
         generation_version: TACTICAL_SCENE_GENERATION_VERSION,
         seed,
-        scene_key: request.scene_key.into(),
+        scene_key: scene_key.into(),
         source: SceneSource::ImportedPackage(pack.digest().into()),
         latitude_microdegrees: coordinates.latitude().to_microdegrees().get(),
         longitude_microdegrees: coordinates.longitude().to_microdegrees().get(),
-        absolute_minute: request.absolute_minute,
-        lunar_phase_minute: request.lunar_phase_minute,
+        absolute_minute,
+        lunar_phase_minute,
         absolute_elevation_metres: center.elevation_m,
         playable,
         fault_scarp: nearest_fault_scarp(pack.terrain_features(), coordinates, seed),
         vista,
         weather: weather_at(
             WORLD_WEATHER_SEED,
-            request.absolute_minute,
+            absolute_minute,
             coordinates.latitude().to_microdegrees().get(),
             coordinates.longitude().to_microdegrees().get(),
             center.elevation_m,
@@ -446,14 +441,12 @@ mod tests {
         let (pack, directory) = constant_final_pack();
         let input = build_imported_scene(
             &pack,
-            ImportedSceneRequest {
-                mission_id: "mission:known-coordinate",
-                scene_key: "known-coordinate",
-                latitude_e7: 505_000_000,
-                longitude_e7: 105_000_000,
-                absolute_minute: 123_456,
-                lunar_phase_minute: 123_456,
-            },
+            "mission:known-coordinate",
+            "known-coordinate",
+            505_000_000,
+            105_000_000,
+            123_456,
+            123_456,
         )
         .expect("known coordinate should produce a tactical scene");
 

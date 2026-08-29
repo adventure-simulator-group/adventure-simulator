@@ -6,6 +6,7 @@ mod equipment;
 mod mission;
 mod player_projection;
 mod stdb;
+mod terrain_collision;
 
 use std::{net::SocketAddr, num::NonZeroU32, path::PathBuf};
 
@@ -843,13 +844,7 @@ fn on_scene_terrain_added(
     query: Query<(&SceneTerrain, Option<&FaultScarpRecipe>)>,
 ) -> Result {
     let (terrain, recipe) = query.get(event.entity)?;
-    let collider = if let Some(recipe) = recipe {
-        let patch = fault_scarp_patch(terrain, *recipe)
-            .map_err(|reason| BevyError::from(reason.to_owned()))?;
-        patch.collider_with_terrain(terrain)
-    } else {
-        terrain.collider()
-    };
+    let collider = terrain_collision::collider(terrain, recipe)?;
     commands.entity(event.entity).insert((
         Replicated,
         RigidBody::Static,
@@ -942,24 +937,15 @@ fn on_server_started(
                 Transform::from_xyz(x, y, z).with_rotation(Quat::from_rotation_y(yaw)),
             ));
         }
-        let terrain_collider = terrain_patch.as_ref().map_or_else(
-            || terrain.collider(),
-            |patch| patch.collider_with_terrain(&terrain),
-        );
-        let mut scene = commands.spawn((
-            Replicated,
-            SceneId(scene_id),
+        terrain_collision::spawn_scene(
+            &mut commands,
+            scene_id,
             terrain,
             ground,
-            RigidBody::Static,
-            CollisionLayers::new(TACTICAL_TERRAIN_LAYER, LayerMask::ALL),
-            terrain_collider,
-            Transform::default(),
-        ));
-        scene.insert(environment);
-        if let Some(recipe) = input.fault_scarp {
-            scene.insert(recipe);
-        }
+            environment,
+            terrain_patch.as_ref(),
+            input.fault_scarp,
+        );
     }
     commands.spawn((
         RigidBody::Static,
