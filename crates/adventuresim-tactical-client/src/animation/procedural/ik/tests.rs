@@ -1038,10 +1038,6 @@ mod coordination_tests {
     }
 
     #[test]
-    #[expect(
-        clippy::assertions_on_constants,
-        reason = "this regression locks the authored continuity budget constants"
-    )]
     fn raised_stop_settle_keeps_terrain_ik_alive_across_ticks() {
         let mut settle = LocomotionSettleState {
             support_left: true,
@@ -2159,10 +2155,6 @@ mod coordination_tests {
     }
 
     #[test]
-    #[expect(
-        clippy::assertions_on_constants,
-        reason = "this regression locks the authored run-release speed envelope"
-    )]
     fn run_release_follows_root_once_and_lifts_only_clearance_floor() {
         let release_clearance = run_airborne_clearance_for_sample(true, 0.81, None, false);
         assert_eq!(
