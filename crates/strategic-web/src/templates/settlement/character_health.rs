@@ -3,8 +3,8 @@ use maud::{Markup, html};
 
 use super::{
     character_skills::{SkillRankBarOptions, skill_rank_bar},
+    coatings::filth_status_bar,
     context::LocationView,
-    trade::filth_status_bar,
 };
 use crate::medical::{ChartGapPresentation, ChartReadingPresentation, MedicalPresentation};
 use crate::spacetimedb::{

@@ -9,11 +9,9 @@ const food = readRustModuleSource(path.join(root, "adventuresim-stdb-module/src/
 const item = fs.readFileSync(path.join(root, "adventuresim-stdb-module/src/item.rs"), "utf8");
 const strategic = readRustModuleSource(path.join(root, "adventuresim-stdb-module/src/strategic/mod.rs"));
 const capability = fs.readFileSync(path.join(root, "adventuresim-stdb-module/src/capability.rs"), "utf8");
-const template = [
-  "character_details.rs",
-  "character_skills.rs",
-  "trade.rs",
-].map((file) => fs.readFileSync(path.join(root, "strategic-web/src/templates/settlement", file), "utf8")).join("\n");
+const template = readRustModuleSource(
+  path.join(root, "strategic-web/src/templates/settlement/mod.rs"),
+);
 const inventoryBrowser = fs.readFileSync(path.join(root, "strategic-web/static/inventory-browser.js"), "utf8");
 
 test("food acquisitions remain independent lots instead of merchant-merged stacks", () => {
