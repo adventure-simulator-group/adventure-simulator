@@ -229,8 +229,14 @@ impl GuardContacts {
             if value.is_finite() { value } else { fallback }
         };
         Self {
-            left: finite(self.left, Vec2::new(-GUARD_DEFAULT_HALF_WIDTH_METRES, 0.0)),
-            right: finite(self.right, Vec2::new(GUARD_DEFAULT_HALF_WIDTH_METRES, 0.0)),
+            left: finite(
+                self.left,
+                Vec2::new(-guard_footwork_config().default_half_width_metres, 0.0),
+            ),
+            right: finite(
+                self.right,
+                Vec2::new(guard_footwork_config().default_half_width_metres, 0.0),
+            ),
         }
     }
 }
@@ -238,8 +244,8 @@ impl GuardContacts {
 impl Default for GuardContacts {
     fn default() -> Self {
         Self {
-            left: Vec2::new(-GUARD_DEFAULT_HALF_WIDTH_METRES, 0.0),
-            right: Vec2::new(GUARD_DEFAULT_HALF_WIDTH_METRES, 0.0),
+            left: Vec2::new(-guard_footwork_config().default_half_width_metres, 0.0),
+            right: Vec2::new(guard_footwork_config().default_half_width_metres, 0.0),
         }
     }
 }
@@ -367,11 +373,17 @@ impl GuardFootworkPlan {
     }
 }
 
-const GUARD_DEFAULT_HALF_WIDTH_METRES: f32 = 0.15;
-pub const GUARD_CONTACT_MARGIN_METRES: f32 = 0.08;
-const GUARD_MINIMUM_STEP_SECONDS: f32 = 0.10;
-const GUARD_MAXIMUM_STEP_SECONDS: f32 = 0.32;
-const GUARD_PLANNING_REACH_METRES: f32 = 0.80;
+fn guard_footwork_config() -> crate::combat_config::GuardFootworkConfig {
+    crate::combat_config::runtime_animation_config().guard_footwork
+}
+
+pub fn guard_contact_margin_metres() -> f32 {
+    guard_footwork_config().contact_margin_metres
+}
+
+pub fn guard_maximum_unsupported_contact_seconds() -> f32 {
+    guard_footwork_config().maximum_unsupported_contact_seconds
+}
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Reflect)]
 pub enum SkeletonAction {
@@ -605,7 +617,9 @@ impl PostureTransitionState {
         // whole character before the supine pose catches up. Reserve the first
         // part of recovery for settling, then transfer root yaw with zero
         // endpoint velocity. The endpoint remains the complete canonical turn.
-        const ROOT_HANDOFF_START_FRACTION: f32 = 0.18;
+        let root_handoff_start_fraction = crate::combat_config::runtime_animation_config()
+            .state_transitions
+            .dive_root_handoff_start_fraction;
         let root_handoff_end_fraction = match trajectory {
             // The shorter slide devotes a larger normalized share to the same
             // fixed presentation settling time, so its handoff finishes with
@@ -615,8 +629,8 @@ impl PostureTransitionState {
             DiveTrajectory::Airborne => 0.92,
         };
         let recovery = ((self.phase - 0.5) * 2.0).clamp(0.0, 1.0);
-        let handoff = ((recovery - ROOT_HANDOFF_START_FRACTION)
-            / (root_handoff_end_fraction - ROOT_HANDOFF_START_FRACTION))
+        let handoff = ((recovery - root_handoff_start_fraction)
+            / (root_handoff_end_fraction - root_handoff_start_fraction))
             .clamp(0.0, 1.0);
         Some((direction, smoothstep(handoff)))
     }
@@ -881,8 +895,17 @@ impl Default for AttackCurve {
 }
 
 impl AttackCurve {
-    pub const MAX_DRAWBACK: f32 = 0.65;
-    pub const MAX_OVERSHOOT: f32 = 0.55;
+    pub fn maximum_drawback() -> f32 {
+        crate::combat_config::runtime_combat_presentation_config()
+            .attack_curve
+            .maximum_drawback
+    }
+
+    pub fn maximum_overshoot() -> f32 {
+        crate::combat_config::runtime_combat_presentation_config()
+            .attack_curve
+            .maximum_overshoot
+    }
 
     /// Produces a readable but controlled curve from physical weapon inertia
     /// and the attacker's effective weapon skill check. High-inertia weapons
@@ -922,7 +945,7 @@ impl AttackCurve {
     }
 
     fn normalized(self) -> Self {
-        self.normalized_with_limits(Self::MAX_DRAWBACK, Self::MAX_OVERSHOOT)
+        self.normalized_with_limits(Self::maximum_drawback(), Self::maximum_overshoot())
     }
 
     fn normalized_with_limits(mut self, maximum_drawback: f32, maximum_overshoot: f32) -> Self {
@@ -1699,14 +1722,13 @@ impl SkeletonState {
             .map(DownedFacingState::half_turns)
             .unwrap_or(initial);
         let target = if aim_held {
-            const SECTOR_HALF_WIDTH: f32 = 0.25;
-            const EDGE_STICKINESS: f32 = 1.0 / 18.0; // ten degrees
+            let tuning = crate::combat_config::runtime_animation_config().state_transitions;
             let committed = previous.map(|state| state.target).unwrap_or(initial_target);
             let committed_half_turns = committed.half_turns_near(current);
             let camera_unwrapped =
                 camera_target + ((committed_half_turns - camera_target) / 2.0).round() * 2.0;
             let target_pose = if (camera_unwrapped - committed_half_turns).abs()
-                > SECTOR_HALF_WIDTH + EDGE_STICKINESS
+                > tuning.downed_facing_sector_half_width + tuning.downed_facing_edge_stickiness
             {
                 DownedFacingPose::from_half_turns(camera_unwrapped)
             } else {
@@ -2074,10 +2096,14 @@ pub struct SkeletonLocomotionInput {
     pub tick: u64,
 }
 
-/// Maximum server-authoritative body turn speed during ordinary locomotion.
-pub const BODY_TURN_SPEED_RADIANS: f32 = std::f32::consts::PI / 0.25;
-/// Deliberate head-direction alignment speed while prone or supine.
-pub const DOWNED_TURN_SPEED_RADIANS: f32 = std::f32::consts::FRAC_PI_2;
+pub fn body_turn_speed_radians() -> f32 {
+    std::f32::consts::PI
+        / crate::combat_config::runtime_combat_presentation_config().body_turn_seconds_per_half_turn
+}
+
+pub fn downed_turn_speed_radians() -> f32 {
+    crate::combat_config::runtime_combat_presentation_config().downed_turn_radians_per_second
+}
 
 /// Returns the controller's yaw without allowing camera pitch or roll to tilt
 /// planar locomotion into or out of the ground plane.
@@ -2117,7 +2143,7 @@ pub fn advance_body_facing(
         action,
         weapon_guard,
         delta_seconds,
-        BODY_TURN_SPEED_RADIANS,
+        body_turn_speed_radians(),
     )
 }
 
@@ -2195,7 +2221,7 @@ pub fn advance_downed_body_facing(
         current,
         controller_orientation,
         delta_seconds,
-        DOWNED_TURN_SPEED_RADIANS,
+        downed_turn_speed_radians(),
     )
 }
 
@@ -2299,7 +2325,8 @@ pub fn project_skeleton_locomotion_with_body_rotation(
     let physical_speed = linear_velocity.xz().length();
     let contiguous_sample = input.tick == skeleton.locomotion_sample_tick.wrapping_add(1);
     skeleton.world_acceleration = if contiguous_sample {
-        ((linear_velocity - previous_world_velocity) * LOCOMOTION_SAMPLE_HZ).clamp_length_max(80.0)
+        ((linear_velocity - previous_world_velocity) * locomotion_sample_hz())
+            .clamp_length_max(80.0)
     } else {
         Vec3::ZERO
     };
@@ -2455,9 +2482,9 @@ fn advance_guard_footwork(skeleton: &mut SkeletonState, delta_seconds: f32, tick
             .max(step.contacts.right.dot(direction));
         let contact_due = tick >= step.contact_tick || leading_contact <= 0.0;
         if contact_due {
-            if step.landing.dot(direction) < GUARD_CONTACT_MARGIN_METRES {
-                step.landing +=
-                    direction * (GUARD_CONTACT_MARGIN_METRES - step.landing.dot(direction));
+            let contact_margin = guard_footwork_config().contact_margin_metres;
+            if step.landing.dot(direction) < contact_margin {
+                step.landing += direction * (contact_margin - step.landing.dot(direction));
             }
             let contacts = step.contacts.with_contact(step.swing_foot, step.landing);
             skeleton.contact_foot = step.swing_foot;
@@ -2510,7 +2537,8 @@ fn plan_guard_step(
 ) -> GuardStepPlan {
     let speed = local_velocity.length().max(0.05);
     let direction = local_velocity.normalize_or_zero();
-    let available_reach = GUARD_PLANNING_REACH_METRES - GUARD_CONTACT_MARGIN_METRES;
+    let tuning = guard_footwork_config();
+    let available_reach = tuning.planning_reach_metres - tuning.contact_margin_metres;
     let reach_seconds = available_reach / speed;
     let leading_contact = contacts
         .left
@@ -2519,25 +2547,25 @@ fn plan_guard_step(
     let support_seconds = if leading_contact > 0.0 {
         leading_contact / speed
     } else {
-        1.0 / LOCOMOTION_SAMPLE_HZ
+        1.0 / locomotion_sample_hz()
     };
     let duration_seconds = reach_seconds
         .min(support_seconds)
-        .clamp(GUARD_MINIMUM_STEP_SECONDS, GUARD_MAXIMUM_STEP_SECONDS);
-    let duration_ticks = (duration_seconds * LOCOMOTION_SAMPLE_HZ).ceil().max(1.0) as u64;
-    let forward = (speed * duration_ticks as f32 / LOCOMOTION_SAMPLE_HZ
-        + GUARD_CONTACT_MARGIN_METRES)
-        .min(GUARD_PLANNING_REACH_METRES);
+        .clamp(tuning.minimum_step_seconds, tuning.maximum_step_seconds);
+    let duration_ticks = (duration_seconds * locomotion_sample_hz()).ceil().max(1.0) as u64;
+    let forward = (speed * duration_ticks as f32 / locomotion_sample_hz()
+        + tuning.contact_margin_metres)
+        .min(tuning.planning_reach_metres);
     let side = match swing_foot {
-        LeadFoot::Left => -GUARD_DEFAULT_HALF_WIDTH_METRES,
-        LeadFoot::Right => GUARD_DEFAULT_HALF_WIDTH_METRES,
+        LeadFoot::Left => -tuning.default_half_width_metres,
+        LeadFoot::Right => tuning.default_half_width_metres,
     };
     let mut landing = direction * forward + Vec2::X * side;
     let along_shortfall = forward - landing.dot(direction);
     if along_shortfall > 0.0 {
         landing += direction * along_shortfall;
     }
-    landing = landing.clamp_length_max(GUARD_PLANNING_REACH_METRES);
+    landing = landing.clamp_length_max(tuning.planning_reach_metres);
     let swing_start = match swing_foot {
         LeadFoot::Left => contacts.left,
         LeadFoot::Right => contacts.right,
@@ -2555,14 +2583,12 @@ fn plan_guard_step(
 // Measured hip-knee-ankle chain of the current humanoid rig. The animation
 // client uses its live rig measurement; this is the server-side fallback until
 // anatomical dimensions become part of character state.
-const REFERENCE_HUMANOID_GUARD_LEG_LENGTH_METRES: f32 = 0.840_348;
-/// Prevents loss of propulsion from stretching an unsupported opening step
-/// into a multi-second feedback loop at movement startup.
-pub const GUARD_MAXIMUM_UNSUPPORTED_CONTACT_SECONDS: f32 = 0.35;
-
 /// Ground distance covered by one procedural combat-stance contact interval.
 pub fn guard_step_length(_speed: f32) -> f32 {
-    guard_contact_travel_distance(REFERENCE_HUMANOID_GUARD_LEG_LENGTH_METRES, Vec2::NEG_Y)
+    guard_contact_travel_distance(
+        guard_footwork_config().reference_leg_length_metres,
+        Vec2::NEG_Y,
+    )
 }
 
 /// Anatomical foot leading a close-guard shuffle in local controller space.

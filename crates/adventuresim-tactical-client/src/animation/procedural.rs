@@ -5,6 +5,10 @@ use bevy::{math::Affine3A, prelude::*};
 
 use super::{AnimationPlayback, AuthoredBindTransform, PresentedSkeleton};
 
+fn procedural_tuning() -> ProceduralAnimationConfig {
+    runtime_animation_config().procedural
+}
+
 mod body_response;
 mod clock;
 mod rig;
@@ -181,8 +185,8 @@ fn guarded_camera_look(
 }
 
 fn constrained_camera_look(look: &CharacterLook, owner_rotation: Quat) -> Vec2 {
-    const JOINT_LIMIT: f32 = std::f32::consts::PI / 8.0;
-    const JOINT_COUNT: f32 = 3.0;
+    let tuning = procedural_tuning();
+    let joint_limit = tuning.guarded_look_joint_limit_degrees.to_radians();
     let camera_forward = Quat::from_euler(EulerRot::YXZ, look.yaw, look.pitch, 0.0) * Vec3::NEG_Z;
     let local = owner_rotation.inverse() * camera_forward;
     // Directly behind the body there is no anatomically preferable left/right
@@ -193,8 +197,8 @@ fn constrained_camera_look(look: &CharacterLook, owner_rotation: Quat) -> Vec2 {
     let yaw = local.x.atan2(local.z.abs());
     let pitch = local.y.atan2(local.xz().length().max(f32::EPSILON));
     Vec2::new(
-        (yaw / JOINT_COUNT).clamp(-JOINT_LIMIT, JOINT_LIMIT),
-        (pitch / JOINT_COUNT).clamp(-JOINT_LIMIT, JOINT_LIMIT),
+        (yaw / tuning.guarded_look_joint_count).clamp(-joint_limit, joint_limit),
+        (pitch / tuning.guarded_look_joint_count).clamp(-joint_limit, joint_limit),
     )
 }
 
@@ -202,10 +206,8 @@ fn jump_charge_pelvis_target(charging: bool, guard: WeaponGuardState) -> f32 {
     (charging && guard == WeaponGuardState::Lowered) as u8 as f32
 }
 
-const DIVE_PELVIS_LEAN_RADIANS: f32 = 40.0_f32.to_radians();
-
 fn dive_pelvis_lean(direction: DiveDirection, amount: f32) -> Quat {
-    let angle = DIVE_PELVIS_LEAN_RADIANS * amount.clamp(0.0, 1.0);
+    let angle = procedural_tuning().dive_pelvis_lean_degrees.to_radians() * amount.clamp(0.0, 1.0);
     match direction {
         DiveDirection::Forward => Quat::from_rotation_x(angle),
         DiveDirection::Backward => Quat::from_rotation_x(-angle),
@@ -481,14 +483,10 @@ pub(super) fn apply_pose_mirroring(
     }
 }
 
-const HEIGHT_TRANSITION_SPEED_METRES_PER_SECOND: f32 = 0.4;
-const LOCOMOTION_STOP_HEIGHT_SPEED_METRES_PER_SECOND: f32 = 0.8;
 // The upright lowered-guard humanoid_unarmed root/pelvis rotations lift its
 // pelvis by about 33 mm at passing. Subtract that measured authored rise only
 // from the additive run-flight treatment; authored walk/pelvis translation
 // remains untouched.
-const AUTHORED_ORDINARY_PASSING_RISE_METRES: f32 = 0.033;
-
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub(crate) struct LocomotionHeightState {
     initialized: bool,
@@ -571,9 +569,9 @@ fn authored_height_compensation(skeleton: &SkeletonState) -> f32 {
     {
         return 0.0;
     }
-    let run_weight =
-        locomotion_profile(skeleton).flight_apex_metres / RUN_LOCOMOTION_PROFILE.flight_apex_metres;
-    AUTHORED_ORDINARY_PASSING_RISE_METRES
+    let run_weight = locomotion_profile(skeleton).flight_apex_metres
+        / run_locomotion_profile().flight_apex_metres;
+    procedural_tuning().authored_ordinary_passing_rise_metres
         * run_weight.clamp(0.0, 1.0)
         * smoothstep(0.05, 0.75, skeleton.animation_speed())
 }
@@ -648,7 +646,7 @@ pub(super) fn apply_locomotion_height(
             presentation_tick_delta(next.evaluation_tick, skeleton.locomotion_sample_tick)
                 .unwrap_or_default();
         next.evaluation_tick = Some(skeleton.locomotion_sample_tick);
-        let delta_seconds = tick_delta as f32 / LOCOMOTION_SAMPLE_HZ;
+        let delta_seconds = tick_delta as f32 / locomotion_sample_hz();
         let ordinary_stop = skeleton.is_grounded()
             && skeleton.action_kind() == SkeletonAction::None
             && skeleton.posture() == Posture::Upright
@@ -657,7 +655,7 @@ pub(super) fn apply_locomotion_height(
             advance_towards(
                 next.amplitude,
                 0.0,
-                LOCOMOTION_STOP_HEIGHT_SPEED_METRES_PER_SECOND * delta_seconds,
+                procedural_tuning().locomotion_stop_height_speed_metres_per_second * delta_seconds,
             )
         } else {
             target_wave
@@ -665,7 +663,7 @@ pub(super) fn apply_locomotion_height(
         next.authored_rise_compensation = advance_towards(
             next.authored_rise_compensation,
             target_authored_compensation,
-            HEIGHT_TRANSITION_SPEED_METRES_PER_SECOND * delta_seconds,
+            procedural_tuning().height_transition_speed_metres_per_second * delta_seconds,
         );
         let landing_delta = skeleton
             .landing_sequence
@@ -741,7 +739,7 @@ pub(super) fn apply_locomotion_height(
             next.wave_transition_offset = advance_towards(
                 next.wave_transition_offset,
                 0.0,
-                HEIGHT_TRANSITION_SPEED_METRES_PER_SECOND * delta_seconds,
+                procedural_tuning().height_transition_speed_metres_per_second * delta_seconds,
             );
         }
         next.displayed_wave = raw_wave + next.wave_transition_offset;
@@ -1030,23 +1028,23 @@ struct BoneSnapshot {
 mod ik;
 pub(crate) use ik::{
     ArmIkState, HandIkTarget, HandSide, HeldWeaponConstraint, HumanoidIkTargets, LegIkDiagnostics,
-    LegIkState, MEASURED_ANKLE_SOLE_OFFSET_METRES, RaisedFootworkState,
-    SOLE_CONTACT_TOLERANCE_METRES, locomotion_support_weights,
-};
-#[cfg(test)]
-use ik::{
-    FOOT_TRACK_INNER, MAX_PELVIS_CORRECTION_STEP, MIN_INTER_FOOT_SEPARATION, TwoBoneSolution,
-    advance_foot_target_at_speed, advance_pelvis_shift, authored_knee_pole_world,
-    balance_recovery_direction, constrain_foot_to_track, constrain_target_to_reach,
-    landing_maximum_reach, maximum_reach, plan_settle_landing, plant_is_continuous,
-    projected_capture_point, raised_footwork_posture_is_valid, retained_plant_requires_release,
-    secondary_grip_world, settle_swing_side, settle_swing_target, slope_aligned_world_rotation,
-    sole_is_at_contact, solve_two_bone, terrain_conformed_guard_target,
-    terrain_ik_posture_is_valid, terrain_leg_has_support,
+    LegIkState, RaisedFootworkState, locomotion_support_weights, measured_ankle_sole_offset_metres,
+    sole_contact_tolerance_metres,
 };
 use ik::{
     TwoBoneChain, apply_two_bone_solution, canonical_knee_pole, constrain_rendered_leg_pole,
     smoothstep, snapshot_chain, solve_landing_two_bone,
+};
+#[cfg(test)]
+use ik::{
+    TwoBoneSolution, advance_foot_target_at_speed, advance_pelvis_shift, authored_knee_pole_world,
+    balance_recovery_direction, constrain_foot_to_track, constrain_target_to_reach,
+    foot_track_inner_metres, landing_maximum_reach, maximum_pelvis_correction_step_metres,
+    maximum_reach, minimum_inter_foot_separation_metres, plan_settle_landing, plant_is_continuous,
+    projected_capture_point, raised_footwork_posture_is_valid, retained_plant_requires_release,
+    secondary_grip_world, settle_swing_side, settle_swing_target, slope_aligned_world_rotation,
+    sole_is_at_contact, solve_two_bone, terrain_conformed_guard_target,
+    terrain_ik_posture_is_valid, terrain_leg_has_support,
 };
 pub(super) use ik::{
     apply_arm_and_weapon_constraints, apply_terrain_leg_ik, enforce_anatomical_knee_yaw,
@@ -1062,7 +1060,7 @@ mod contract_tests {
         let mut app = App::new();
         app.add_systems(Update, apply_locomotion_height);
         let state = SkeletonState::default()
-            .with_local_velocity(Vec3::NEG_Z * WALK_LOCOMOTION_PROFILE.reference_speed)
+            .with_local_velocity(Vec3::NEG_Z * walk_locomotion_profile().reference_speed)
             .with_gait_phase(0.25)
             .with_locomotion_sample_tick(1);
         let owner = app
@@ -1106,7 +1104,7 @@ mod contract_tests {
         let mut app = App::new();
         app.add_systems(Update, apply_locomotion_height);
         let state = SkeletonState::default()
-            .with_local_velocity(Vec3::NEG_Z * RUN_LOCOMOTION_PROFILE.reference_speed)
+            .with_local_velocity(Vec3::NEG_Z * run_locomotion_profile().reference_speed)
             .with_gait_phase(0.25)
             .with_locomotion_sample_tick(1);
         let owner = app
@@ -1138,8 +1136,8 @@ mod contract_tests {
 
         app.update();
 
-        let expected_flight =
-            RUN_LOCOMOTION_PROFILE.flight_apex_metres - AUTHORED_ORDINARY_PASSING_RISE_METRES;
+        let expected_flight = run_locomotion_profile().flight_apex_metres
+            - procedural_tuning().authored_ordinary_passing_rise_metres;
         let displayed_root = app.world().get::<Transform>(root).unwrap();
         assert!(
             (displayed_root.translation.y - (authored_root.translation.y + expected_flight)).abs()
@@ -1157,7 +1155,7 @@ mod contract_tests {
 
     #[test]
     fn measured_sole_offset_matches_the_authored_rig() {
-        assert!((MEASURED_ANKLE_SOLE_OFFSET_METRES - 0.085).abs() < f32::EPSILON);
+        assert!((measured_ankle_sole_offset_metres() - 0.085).abs() < f32::EPSILON);
     }
 
     #[test]
@@ -1323,18 +1321,18 @@ mod ik_tests {
     #[test]
     fn run_has_unconstrained_flight_but_walk_retains_support() {
         for phase in [0.25, 0.75] {
-            let (run_left, run_right) = gait_support_weights(RUN_LOCOMOTION_PROFILE, phase);
+            let (run_left, run_right) = gait_support_weights(run_locomotion_profile(), phase);
             assert_eq!((run_left, run_right), (0.0, 0.0));
-            let (walk_left, walk_right) = gait_support_weights(WALK_LOCOMOTION_PROFILE, phase);
+            let (walk_left, walk_right) = gait_support_weights(walk_locomotion_profile(), phase);
             assert!(walk_left + walk_right > 0.0);
         }
 
-        let phase_step = gait_cycle_phase_delta(RUN_LOCOMOTION_PROFILE, 5.5, 1.0 / 64.0);
+        let phase_step = gait_cycle_phase_delta(run_locomotion_profile(), 5.5, 1.0 / 64.0);
         let mut longest = 0_u32;
         let mut current = 0_u32;
         for frame in 0..=64 {
             let phase = frame as f32 * phase_step;
-            let (left, right) = gait_support_weights(RUN_LOCOMOTION_PROFILE, phase);
+            let (left, right) = gait_support_weights(run_locomotion_profile(), phase);
             if left <= 0.001 && right <= 0.001 {
                 current += 1;
                 longest = longest.max(current);
@@ -1359,7 +1357,8 @@ mod ik_tests {
                 .with_local_velocity(Vec3::NEG_Z * 5.5)
                 .with_gait_phase(phase);
             assert!(
-                (locomotion_height_wave(&state) - RUN_LOCOMOTION_PROFILE.flight_apex_metres).abs()
+                (locomotion_height_wave(&state) - run_locomotion_profile().flight_apex_metres)
+                    .abs()
                     < 0.0001
             );
         }
@@ -1390,7 +1389,7 @@ mod ik_tests {
         assert!(
             (locomotion_height_wave(
                 &moving(5.5, Posture::Upright, WeaponGuardState::Lowered,).with_gait_phase(0.25)
-            ) - RUN_LOCOMOTION_PROFILE.flight_apex_metres)
+            ) - run_locomotion_profile().flight_apex_metres)
                 .abs()
                 < 0.0001
         );
@@ -1411,7 +1410,7 @@ mod ik_tests {
                 5.5,
                 Posture::Upright,
                 WeaponGuardState::Lowered,
-            )) - AUTHORED_ORDINARY_PASSING_RISE_METRES)
+            )) - procedural_tuning().authored_ordinary_passing_rise_metres)
                 .abs()
                 < 0.0001
         );
@@ -1430,9 +1429,9 @@ mod ik_tests {
         let forward = body_response_target(Vec3::Z * 5.5, Vec3::Z * 12.0, 1.0);
         let braking = body_response_target(Vec3::Z * 5.5, Vec3::NEG_Z * 12.0, 1.0);
         let walking_braking = body_response_target(
-            Vec3::Z * WALK_LOCOMOTION_PROFILE.reference_speed,
+            Vec3::Z * walk_locomotion_profile().reference_speed,
             Vec3::NEG_Z * 12.0,
-            WALK_LOCOMOTION_PROFILE.reference_speed / RUN_LOCOMOTION_PROFILE.reference_speed,
+            walk_locomotion_profile().reference_speed / run_locomotion_profile().reference_speed,
         );
         let stopped_braking = body_response_target(Vec3::ZERO, Vec3::NEG_Z * 12.0, 0.0);
         let stationary_lateral = body_response_target(Vec3::ZERO, Vec3::X * 12.0, 1.0);
@@ -1453,21 +1452,21 @@ mod ik_tests {
                 <= 30.0
         );
         assert_eq!(
-            landing_compression_for_impact(WALK_LOCOMOTION_PROFILE, 0.5),
+            landing_compression_for_impact(walk_locomotion_profile(), 0.5),
             0.0
         );
         assert!((0.04..=0.08).contains(&landing_compression_for_impact(
-            WALK_LOCOMOTION_PROFILE,
+            walk_locomotion_profile(),
             4.5,
         )));
         assert!(
             landing_compression_for_action(
-                WALK_LOCOMOTION_PROFILE,
+                walk_locomotion_profile(),
                 4.5,
                 Some(SkeletonAction::Dodge),
             ) > 0.0
         );
-        assert!(landing_compression_for_action(WALK_LOCOMOTION_PROFILE, 4.5, None) > 0.0);
+        assert!(landing_compression_for_action(walk_locomotion_profile(), 4.5, None) > 0.0);
         assert_eq!(presentation_tick_delta(Some(10), 10), Some(0));
         assert_eq!(presentation_tick_delta(Some(10), 14), Some(4));
         assert_eq!(presentation_tick_delta(Some(14), 2), None);
@@ -1664,14 +1663,14 @@ mod ik_tests {
     #[test]
     fn rendered_sole_contact_uses_the_shared_hierarchy_tolerance() {
         let terrain_height = 2.0;
-        let exact_ankle = terrain_height + MEASURED_ANKLE_SOLE_OFFSET_METRES;
+        let exact_ankle = terrain_height + measured_ankle_sole_offset_metres();
         assert!(sole_is_at_contact(exact_ankle, terrain_height));
         assert!(sole_is_at_contact(
-            exact_ankle + SOLE_CONTACT_TOLERANCE_METRES - 0.00001,
+            exact_ankle + sole_contact_tolerance_metres() - 0.00001,
             terrain_height
         ));
         assert!(!sole_is_at_contact(
-            exact_ankle + SOLE_CONTACT_TOLERANCE_METRES + 0.0001,
+            exact_ankle + sole_contact_tolerance_metres() + 0.0001,
             terrain_height
         ));
     }
@@ -1688,7 +1687,7 @@ mod ik_tests {
             let landing =
                 plan_settle_landing(origin, rotation, capture, rotation * Vec3::NEG_Z, side);
             let landing_local = rotation.inverse() * (landing - origin);
-            assert!(landing_local.x * local_x.signum() >= FOOT_TRACK_INNER);
+            assert!(landing_local.x * local_x.signum() >= foot_track_inner_metres());
         }
     }
 
@@ -1837,7 +1836,7 @@ mod ik_tests {
         let left_local = rotation.inverse() * (left - origin);
         let right_local = rotation.inverse() * (right - origin);
         assert!(left_local.x < 0.0 && right_local.x > 0.0);
-        assert!(right_local.x - left_local.x >= MIN_INTER_FOOT_SEPARATION - 0.0001);
+        assert!(right_local.x - left_local.x >= minimum_inter_foot_separation_metres() - 0.0001);
     }
 
     #[test]
@@ -1868,7 +1867,7 @@ mod ik_tests {
         assert!((at_64_hz + 0.3).abs() < 0.0001);
 
         let after_hitch = advance_pelvis_shift(0.0, -1.0, 1.0);
-        assert!((after_hitch + MAX_PELVIS_CORRECTION_STEP).abs() < 0.0001);
+        assert!((after_hitch + maximum_pelvis_correction_step_metres()).abs() < 0.0001);
     }
 
     #[test]

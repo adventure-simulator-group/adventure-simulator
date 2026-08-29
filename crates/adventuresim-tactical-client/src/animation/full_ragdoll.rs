@@ -14,23 +14,28 @@ use super::{
 
 const RAGDOLL_LAYER: u32 = 1 << 7;
 
-const BODY_SPECS: [(BoneRole, f32, f32); 15] = [
-    (BoneRole::Pelvis, 0.18, 0.24),
-    (BoneRole::Chest, 0.18, 0.28),
-    (BoneRole::Head, 0.15, 0.16),
-    (BoneRole::ThighLeft, 0.10, 0.36),
-    (BoneRole::ShinLeft, 0.085, 0.34),
-    (BoneRole::FootLeft, 0.09, 0.20),
-    (BoneRole::ThighRight, 0.10, 0.36),
-    (BoneRole::ShinRight, 0.085, 0.34),
-    (BoneRole::FootRight, 0.09, 0.20),
-    (BoneRole::UpperArmLeft, 0.075, 0.27),
-    (BoneRole::ForearmLeft, 0.065, 0.25),
-    (BoneRole::HandLeft, 0.07, 0.14),
-    (BoneRole::UpperArmRight, 0.075, 0.27),
-    (BoneRole::ForearmRight, 0.065, 0.25),
-    (BoneRole::HandRight, 0.07, 0.14),
-];
+fn body_specs() -> [(BoneRole, f32, f32); 15] {
+    let config = runtime_animation_config().full_ragdoll;
+    let spec =
+        |role, capsule: RagdollCapsuleConfig| (role, capsule.radius_metres, capsule.length_metres);
+    [
+        spec(BoneRole::Pelvis, config.pelvis),
+        spec(BoneRole::Chest, config.chest),
+        spec(BoneRole::Head, config.head),
+        spec(BoneRole::ThighLeft, config.thigh),
+        spec(BoneRole::ShinLeft, config.shin),
+        spec(BoneRole::FootLeft, config.foot),
+        spec(BoneRole::ThighRight, config.thigh),
+        spec(BoneRole::ShinRight, config.shin),
+        spec(BoneRole::FootRight, config.foot),
+        spec(BoneRole::UpperArmLeft, config.upper_arm),
+        spec(BoneRole::ForearmLeft, config.forearm),
+        spec(BoneRole::HandLeft, config.hand),
+        spec(BoneRole::UpperArmRight, config.upper_arm),
+        spec(BoneRole::ForearmRight, config.forearm),
+        spec(BoneRole::HandRight, config.hand),
+    ]
+}
 
 const SPHERICAL_LINKS: [(BoneRole, BoneRole); 6] = [
     (BoneRole::Pelvis, BoneRole::Chest),
@@ -184,7 +189,7 @@ fn spawn_full_ragdoll(
     let mut role_bodies = BTreeMap::new();
     let mut bodies = Vec::new();
     let mut parts = Vec::new();
-    for (role, radius, length) in BODY_SPECS {
+    for (role, radius, length) in body_specs() {
         let Some(&bone) = rig.get(&role) else {
             return;
         };
@@ -429,7 +434,7 @@ mod tests {
 
     #[test]
     fn conservative_ragdoll_has_expected_topology() {
-        let unique = BODY_SPECS
+        let unique = body_specs()
             .iter()
             .map(|(role, _, _)| *role)
             .collect::<std::collections::BTreeSet<_>>();

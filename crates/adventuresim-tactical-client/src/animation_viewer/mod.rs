@@ -30,12 +30,13 @@ use crate::animation::pose_buffer::PoseBufferMetrics;
 use crate::animation::{
     AnimationPlayback, AnimationRuntime, ArmIkState, AuthoredBindTransform, BoneRole, HumanoidBone,
     LegIkDiagnostics, LegIkState, LocomotionBodyResponseState, LocomotionHeightState,
-    LocomotionPresentationEvent, LocomotionPresentationEventKind,
-    MEASURED_ANKLE_SOLE_OFFSET_METRES, PresentedSkeleton, ProceduralAnimationClock,
-    RaisedFootworkState, SOLE_CONTACT_TOLERANCE_METRES, TacticalAnimationPlugin, TerrainIkEnabled,
+    LocomotionPresentationEvent, LocomotionPresentationEventKind, PresentedSkeleton,
+    ProceduralAnimationClock, RaisedFootworkState, TacticalAnimationPlugin, TerrainIkEnabled,
     capture_animation_target_id, capture_entity_id, locomotion_support_weights,
+    measured_ankle_sole_offset_metres,
     secondary_physics::SecondaryPhysicsTelemetry,
     semantic_route::{SemanticRoutePath, SemanticRouteTrace},
+    sole_contact_tolerance_metres,
 };
 use crate::{
     camera::{
@@ -58,6 +59,7 @@ pub(crate) fn run(
     asset_root: PathBuf,
     settle_frames: u32,
     scenario: Option<&str>,
+    combat_config: TacticalCombatConfig,
 ) -> AppExit {
     fs::create_dir_all(&output).unwrap_or_else(|error| {
         panic!("failed to create animation capture directory {output:?}: {error}")
@@ -71,6 +73,7 @@ pub(crate) fn run(
     let workspace_asset_source =
         AssetSourceBuilder::platform_default(&asset_root.to_string_lossy(), None);
     App::new()
+        .insert_resource(combat_config)
         .register_asset_source("workspace", workspace_asset_source)
         // The live debug client registers the same default through
         // `DebugPlugin`. The fixture does not install that input/network
@@ -110,7 +113,7 @@ pub(crate) fn run(
         .insert_resource(LocalCharacterId(default_character_id))
         .insert_resource(CameraMode { third_person: true })
         .insert_resource(WeaponGuardInputState::default())
-        .insert_resource(Time::<Fixed>::from_hz(SAMPLE_HZ as f64))
+        .insert_resource(Time::<Fixed>::from_hz(locomotion_sample_hz() as f64))
         // Individual scenarios select terrain conformity explicitly so the
         // viewer can retain FK-only controls after the live default changed.
         .insert_resource(TerrainIkEnabled(initial_terrain_ik))

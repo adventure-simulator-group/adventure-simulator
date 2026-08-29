@@ -49,6 +49,10 @@ fn store_tactical_combat_config(
         error!("ignored invalid tactical combat config received from server: {error}");
         return;
     }
+    if let Err(error) = snapshot.0.install_runtime_snapshot() {
+        error!("ignored tactical combat config that could not be installed: {error}");
+        return;
+    }
     *config = snapshot.0.clone();
 }
 

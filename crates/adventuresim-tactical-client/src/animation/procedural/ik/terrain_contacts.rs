@@ -6,34 +6,13 @@ use super::*;
 // target near extension. Derive the release cap from that conservative bound
 // and retain two percent of numerical margin below the viewer's 0.10 m
 // contract at 64 Hz.
-pub(super) const MAX_KNEE_TARGET_AMPLIFICATION: f32 = 2.05;
-pub(super) const MAX_KNEE_STEP_METRES: f32 = 0.10;
-pub(super) const CONTINUITY_SAMPLE_HZ: f32 = 64.0;
-pub(super) const RUN_AIRBORNE_OWNER_TARGET_SPEED: f32 = 0.0875 * CONTINUITY_SAMPLE_HZ;
-pub(super) const RUN_FIRST_RELEASE_OWNER_TARGET_SPEED: f32 = 0.094 * CONTINUITY_SAMPLE_HZ;
-pub(super) const AIRBORNE_RELEASE_TARGET_SPEED: f32 =
-    MAX_KNEE_STEP_METRES * CONTINUITY_SAMPLE_HZ / MAX_KNEE_TARGET_AMPLIFICATION * 0.98;
-pub(super) const MIN_TERRAIN_KNEE_FLEXION: f32 = 12.0_f32.to_radians();
 /// Measured vertical distance from the Cascadeur ankle bone to its sole.
-pub(crate) const MEASURED_ANKLE_SOLE_OFFSET_METRES: f32 = 0.085;
 /// Maximum rendered ankle-to-terrain residual that still represents sole
 /// contact after the complete analytic and scene-hierarchy solve.
-pub(crate) const SOLE_CONTACT_TOLERANCE_METRES: f32 = 0.01;
-pub(super) const SWING_SOLE_CLEARANCE_METRES: f32 = 0.02;
-pub(super) const RUN_SWING_SOLE_CLEARANCE_METRES: f32 = 0.08;
-pub(super) const TERRAIN_TRANSITION_FLIGHT_TOE_CLEARANCE_METRES: f32 = 0.011;
-pub(super) const TERRAIN_CONTACT_TOE_CLEARANCE_METRES: f32 = -0.009;
-pub(super) const RUN_SWING_MINIMUM_SOLE_CLEARANCE_METRES: f32 = 0.051;
-pub(super) const RUN_CONTACT_APPROACH_PHASE: f32 = 0.95;
-pub(super) const RUN_CONTACT_CHAIN_SETTLE_PHASE: f32 = 0.18;
-pub(super) const RUN_MAXIMUM_PLANNED_REACH_PELVIS_DROP: f32 = 0.25;
-pub(super) const LATE_RUN_CONTACT_PLAN_PHASE: f32 = 0.5;
 // A late-created plan must not compress a full stride into the few samples
 // left before support entry. Keep target motion relative to the advancing body
 // below the measured knee-singularity budget; ordinary full-swing plans retain
 // their desired footprint because their available budget is larger.
-pub(super) const MAX_RUN_SWING_ROOT_RELATIVE_STEP_METRES: f32 = 0.068;
-pub(super) const SETTLE_STEP_CLEARANCE_METRES: f32 = 0.10;
 
 pub(in crate::animation::procedural) fn run_airborne_owner_target_speed(
     just_released: bool,
@@ -44,9 +23,9 @@ pub(in crate::animation::procedural) fn run_airborne_owner_target_speed(
         // search sphere can contain no terrain-valid point, causing the
         // fallback to exceed both its own budget and the rendered gate. Use
         // the remaining sub-gate margin only for this release projection.
-        RUN_FIRST_RELEASE_OWNER_TARGET_SPEED
+        ik_tuning().run_first_release_owner_step_metres * ik_tuning().continuity_sample_hz
     } else {
-        RUN_AIRBORNE_OWNER_TARGET_SPEED
+        ik_tuning().run_airborne_owner_step_metres * ik_tuning().continuity_sample_hz
     }
 }
 
@@ -60,7 +39,7 @@ pub(in crate::animation::procedural) fn run_airborne_owner_target_speed_for_samp
         // budget for the first restart sample; Run's wider swing budget can
         // amplify an otherwise valid ankle step past the knee continuity gate
         // near extension.
-        AIRBORNE_RELEASE_TARGET_SPEED
+        ik_tuning().airborne_release_step_metres * ik_tuning().continuity_sample_hz
     } else {
         run_airborne_owner_target_speed(just_released)
     }
@@ -72,7 +51,8 @@ pub(in crate::animation::procedural) fn uses_run_airborne_motion_budget(
 ) -> bool {
     gait == LocomotionGait::Run
         || planar_speed
-            >= (WALK_LOCOMOTION_PROFILE.reference_speed + RUN_LOCOMOTION_PROFILE.reference_speed)
+            >= (walk_locomotion_profile().reference_speed
+                + run_locomotion_profile().reference_speed)
                 * 0.5
 }
 
@@ -99,7 +79,7 @@ pub(in crate::animation::procedural) fn bound_unacquired_run_support_release_tar
             rig_origin,
             rig_rotation,
             delta_seconds,
-            RUN_AIRBORNE_OWNER_TARGET_SPEED,
+            ik_tuning().run_airborne_owner_step_metres * ik_tuning().continuity_sample_hz,
             minimum_world_y,
         )
     } else {
@@ -431,8 +411,9 @@ pub(in crate::animation::procedural) fn bound_late_run_contact(
     } else {
         0.0
     };
-    let relative_travel =
-        MAX_RUN_SWING_ROOT_RELATIVE_STEP_METRES * CONTINUITY_SAMPLE_HZ * remaining_seconds;
+    let relative_travel = ik_tuning().maximum_run_swing_root_relative_step_metres
+        * ik_tuning().continuity_sample_hz
+        * remaining_seconds;
     let maximum_horizontal_travel = root_travel + relative_travel;
     let horizontal = desired_contact.xz() - visible_start.xz();
     let bounded = visible_start.xz() + horizontal.clamp_length_max(maximum_horizontal_travel);
@@ -443,7 +424,7 @@ pub(in crate::animation::procedural) fn late_run_plan_requires_bound(
     retained_contact: Option<Vec3>,
     phase_to_contact: f32,
 ) -> bool {
-    retained_contact.is_none() && phase_to_contact < LATE_RUN_CONTACT_PLAN_PHASE
+    retained_contact.is_none() && phase_to_contact < ik_tuning().late_run_contact_plan_phase
 }
 
 pub(in crate::animation::procedural) fn unplanned_run_support_requires_flight(
@@ -466,12 +447,12 @@ pub(in crate::animation::procedural) fn run_swing_clearance(
 ) -> f32 {
     if let Some(progress) = planned_progress {
         let progress = progress.clamp(0.0, 1.0);
-        RUN_SWING_MINIMUM_SOLE_CLEARANCE_METRES * (1.0 - progress)
-            + (std::f32::consts::PI * progress).sin() * RUN_SWING_SOLE_CLEARANCE_METRES
+        ik_tuning().run_swing_minimum_sole_clearance_metres * (1.0 - progress)
+            + (std::f32::consts::PI * progress).sin() * ik_tuning().run_swing_sole_clearance_metres
     } else {
         let progress = (1.0 - phase_to_contact).clamp(0.0, 1.0);
-        RUN_SWING_MINIMUM_SOLE_CLEARANCE_METRES
-            + (std::f32::consts::PI * progress).sin() * RUN_SWING_SOLE_CLEARANCE_METRES
+        ik_tuning().run_swing_minimum_sole_clearance_metres
+            + (std::f32::consts::PI * progress).sin() * ik_tuning().run_swing_sole_clearance_metres
     }
 }
 
@@ -484,7 +465,7 @@ pub(in crate::animation::procedural) fn run_airborne_clearance(
     if support_eligible_for_descent {
         clearance
     } else {
-        clearance.max(RUN_SWING_MINIMUM_SOLE_CLEARANCE_METRES)
+        clearance.max(ik_tuning().run_swing_minimum_sole_clearance_metres)
     }
 }
 
@@ -499,7 +480,7 @@ pub(in crate::animation::procedural) fn run_airborne_clearance_for_sample(
         // floor. Adding the phase swing arc here requested ~9.6 cm of vertical
         // clearance on the captured uphill edge, leaving no terrain-valid
         // point inside the visible foot budget. Later samples build the arc.
-        RUN_SWING_MINIMUM_SOLE_CLEARANCE_METRES
+        ik_tuning().run_swing_minimum_sole_clearance_metres
     } else {
         run_airborne_clearance(
             phase_to_contact,
@@ -554,7 +535,9 @@ pub(in crate::animation::procedural) fn run_contact_within_follower_step(
     };
     let desired_owner = rig_rotation.inverse() * (desired_world - rig_origin);
     previous_owner.distance(desired_owner)
-        <= RUN_AIRBORNE_OWNER_TARGET_SPEED * delta_seconds.max(0.0) + SOLE_CONTACT_TOLERANCE_METRES
+        <= (ik_tuning().run_airborne_owner_step_metres * ik_tuning().continuity_sample_hz)
+            * delta_seconds.max(0.0)
+            + sole_contact_tolerance_metres()
 }
 
 pub(in crate::animation::procedural) fn run_contact_within_leg_reach(
@@ -577,7 +560,9 @@ pub(in crate::animation::procedural) fn run_contact_within_follower_motion_step(
     };
     let desired_owner = rig_rotation.inverse() * (desired_world - rig_origin);
     previous_owner.distance(desired_owner)
-        <= RUN_AIRBORNE_OWNER_TARGET_SPEED * delta_seconds.max(0.0) + 0.0001
+        <= (ik_tuning().run_airborne_owner_step_metres * ik_tuning().continuity_sample_hz)
+            * delta_seconds.max(0.0)
+            + 0.0001
 }
 
 #[expect(
@@ -616,7 +601,9 @@ pub(in crate::animation::procedural) fn retarget_unacquired_run_contact_for_desc
     // second, then terrain-resample and project into current reach before
     // freezing the final acquired footprint.
     let start_world = rig_origin + rig_rotation * previous_owner;
-    let maximum_motion = RUN_AIRBORNE_OWNER_TARGET_SPEED * delta_seconds.max(0.0);
+    let maximum_motion = (ik_tuning().run_airborne_owner_step_metres
+        * ik_tuning().continuity_sample_hz)
+        * delta_seconds.max(0.0);
     let mut transported_contact = if fixed_within_motion {
         fixed_contact
     } else {
@@ -626,7 +613,7 @@ pub(in crate::animation::procedural) fn retarget_unacquired_run_contact_for_desc
         transported_contact =
             constrain_foot_to_track(transported_contact, rig_origin, rig_rotation, side);
         let height = terrain_height_at(transported_contact.xz())?;
-        transported_contact.y = height + MEASURED_ANKLE_SOLE_OFFSET_METRES;
+        transported_contact.y = height + measured_ankle_sole_offset_metres();
         let leg_vertical = transported_contact.y - upper_root.y;
         let leg_horizontal = (maximum_reach * maximum_reach - leg_vertical * leg_vertical)
             .max(0.0)
@@ -649,7 +636,7 @@ pub(in crate::animation::procedural) fn retarget_unacquired_run_contact_for_desc
     transported_contact =
         constrain_foot_to_track(transported_contact, rig_origin, rig_rotation, side);
     let height = terrain_height_at(transported_contact.xz())?;
-    transported_contact.y = height + MEASURED_ANKLE_SOLE_OFFSET_METRES;
+    transported_contact.y = height + measured_ankle_sole_offset_metres();
     let accepted = transported_contact.distance(upper_root) <= maximum_reach + 0.001
         && run_contact_within_follower_motion_step(
             Some(previous_owner),
@@ -721,7 +708,8 @@ pub(in crate::animation::procedural) fn reachable_run_contact_target(
     terrain_height_at: impl Fn(Vec2) -> Option<f32>,
 ) -> Vec3 {
     let direction = velocity.with_y(0.0).try_normalize().unwrap_or(Vec3::NEG_Z);
-    let support_radius = (contact_ready_phase - RUN_CONTACT_CHAIN_SETTLE_PHASE).max(0.0);
+    let support_radius =
+        (contact_ready_phase - ik_tuning().run_contact_chain_settle_phase).max(0.0);
     let travel_per_phase = ordinary_step_distance(speed) * 2.0;
     let current_terrain_height = terrain_height_at(current_upper_root.xz());
     let predicted_upper_roots = [
@@ -737,7 +725,7 @@ pub(in crate::animation::procedural) fn reachable_run_contact_target(
         {
             root.y += predicted_height - current_height;
         }
-        root - Vec3::Y * RUN_MAXIMUM_PLANNED_REACH_PELVIS_DROP
+        root - Vec3::Y * ik_tuning().run_maximum_planned_reach_pelvis_drop_metres
     });
     // The world footprint must remain reachable for the whole stance, not
     // merely at entry. Project its XZ into the intersection of the predicted
@@ -747,7 +735,7 @@ pub(in crate::animation::procedural) fn reachable_run_contact_target(
     // accounts for the changing vertical budget on sloped terrain.
     for _ in 0..4 {
         if let Some(height) = terrain_height_at(candidate.xz()) {
-            candidate.y = height + MEASURED_ANKLE_SOLE_OFFSET_METRES;
+            candidate.y = height + measured_ankle_sole_offset_metres();
         }
         candidate = project_run_contact_into_reach_intersection(
             candidate,
@@ -756,7 +744,7 @@ pub(in crate::animation::procedural) fn reachable_run_contact_target(
         );
     }
     if let Some(height) = terrain_height_at(candidate.xz()) {
-        candidate.y = height + MEASURED_ANKLE_SOLE_OFFSET_METRES;
+        candidate.y = height + measured_ankle_sole_offset_metres();
     }
     if !run_contact_reachable_through_stance(candidate, predicted_upper_roots, maximum_reach) {
         // A cliff-like sample can have no shared stance footprint even with
@@ -770,7 +758,7 @@ pub(in crate::animation::procedural) fn reachable_run_contact_target(
                 maximum_reach,
             );
             if let Some(height) = terrain_height_at(candidate.xz()) {
-                candidate.y = height + MEASURED_ANKLE_SOLE_OFFSET_METRES;
+                candidate.y = height + measured_ankle_sole_offset_metres();
             }
         }
     }
@@ -993,7 +981,7 @@ pub(in crate::animation::procedural) fn settle_swing_target(
     let progress = progress.clamp(0.0, 1.0);
     let horizontal = smoothstep(0.0, 1.0, progress);
     let mut target = start.lerp(landing, horizontal);
-    target.y += (std::f32::consts::PI * progress).sin() * SETTLE_STEP_CLEARANCE_METRES;
+    target.y += (std::f32::consts::PI * progress).sin() * ik_tuning().settle_step_clearance_metres;
     target
 }
 
@@ -1021,10 +1009,11 @@ pub(in crate::animation::procedural) fn transition_toe_clearance_with_rotation_m
     // target is selected. Reserve the maximum vertical motion of the visible
     // ankle-to-toe lever so a target that was toe-safe before finalization is
     // still toe-safe in the propagated pose.
-    let angular_step = (AIRBORNE_FOOT_ROTATION_SPEED_DEGREES * delta_seconds.max(0.0))
-        .min(90.0)
-        .to_radians();
-    TERRAIN_TRANSITION_FLIGHT_TOE_CLEARANCE_METRES
+    let angular_step = (ik_tuning().airborne_foot_rotation_speed_degrees_per_second
+        * delta_seconds.max(0.0))
+    .min(90.0)
+    .to_radians();
+    ik_tuning().terrain_transition_flight_toe_clearance_metres
         + rendered_ankle.distance(rendered_toe) * angular_step.sin()
 }
 
@@ -1034,7 +1023,13 @@ pub(in crate::animation::procedural) fn terrain_maximum_reach(
 ) -> f32 {
     (upper_length * upper_length
         + lower_length * lower_length
-        + 2.0 * upper_length * lower_length * MIN_TERRAIN_KNEE_FLEXION.cos())
+        + 2.0
+            * upper_length
+            * lower_length
+            * ik_tuning()
+                .minimum_terrain_knee_flexion_degrees
+                .to_radians()
+                .cos())
     .sqrt()
 }
 

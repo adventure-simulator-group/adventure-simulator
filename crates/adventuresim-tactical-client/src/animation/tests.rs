@@ -118,14 +118,14 @@ mod legacy_tests {
                     orientation: Quat::IDENTITY,
                     linear_velocity: Vec3::NEG_Z * 5.5,
                     grounded: true,
-                    delta_seconds: 1.0 / LOCOMOTION_SAMPLE_HZ,
+                    delta_seconds: 1.0 / locomotion_sample_hz(),
                     tick,
                 },
             );
             if tick % 4 == 0 {
                 replicated = authoritative.clone();
             }
-            advance_presented_skeleton(&mut presented, &replicated, 1.0 / LOCOMOTION_SAMPLE_HZ);
+            advance_presented_skeleton(&mut presented, &replicated, 1.0 / locomotion_sample_hz());
             let step = circular_phase_delta(previous_phase, presented.gait_phase).abs();
             largest_step = largest_step.max(step);
             if tick % 4 != 0 && step > 0.001 {
@@ -154,11 +154,11 @@ mod legacy_tests {
                 orientation: Quat::IDENTITY,
                 linear_velocity: velocity,
                 grounded: true,
-                delta_seconds: 1.0 / LOCOMOTION_SAMPLE_HZ,
+                delta_seconds: 1.0 / locomotion_sample_hz(),
                 tick: 1,
             },
         );
-        advance_presented_skeleton(&mut presented, &authoritative, 1.0 / LOCOMOTION_SAMPLE_HZ);
+        advance_presented_skeleton(&mut presented, &authoritative, 1.0 / locomotion_sample_hz());
 
         assert!(
             circular_phase_delta(presented.gait_phase, authoritative.gait_phase).abs() < 0.000_01
@@ -193,7 +193,7 @@ mod legacy_tests {
                 delta_seconds,
             );
             let maximum = predicted
-                + PRESENTATION_PHASE_CORRECTION_RATE_PER_SECOND * delta_seconds
+                + presentation_phase_correction_rate_per_second() * delta_seconds
                 + 0.000_01;
             assert!(actual >= 0.0, "phase moved backwards by {actual}");
             assert!(actual <= maximum, "phase step {actual} exceeded {maximum}");
@@ -240,7 +240,7 @@ mod legacy_tests {
             .with_world_velocity(velocity);
         let mut presented = PresentedSkeleton::new(authoritative.clone(), None);
         let delta_seconds = 1.0 / 60.0;
-        let maximum_correction = PRESENTATION_PHASE_CORRECTION_RATE_PER_SECOND * delta_seconds;
+        let maximum_correction = presentation_phase_correction_rate_per_second() * delta_seconds;
 
         for tick in 1..=8 {
             let predicted_delta = gait_cycle_phase_delta(
@@ -260,7 +260,7 @@ mod legacy_tests {
                 .last_phase_measurement_error
                 .expect("new authoritative sample should be measured");
             assert!((measured - 0.10).abs() < 0.000_01);
-            assert!(presented.phase_error_remaining < 0.10 - PRESENTATION_PHASE_DRIFT_DEADBAND);
+            assert!(presented.phase_error_remaining < 0.10 - presentation_phase_drift_deadband());
         }
     }
 
@@ -277,7 +277,7 @@ mod legacy_tests {
             .with_locomotion_sample_tick(4)
             .with_gait_phase(0.1);
 
-        advance_presented_skeleton(&mut presented, &turned, 1.0 / LOCOMOTION_SAMPLE_HZ);
+        advance_presented_skeleton(&mut presented, &turned, 1.0 / locomotion_sample_hz());
 
         assert_eq!(turned.local_velocity, Vec3::X * 5.5);
         assert!(presented.local_velocity.x > 0.0);
@@ -472,7 +472,7 @@ mod legacy_tests {
                     handle: assets.add(AnimationClip::default()),
                     duration_seconds: catalog.packs[HUMANOID_UNARMED_PACK].motions[&anchor.motion]
                         .last_frame as f32
-                        / ANIMATION_FPS,
+                        / animation_frames_per_second(),
                     layer: ClipLayer::Whole,
                 },
             );
@@ -508,7 +508,7 @@ mod legacy_tests {
             })
         );
         assert!(weighted.iter().any(|sample| {
-            (sample.time_seconds - 16.0 / ANIMATION_FPS).abs() < 0.0001
+            (sample.time_seconds - 16.0 / animation_frames_per_second()).abs() < 0.0001
                 && (sample.weight - 0.5).abs() < 0.0001
         }));
     }
@@ -548,14 +548,10 @@ mod legacy_tests {
                 .iter()
                 .any(|sample| sample.time_seconds == 0.0 && (sample.weight - 0.5).abs() < 0.0001)
         );
-        assert!(
-            weighted
-                .iter()
-                .any(
-                    |sample| (sample.time_seconds - 4.0 / ANIMATION_FPS).abs() < 0.0001
-                        && (sample.weight - 0.5).abs() < 0.0001
-                )
-        );
+        assert!(weighted.iter().any(|sample| {
+            (sample.time_seconds - 4.0 / animation_frames_per_second()).abs() < 0.0001
+                && (sample.weight - 0.5).abs() < 0.0001
+        }));
     }
 
     #[test]
@@ -569,7 +565,7 @@ mod legacy_tests {
             (HUMANOID_UNARMED_PACK.to_owned(), "run_mirrored".to_owned()),
             LoadedClip {
                 handle: mirrored_handle.clone(),
-                duration_seconds: 64.0 / ANIMATION_FPS,
+                duration_seconds: 64.0 / animation_frames_per_second(),
                 layer: ClipLayer::Whole,
             },
         );
@@ -713,7 +709,7 @@ mod legacy_tests {
             .expect("client authored rig");
         assert_eq!(
             world.get::<Transform>(rig).unwrap().translation.y,
-            PLAYER_VISUAL_Y_OFFSET
+            player_visual_y_offset_metres()
         );
     }
 
@@ -785,7 +781,7 @@ mod legacy_tests {
             .id();
         assert_eq!(weighted.len(), 1);
         assert_eq!(weighted[0].clip.handle.id(), back);
-        assert!((weighted[0].time_seconds - 9.0 / ANIMATION_FPS).abs() < 0.0001);
+        assert!((weighted[0].time_seconds - 9.0 / animation_frames_per_second()).abs() < 0.0001);
         assert!((weighted[0].weight - 1.0).abs() < 0.0001);
     }
 
@@ -820,7 +816,7 @@ mod legacy_tests {
             .id();
         assert_eq!(weighted.len(), 1);
         assert_eq!(weighted[0].clip.handle.id(), right);
-        assert!((weighted[0].time_seconds - 6.0 / ANIMATION_FPS).abs() < 0.0001);
+        assert!((weighted[0].time_seconds - 6.0 / animation_frames_per_second()).abs() < 0.0001);
     }
 
     #[test]

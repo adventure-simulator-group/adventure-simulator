@@ -2,8 +2,6 @@
 
 use super::*;
 
-const MAX_RETAINED_PLANT_REACH_CORRECTION: f32 = 0.015;
-
 pub(in crate::animation::procedural) fn retain_monotonic_contact_sequence(
     current: u64,
     observed: u64,
@@ -256,7 +254,8 @@ pub(in crate::animation::procedural) fn retained_plant_requires_release(
     retained: Vec3,
     reachable: Vec3,
 ) -> bool {
-    retained.xz().distance(reachable.xz()) > MAX_RETAINED_PLANT_REACH_CORRECTION
+    retained.xz().distance(reachable.xz())
+        > ik_tuning().maximum_retained_plant_reach_correction_metres
 }
 
 pub(in crate::animation::procedural) fn ordinary_plant_requires_clear(

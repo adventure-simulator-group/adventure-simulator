@@ -319,7 +319,7 @@ fn begin_melee_lunge(
         )
         .map(|(_, closure)| closure);
         let outcome =
-            if closure.is_some_and(|value| value <= MELEE_LUNGE_RANGE_WINDOW_METRES + 1.0e-5) {
+            if closure.is_some_and(|value| value <= melee_lunge_range_window_metres() + 1.0e-5) {
                 "already_in_window"
             } else {
                 "unreachable_no_movement"
@@ -878,11 +878,11 @@ mod roll_tests {
         movement: MeleeLungeMovement,
         config: &TacticalCombatConfig,
     ) -> f32 {
-        let dt = 1.0 / LOCOMOTION_SAMPLE_HZ;
+        let dt = 1.0 / locomotion_sample_hz();
         let authored_windup_seconds = 0.18_f32;
         let contact_seconds =
             authored_windup_seconds.max(melee_lunge_movement_delay(movement, config));
-        let contact_ticks = (contact_seconds * LOCOMOTION_SAMPLE_HZ).ceil() as u64;
+        let contact_ticks = (contact_seconds * locomotion_sample_hz()).ceil() as u64;
         let motor = &config.movement.motor;
         let mass = motor.fallback_character_mass_kg;
         let mut displacement = 0.0;
@@ -890,7 +890,7 @@ mod roll_tests {
 
         if movement.quickstep {
             let action_seconds = config.movement.maneuvers.quickstep_duration_seconds;
-            let action_ticks = (action_seconds * LOCOMOTION_SAMPLE_HZ).round().max(1.0) as u64;
+            let action_ticks = (action_seconds * locomotion_sample_hz()).round().max(1.0) as u64;
             let maximum_force = quickstep_peak_horizontal_force_newtons(70.0, 3.0, motor);
             for tick in 0..contact_ticks {
                 if displacement >= movement.distance_metres {
@@ -1496,7 +1496,7 @@ pub(super) fn on_ranged_attack_started(
 }
 
 fn animation_tick(time: &Time<()>) -> u64 {
-    (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64
+    (time.elapsed_secs_f64() * locomotion_sample_hz() as f64).round() as u64
 }
 
 fn delayed_melee_timing_ticks(
@@ -1506,7 +1506,7 @@ fn delayed_melee_timing_ticks(
     recovery: CombatDuration,
 ) -> (u64, u64, u64) {
     let authored_ticks = duration_ticks(authored_windup);
-    let arrival_ticks = (lunge_delay_seconds.max(0.0) * LOCOMOTION_SAMPLE_HZ).round() as u64;
+    let arrival_ticks = (lunge_delay_seconds.max(0.0) * locomotion_sample_hz()).round() as u64;
     let contact = input_tick.saturating_add(authored_ticks.max(arrival_ticks));
     let animation_start = contact.saturating_sub(authored_ticks);
     let recovery_end = contact.saturating_add(duration_ticks(recovery));
@@ -1514,7 +1514,7 @@ fn delayed_melee_timing_ticks(
 }
 
 fn duration_ticks(duration: CombatDuration) -> u64 {
-    (duration.as_secs_f32() * LOCOMOTION_SAMPLE_HZ)
+    (duration.as_secs_f32() * locomotion_sample_hz())
         .round()
         .max(1.0) as u64
 }

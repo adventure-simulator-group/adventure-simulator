@@ -829,7 +829,7 @@ fn try_start_attack(
         warn!("Trying to attack without a usable equipped weapon");
         return;
     }
-    let start = (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64;
+    let start = (time.elapsed_secs_f64() * locomotion_sample_hz() as f64).round() as u64;
     if ranged {
         if attacking {
             return;
@@ -1005,7 +1005,7 @@ fn flush_buffered_melee_attacks(
         if !attack_reach_is_usable(false, melee, reach, targeting.arm_reach(entity)) {
             continue;
         }
-        let start = (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64;
+        let start = (time.elapsed_secs_f64() * locomotion_sample_hz() as f64).round() as u64;
         let acquisition_range = targeting.melee_acquisition_range(entity, reach, &combat_config);
         let (target, target_position, aim_direction) = targeting.acquire(
             entity,
@@ -1061,11 +1061,11 @@ fn attack_reach_is_usable(ranged: bool, melee: bool, weapon_reach: f32, arm_reac
 }
 
 fn animation_ticks(seconds: f32) -> u64 {
-    (seconds.max(1.0 / LOCOMOTION_SAMPLE_HZ) * LOCOMOTION_SAMPLE_HZ).round() as u64
+    (seconds.max(1.0 / locomotion_sample_hz()) * locomotion_sample_hz()).round() as u64
 }
 
 fn delay_ticks(seconds: f32) -> u64 {
-    (seconds.max(0.0) * LOCOMOTION_SAMPLE_HZ).round() as u64
+    (seconds.max(0.0) * locomotion_sample_hz()).round() as u64
 }
 
 fn delayed_melee_contact_seconds(authored_windup: f32, predicted_arrival: f32) -> (f32, f32) {
@@ -1154,7 +1154,7 @@ fn on_parry_fired(
     mut skeletons: Query<&mut SkeletonState>,
 ) {
     if let Ok(mut skeleton) = skeletons.get_mut(event.context) {
-        let start = (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64;
+        let start = (time.elapsed_secs_f64() * locomotion_sample_hz() as f64).round() as u64;
         let _ = skeleton.begin_block(BlockSpec::default(), start, start + 8);
     }
     cmd.client_trigger(DefendRequest::Parry);

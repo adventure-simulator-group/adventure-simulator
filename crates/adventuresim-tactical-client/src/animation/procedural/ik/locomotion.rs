@@ -1,8 +1,5 @@
 use super::*;
 
-const MAX_HIP_DROP_METRES: f32 = 0.18;
-const SOLE_CONTACT_MARGIN_METRES: f32 = 0.001;
-
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub(in crate::animation) struct OrdinaryLocomotionIkState {
     initialized: bool,
@@ -116,11 +113,10 @@ pub(in crate::animation) fn apply(
             // compatibility solve may lift the rendered sample further when
             // terrain rises, but must never lower the authored flat-ground
             // clearance toward a fixed ankle offset.
-            let terrain_target = foot_position.with_y(
-                foot_position
-                    .y
-                    .max(height + MEASURED_ANKLE_SOLE_OFFSET_METRES - SOLE_CONTACT_MARGIN_METRES),
-            );
+            let terrain_target = foot_position.with_y(foot_position.y.max(
+                height + measured_ankle_sole_offset_metres()
+                    - ik_tuning().sole_contact_margin_metres,
+            ));
             let target = foot_position.lerp(terrain_target, weight.clamp(0.0, 1.0));
             targets[index] = Some(target);
 
@@ -132,7 +128,7 @@ pub(in crate::animation) fn apply(
             let reach = maximum_reach(upper_length, lower_length);
             desired_pelvis_shift = desired_pelvis_shift.min(
                 required_hip_shift_for_reach(upper_snapshot.global.translation(), target, reach)
-                    .clamp(-MAX_HIP_DROP_METRES, 0.0)
+                    .clamp(-ik_tuning().maximum_hip_drop_metres, 0.0)
                     * weight,
             );
         }

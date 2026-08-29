@@ -732,7 +732,7 @@ pub(super) fn maximum_facing_tracking_excess(frames: &[&FrameSample]) -> f32 {
             let desired = Vec3::from_array(pair[1].desired_body_forward_direction);
             let elapsed = (pair[1].time_seconds - pair[0].time_seconds).max(0.0);
             let permitted_residual =
-                (before.angle_between(desired) - BODY_TURN_SPEED_RADIANS * elapsed).max(0.0);
+                (before.angle_between(desired) - body_turn_speed_radians() * elapsed).max(0.0);
             (actual.angle_between(desired) - permitted_residual)
                 .abs()
                 .to_degrees()
@@ -1106,8 +1106,9 @@ pub(super) fn ordinary_unplanned_release_transition_is_valid(
 }
 
 pub(super) fn frame_uses_run_motion_budget(frame: &FrameSample) -> bool {
-    let run_speed_threshold =
-        (WALK_LOCOMOTION_PROFILE.reference_speed + RUN_LOCOMOTION_PROFILE.reference_speed) * 0.5;
+    let run_speed_threshold = (walk_locomotion_profile().reference_speed
+        + run_locomotion_profile().reference_speed)
+        * 0.5;
     frame.speed_metres_per_second >= run_speed_threshold
 }
 
@@ -1203,7 +1204,7 @@ pub(super) fn contact_sole_clearance_range(frames: &[&FrameSample]) -> (f32, f32
                     .bones
                     .get(foot)?
                     .terrain_clearance_metres
-                    .map(|ankle| ankle - MEASURED_ANKLE_SOLE_OFFSET_METRES)
+                    .map(|ankle| ankle - measured_ankle_sole_offset_metres())
             })
         })
         .fold(
@@ -1295,7 +1296,7 @@ pub(super) fn reported_support_contacts_are_valid(frames: &[FrameSample]) -> boo
                     .bones
                     .get(toe)
                     .and_then(|bone| bone.terrain_clearance_metres)
-                    .is_some_and(|clearance| clearance.abs() <= SOLE_CONTACT_TOLERANCE_METRES)
+                    .is_some_and(|clearance| clearance.abs() <= sole_contact_tolerance_metres())
             } else {
                 false
             };
@@ -1307,14 +1308,14 @@ pub(super) fn reported_support_contacts_are_valid(frames: &[FrameSample]) -> boo
                         .get(foot)
                         .and_then(|bone| bone.terrain_clearance_metres)
                         .is_some_and(|ankle_clearance| {
-                            (ankle_clearance - MEASURED_ANKLE_SOLE_OFFSET_METRES).abs()
+                            (ankle_clearance - measured_ankle_sole_offset_metres()).abs()
                                 <= if frame.scenario == "raised-guard-stationary-turn" {
                                     // The combat stance is deliberately
                                     // non-flat-footed; its planted pole target
                                     // has a measured 1.11 cm ankle residual.
                                     0.012
                                 } else {
-                                    SOLE_CONTACT_TOLERANCE_METRES
+                                    sole_contact_tolerance_metres()
                                 }
                         }))
         })
@@ -1477,7 +1478,7 @@ mod tests {
         FrameSample {
             scenario: "metric-test".into(),
             scenario_frame,
-            time_seconds: scenario_frame as f32 / SAMPLE_HZ,
+            time_seconds: scenario_frame as f32 / locomotion_sample_hz(),
             speed_metres_per_second: 2.0,
             gait_phase: 0.0,
             locomotion_sample_tick: scenario_frame as u64,
@@ -1683,7 +1684,7 @@ mod tests {
         let mut previous = frame.clone();
         previous.desired_body_forward_direction = Vec3::Z.to_array();
         frame.scenario_frame = 1;
-        frame.time_seconds = 1.0 / SAMPLE_HZ;
+        frame.time_seconds = 1.0 / locomotion_sample_hz();
         assert!(maximum_facing_tracking_excess(&[&previous, &frame]) > 8.0);
 
         frame.guard_action = true;
@@ -1955,7 +1956,7 @@ mod tests {
             .get_mut("left_foot")
             .unwrap()
             .terrain_clearance_metres =
-            Some(MEASURED_ANKLE_SOLE_OFFSET_METRES + SOLE_CONTACT_TOLERANCE_METRES - 0.00001);
+            Some(measured_ankle_sole_offset_metres() + sole_contact_tolerance_metres() - 0.00001);
         assert!(reported_support_contacts_are_valid(&[frame.clone()]));
 
         frame
@@ -1963,7 +1964,7 @@ mod tests {
             .get_mut("left_foot")
             .unwrap()
             .terrain_clearance_metres =
-            Some(MEASURED_ANKLE_SOLE_OFFSET_METRES + SOLE_CONTACT_TOLERANCE_METRES + 0.0001);
+            Some(measured_ankle_sole_offset_metres() + sole_contact_tolerance_metres() + 0.0001);
         assert!(!reported_support_contacts_are_valid(&[frame]));
     }
 
@@ -1984,16 +1985,16 @@ mod tests {
     #[test]
     fn terrain_run_contact_gate_is_non_vacuous_and_requires_alternation() {
         let phase_step = gait_cycle_phase_delta(
-            RUN_LOCOMOTION_PROFILE,
-            RUN_LOCOMOTION_PROFILE.reference_speed,
-            1.0 / SAMPLE_HZ,
+            run_locomotion_profile(),
+            run_locomotion_profile().reference_speed,
+            1.0 / locomotion_sample_hz(),
         );
         let mut unsupported = (0..160)
             .map(|index| {
                 let mut frame = foot_metric_frame(index, 0.0, 0.0, 0.0, 0.0);
                 frame.scenario = "terrain-steady-run-5.5".to_owned();
                 frame.gait_phase = (index as f32 * phase_step).rem_euclid(1.0);
-                frame.time_seconds = index as f32 / SAMPLE_HZ;
+                frame.time_seconds = index as f32 / locomotion_sample_hz();
                 frame
             })
             .collect::<Vec<_>>();

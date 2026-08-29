@@ -1,10 +1,18 @@
+use std::{
+    cell::Cell,
+    sync::{
+        OnceLock, RwLock,
+        atomic::{AtomicU64, Ordering},
+    },
+};
+
 use adventuresim_core::body::BodyPart;
 use bevy::prelude::Resource;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
-pub const TACTICAL_COMBAT_CONFIG_SCHEMA_VERSION: u16 = 2;
+pub const TACTICAL_COMBAT_CONFIG_SCHEMA_VERSION: u16 = 3;
 
 #[derive(Clone, Debug, PartialEq, Resource, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -16,6 +24,217 @@ pub struct TacticalCombatConfig {
     pub client_input: ClientInputConfig,
     pub targeting: TargetingConfig,
     pub presentation: CombatPresentationConfig,
+    pub animation: TacticalAnimationConfig,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TacticalAnimationConfig {
+    pub locomotion: AnimationLocomotionConfig,
+    pub guard_footwork: GuardFootworkConfig,
+    pub state_transitions: AnimationStateTransitionConfig,
+    pub playback: AnimationPlaybackConfig,
+    pub pose_buffer: PoseBufferConfig,
+    pub procedural: ProceduralAnimationConfig,
+    pub secondary_physics: SecondaryPhysicsConfig,
+    pub inverse_kinematics: InverseKinematicsConfig,
+    pub full_ragdoll: FullRagdollConfig,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AnimationLocomotionConfig {
+    pub sample_hz: f32,
+    pub landing: AnimationLandingConfig,
+    pub walk: AnimationGaitConfig,
+    pub run: AnimationGaitConfig,
+    pub raised_guard: AnimationGaitConfig,
+    pub prone: AnimationGaitConfig,
+    pub supine: AnimationGaitConfig,
+    pub blend_speed: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AnimationLandingConfig {
+    pub compression_per_metre_per_second: f32,
+    pub minimum_compression_metres: f32,
+    pub maximum_compression_metres: f32,
+    pub recovery_seconds: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AnimationGaitConfig {
+    pub reference_speed_metres_per_second: f32,
+    pub step_distance_metres: f32,
+    pub support_phase_radius: f32,
+    pub bounce_metres: f32,
+    pub flight_apex_metres: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GuardFootworkConfig {
+    pub default_half_width_metres: f32,
+    pub contact_margin_metres: f32,
+    pub minimum_step_seconds: f32,
+    pub maximum_step_seconds: f32,
+    pub planning_reach_metres: f32,
+    pub reference_leg_length_metres: f32,
+    pub maximum_unsupported_contact_seconds: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AnimationStateTransitionConfig {
+    pub dive_root_handoff_start_fraction: f32,
+    pub downed_facing_sector_half_width: f32,
+    pub downed_facing_edge_stickiness: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AnimationPlaybackConfig {
+    pub frames_per_second: f32,
+    pub player_visual_y_offset_metres: f32,
+    pub velocity_response_per_second: f32,
+    pub phase_correction_rate_per_second: f32,
+    pub phase_drift_deadband: f32,
+    pub phase_drift_measurement_blend: f32,
+    pub phase_snap_error: f32,
+    pub maximum_source_gap_ticks: u64,
+    pub maximum_authored_step_cadence_per_second: f32,
+    pub maximum_authored_stance_slip_metres: f32,
+    pub authored_cadence_cap_transition_width: f32,
+    pub maximum_coalesced_events: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PoseBufferConfig {
+    pub sample_hz: f32,
+    pub inertial_halflife_seconds: f32,
+    pub cull_distance_metres: f32,
+    pub cull_radius_metres: f32,
+    pub authored_contact_plant_limit_metres: f32,
+    pub authored_contact_height_fraction: f32,
+    pub authored_contact_minimum_height_window_metres: f32,
+    pub authored_contact_maximum_height_window_metres: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProceduralAnimationConfig {
+    pub guarded_look_joint_limit_degrees: f32,
+    pub guarded_look_joint_count: f32,
+    pub dive_pelvis_lean_degrees: f32,
+    pub height_transition_speed_metres_per_second: f32,
+    pub locomotion_stop_height_speed_metres_per_second: f32,
+    pub authored_ordinary_passing_rise_metres: f32,
+    pub body_response: BodyResponseConfig,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BodyResponseConfig {
+    pub maximum_presentation_sample_gap_ticks: u64,
+    pub steady_travel_lean_degrees: f32,
+    pub forward_acceleration_lean_degrees: f32,
+    pub lateral_acceleration_lean_degrees: f32,
+    pub startup_inertial_lean_scale: f32,
+    pub sustained_inertial_lean_scale: f32,
+    pub degrees_per_second: f32,
+    pub smooth_time_seconds: f32,
+    pub acceleration_attack_response_per_second: f32,
+    pub acceleration_release_response_per_second: f32,
+    pub maximum_frame_seconds: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SecondaryPhysicsConfig {
+    pub motor_frequency_hz: f32,
+    pub motor_damping_ratio: f32,
+    pub maximum_angular_speed_radians_per_second: f32,
+    pub impact_angular_speed_per_metre_per_second: f32,
+    pub maximum_locomotion_acceleration_metres_per_second_squared: f32,
+    pub ragdoll_motor_frequency_hz: f32,
+    pub ragdoll_gravity_torque: f32,
+    pub weight_response_per_second: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct InverseKinematicsConfig {
+    pub minimum_inter_foot_separation_metres: f32,
+    pub outer_foot_track_metres: f32,
+    pub maximum_plant_discontinuity_metres: f32,
+    pub maximum_owner_translation_per_tick_metres: f32,
+    pub maximum_owner_rotation_per_tick_degrees: f32,
+    pub maximum_knee_target_amplification: f32,
+    pub maximum_knee_step_metres: f32,
+    pub continuity_sample_hz: f32,
+    pub run_airborne_owner_step_metres: f32,
+    pub run_first_release_owner_step_metres: f32,
+    pub airborne_release_step_metres: f32,
+    pub raised_settle_pelvis_knee_budget_metres: f32,
+    pub raised_settle_step_metres: f32,
+    pub guard_reach_pelvis_drop_metres: f32,
+    pub stationary_turn_foot_limit_metres: f32,
+    pub stationary_turn_step_seconds: f32,
+    pub knee_pole_maximum_foot_facing_offset_degrees: f32,
+    pub airborne_foot_rotation_speed_degrees_per_second: f32,
+    pub first_run_release_foot_rotation_speed_degrees_per_second: f32,
+    pub maximum_retained_plant_reach_correction_metres: f32,
+    pub pelvis_correction_speed_metres_per_second: f32,
+    pub run_pelvis_correction_speed_metres_per_second: f32,
+    pub maximum_pelvis_correction_step_metres: f32,
+    pub terrain_blend_speed_per_second: f32,
+    pub minimum_knee_flexion_degrees: f32,
+    pub minimum_terrain_knee_flexion_degrees: f32,
+    pub landing_knee_reserve_release_compression_metres: f32,
+    pub landing_knee_reserve_full_compression_metres: f32,
+    pub measured_ankle_sole_offset_metres: f32,
+    pub sole_contact_tolerance_metres: f32,
+    pub swing_sole_clearance_metres: f32,
+    pub run_swing_sole_clearance_metres: f32,
+    pub terrain_transition_flight_toe_clearance_metres: f32,
+    pub terrain_contact_toe_clearance_metres: f32,
+    pub run_swing_minimum_sole_clearance_metres: f32,
+    pub run_contact_approach_phase: f32,
+    pub run_contact_chain_settle_phase: f32,
+    pub run_maximum_planned_reach_pelvis_drop_metres: f32,
+    pub late_run_contact_plan_phase: f32,
+    pub maximum_run_swing_root_relative_step_metres: f32,
+    pub settle_step_seconds: f32,
+    pub settle_step_clearance_metres: f32,
+    pub settle_capture_point_margin_metres: f32,
+    pub assumed_center_of_mass_height_metres: f32,
+    pub maximum_settle_capture_speed_metres_per_second: f32,
+    pub maximum_hip_drop_metres: f32,
+    pub sole_contact_margin_metres: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FullRagdollConfig {
+    pub pelvis: RagdollCapsuleConfig,
+    pub chest: RagdollCapsuleConfig,
+    pub head: RagdollCapsuleConfig,
+    pub thigh: RagdollCapsuleConfig,
+    pub shin: RagdollCapsuleConfig,
+    pub foot: RagdollCapsuleConfig,
+    pub upper_arm: RagdollCapsuleConfig,
+    pub forearm: RagdollCapsuleConfig,
+    pub hand: RagdollCapsuleConfig,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RagdollCapsuleConfig {
+    pub radius_metres: f32,
+    pub length_metres: f32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -42,6 +261,8 @@ pub struct MeleeAuthorityConfig {
     pub range_latency_tolerance_metres: f32,
     pub windup_jitter_fraction: f32,
     pub maximum_windup_jitter_seconds: f32,
+    pub lunge_range_window_metres: f32,
+    pub lunge_quickstep_threshold_metres: f32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -291,6 +512,8 @@ impl TacticalCombatConfig {
             authority.melee.range_latency_tolerance_metres,
             authority.melee.windup_jitter_fraction,
             authority.melee.maximum_windup_jitter_seconds,
+            authority.melee.lunge_range_window_metres,
+            authority.melee.lunge_quickstep_threshold_metres,
             authority.ranged.cooldown_seconds,
             authority.ranged.completion_allowance_seconds,
             authority.ranged.range_latency_tolerance_metres,
@@ -519,6 +742,254 @@ impl TacticalCombatConfig {
                 "invalid attack curve",
             ));
         }
+
+        let animation = self.animation;
+        let locomotion = animation.locomotion;
+        let gait_values = [
+            locomotion.walk,
+            locomotion.run,
+            locomotion.raised_guard,
+            locomotion.prone,
+            locomotion.supine,
+        ];
+        if !locomotion.sample_hz.is_finite()
+            || locomotion.sample_hz <= 0.0
+            || !locomotion.blend_speed.is_finite()
+            || locomotion.blend_speed <= 0.0
+            || gait_values.into_iter().any(|gait| {
+                ![
+                    gait.reference_speed_metres_per_second,
+                    gait.step_distance_metres,
+                    gait.support_phase_radius,
+                    gait.bounce_metres,
+                    gait.flight_apex_metres,
+                ]
+                .into_iter()
+                .all(finite_nonnegative)
+                    || gait.reference_speed_metres_per_second == 0.0
+                    || gait.step_distance_metres == 0.0
+                    || !(0.0..0.5).contains(&gait.support_phase_radius)
+            })
+        {
+            return Err(TacticalCombatConfigError::Validation(
+                "invalid animation locomotion tuning",
+            ));
+        }
+        let landing = locomotion.landing;
+        if ![
+            landing.compression_per_metre_per_second,
+            landing.minimum_compression_metres,
+            landing.maximum_compression_metres,
+            landing.recovery_seconds,
+        ]
+        .into_iter()
+        .all(finite_nonnegative)
+            || landing.maximum_compression_metres < landing.minimum_compression_metres
+            || landing.recovery_seconds == 0.0
+        {
+            return Err(TacticalCombatConfigError::Validation(
+                "invalid animation landing tuning",
+            ));
+        }
+        let guard = animation.guard_footwork;
+        if ![
+            guard.default_half_width_metres,
+            guard.contact_margin_metres,
+            guard.minimum_step_seconds,
+            guard.maximum_step_seconds,
+            guard.planning_reach_metres,
+            guard.reference_leg_length_metres,
+            guard.maximum_unsupported_contact_seconds,
+        ]
+        .into_iter()
+        .all(|value| finite_nonnegative(value) && value > 0.0)
+            || guard.maximum_step_seconds < guard.minimum_step_seconds
+            || guard.planning_reach_metres <= guard.contact_margin_metres
+        {
+            return Err(TacticalCombatConfigError::Validation(
+                "invalid guard footwork tuning",
+            ));
+        }
+        let playback = animation.playback;
+        if ![
+            playback.frames_per_second,
+            playback.velocity_response_per_second,
+            playback.phase_correction_rate_per_second,
+            playback.phase_drift_deadband,
+            playback.phase_drift_measurement_blend,
+            playback.phase_snap_error,
+            playback.maximum_authored_step_cadence_per_second,
+            playback.maximum_authored_stance_slip_metres,
+            playback.authored_cadence_cap_transition_width,
+        ]
+        .into_iter()
+        .all(finite_nonnegative)
+            || !playback.player_visual_y_offset_metres.is_finite()
+            || playback.frames_per_second == 0.0
+            || playback.maximum_source_gap_ticks == 0
+            || playback.maximum_coalesced_events == 0
+        {
+            return Err(TacticalCombatConfigError::Validation(
+                "invalid animation playback tuning",
+            ));
+        }
+        let pose = animation.pose_buffer;
+        if ![
+            pose.sample_hz,
+            pose.inertial_halflife_seconds,
+            pose.cull_distance_metres,
+            pose.cull_radius_metres,
+            pose.authored_contact_plant_limit_metres,
+            pose.authored_contact_height_fraction,
+            pose.authored_contact_minimum_height_window_metres,
+            pose.authored_contact_maximum_height_window_metres,
+        ]
+        .into_iter()
+        .all(|value| finite_nonnegative(value) && value > 0.0)
+            || pose.authored_contact_maximum_height_window_metres
+                < pose.authored_contact_minimum_height_window_metres
+        {
+            return Err(TacticalCombatConfigError::Validation(
+                "invalid pose buffer tuning",
+            ));
+        }
+        let ragdoll = animation.full_ragdoll;
+        if [
+            ragdoll.pelvis,
+            ragdoll.chest,
+            ragdoll.head,
+            ragdoll.thigh,
+            ragdoll.shin,
+            ragdoll.foot,
+            ragdoll.upper_arm,
+            ragdoll.forearm,
+            ragdoll.hand,
+        ]
+        .into_iter()
+        .any(|capsule| {
+            !capsule.radius_metres.is_finite()
+                || !capsule.length_metres.is_finite()
+                || capsule.radius_metres <= 0.0
+                || capsule.length_metres <= 0.0
+        }) {
+            return Err(TacticalCombatConfigError::Validation(
+                "invalid full-ragdoll capsule tuning",
+            ));
+        }
+        let procedural = animation.procedural;
+        let response = procedural.body_response;
+        if ![
+            procedural.guarded_look_joint_limit_degrees,
+            procedural.guarded_look_joint_count,
+            procedural.dive_pelvis_lean_degrees,
+            procedural.height_transition_speed_metres_per_second,
+            procedural.locomotion_stop_height_speed_metres_per_second,
+            procedural.authored_ordinary_passing_rise_metres,
+            response.steady_travel_lean_degrees,
+            response.forward_acceleration_lean_degrees,
+            response.lateral_acceleration_lean_degrees,
+            response.startup_inertial_lean_scale,
+            response.sustained_inertial_lean_scale,
+            response.degrees_per_second,
+            response.smooth_time_seconds,
+            response.acceleration_attack_response_per_second,
+            response.acceleration_release_response_per_second,
+            response.maximum_frame_seconds,
+        ]
+        .into_iter()
+        .all(finite_nonnegative)
+            || procedural.guarded_look_joint_count == 0.0
+            || response.maximum_presentation_sample_gap_ticks == 0
+        {
+            return Err(TacticalCombatConfigError::Validation(
+                "invalid procedural animation tuning",
+            ));
+        }
+        let secondary = animation.secondary_physics;
+        if ![
+            secondary.motor_frequency_hz,
+            secondary.motor_damping_ratio,
+            secondary.maximum_angular_speed_radians_per_second,
+            secondary.impact_angular_speed_per_metre_per_second,
+            secondary.maximum_locomotion_acceleration_metres_per_second_squared,
+            secondary.ragdoll_motor_frequency_hz,
+            secondary.ragdoll_gravity_torque,
+            secondary.weight_response_per_second,
+        ]
+        .into_iter()
+        .all(finite_nonnegative)
+        {
+            return Err(TacticalCombatConfigError::Validation(
+                "invalid secondary animation physics tuning",
+            ));
+        }
+        let ik = animation.inverse_kinematics;
+        if ![
+            ik.minimum_inter_foot_separation_metres,
+            ik.outer_foot_track_metres,
+            ik.maximum_plant_discontinuity_metres,
+            ik.maximum_owner_translation_per_tick_metres,
+            ik.maximum_owner_rotation_per_tick_degrees,
+            ik.maximum_knee_target_amplification,
+            ik.maximum_knee_step_metres,
+            ik.continuity_sample_hz,
+            ik.run_airborne_owner_step_metres,
+            ik.run_first_release_owner_step_metres,
+            ik.airborne_release_step_metres,
+            ik.raised_settle_pelvis_knee_budget_metres,
+            ik.raised_settle_step_metres,
+            ik.guard_reach_pelvis_drop_metres,
+            ik.stationary_turn_foot_limit_metres,
+            ik.stationary_turn_step_seconds,
+            ik.knee_pole_maximum_foot_facing_offset_degrees,
+            ik.airborne_foot_rotation_speed_degrees_per_second,
+            ik.first_run_release_foot_rotation_speed_degrees_per_second,
+            ik.maximum_retained_plant_reach_correction_metres,
+            ik.pelvis_correction_speed_metres_per_second,
+            ik.run_pelvis_correction_speed_metres_per_second,
+            ik.maximum_pelvis_correction_step_metres,
+            ik.terrain_blend_speed_per_second,
+            ik.minimum_knee_flexion_degrees,
+            ik.minimum_terrain_knee_flexion_degrees,
+            ik.landing_knee_reserve_release_compression_metres,
+            ik.landing_knee_reserve_full_compression_metres,
+            ik.measured_ankle_sole_offset_metres,
+            ik.sole_contact_tolerance_metres,
+            ik.swing_sole_clearance_metres,
+            ik.run_swing_sole_clearance_metres,
+            ik.terrain_transition_flight_toe_clearance_metres,
+            ik.terrain_contact_toe_clearance_metres,
+            ik.run_swing_minimum_sole_clearance_metres,
+            ik.run_contact_approach_phase,
+            ik.run_contact_chain_settle_phase,
+            ik.run_maximum_planned_reach_pelvis_drop_metres,
+            ik.late_run_contact_plan_phase,
+            ik.maximum_run_swing_root_relative_step_metres,
+            ik.settle_step_seconds,
+            ik.settle_step_clearance_metres,
+            ik.settle_capture_point_margin_metres,
+            ik.assumed_center_of_mass_height_metres,
+            ik.maximum_settle_capture_speed_metres_per_second,
+            ik.maximum_hip_drop_metres,
+            ik.sole_contact_margin_metres,
+        ]
+        .into_iter()
+        .all(f32::is_finite)
+            || ik.minimum_inter_foot_separation_metres <= 0.0
+            || ik.outer_foot_track_metres <= ik.minimum_inter_foot_separation_metres * 0.5
+            || ik.maximum_knee_target_amplification <= 0.0
+            || ik.maximum_knee_step_metres <= 0.0
+            || ik.continuity_sample_hz <= 0.0
+            || ik.measured_ankle_sole_offset_metres <= 0.0
+            || ik.sole_contact_tolerance_metres <= 0.0
+            || !(0.0..=1.0).contains(&ik.run_contact_approach_phase)
+            || !(0.0..=1.0).contains(&ik.run_contact_chain_settle_phase)
+            || !(0.0..=1.0).contains(&ik.late_run_contact_plan_phase)
+        {
+            return Err(TacticalCombatConfigError::Validation(
+                "invalid inverse-kinematics tuning",
+            ));
+        }
         Ok(())
     }
 
@@ -531,6 +1002,66 @@ impl TacticalCombatConfig {
             .map(|byte| format!("{byte:02x}"))
             .collect())
     }
+
+    /// Makes a validated process-lifetime snapshot available to animation
+    /// code that runs below Bevy's system-parameter boundary.
+    pub fn install_runtime_snapshot(&self) -> Result<(), TacticalCombatConfigError> {
+        self.validate()?;
+        *runtime_config_lock()
+            .write()
+            .expect("tactical combat config lock should not be poisoned") = self.clone();
+        RUNTIME_CONFIG_VERSION.fetch_add(1, Ordering::Release);
+        Ok(())
+    }
+}
+
+static RUNTIME_CONFIG: OnceLock<RwLock<TacticalCombatConfig>> = OnceLock::new();
+static RUNTIME_CONFIG_VERSION: AtomicU64 = AtomicU64::new(0);
+
+thread_local! {
+    static CACHED_ANIMATION_CONFIG: Cell<Option<(u64, TacticalAnimationConfig)>> = const {
+        Cell::new(None)
+    };
+}
+
+fn runtime_config_lock() -> &'static RwLock<TacticalCombatConfig> {
+    RUNTIME_CONFIG.get_or_init(|| RwLock::new(TacticalCombatConfig::default()))
+}
+
+/// Returns the active animation tuning selected from runtime YAML. The value
+/// is copied so animation evaluation never holds a synchronization guard.
+pub fn runtime_animation_config() -> TacticalAnimationConfig {
+    let version = RUNTIME_CONFIG_VERSION.load(Ordering::Acquire);
+    CACHED_ANIMATION_CONFIG.with(|cache| {
+        if let Some((cached_version, config)) = cache.get()
+            && cached_version == version
+        {
+            return config;
+        }
+        let config = runtime_config_lock()
+            .read()
+            .expect("tactical combat config lock should not be poisoned")
+            .animation;
+        cache.set(Some((version, config)));
+        config
+    })
+}
+
+pub fn runtime_combat_presentation_config() -> CombatPresentationConfig {
+    runtime_config_lock()
+        .read()
+        .expect("tactical combat config lock should not be poisoned")
+        .presentation
+        .clone()
+}
+
+pub fn runtime_melee_authority_config() -> MeleeAuthorityConfig {
+    runtime_config_lock()
+        .read()
+        .expect("tactical combat config lock should not be poisoned")
+        .realtime_authority
+        .melee
+        .clone()
 }
 
 const fn body_part_index(part: BodyPart) -> usize {
@@ -560,6 +1091,8 @@ impl Default for TacticalCombatConfig {
                     range_latency_tolerance_metres: 0.25,
                     windup_jitter_fraction: 0.10,
                     maximum_windup_jitter_seconds: 0.025,
+                    lunge_range_window_metres: 0.10,
+                    lunge_quickstep_threshold_metres: 0.50,
                 },
                 ranged: RangedAuthorityConfig {
                     cooldown_seconds: 0.6,
@@ -693,6 +1226,209 @@ impl Default for TacticalCombatConfig {
                     overshoot_span: 0.38,
                     maximum_drawback: 0.65,
                     maximum_overshoot: 0.55,
+                },
+            },
+            animation: TacticalAnimationConfig {
+                locomotion: AnimationLocomotionConfig {
+                    sample_hz: 64.0,
+                    landing: AnimationLandingConfig {
+                        compression_per_metre_per_second: 0.012,
+                        minimum_compression_metres: 0.04,
+                        maximum_compression_metres: 0.08,
+                        recovery_seconds: 0.16,
+                    },
+                    walk: AnimationGaitConfig {
+                        reference_speed_metres_per_second: 2.0,
+                        step_distance_metres: 1.22,
+                        support_phase_radius: 0.28,
+                        bounce_metres: 0.04,
+                        flight_apex_metres: 0.0,
+                    },
+                    run: AnimationGaitConfig {
+                        reference_speed_metres_per_second: 5.5,
+                        step_distance_metres: 1.78,
+                        support_phase_radius: 0.175,
+                        bounce_metres: 0.0,
+                        flight_apex_metres: 0.12,
+                    },
+                    raised_guard: AnimationGaitConfig {
+                        reference_speed_metres_per_second: 2.0,
+                        step_distance_metres: 0.38,
+                        support_phase_radius: 0.25,
+                        bounce_metres: 0.03,
+                        flight_apex_metres: 0.0,
+                    },
+                    prone: AnimationGaitConfig {
+                        reference_speed_metres_per_second: 1.0,
+                        step_distance_metres: 0.60,
+                        support_phase_radius: 0.30,
+                        bounce_metres: 0.0,
+                        flight_apex_metres: 0.0,
+                    },
+                    supine: AnimationGaitConfig {
+                        reference_speed_metres_per_second: 0.8,
+                        step_distance_metres: 1.028,
+                        support_phase_radius: 0.30,
+                        bounce_metres: 0.0,
+                        flight_apex_metres: 0.0,
+                    },
+                    blend_speed: 0.75,
+                },
+                guard_footwork: GuardFootworkConfig {
+                    default_half_width_metres: 0.15,
+                    contact_margin_metres: 0.08,
+                    minimum_step_seconds: 0.10,
+                    maximum_step_seconds: 0.32,
+                    planning_reach_metres: 0.80,
+                    reference_leg_length_metres: 0.840_348,
+                    maximum_unsupported_contact_seconds: 0.35,
+                },
+                state_transitions: AnimationStateTransitionConfig {
+                    dive_root_handoff_start_fraction: 0.18,
+                    downed_facing_sector_half_width: 0.25,
+                    downed_facing_edge_stickiness: 1.0 / 18.0,
+                },
+                playback: AnimationPlaybackConfig {
+                    frames_per_second: 30.0,
+                    player_visual_y_offset_metres: -0.95,
+                    velocity_response_per_second: 18.0,
+                    phase_correction_rate_per_second: 0.05,
+                    phase_drift_deadband: 0.04,
+                    phase_drift_measurement_blend: 0.15,
+                    phase_snap_error: 0.20,
+                    maximum_source_gap_ticks: 32,
+                    maximum_authored_step_cadence_per_second: 5.0,
+                    maximum_authored_stance_slip_metres: 0.03,
+                    authored_cadence_cap_transition_width: 1.0,
+                    maximum_coalesced_events: 8,
+                },
+                pose_buffer: PoseBufferConfig {
+                    sample_hz: 30.0,
+                    inertial_halflife_seconds: 0.10,
+                    cull_distance_metres: 100.0,
+                    cull_radius_metres: 2.0,
+                    authored_contact_plant_limit_metres: 0.14,
+                    authored_contact_height_fraction: 0.12,
+                    authored_contact_minimum_height_window_metres: 0.015,
+                    authored_contact_maximum_height_window_metres: 0.05,
+                },
+                procedural: ProceduralAnimationConfig {
+                    guarded_look_joint_limit_degrees: 22.5,
+                    guarded_look_joint_count: 3.0,
+                    dive_pelvis_lean_degrees: 40.0,
+                    height_transition_speed_metres_per_second: 0.4,
+                    locomotion_stop_height_speed_metres_per_second: 0.8,
+                    authored_ordinary_passing_rise_metres: 0.033,
+                    body_response: BodyResponseConfig {
+                        maximum_presentation_sample_gap_ticks: 32,
+                        steady_travel_lean_degrees: 16.0,
+                        forward_acceleration_lean_degrees: 10.0,
+                        lateral_acceleration_lean_degrees: 6.4,
+                        startup_inertial_lean_scale: 0.25,
+                        sustained_inertial_lean_scale: 0.18,
+                        degrees_per_second: 128.0,
+                        smooth_time_seconds: 0.10,
+                        acceleration_attack_response_per_second: 16.0,
+                        acceleration_release_response_per_second: 7.0,
+                        maximum_frame_seconds: 1.0 / 30.0,
+                    },
+                },
+                secondary_physics: SecondaryPhysicsConfig {
+                    motor_frequency_hz: 4.25,
+                    motor_damping_ratio: 0.78,
+                    maximum_angular_speed_radians_per_second: 18.0,
+                    impact_angular_speed_per_metre_per_second: 0.85,
+                    maximum_locomotion_acceleration_metres_per_second_squared: 24.0,
+                    ragdoll_motor_frequency_hz: 0.7,
+                    ragdoll_gravity_torque: 8.0,
+                    weight_response_per_second: 12.0,
+                },
+                inverse_kinematics: InverseKinematicsConfig {
+                    minimum_inter_foot_separation_metres: 0.16,
+                    outer_foot_track_metres: 0.55,
+                    maximum_plant_discontinuity_metres: 2.0,
+                    maximum_owner_translation_per_tick_metres: 0.5,
+                    maximum_owner_rotation_per_tick_degrees: 120.0,
+                    maximum_knee_target_amplification: 2.05,
+                    maximum_knee_step_metres: 0.10,
+                    continuity_sample_hz: 64.0,
+                    run_airborne_owner_step_metres: 0.0875,
+                    run_first_release_owner_step_metres: 0.094,
+                    airborne_release_step_metres: 0.047_804_88,
+                    raised_settle_pelvis_knee_budget_metres: 0.02,
+                    raised_settle_step_metres: 0.038_243_9,
+                    guard_reach_pelvis_drop_metres: 0.12,
+                    stationary_turn_foot_limit_metres: 0.14,
+                    stationary_turn_step_seconds: 0.22,
+                    knee_pole_maximum_foot_facing_offset_degrees: 22.5,
+                    airborne_foot_rotation_speed_degrees_per_second: 576.0,
+                    first_run_release_foot_rotation_speed_degrees_per_second: 0.0,
+                    maximum_retained_plant_reach_correction_metres: 0.015,
+                    pelvis_correction_speed_metres_per_second: 1.2,
+                    run_pelvis_correction_speed_metres_per_second: 0.4,
+                    maximum_pelvis_correction_step_metres: 0.05,
+                    terrain_blend_speed_per_second: 4.0,
+                    minimum_knee_flexion_degrees: 20.0,
+                    minimum_terrain_knee_flexion_degrees: 12.0,
+                    landing_knee_reserve_release_compression_metres: 0.012,
+                    landing_knee_reserve_full_compression_metres: 0.04,
+                    measured_ankle_sole_offset_metres: 0.085,
+                    sole_contact_tolerance_metres: 0.01,
+                    swing_sole_clearance_metres: 0.02,
+                    run_swing_sole_clearance_metres: 0.08,
+                    terrain_transition_flight_toe_clearance_metres: 0.011,
+                    terrain_contact_toe_clearance_metres: -0.009,
+                    run_swing_minimum_sole_clearance_metres: 0.051,
+                    run_contact_approach_phase: 0.95,
+                    run_contact_chain_settle_phase: 0.18,
+                    run_maximum_planned_reach_pelvis_drop_metres: 0.25,
+                    late_run_contact_plan_phase: 0.5,
+                    maximum_run_swing_root_relative_step_metres: 0.068,
+                    settle_step_seconds: 0.28,
+                    settle_step_clearance_metres: 0.10,
+                    settle_capture_point_margin_metres: 0.12,
+                    assumed_center_of_mass_height_metres: 1.0,
+                    maximum_settle_capture_speed_metres_per_second: 1.1,
+                    maximum_hip_drop_metres: 0.18,
+                    sole_contact_margin_metres: 0.001,
+                },
+                full_ragdoll: FullRagdollConfig {
+                    pelvis: RagdollCapsuleConfig {
+                        radius_metres: 0.18,
+                        length_metres: 0.24,
+                    },
+                    chest: RagdollCapsuleConfig {
+                        radius_metres: 0.18,
+                        length_metres: 0.28,
+                    },
+                    head: RagdollCapsuleConfig {
+                        radius_metres: 0.15,
+                        length_metres: 0.16,
+                    },
+                    thigh: RagdollCapsuleConfig {
+                        radius_metres: 0.10,
+                        length_metres: 0.36,
+                    },
+                    shin: RagdollCapsuleConfig {
+                        radius_metres: 0.085,
+                        length_metres: 0.34,
+                    },
+                    foot: RagdollCapsuleConfig {
+                        radius_metres: 0.09,
+                        length_metres: 0.20,
+                    },
+                    upper_arm: RagdollCapsuleConfig {
+                        radius_metres: 0.075,
+                        length_metres: 0.27,
+                    },
+                    forearm: RagdollCapsuleConfig {
+                        radius_metres: 0.065,
+                        length_metres: 0.25,
+                    },
+                    hand: RagdollCapsuleConfig {
+                        radius_metres: 0.07,
+                        length_metres: 0.14,
+                    },
                 },
             },
         }

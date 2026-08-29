@@ -243,11 +243,11 @@ pub(super) fn sole_animation(
 }
 
 pub(super) fn frame_fits_clip(frame: u16, duration: f32) -> bool {
-    frame_seconds(frame) <= duration + 0.5 / ANIMATION_FPS
+    frame_seconds(frame) <= duration + 0.5 / animation_frames_per_second()
 }
 
 pub(super) fn frame_seconds(frame: u16) -> f32 {
-    frame as f32 / ANIMATION_FPS
+    frame as f32 / animation_frames_per_second()
 }
 
 pub(super) fn clip_targets_match_base(
@@ -284,7 +284,7 @@ pub(super) fn attach_loaded_rig_scenes(
                 Name::new("Authored animation rig"),
                 AnimationRigScene(player),
                 WorldAssetRoot(scene.clone()),
-                Transform::from_xyz(0.0, PLAYER_VISUAL_Y_OFFSET, 0.0),
+                Transform::from_xyz(0.0, player_visual_y_offset_metres(), 0.0),
                 Visibility::Hidden,
             ));
         });

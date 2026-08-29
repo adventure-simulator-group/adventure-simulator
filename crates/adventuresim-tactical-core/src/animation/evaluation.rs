@@ -453,10 +453,14 @@ fn alternating_contact_pair(phase: f32, contact: SemanticPose) -> Vec<PoseSample
 }
 
 fn locomotion_samples(speed: f32, phase: f32) -> Vec<PoseSample> {
-    const LOCOMOTION_BLEND_SPEED: f32 = 0.75;
-    let locomotion = smoothstep01(speed / LOCOMOTION_BLEND_SPEED);
-    let run = ((speed - WALK_LOCOMOTION_PROFILE.reference_speed)
-        / (RUN_LOCOMOTION_PROFILE.reference_speed - WALK_LOCOMOTION_PROFILE.reference_speed))
+    let locomotion = smoothstep01(
+        speed
+            / crate::combat_config::runtime_animation_config()
+                .locomotion
+                .blend_speed,
+    );
+    let run = ((speed - walk_locomotion_profile().reference_speed)
+        / (run_locomotion_profile().reference_speed - walk_locomotion_profile().reference_speed))
         .clamp(0.0, 1.0);
     let mut samples = Vec::with_capacity(5);
     append_scaled(
@@ -497,8 +501,12 @@ fn upright_locomotion_samples(state: &SkeletonState) -> Vec<PoseSample> {
         return locomotion_samples(speed, phase);
     }
 
-    const LOCOMOTION_BLEND_SPEED: f32 = 0.75;
-    let locomotion = smoothstep01(speed / LOCOMOTION_BLEND_SPEED);
+    let locomotion = smoothstep01(
+        speed
+            / crate::combat_config::runtime_animation_config()
+                .locomotion
+                .blend_speed,
+    );
     let longitudinal_weight = longitudinal / total;
     let lateral_weight = lateral / total;
     let mut samples = locomotion_samples(speed, phase);
@@ -597,7 +605,7 @@ fn airborne_sample(horizontal_speed: f32) -> PoseSample {
         pose: SemanticPose::AirborneCenter,
         sampling: PoseSampling::Span {
             end: SemanticPose::AirborneTravel,
-            progress: smoothstep01(horizontal_speed / WALK_LOCOMOTION_PROFILE.reference_speed),
+            progress: smoothstep01(horizontal_speed / walk_locomotion_profile().reference_speed),
         },
         weight: 1.0,
         mirror_lower_body: false,
