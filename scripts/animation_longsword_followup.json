@@ -1,0 +1,12 @@
+{
+  "commands": [
+    { "type": "wait", "duration_seconds": 0.75 },
+    { "type": "guard", "raised": true },
+    { "type": "wait", "duration_seconds": 0.5 },
+    { "type": "attack", "duration_seconds": 0.2 },
+    { "type": "attack", "duration_seconds": 1.5 },
+    { "type": "wait", "duration_seconds": 0.5 },
+    { "type": "guard", "raised": false },
+    { "type": "wait", "duration_seconds": 0.25 }
+  ]
+}

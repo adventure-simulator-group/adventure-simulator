@@ -21,6 +21,9 @@ use bevy::{
 use super::*;
 use crate::presentation::TacticalGameplayCamera;
 
+mod spline;
+use spline::clamped_cubic_spline_vec3;
+
 fn pose_tuning() -> PoseBufferConfig {
     runtime_animation_config().pose_buffer
 }
@@ -126,6 +129,26 @@ struct ContinuationTransition {
     ready_phase: f32,
 }
 
+impl ContinuationTransition {
+    fn from_span(
+        contact: LocalPose,
+        ready: LocalPose,
+        outgoing: LocalPose,
+        finish: LocalPose,
+        span: &ContinuationSpan,
+    ) -> Self {
+        Self {
+            contact,
+            ready,
+            outgoing,
+            finish,
+            start_coordinate: span.start_coordinate,
+            incoming_tangent: span.incoming_tangent,
+            ready_phase: span.ready_phase,
+        }
+    }
+}
+
 #[derive(Debug)]
 struct SampledPlan {
     pose: Vec<LocalPose>,
@@ -227,73 +250,6 @@ impl LocalPose {
             ),
         }
     }
-}
-
-fn clamped_cubic_spline_vec3(
-    knots: [f32; 4],
-    values: [Vec3; 4],
-    start_velocity: Vec3,
-    end_velocity: Vec3,
-    progress: f32,
-) -> Vec3 {
-    let second_derivatives =
-        clamped_cubic_second_derivatives(knots, values, start_velocity, end_velocity);
-    let progress = progress.clamp(knots[0], knots[3]);
-    let segment = if progress <= knots[1] {
-        0
-    } else if progress <= knots[2] {
-        1
-    } else {
-        2
-    };
-    let start = knots[segment];
-    let end = knots[segment + 1];
-    let duration = end - start;
-    let a = (end - progress) / duration;
-    let b = (progress - start) / duration;
-    values[segment] * a
-        + values[segment + 1] * b
-        + (second_derivatives[segment] * (a * a * a - a)
-            + second_derivatives[segment + 1] * (b * b * b - b))
-            * (duration * duration / 6.0)
-}
-
-fn clamped_cubic_second_derivatives(
-    knots: [f32; 4],
-    values: [Vec3; 4],
-    start_velocity: Vec3,
-    end_velocity: Vec3,
-) -> [Vec3; 4] {
-    let intervals = [
-        knots[1] - knots[0],
-        knots[2] - knots[1],
-        knots[3] - knots[2],
-    ];
-    let lower = [0.0, intervals[0], intervals[1], intervals[2]];
-    let mut diagonal = [
-        2.0 * intervals[0],
-        2.0 * (intervals[0] + intervals[1]),
-        2.0 * (intervals[1] + intervals[2]),
-        2.0 * intervals[2],
-    ];
-    let upper = [intervals[0], intervals[1], intervals[2], 0.0];
-    let mut right = [
-        6.0 * ((values[1] - values[0]) / intervals[0] - start_velocity),
-        6.0 * ((values[2] - values[1]) / intervals[1] - (values[1] - values[0]) / intervals[0]),
-        6.0 * ((values[3] - values[2]) / intervals[2] - (values[2] - values[1]) / intervals[1]),
-        6.0 * (end_velocity - (values[3] - values[2]) / intervals[2]),
-    ];
-    for row in 1..4 {
-        let factor = lower[row] / diagonal[row - 1];
-        diagonal[row] -= factor * upper[row - 1];
-        right[row] -= right[row - 1] * factor;
-    }
-    let mut result = [Vec3::ZERO; 4];
-    result[3] = right[3] / diagonal[3];
-    for row in (0..3).rev() {
-        result[row] = (right[row] - result[row + 1] * upper[row]) / diagonal[row];
-    }
-    result
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -676,9 +632,12 @@ pub(super) fn update_pose_buffers(
             .iter()
             .zip(&rig.next)
             .map(|(target, previous)| {
-                if rig.active && direct_sampling {
+                if rig.active && direct_sampling && !transition {
                     local_pose_velocity(*previous, *target, delta_seconds)
                 } else {
+                    // Poses on opposite sides of a plan change do not form a
+                    // trajectory. Differentiating them invents an angular
+                    // velocity that inertialization would then preserve.
                     (Vec3::ZERO, Vec3::ZERO)
                 }
             })
@@ -1049,15 +1008,7 @@ fn sample_plan(
             );
             let sample = sanitize_pose(
                 start.continuation_transition(
-                    ContinuationTransition {
-                        contact,
-                        ready: end,
-                        outgoing,
-                        finish,
-                        start_coordinate: span.start_coordinate,
-                        incoming_tangent: span.incoming_tangent,
-                        ready_phase: span.ready_phase,
-                    },
+                    ContinuationTransition::from_span(contact, end, outgoing, finish, span),
                     span.progress,
                 ),
                 joint.bind,
@@ -3027,24 +2978,26 @@ mod tests {
     }
 
     #[test]
-    fn moving_pose_plan_transition_preserves_target_velocity() {
-        let previous = pose(Vec3::ZERO, Quat::IDENTITY);
-        let current = pose(Vec3::X * 0.2, Quat::from_rotation_y(0.3));
-        let (linear_velocity, angular_velocity) = local_pose_velocity(previous, current, 0.1);
+    fn pose_plan_transition_preserves_displayed_velocity_without_cross_plan_derivative() {
+        let displayed = pose(Vec3::X * 0.2, Quat::from_rotation_y(0.3));
+        let target = pose(Vec3::NEG_X, Quat::from_rotation_x(2.8));
+        let linear_velocity = Vec3::new(0.5, -0.2, 0.1);
+        let angular_velocity = Vec3::new(0.3, -0.4, 0.2);
         let mut offset = JointInertialOffset::default();
         offset.capture(
-            current,
+            displayed,
             linear_velocity,
             angular_velocity,
-            current,
-            linear_velocity,
-            angular_velocity,
+            target,
+            Vec3::ZERO,
+            Vec3::ZERO,
         );
 
-        assert!(offset.translation.length() < 1.0e-6);
-        assert!(offset.translation_velocity.length() < 1.0e-6);
-        assert!(offset.rotation.angle_between(Quat::IDENTITY) < 1.0e-6);
-        assert!(offset.angular_velocity.length() < 1.0e-6);
+        let preserved = offset.peek(target);
+        assert!(preserved.translation.distance(displayed.translation) < 1.0e-6);
+        assert!(preserved.rotation.angle_between(displayed.rotation) < 1.0e-6);
+        assert_eq!(offset.translation_velocity, linear_velocity);
+        assert_eq!(offset.angular_velocity, angular_velocity);
     }
 
     #[test]
