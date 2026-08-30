@@ -30,3 +30,21 @@ rustflags = [
   "-Z", "share-generics=n", # (Nightly)
   "-Z", "threads=0",        # (Nightly) Use improved multithreading with the recommended amount of threads.
 ]
+
+# Keep routine development and test artifacts small enough to coexist across
+# multiple worktrees. Use `--profile full-debug` when debugger-quality symbols
+# and incremental compilation are specifically needed.
+[build]
+incremental = false
+
+[profile.dev]
+debug = "none"
+
+[profile.test]
+debug = "none"
+
+[profile.full-debug]
+inherits = "dev"
+debug = "full"
+incremental = true
+strip = "none"
