@@ -538,6 +538,28 @@ fn configure_animation_lab_enemies(
     Ok(())
 }
 
+/// Gives the native diagnostic the same two-handed weapon path that its
+/// scripted attack is intended to validate. The standalone database is
+/// disposable, so this may replace the seeded character's equipped roots
+/// without affecting strategic state or player data.
+fn configure_diagnostic_player(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
+    use adventuresim_core::starting_character::StartingSlot;
+
+    const LONGSWORD_LOADOUT: &[(&str, StartingSlot)] = &[
+        ("linen_tunic", StartingSlot::Chest),
+        ("linen_breeches", StartingSlot::LeftLeg),
+        ("leather_boot", StartingSlot::LeftFoot),
+        ("leather_boot", StartingSlot::RightFoot),
+        ("morion", StartingSlot::Head),
+        ("breastplate", StartingSlot::Chest),
+        ("vambrace", StartingSlot::LeftArm),
+        ("vambrace", StartingSlot::RightArm),
+        ("longsword", StartingSlot::RightHand),
+    ];
+
+    crate::character::replace_development_loadout(ctx, character_id, LONGSWORD_LOADOUT)
+}
+
 #[reducer]
 pub fn seed_standalone_tactical_mission(
     ctx: &ReducerContext,
@@ -584,6 +606,9 @@ pub fn seed_standalone_tactical_mission(
         let default =
             adventuresim_core::starting_character::default_character_with_id(character_id);
         crate::character::insert_starting_character(ctx, &default)?;
+    }
+    if standalone_mission_family == StandaloneMissionFamily::Diagnostic {
+        configure_diagnostic_player(ctx, character_id)?;
     }
     let party_id = create_solo_party_for_character(ctx, character_id)?;
     crate::tactical::retire_interrupted_standalone_server_for_character(ctx, character_id)?;
@@ -861,8 +886,12 @@ pub fn seed_standalone_tactical_mission(
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum StandaloneMissionFamily {
     Animation,
+    Diagnostic,
     General,
 }
+
+const ANIMATION_MISSION_COORDINATE_PREFIX: &str = "animation-";
+const DIAGNOSTIC_MISSION_COORDINATE_PREFIX: &str = "diagnostic-";
 
 fn standalone_mission_family(mission_id: &str) -> Result<StandaloneMissionFamily, String> {
     let (domain, coordinate) = mission_id
@@ -871,11 +900,19 @@ fn standalone_mission_family(mission_id: &str) -> Result<StandaloneMissionFamily
     if domain != "mission" || coordinate.is_empty() {
         return Err("Standalone mission ID has an invalid domain coordinate".into());
     }
-    if let Some(animation_coordinate) = coordinate.strip_prefix("animation-") {
+    if let Some(animation_coordinate) = coordinate.strip_prefix(ANIMATION_MISSION_COORDINATE_PREFIX)
+    {
         if animation_coordinate.is_empty() {
             return Err("Animation mission ID has no coordinate".into());
         }
         Ok(StandaloneMissionFamily::Animation)
+    } else if let Some(diagnostic_coordinate) =
+        coordinate.strip_prefix(DIAGNOSTIC_MISSION_COORDINATE_PREFIX)
+    {
+        if diagnostic_coordinate.is_empty() {
+            return Err("Diagnostic mission ID has no coordinate".into());
+        }
+        Ok(StandaloneMissionFamily::Diagnostic)
     } else {
         Ok(StandaloneMissionFamily::General)
     }
@@ -2639,7 +2676,17 @@ mod developer_quest_source_tests {
             standalone_mission_family("mission:ordinary").unwrap()
                 == StandaloneMissionFamily::General
         );
-        for invalid in ["mission:", "case:animation-demo", "animation-demo"] {
+        assert!(
+            standalone_mission_family("mission:diagnostic-demo").unwrap()
+                == StandaloneMissionFamily::Diagnostic
+        );
+        for invalid in [
+            "mission:",
+            "mission:animation-",
+            "mission:diagnostic-",
+            "case:animation-demo",
+            "animation-demo",
+        ] {
             assert!(standalone_mission_family(invalid).is_err());
         }
     }

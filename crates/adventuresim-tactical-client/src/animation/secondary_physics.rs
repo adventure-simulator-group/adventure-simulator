@@ -101,17 +101,7 @@ fn is_above_pelvis(role: BoneRole) -> bool {
 
 fn baseline_weight(class: SecondaryMotionClass, role: BoneRole) -> f32 {
     use BoneRole::*;
-    let arm = matches!(
-        role,
-        ClavicleLeft
-            | ClavicleRight
-            | UpperArmLeft
-            | ForearmLeft
-            | HandLeft
-            | UpperArmRight
-            | ForearmRight
-            | HandRight
-    );
+    let arm = is_arm(role);
     let distal_arm = matches!(role, ForearmLeft | HandLeft | ForearmRight | HandRight);
     let axial = matches!(
         role,
@@ -130,7 +120,7 @@ fn baseline_weight(class: SecondaryMotionClass, role: BoneRole) -> f32 {
         SecondaryMotionClass::Airborne if distal_arm => 0.52,
         SecondaryMotionClass::Airborne if arm => 0.44,
         SecondaryMotionClass::Guarded if arm => 0.10,
-        SecondaryMotionClass::CommittedAction if arm => 0.12,
+        SecondaryMotionClass::CommittedAction if arm => 0.0,
         SecondaryMotionClass::Downed if arm => 0.16,
         SecondaryMotionClass::Ragdolled if !matches!(role, Root | Pelvis) => 1.0,
         SecondaryMotionClass::Running if axial => 0.38,
@@ -144,6 +134,25 @@ fn baseline_weight(class: SecondaryMotionClass, role: BoneRole) -> f32 {
         _ if matches!(role, FootLeft | ToeLeft | FootRight | ToeRight) => 0.01,
         _ => 0.0,
     }
+}
+
+fn is_arm(role: BoneRole) -> bool {
+    use BoneRole::*;
+    matches!(
+        role,
+        ClavicleLeft
+            | ClavicleRight
+            | UpperArmLeft
+            | ForearmLeft
+            | HandLeft
+            | UpperArmRight
+            | ForearmRight
+            | HandRight
+    )
+}
+
+fn authored_action_owns_secondary_motion(class: SecondaryMotionClass, role: BoneRole) -> bool {
+    class == SecondaryMotionClass::CommittedAction && is_arm(role)
 }
 
 /// Presentation-only pseudo torque produced by acceleration of the
@@ -251,6 +260,18 @@ pub(super) fn apply_secondary_bone_physics(
             continue;
         };
         let target = transform.rotation.normalize();
+        let class = motion_class(skeleton);
+        if authored_action_owns_secondary_motion(class, bone.role) {
+            // Authored attacks and their hand constraints own the complete
+            // weapon-driving chain. Independent motors on its joints
+            // compound small phase lags into visible sword-tip acceleration.
+            dynamics.simulated_rotation = target;
+            dynamics.angular_velocity = Vec3::ZERO;
+            dynamics.previous_impact_remaining = impact.map_or(0.0, |impact| impact.remaining);
+            dynamics.blend_weight = 0.0;
+            dynamics.initialized = true;
+            continue;
+        }
         if !dynamics.initialized || !dynamics.simulated_rotation.is_finite() {
             dynamics.simulated_rotation = target;
             dynamics.angular_velocity = Vec3::ZERO;
@@ -318,7 +339,7 @@ pub(super) fn apply_secondary_bone_physics(
         }
 
         let target_weight = secondary_physics_weight(
-            baseline_weight(motion_class(skeleton), bone.role),
+            baseline_weight(class, bone.role),
             combat.map_or(0.0, |combat| combat.incapacitation),
             is_above_pelvis(bone.role),
         );
@@ -421,5 +442,36 @@ mod tests {
         assert!(baseline_weight(SecondaryMotionClass::Running, BoneRole::Chest) >= 0.35);
         assert!(baseline_weight(SecondaryMotionClass::Running, BoneRole::ForearmLeft) >= 0.30);
         assert!(baseline_weight(SecondaryMotionClass::Running, BoneRole::Chest) < 0.5);
+    }
+
+    #[test]
+    fn committed_actions_give_authored_motion_complete_arm_ownership() {
+        for role in [
+            BoneRole::ClavicleLeft,
+            BoneRole::UpperArmLeft,
+            BoneRole::ForearmLeft,
+            BoneRole::HandLeft,
+            BoneRole::ClavicleRight,
+            BoneRole::UpperArmRight,
+            BoneRole::ForearmRight,
+            BoneRole::HandRight,
+        ] {
+            assert!(authored_action_owns_secondary_motion(
+                SecondaryMotionClass::CommittedAction,
+                role
+            ));
+            assert_eq!(
+                baseline_weight(SecondaryMotionClass::CommittedAction, role),
+                0.0
+            );
+        }
+        assert!(!authored_action_owns_secondary_motion(
+            SecondaryMotionClass::CommittedAction,
+            BoneRole::Chest
+        ));
+        assert!(!authored_action_owns_secondary_motion(
+            SecondaryMotionClass::Guarded,
+            BoneRole::HandRight
+        ));
     }
 }

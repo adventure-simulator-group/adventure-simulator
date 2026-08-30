@@ -915,12 +915,21 @@ fn try_start_attack(
         let (animation_delay, contact_seconds) =
             delayed_melee_contact_seconds(windup_secs, contact_delay);
         spec.curve = curve;
-        match skeleton.begin_attack_timed(
-            spec,
-            start + delay_ticks(animation_delay),
-            start + animation_ticks(contact_seconds),
-            start + animation_ticks(contact_seconds + recovery_secs),
-        ) {
+        let sequence_start = if spec.continuation {
+            skeleton.attack_continuation_tick().unwrap_or(start)
+        } else {
+            start
+        };
+        let animation_start = sequence_start + delay_ticks(animation_delay);
+        let contact_tick = sequence_start + animation_ticks(contact_seconds);
+        let recovery_tick = sequence_start + animation_ticks(contact_seconds + recovery_secs);
+        let contact_from_input = melee_contact_delay_from_input(
+            &skeleton,
+            spec.continuation,
+            contact_tick,
+            contact_seconds,
+        );
+        match skeleton.begin_attack_timed(spec, animation_start, contact_tick, recovery_tick) {
             Ok(()) => {}
             Err(ActionTransitionError::ActionBusy) => {
                 cmd.entity(entity).insert(BufferedMeleeAttack {
@@ -935,8 +944,8 @@ fn try_start_attack(
         }
         cmd.entity(entity)
             .insert(AttackState::new(
-                contact_seconds,
-                contact_seconds,
+                contact_from_input,
+                contact_from_input,
                 reach,
                 false,
                 target,
@@ -956,12 +965,7 @@ fn try_start_attack(
 fn flush_buffered_melee_attacks(
     mut cmd: Commands,
     mut characters: Query<
-        (
-            Entity,
-            &BufferedMeleeAttack,
-            Has<AttackState>,
-            &mut SkeletonState,
-        ),
+        (Entity, &BufferedMeleeAttack, &mut SkeletonState),
         With<ControlledPlayer>,
     >,
     viewer: TacticalPlayerViewer,
@@ -969,10 +973,7 @@ fn flush_buffered_melee_attacks(
     combat_config: Res<TacticalCombatConfig>,
     targeting: CombatTargeting,
 ) {
-    for (entity, buffered, attacking, mut skeleton) in &mut characters {
-        if attacking {
-            continue;
-        }
+    for (entity, buffered, mut skeleton) in &mut characters {
         let Some(spec) = (match buffered.hand {
             AttackHand::Main => skeleton.select_main_attack(buffered.family),
             AttackHand::Offhand => skeleton.select_offhand_attack(buffered.family),
@@ -1021,21 +1022,30 @@ fn flush_buffered_melee_attacks(
         let (animation_delay, contact_seconds) =
             delayed_melee_contact_seconds(windup_secs, contact_delay);
         let spec = AttackSpec { curve, ..spec };
+        let sequence_start = if spec.continuation {
+            skeleton.attack_continuation_tick().unwrap_or(start)
+        } else {
+            start
+        };
+        let animation_start = sequence_start + delay_ticks(animation_delay);
+        let contact_tick = sequence_start + animation_ticks(contact_seconds);
+        let recovery_tick = sequence_start + animation_ticks(contact_seconds + recovery_secs);
+        let contact_from_input = melee_contact_delay_from_input(
+            &skeleton,
+            spec.continuation,
+            contact_tick,
+            contact_seconds,
+        );
         if skeleton
-            .begin_attack_timed(
-                spec,
-                start + delay_ticks(animation_delay),
-                start + animation_ticks(contact_seconds),
-                start + animation_ticks(contact_seconds + recovery_secs),
-            )
+            .begin_attack_timed(spec, animation_start, contact_tick, recovery_tick)
             .is_err()
         {
             continue;
         }
         cmd.entity(entity)
             .insert(AttackState::new(
-                contact_seconds,
-                contact_seconds,
+                contact_from_input,
+                contact_from_input,
                 reach,
                 false,
                 target,
@@ -1160,6 +1170,19 @@ fn on_parry_fired(
     cmd.client_trigger(DefendRequest::Parry);
 }
 
+fn melee_contact_delay_from_input(
+    skeleton: &SkeletonState,
+    continuation: bool,
+    contact_tick: u64,
+    ordinary_contact_seconds: f32,
+) -> f32 {
+    if continuation {
+        contact_tick.saturating_sub(skeleton.locomotion_sample_tick) as f32 / locomotion_sample_hz()
+    } else {
+        ordinary_contact_seconds
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1185,6 +1208,20 @@ mod tests {
             state.facing_timer.remaining(),
             state.pre_hit_timer.remaining(),
             "facing remains active from input through delayed contact"
+        );
+    }
+
+    #[test]
+    fn continuation_cooldown_uses_the_replicated_animation_clock() {
+        let skeleton = SkeletonState::default().with_locomotion_sample_tick(700);
+
+        assert_eq!(
+            melee_contact_delay_from_input(&skeleton, true, 732, 0.3),
+            0.5
+        );
+        assert_eq!(
+            melee_contact_delay_from_input(&skeleton, false, 732, 0.3),
+            0.3
         );
     }
 

@@ -672,18 +672,81 @@ mod legacy_tests {
     #[test]
     fn weapon_catalog_selects_specific_and_two_handed_fallback_packs() {
         assert_eq!(
-            animation_pack_for_weapon("longsword"),
+            animation_pack_for_weapon("longsword", true),
             HUMANOID_2H_CLOSE_PACK
         );
         assert_eq!(
-            animation_pack_for_weapon("zweihander"),
+            animation_pack_for_weapon("zweihander", true),
             HUMANOID_2H_CLOSE_PACK
         );
-        assert_eq!(animation_pack_for_weapon("halberd"), HUMANOID_2H_CLOSE_PACK);
         assert_eq!(
-            animation_pack_for_weapon("arming_sword"),
+            animation_pack_for_weapon("halberd", true),
+            HUMANOID_2H_CLOSE_PACK
+        );
+        assert_eq!(
+            animation_pack_for_weapon("arming_sword", false),
             HUMANOID_UNARMED_PACK
         );
+    }
+
+    #[test]
+    fn two_handed_weapon_only_recruits_an_empty_offhand() {
+        assert!(weapon_uses_offhand("longsword", true));
+        assert!(!weapon_uses_offhand("longsword", false));
+        assert!(!weapon_uses_offhand("arming_sword", true));
+        assert_eq!(
+            animation_pack_for_weapon("longsword", false),
+            HUMANOID_UNARMED_PACK
+        );
+        assert_eq!(
+            weapon_grip_layers(true, true),
+            [None, None],
+            "an active two-handed clip owns its authored wrist and finger tracks"
+        );
+        assert_eq!(
+            weapon_grip_layers(false, true),
+            [Some(ClipLayer::MainHand), Some(ClipLayer::Offhand)]
+        );
+        assert_eq!(
+            weapon_grip_layers(true, false),
+            [Some(ClipLayer::MainHand), None]
+        );
+        assert!(SemanticPose::GuardSwing.is_main_hand_attack());
+        assert!(SemanticPose::ContinueThrust.is_main_hand_attack());
+        assert!(!SemanticPose::DiveForward.is_main_hand_attack());
+    }
+
+    #[test]
+    fn raised_guard_uses_authored_hand_tracks_before_the_attack_starts() {
+        let skeleton = SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised);
+        let evaluation = AnimationEvaluation::from_skeleton(&skeleton);
+
+        assert!(evaluation.action.is_empty());
+        assert!(authored_pose_owns_hands(&evaluation.base));
+        assert_eq!(weapon_grip_layers(true, true), [None, None]);
+    }
+
+    #[test]
+    fn analytical_attack_curves_bypass_the_fixed_rate_clip_sampler() {
+        let mut playback = AnimationPlayback::default();
+        assert_eq!(playback.sampling_cadence(), PoseSamplingCadence::Buffered);
+
+        let clip = LoadedClip {
+            handle: Handle::default(),
+            duration_seconds: 0.4,
+            layer: ClipLayer::Whole,
+        };
+        playback.extrapolated_spans.push(ExtrapolatedSpan {
+            start: clip.clone(),
+            start_time_seconds: 0.0,
+            end: clip,
+            end_time_seconds: 4.0 / animation_frames_per_second(),
+            coordinate: 1.0,
+            weight: 1.0,
+            mirrored_weight: 0.0,
+        });
+
+        assert_eq!(playback.sampling_cadence(), PoseSamplingCadence::Direct);
     }
 
     #[test]
@@ -856,7 +919,14 @@ mod legacy_tests {
         ] {
             let mut weighted = Vec::new();
             let mut spans = Vec::new();
-            sample_resolver.append_layer(&mut weighted, &mut spans, sample, expected_layer);
+            let mut continuations = Vec::new();
+            sample_resolver.append_layer(
+                &mut weighted,
+                &mut spans,
+                &mut continuations,
+                sample,
+                expected_layer,
+            );
             assert_eq!(weighted.len(), 1);
             assert_eq!(weighted[0].clip.layer, expected_layer);
         }
@@ -877,6 +947,7 @@ mod legacy_tests {
         let physical_phase = 0.5;
         let mut weighted = Vec::new();
         let mut spans = Vec::new();
+        let mut continuations = Vec::new();
         let sample_resolver = PoseSampleResolver {
             runtime: &runtime,
             catalog: &catalog,
@@ -886,6 +957,7 @@ mod legacy_tests {
         sample_resolver.append_layer(
             &mut weighted,
             &mut spans,
+            &mut continuations,
             PoseSample {
                 pose: SemanticPose::WalkContact,
                 sampling: PoseSampling::Cycle {
@@ -905,6 +977,7 @@ mod legacy_tests {
         sample_resolver.append_layer(
             &mut weighted,
             &mut spans,
+            &mut continuations,
             PoseSample {
                 pose: SemanticPose::StrafeCycle,
                 sampling: PoseSampling::Cycle {

@@ -103,6 +103,7 @@ pub(super) fn log_animation_diagnostics(
             &PresentedSkeleton,
             &AnimationPlayback,
             Option<&semantic_route::SemanticRouteTrace>,
+            Option<&pose_buffer::AuthoredWeaponTarget>,
         ),
         (With<Player>, With<crate::player::ClientPlayer>),
     >,
@@ -137,6 +138,7 @@ pub(super) fn log_animation_diagnostics(
         presented,
         playback,
         semantic_route,
+        authored_weapon_target,
     ) in &players
     {
         let diagnostic_frame = log.frame;
@@ -202,6 +204,10 @@ pub(super) fn log_animation_diagnostics(
             "subject_rotation_xyzw": global_transform.compute_transform().rotation.to_array(),
             "action": presented.state.action_kind(),
             "action_phase": presented.state.action_phase(),
+            "authored_weapon_target": authored_weapon_target.map(|target| serde_json::json!({
+                "translation": target.translation.to_array(),
+                "rotation_xyzw": target.rotation.to_array(),
+            })),
             "bones": bone_transforms,
             "terrain_height": terrain_height,
             "controller_height_above_terrain": terrain_height

@@ -1234,7 +1234,7 @@ mod legacy_tests {
     }
 
     #[test]
-    fn continuation_is_available_only_after_contact_and_cannot_chain() {
+    fn continuation_enters_follow_up_preparation_at_full_backswing() {
         let mut state = SkeletonState::default();
         state.attack_animations = AttackAnimations {
             swing: true,
@@ -1248,16 +1248,108 @@ mod legacy_tests {
             .begin_attack(AttackSpec::new(AttackAnimation::Swing), 10, 20)
             .unwrap();
         state.advance_action(19);
-        assert_eq!(state.select_main_attack(StrikeFamily::Swing), None);
-        state.advance_action(20);
         assert_eq!(
             state.select_main_attack(StrikeFamily::Swing),
             Some(AttackSpec::main(StrikeFamily::Swing, true))
         );
+        let continuation_tick = state.attack_continuation_tick().unwrap();
+        assert!(continuation_tick > 20);
+        assert!(continuation_tick < 30);
         state
-            .begin_attack(AttackSpec::main(StrikeFamily::Swing, true), 20, 30)
+            .begin_attack_timed(
+                AttackSpec::main(StrikeFamily::Swing, true),
+                continuation_tick,
+                continuation_tick + 24,
+                continuation_tick + 48,
+            )
             .unwrap();
-        state.advance_action(30);
+        assert!(!state.attack_is_continuation());
+        assert_eq!(state.select_main_attack(StrikeFamily::Swing), None);
+
+        state.advance_action(continuation_tick - 2);
+        let before_recovery = AnimationEvaluation::from_skeleton(&state);
+        let PoseSampling::CurveSpan {
+            coordinate: before_coordinate,
+            ..
+        } = before_recovery.action[0].sampling
+        else {
+            panic!("queued recovery should remain a frame-0-to-frame-4 extrapolation");
+        };
+        state.advance_action(continuation_tick - 1);
+        assert!(!state.attack_is_continuation());
+        let recovery = AnimationEvaluation::from_skeleton(&state);
+        assert_eq!(recovery.action[0].pose, SemanticPose::GuardSwing);
+        let PoseSampling::CurveSpan { end, coordinate } = recovery.action[0].sampling else {
+            panic!("queued recovery should remain a frame-0-to-frame-4 extrapolation");
+        };
+        assert_eq!(end, SemanticPose::AttackSwing);
+        assert!(coordinate > before_coordinate);
+        assert!(coordinate < 1.0 + state.attack_curve().overshoot);
+
+        let expected_start_coordinate = state.attack_curve().queued_recovery_coordinate(
+            0.5 + 0.5 * continuation_tick.saturating_sub(20) as f32 / 10.0,
+        );
+        state.advance_action(continuation_tick);
+        assert!(state.attack_is_continuation());
+        assert_eq!(state.action_phase(), 0.0);
+        let follow_up_start = AnimationEvaluation::from_skeleton(&state);
+        assert_eq!(follow_up_start.action.len(), 1);
+        let PoseSampling::ContinuationSpan {
+            contact,
+            end,
+            outgoing,
+            finish,
+            start_coordinate,
+            incoming_tangent,
+            ready_phase,
+            progress,
+        } = follow_up_start.action[0].sampling
+        else {
+            panic!("follow-up preparation must inherit the full-backswing tangent");
+        };
+        assert_eq!(contact, SemanticPose::AttackSwing);
+        assert_eq!(end, SemanticPose::RecoverSwing);
+        assert_eq!(outgoing, SemanticPose::ContinueSwing);
+        assert_eq!(finish, SemanticPose::GuardThrust);
+        assert_eq!(start_coordinate, expected_start_coordinate);
+        assert!(start_coordinate >= 1.0 + state.attack_curve().overshoot);
+        assert!(incoming_tangent > 0.0);
+        assert_eq!(ready_phase, 7.0 / 24.0);
+        assert_eq!(progress, 0.0);
+        assert_eq!(follow_up_start.action[0].weight, 1.0);
+
+        state.advance_action(continuation_tick + 14);
+        let prepared = AnimationEvaluation::from_skeleton(&state);
+        assert_eq!(prepared.action[0].pose, SemanticPose::GuardSwing);
+        assert_eq!(
+            prepared.action[0].sampling,
+            PoseSampling::ContinuationSpan {
+                contact: SemanticPose::AttackSwing,
+                end: SemanticPose::RecoverSwing,
+                outgoing: SemanticPose::ContinueSwing,
+                finish: SemanticPose::GuardThrust,
+                start_coordinate,
+                incoming_tangent,
+                ready_phase: 7.0 / 24.0,
+                progress: 7.0 / 24.0,
+            }
+        );
+        state.advance_action(continuation_tick + 24);
+        assert_eq!(state.action_phase(), 0.5);
+        assert_eq!(
+            AnimationEvaluation::from_skeleton(&state).action[0]
+                .sampling,
+            PoseSampling::ContinuationSpan {
+                contact: SemanticPose::AttackSwing,
+                end: SemanticPose::RecoverSwing,
+                outgoing: SemanticPose::ContinueSwing,
+                finish: SemanticPose::GuardThrust,
+                start_coordinate,
+                incoming_tangent,
+                ready_phase: 7.0 / 24.0,
+                progress: 0.5,
+            }
+        );
         assert_eq!(state.select_main_attack(StrikeFamily::Swing), None);
     }
 
@@ -1406,6 +1498,84 @@ mod legacy_tests {
         assert!(uncontrolled.coordinate(0.6) > controlled.coordinate(0.6));
         assert_eq!(uncontrolled.coordinate(0.5), 1.0);
         assert!(uncontrolled.coordinate(1.0).abs() < 1.0e-6);
+    }
+
+    #[test]
+    fn ordinary_attack_crosses_contact_without_stopping_or_changing_velocity() {
+        for curve in [
+            AttackCurve::from_handling(0.03, 5.0),
+            AttackCurve::default(),
+            AttackCurve::from_handling(1.2, 1.0),
+        ] {
+            let step = 0.0025;
+            let contact = curve.coordinate(0.5);
+            let left_velocity = (3.0 * contact - 4.0 * curve.coordinate(0.5 - step)
+                + curve.coordinate(0.5 - 2.0 * step))
+                / (2.0 * step);
+            let right_velocity = (-3.0 * contact + 4.0 * curve.coordinate(0.5 + step)
+                - curve.coordinate(0.5 + 2.0 * step))
+                / (2.0 * step);
+            assert!(left_velocity > 0.1, "contact must retain forward velocity");
+            assert!(right_velocity > 0.1, "follow-through must continue forward");
+            assert!(
+                (left_velocity - right_velocity).abs() < 0.02,
+                "contact velocity changed from {left_velocity} to {right_velocity}"
+            );
+        }
+    }
+
+    #[test]
+    fn ordinary_attack_carries_acceleration_through_contact() {
+        for curve in [
+            AttackCurve::from_handling(0.03, 5.0),
+            AttackCurve::default(),
+            AttackCurve::from_handling(1.2, 1.0),
+        ] {
+            let step = 0.01;
+            let contact = curve.coordinate(0.5);
+            let one_sided_acceleration = |direction: f32, sample_step: f32| {
+                (2.0 * contact
+                    - 5.0 * curve.coordinate(0.5 + direction * sample_step)
+                    + 4.0 * curve.coordinate(0.5 + direction * 2.0 * sample_step)
+                    - curve.coordinate(0.5 + direction * 3.0 * sample_step))
+                    / (sample_step * sample_step)
+            };
+            let left_acceleration = (4.0 * one_sided_acceleration(-1.0, step * 0.5)
+                - one_sided_acceleration(-1.0, step))
+                / 3.0;
+            let right_acceleration = (4.0 * one_sided_acceleration(1.0, step * 0.5)
+                - one_sided_acceleration(1.0, step))
+                / 3.0;
+            assert!(left_acceleration.abs() > 1.0);
+            assert!(right_acceleration.abs() > 1.0);
+            assert!(
+                (left_acceleration - right_acceleration).abs() < 1.0,
+                "contact acceleration changed from {left_acceleration} to {right_acceleration}"
+            );
+        }
+    }
+
+    #[test]
+    fn ordinary_attack_remains_monotone_from_drawback_through_follow_through() {
+        for curve in [
+            AttackCurve::from_handling(0.03, 5.0),
+            AttackCurve::default(),
+            AttackCurve::from_handling(1.2, 1.0),
+        ] {
+            let tell_end = curve.tell_fraction * 0.5;
+            let follow_through_end = 0.5 + curve.follow_through_fraction * 0.5;
+            let mut previous = curve.coordinate(tell_end);
+            for sample in 1..=128 {
+                let phase = tell_end
+                    + (follow_through_end - tell_end) * sample as f32 / 128.0;
+                let coordinate = curve.coordinate(phase);
+                assert!(
+                    coordinate + 1.0e-5 >= previous,
+                    "attack reversed at phase {phase}: {previous} -> {coordinate}"
+                );
+                previous = coordinate;
+            }
+        }
     }
 
     #[test]

@@ -374,6 +374,10 @@ tactical-play mode="animation" base_port="24920" graphics_config="assets/config/
 animation-direction-benchmark base_port="24920" graphics_config="assets/config/tactical-graphics.yaml" render_backend="auto" scene_input="assets/tactical-scenes/dense-woodland.json":
     @just tactical-play mode=diagnostic base_port={{ quote(base_port) }} graphics_config={{ quote(graphics_config) }} presentation_trace=off window_capture=off render_backend={{ quote(render_backend) }} scene_input={{ quote(scene_input) }} input_script=scripts/animation_direction_benchmark.json
 
+# Plot subject-relative bone speed and acceleration across one captured attack chain.
+animation-motion-graph trace output="target/animation-motion/r-weapon.svg" bone="r_weapon" cycle="-1" source="final":
+    @{{ python_bin }} scripts/plot_animation_motion_trace.py {{ quote(trace) }} --output {{ quote(output) }} --bone {{ quote(bone) }} --cycle {{ quote(cycle) }} --source {{ quote(source) }}
+
 # Exercise authored quickstep playback while guard is released during flight.
 animation-quickstep-guard-release base_port="24920" graphics_config="assets/config/tactical-graphics.yaml" render_backend="auto" scene_input="assets/tactical-scenes/dense-woodland.json":
     @just tactical-play mode=diagnostic base_port={{ quote(base_port) }} graphics_config={{ quote(graphics_config) }} presentation_trace=off window_capture=off render_backend={{ quote(render_backend) }} scene_input={{ quote(scene_input) }} input_script=scripts/animation_quickstep_guard_release.json

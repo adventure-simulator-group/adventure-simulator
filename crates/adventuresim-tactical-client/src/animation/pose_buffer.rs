@@ -37,6 +37,14 @@ pub(crate) struct PoseBufferMetrics {
     pub(crate) culled_character_count: usize,
 }
 
+/// Rig-local semantic target before inertialization, secondary physics, IK,
+/// and hierarchical render transforms modify the weapon-driving chain.
+#[derive(Component, Debug, Clone, Copy)]
+pub(crate) struct AuthoredWeaponTarget {
+    pub(crate) translation: Vec3,
+    pub(crate) rotation: Quat,
+}
+
 #[derive(Resource, Default)]
 pub(super) struct RigDefinitions(HashMap<String, Arc<RigDefinition>>);
 
@@ -107,6 +115,17 @@ struct LocalPose {
     scale: Vec3,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct ContinuationTransition {
+    contact: LocalPose,
+    ready: LocalPose,
+    outgoing: LocalPose,
+    finish: LocalPose,
+    start_coordinate: f32,
+    incoming_tangent: f32,
+    ready_phase: f32,
+}
+
 #[derive(Debug)]
 struct SampledPlan {
     pose: Vec<LocalPose>,
@@ -138,6 +157,10 @@ impl LocalPose {
             -AttackCurve::maximum_drawback(),
             1.0 + AttackCurve::maximum_overshoot(),
         );
+        self.extrapolate_unbounded(next, coordinate)
+    }
+
+    fn extrapolate_unbounded(self, next: Self, coordinate: f32) -> Self {
         let relative = shortest_rotation(next.rotation * self.rotation.inverse());
         Self {
             translation: self.translation + (next.translation - self.translation) * coordinate,
@@ -146,6 +169,131 @@ impl LocalPose {
             scale: self.scale + (next.scale - self.scale) * coordinate,
         }
     }
+
+    fn continuation_transition(self, transition: ContinuationTransition, progress: f32) -> Self {
+        let start = self.extrapolate(transition.contact, transition.start_coordinate);
+        let progress = progress.clamp(0.0, 1.0);
+        let ready_phase = transition
+            .ready_phase
+            .clamp(f32::EPSILON, 0.5 - f32::EPSILON);
+        let knots = [0.0, ready_phase, 0.5, 1.0];
+        let incoming_scale = transition.incoming_tangent / ready_phase;
+        let rotation_values = [
+            Vec3::ZERO,
+            quaternion_log(shortest_rotation(
+                transition.ready.rotation * start.rotation.inverse(),
+            )),
+            quaternion_log(shortest_rotation(
+                transition.outgoing.rotation * start.rotation.inverse(),
+            )),
+            quaternion_log(shortest_rotation(
+                transition.finish.rotation * start.rotation.inverse(),
+            )),
+        ];
+        Self {
+            translation: clamped_cubic_spline_vec3(
+                knots,
+                [
+                    start.translation,
+                    transition.ready.translation,
+                    transition.outgoing.translation,
+                    transition.finish.translation,
+                ],
+                (transition.contact.translation - self.translation) * incoming_scale,
+                Vec3::ZERO,
+                progress,
+            ),
+            rotation: (quaternion_exp(clamped_cubic_spline_vec3(
+                knots,
+                rotation_values,
+                quaternion_log(shortest_rotation(
+                    transition.contact.rotation * self.rotation.inverse(),
+                )) * incoming_scale,
+                Vec3::ZERO,
+                progress,
+            )) * start.rotation)
+                .normalize(),
+            scale: clamped_cubic_spline_vec3(
+                knots,
+                [
+                    start.scale,
+                    transition.ready.scale,
+                    transition.outgoing.scale,
+                    transition.finish.scale,
+                ],
+                (transition.contact.scale - self.scale) * incoming_scale,
+                Vec3::ZERO,
+                progress,
+            ),
+        }
+    }
+}
+
+fn clamped_cubic_spline_vec3(
+    knots: [f32; 4],
+    values: [Vec3; 4],
+    start_velocity: Vec3,
+    end_velocity: Vec3,
+    progress: f32,
+) -> Vec3 {
+    let second_derivatives =
+        clamped_cubic_second_derivatives(knots, values, start_velocity, end_velocity);
+    let progress = progress.clamp(knots[0], knots[3]);
+    let segment = if progress <= knots[1] {
+        0
+    } else if progress <= knots[2] {
+        1
+    } else {
+        2
+    };
+    let start = knots[segment];
+    let end = knots[segment + 1];
+    let duration = end - start;
+    let a = (end - progress) / duration;
+    let b = (progress - start) / duration;
+    values[segment] * a
+        + values[segment + 1] * b
+        + (second_derivatives[segment] * (a * a * a - a)
+            + second_derivatives[segment + 1] * (b * b * b - b))
+            * (duration * duration / 6.0)
+}
+
+fn clamped_cubic_second_derivatives(
+    knots: [f32; 4],
+    values: [Vec3; 4],
+    start_velocity: Vec3,
+    end_velocity: Vec3,
+) -> [Vec3; 4] {
+    let intervals = [
+        knots[1] - knots[0],
+        knots[2] - knots[1],
+        knots[3] - knots[2],
+    ];
+    let lower = [0.0, intervals[0], intervals[1], intervals[2]];
+    let mut diagonal = [
+        2.0 * intervals[0],
+        2.0 * (intervals[0] + intervals[1]),
+        2.0 * (intervals[1] + intervals[2]),
+        2.0 * intervals[2],
+    ];
+    let upper = [intervals[0], intervals[1], intervals[2], 0.0];
+    let mut right = [
+        6.0 * ((values[1] - values[0]) / intervals[0] - start_velocity),
+        6.0 * ((values[2] - values[1]) / intervals[1] - (values[1] - values[0]) / intervals[0]),
+        6.0 * ((values[3] - values[2]) / intervals[2] - (values[2] - values[1]) / intervals[1]),
+        6.0 * (end_velocity - (values[3] - values[2]) / intervals[2]),
+    ];
+    for row in 1..4 {
+        let factor = lower[row] / diagonal[row - 1];
+        diagonal[row] -= factor * upper[row - 1];
+        right[row] -= right[row - 1] * factor;
+    }
+    let mut result = [Vec3::ZERO; 4];
+    result[3] = right[3] / diagonal[3];
+    for row in (0..3).rev() {
+        result[row] = (right[row] - result[row + 1] * upper[row]) / diagonal[row];
+    }
+    result
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -165,6 +313,15 @@ impl PosePlanKey {
             [
                 (span.start.handle.id(), span.start.layer),
                 (span.end.handle.id(), span.end.layer),
+            ]
+        }));
+        clips.extend(playback.continuation_spans.iter().flat_map(|span| {
+            [
+                (span.start.handle.id(), span.start.layer),
+                (span.contact.handle.id(), span.contact.layer),
+                (span.end.handle.id(), span.end.layer),
+                (span.outgoing.handle.id(), span.outgoing.layer),
+                (span.finish.handle.id(), span.finish.layer),
             ]
         }));
         clips.sort_by_key(|(id, layer)| (*id, *layer as u8));
@@ -187,6 +344,8 @@ pub(super) struct PoseBufferRig {
     last_evaluation_tick: Option<u64>,
     decay_delta_seconds: f32,
     offsets: Vec<JointInertialOffset>,
+    target_linear_velocities: Vec<Vec3>,
+    target_angular_velocities: Vec<Vec3>,
     terrain_plants: [Option<AuthoredContactPlant>; 2],
     plan: Option<PosePlanKey>,
     active: bool,
@@ -212,13 +371,8 @@ impl PoseBufferRig {
 
     fn displayed_velocity(&self, joint: usize) -> (Vec3, Vec3) {
         (
-            (self.next[joint].translation - self.previous[joint].translation)
-                / pose_sample_seconds(),
-            quaternion_angular_velocity(
-                self.next[joint].rotation,
-                self.previous[joint].rotation,
-                pose_sample_seconds(),
-            ),
+            self.target_linear_velocities[joint] + self.offsets[joint].translation_velocity,
+            self.target_angular_velocities[joint] + self.offsets[joint].angular_velocity,
         )
     }
 }
@@ -410,6 +564,8 @@ pub(super) fn update_pose_buffers(
                 last_evaluation_tick: None,
                 decay_delta_seconds: 0.0,
                 offsets: vec![JointInertialOffset::default(); joint_count],
+                target_linear_velocities: vec![Vec3::ZERO; joint_count],
+                target_angular_velocities: vec![Vec3::ZERO; joint_count],
                 terrain_plants: [None; 2],
                 plan: None,
                 active: false,
@@ -455,6 +611,8 @@ pub(super) fn update_pose_buffers(
         if rig.frozen {
             rig.sample_accumulator = 0.0;
             rig.interpolation_alpha = 0.0;
+            rig.target_linear_velocities.fill(Vec3::ZERO);
+            rig.target_angular_velocities.fill(Vec3::ZERO);
         }
         rig.frozen = false;
 
@@ -466,13 +624,11 @@ pub(super) fn update_pose_buffers(
         else {
             continue;
         };
-        let terrain = terrain_ik_enabled
-            .0
+        let locomotion_ik_owns = procedural::authored_locomotion_ik_owns(skeleton);
+        let terrain = (terrain_ik_enabled.0 && locomotion_ik_owns)
             .then(|| terrain.single().ok())
             .flatten();
-        if procedural::authored_locomotion_ik_owns(skeleton)
-            && (terrain.is_some() || sampled.locomotion_pelvis_rotation.is_some())
-        {
+        if terrain.is_some() || sampled.locomotion_pelvis_rotation.is_some() {
             let definition = Arc::clone(&rig.definition);
             // Buffered joint poses are relative to the authored scene, not to
             // the controller entity. The scene is translated from the
@@ -505,6 +661,28 @@ pub(super) fn update_pose_buffers(
             rig.terrain_plants = [None; 2];
         }
         let target = sampled.pose;
+        if let Some(weapon_joint) = rig.definition.joints.iter().position(|joint| {
+            joint.name.as_deref().and_then(BoneRole::from_name) == Some(BoneRole::WeaponRight)
+        }) {
+            let mut cache = vec![None; target.len()];
+            let weapon = local_pose_global(&rig.definition, &target, weapon_joint, &mut cache);
+            commands.entity(owner).insert(AuthoredWeaponTarget {
+                translation: weapon.translation,
+                rotation: weapon.rotation,
+            });
+        }
+        let direct_sampling = playback.sampling_cadence() == PoseSamplingCadence::Direct;
+        let target_velocities = target
+            .iter()
+            .zip(&rig.next)
+            .map(|(target, previous)| {
+                if rig.active && direct_sampling {
+                    local_pose_velocity(*previous, *target, delta_seconds)
+                } else {
+                    (Vec3::ZERO, Vec3::ZERO)
+                }
+            })
+            .collect::<Vec<_>>();
         if transition {
             let capture_displayed = rig.active;
             for (joint, target_pose) in target.iter().copied().enumerate() {
@@ -529,9 +707,13 @@ pub(super) fn update_pose_buffers(
                     linear_velocity,
                     angular_velocity,
                     target_pose,
-                    Vec3::ZERO,
-                    Vec3::ZERO,
+                    target_velocities[joint].0,
+                    target_velocities[joint].1,
                 );
+            }
+            for (joint, (linear, angular)) in target_velocities.iter().copied().enumerate() {
+                rig.target_linear_velocities[joint] = linear;
+                rig.target_angular_velocities[joint] = angular;
             }
             rig.previous.clone_from(&target);
             rig.next = target;
@@ -540,18 +722,43 @@ pub(super) fn update_pose_buffers(
             rig.plan = Some(key);
             rig.active = true;
         } else {
-            let due = samples_due(rig.sample_accumulator);
-            if due > 0 {
-                rig.previous = rig.next.clone();
+            if direct_sampling {
+                // The semantic curve supplies the continuous target. Preserve
+                // transition inertialization, but do not quantize its normal
+                // updates through the authored-clip sampling accumulator.
+                rig.previous.clone_from(&target);
                 rig.next = target;
-                rig.sample_accumulator =
-                    (rig.sample_accumulator - pose_sample_seconds() * due as f32).max(0.0);
+                rig.sample_accumulator = 0.0;
+                rig.interpolation_alpha = 1.0;
+                for (joint, (linear, angular)) in target_velocities.iter().copied().enumerate() {
+                    rig.target_linear_velocities[joint] = linear;
+                    rig.target_angular_velocities[joint] = angular;
+                }
+            } else {
+                let due = samples_due(rig.sample_accumulator);
+                if due > 0 {
+                    rig.previous = rig.next.clone();
+                    rig.next = target;
+                    let sample_seconds = pose_sample_seconds() * due as f32;
+                    for joint in 0..rig.next.len() {
+                        let (linear, angular) = local_pose_velocity(
+                            rig.previous[joint],
+                            rig.next[joint],
+                            sample_seconds,
+                        );
+                        rig.target_linear_velocities[joint] = linear;
+                        rig.target_angular_velocities[joint] = angular;
+                    }
+                    rig.sample_accumulator =
+                        (rig.sample_accumulator - pose_sample_seconds() * due as f32).max(0.0);
+                }
+                // Terrain IK has already modified `next`. Interpolate local
+                // joint transforms from the preceding solved sample to that
+                // upcoming solved sample; no post-interpolation contact toggle
+                // is needed.
+                rig.interpolation_alpha =
+                    (rig.sample_accumulator / pose_sample_seconds()).clamp(0.0, 1.0);
             }
-            // Terrain IK has already modified `next`. Interpolate local joint
-            // transforms from the preceding solved sample to that upcoming
-            // solved sample; no post-interpolation contact toggle is needed.
-            rig.interpolation_alpha =
-                (rig.sample_accumulator / pose_sample_seconds()).clamp(0.0, 1.0);
         }
     }
 }
@@ -601,7 +808,9 @@ fn sample_plan(
     metrics: &mut PoseBufferMetrics,
 ) -> Option<SampledPlan> {
     if playback.use_authored_bind_pose
-        || (playback.clips.is_empty() && playback.extrapolated_spans.is_empty())
+        || (playback.clips.is_empty()
+            && playback.extrapolated_spans.is_empty()
+            && playback.continuation_spans.is_empty())
     {
         return Some(SampledPlan {
             pose: definition.joints.iter().map(|joint| joint.bind).collect(),
@@ -640,6 +849,50 @@ fn sample_plan(
         )?;
         baked_spans.push((span, start, end));
     }
+    let mut baked_continuations = Vec::with_capacity(playback.continuation_spans.len());
+    for span in &playback.continuation_spans {
+        let start = get_or_bake(
+            span.start.handle.id(),
+            &span.start.handle,
+            definition,
+            clips,
+            bank,
+            metrics,
+        )?;
+        let contact = get_or_bake(
+            span.contact.handle.id(),
+            &span.contact.handle,
+            definition,
+            clips,
+            bank,
+            metrics,
+        )?;
+        let end = get_or_bake(
+            span.end.handle.id(),
+            &span.end.handle,
+            definition,
+            clips,
+            bank,
+            metrics,
+        )?;
+        let outgoing = get_or_bake(
+            span.outgoing.handle.id(),
+            &span.outgoing.handle,
+            definition,
+            clips,
+            bank,
+            metrics,
+        )?;
+        let finish = get_or_bake(
+            span.finish.handle.id(),
+            &span.finish.handle,
+            definition,
+            clips,
+            bank,
+            metrics,
+        )?;
+        baked_continuations.push((span, start, contact, end, outgoing, finish));
+    }
     let mut pose = Vec::with_capacity(definition.joints.len());
     let mut locomotion_pelvis_rotation = None;
     for (joint_index, joint) in definition.joints.iter().enumerate() {
@@ -660,7 +913,7 @@ fn sample_plan(
                 ClipLayer::Lower => joint.lower_body,
                 ClipLayer::CombatUpper => !joint.lower_body || pelvis,
                 ClipLayer::CombatLower => joint.lower_body,
-                ClipLayer::Hands => false,
+                ClipLayer::MainHand | ClipLayer::Offhand => false,
             };
             if !included || weighted.weight <= f32::EPSILON || !weighted.weight.is_finite() {
                 continue;
@@ -710,7 +963,7 @@ fn sample_plan(
                 ClipLayer::Lower => joint.lower_body,
                 ClipLayer::CombatUpper => !joint.lower_body || pelvis,
                 ClipLayer::CombatLower => joint.lower_body,
-                ClipLayer::Hands => false,
+                ClipLayer::MainHand | ClipLayer::Offhand => false,
             };
             if !included || span.weight <= f32::EPSILON || !span.weight.is_finite() {
                 continue;
@@ -723,7 +976,92 @@ fn sample_plan(
                 end_clip.sample(joint_index, span.end_time_seconds),
                 joint.bind,
             );
-            let sample = sanitize_pose(start.extrapolate(end, span.coordinate), joint.bind);
+            // CurveSpan is defined by its two semantic anchors, not the keys
+            // authored between or after them. Applying their transform delta
+            // directly gives one constant spatial path through coordinate 1,
+            // so contact cannot introduce a hidden ease-out/ease-in stop.
+            let sample = start.extrapolate(end, span.coordinate);
+            let sample = sanitize_pose(sample, joint.bind);
+            if pelvis && span.start.layer == ClipLayer::CombatUpper {
+                accumulate_local_pose(
+                    &mut combat_upper,
+                    &mut combat_upper_weight,
+                    sample,
+                    span.weight,
+                );
+                continue;
+            }
+            if pelvis && span.start.layer == ClipLayer::CombatLower {
+                accumulate_local_pose(
+                    &mut combat_lower,
+                    &mut combat_lower_weight,
+                    sample,
+                    span.weight,
+                );
+                continue;
+            }
+            let next_total = accumulated + span.weight;
+            let alpha = if next_total > f32::EPSILON {
+                span.weight / next_total
+            } else {
+                0.0
+            };
+            blended = if accumulated <= f32::EPSILON {
+                sample
+            } else {
+                blended.interpolate(sample, alpha)
+            };
+            accumulated = next_total;
+        }
+        for (span, start_clip, contact_clip, end_clip, outgoing_clip, finish_clip) in
+            &baked_continuations
+        {
+            let included = match span.start.layer {
+                ClipLayer::Whole => true,
+                ClipLayer::Upper => !joint.lower_body,
+                ClipLayer::Lower => joint.lower_body,
+                ClipLayer::CombatUpper => !joint.lower_body || pelvis,
+                ClipLayer::CombatLower => joint.lower_body,
+                ClipLayer::MainHand | ClipLayer::Offhand => false,
+            };
+            if !included || span.weight <= f32::EPSILON || !span.weight.is_finite() {
+                continue;
+            }
+            let start = sanitize_pose(
+                start_clip.sample(joint_index, span.start_time_seconds),
+                joint.bind,
+            );
+            let contact = sanitize_pose(
+                contact_clip.sample(joint_index, span.contact_time_seconds),
+                joint.bind,
+            );
+            let end = sanitize_pose(
+                end_clip.sample(joint_index, span.end_time_seconds),
+                joint.bind,
+            );
+            let outgoing = sanitize_pose(
+                outgoing_clip.sample(joint_index, span.outgoing_time_seconds),
+                joint.bind,
+            );
+            let finish = sanitize_pose(
+                finish_clip.sample(joint_index, span.finish_time_seconds),
+                joint.bind,
+            );
+            let sample = sanitize_pose(
+                start.continuation_transition(
+                    ContinuationTransition {
+                        contact,
+                        ready: end,
+                        outgoing,
+                        finish,
+                        start_coordinate: span.start_coordinate,
+                        incoming_tangent: span.incoming_tangent,
+                        ready_phase: span.ready_phase,
+                    },
+                    span.progress,
+                ),
+                joint.bind,
+            );
             if pelvis && span.start.layer == ClipLayer::CombatUpper {
                 accumulate_local_pose(
                     &mut combat_upper,
@@ -764,11 +1102,11 @@ fn sample_plan(
             } else {
                 joint.bind
             };
-        if is_hand_animation_joint(definition, joint_index) {
+        if let Some(hand) = hand_animation_joint(definition, joint_index) {
             let mut hand_pose = joint.bind;
             let mut hand_weight = 0.0_f32;
             for (weighted, clip, _) in &baked {
-                if weighted.clip.layer != ClipLayer::Hands
+                if weighted.clip.layer != hand
                     || !clip.tracks[joint_index].animated
                     || weighted.weight <= f32::EPSILON
                     || !weighted.weight.is_finite()
@@ -861,20 +1199,18 @@ fn sparse_locomotion_segment(authored_phase: f32) -> (u32, u32, f32) {
     (start, (start + 1) % 4, t * t * (3.0 - 2.0 * t))
 }
 
-fn is_hand_animation_joint(definition: &RigDefinition, mut joint: usize) -> bool {
+fn hand_animation_joint(definition: &RigDefinition, mut joint: usize) -> Option<ClipLayer> {
     loop {
-        if definition.joints[joint]
+        match definition.joints[joint]
             .name
             .as_deref()
-            .is_some_and(|name| {
-                name.eq_ignore_ascii_case("l_wrist") || name.eq_ignore_ascii_case("r_wrist")
-            })
+            .and_then(BoneRole::from_name)
         {
-            return true;
+            Some(BoneRole::HandRight) => return Some(ClipLayer::MainHand),
+            Some(BoneRole::HandLeft) => return Some(ClipLayer::Offhand),
+            _ => {}
         }
-        let Some(parent) = definition.joints[joint].parent else {
-            return false;
-        };
+        let parent = definition.joints[joint].parent?;
         joint = parent;
     }
 }
@@ -1810,6 +2146,17 @@ fn quaternion_angular_velocity(next: Quat, current: Quat, delta_seconds: f32) ->
     scaled_angle_axis(shortest_rotation(next * current.inverse())) / delta_seconds.max(1e-5)
 }
 
+fn local_pose_velocity(
+    previous: LocalPose,
+    current: LocalPose,
+    delta_seconds: f32,
+) -> (Vec3, Vec3) {
+    (
+        (current.translation - previous.translation) / delta_seconds.max(1.0e-5),
+        quaternion_angular_velocity(current.rotation, previous.rotation, delta_seconds),
+    )
+}
+
 fn halflife_to_damping(halflife: f32) -> f32 {
     (4.0 * core::f32::consts::LN_2) / (halflife + 1e-5)
 }
@@ -1861,12 +2208,24 @@ mod tests {
             ],
         };
 
-        assert!(!is_hand_animation_joint(&definition, 0));
-        assert!(!is_hand_animation_joint(&definition, 1));
-        assert!(is_hand_animation_joint(&definition, 2));
-        assert!(is_hand_animation_joint(&definition, 3));
-        assert!(is_hand_animation_joint(&definition, 4));
-        assert!(is_hand_animation_joint(&definition, 5));
+        assert_eq!(hand_animation_joint(&definition, 0), None);
+        assert_eq!(hand_animation_joint(&definition, 1), None);
+        assert_eq!(
+            hand_animation_joint(&definition, 2),
+            Some(ClipLayer::MainHand)
+        );
+        assert_eq!(
+            hand_animation_joint(&definition, 3),
+            Some(ClipLayer::MainHand)
+        );
+        assert_eq!(
+            hand_animation_joint(&definition, 4),
+            Some(ClipLayer::Offhand)
+        );
+        assert_eq!(
+            hand_animation_joint(&definition, 5),
+            Some(ClipLayer::Offhand)
+        );
     }
 
     fn pose(translation: Vec3, rotation: Quat) -> LocalPose {
@@ -1917,6 +2276,158 @@ mod tests {
                 .angle_between(Quat::from_rotation_y(0.75))
                 < 1.0e-4
         );
+    }
+
+    #[test]
+    fn anchor_curve_span_conserves_transform_velocity_through_contact() {
+        let start = LocalPose {
+            translation: Vec3::ZERO,
+            rotation: Quat::IDENTITY,
+            scale: Vec3::ONE,
+        };
+        let end = LocalPose {
+            translation: Vec3::X,
+            rotation: Quat::from_rotation_y(0.2),
+            scale: Vec3::ONE,
+        };
+        let step = 0.001;
+        let before = start.extrapolate(end, 1.0 - step);
+        let contact = start.extrapolate(end, 1.0);
+        let after = start.extrapolate(end, 1.0 + step);
+        let incoming_velocity = (contact.translation.x - before.translation.x) / step;
+        let outgoing_velocity = (after.translation.x - contact.translation.x) / step;
+        assert!((incoming_velocity - outgoing_velocity).abs() < 0.01);
+        let incoming_angular_velocity = before.rotation.angle_between(contact.rotation) / step;
+        let outgoing_angular_velocity = contact.rotation.angle_between(after.rotation) / step;
+        assert!((incoming_angular_velocity - outgoing_angular_velocity).abs() < 0.01);
+    }
+
+    #[test]
+    fn continuation_spline_interpolates_anchors_and_preserves_derivatives() {
+        let guard = LocalPose {
+            translation: Vec3::ZERO,
+            rotation: Quat::IDENTITY,
+            scale: Vec3::ONE,
+        };
+        let contact = LocalPose {
+            translation: Vec3::X,
+            rotation: Quat::from_rotation_y(0.4),
+            scale: Vec3::ONE,
+        };
+        let preparation = LocalPose {
+            translation: Vec3::new(1.5, 0.2, 0.0),
+            rotation: Quat::from_rotation_y(0.7),
+            scale: Vec3::ONE,
+        };
+        let follow = LocalPose {
+            translation: Vec3::new(1.7, 0.5, 0.1),
+            rotation: Quat::from_rotation_y(1.0),
+            scale: Vec3::ONE,
+        };
+        let finish = LocalPose {
+            translation: Vec3::new(0.2, 0.1, -0.1),
+            rotation: Quat::from_rotation_y(0.1),
+            scale: Vec3::ONE,
+        };
+        let coordinate = 1.2;
+        let incoming_tangent = 0.35;
+        let ready_phase = 7.0 / 24.0;
+        let transition = ContinuationTransition {
+            contact,
+            ready: preparation,
+            outgoing: follow,
+            finish,
+            start_coordinate: coordinate,
+            incoming_tangent,
+            ready_phase,
+        };
+        let step = 0.0005;
+        let before = guard
+            .extrapolate_unbounded(contact, coordinate - incoming_tangent * step / ready_phase);
+        let start = guard.continuation_transition(transition, 0.0);
+        let after = guard.continuation_transition(transition, step);
+        let incoming_translation_velocity = (start.translation - before.translation) / step;
+        let outgoing_translation_velocity = (after.translation - start.translation) / step;
+        assert!(incoming_translation_velocity.distance(outgoing_translation_velocity) < 0.02);
+        let incoming_angular_velocity = before.rotation.angle_between(start.rotation) / step;
+        let outgoing_angular_velocity = start.rotation.angle_between(after.rotation) / step;
+        assert!((incoming_angular_velocity - outgoing_angular_velocity).abs() < 0.02);
+
+        let ready = guard.continuation_transition(transition, ready_phase);
+        let outgoing = guard.continuation_transition(transition, 0.5);
+        let end = guard.continuation_transition(transition, 1.0);
+        assert!(ready.translation.distance(preparation.translation) < 0.0001);
+        assert!(ready.rotation.angle_between(preparation.rotation) < 0.0001);
+        assert!(outgoing.translation.distance(follow.translation) < 0.0001);
+        assert!(outgoing.rotation.angle_between(follow.rotation) < 0.0001);
+        assert!(end.translation.distance(finish.translation) < 0.0001);
+        assert!(end.rotation.angle_between(finish.rotation) < 0.0001);
+
+        let step = 0.002;
+        for seam in [ready_phase, 0.5] {
+            let before_three = guard.continuation_transition(transition, seam - 3.0 * step);
+            let before_two = guard.continuation_transition(transition, seam - 2.0 * step);
+            let before_one = guard.continuation_transition(transition, seam - step);
+            let at = guard.continuation_transition(transition, seam);
+            let after_one = guard.continuation_transition(transition, seam + step);
+            let after_two = guard.continuation_transition(transition, seam + 2.0 * step);
+            let after_three = guard.continuation_transition(transition, seam + 3.0 * step);
+            let velocity_before = (3.0 * at.translation - 4.0 * before_one.translation
+                + before_two.translation)
+                / (2.0 * step);
+            let velocity_after = (-3.0 * at.translation + 4.0 * after_one.translation
+                - after_two.translation)
+                / (2.0 * step);
+            assert!(velocity_before.distance(velocity_after) < 0.01);
+            let acceleration_before = (2.0 * at.translation - 5.0 * before_one.translation
+                + 4.0 * before_two.translation
+                - before_three.translation)
+                / (step * step);
+            let acceleration_after = (2.0 * at.translation - 5.0 * after_one.translation
+                + 4.0 * after_two.translation
+                - after_three.translation)
+                / (step * step);
+            assert!(acceleration_before.distance(acceleration_after) < 2.0);
+
+            let rotation_vector = |pose: LocalPose| {
+                quaternion_log(shortest_rotation(pose.rotation * start.rotation.inverse()))
+            };
+            let angular_velocity_before = (3.0 * rotation_vector(at)
+                - 4.0 * rotation_vector(before_one)
+                + rotation_vector(before_two))
+                / (2.0 * step);
+            let angular_velocity_after = (-3.0 * rotation_vector(at)
+                + 4.0 * rotation_vector(after_one)
+                - rotation_vector(after_two))
+                / (2.0 * step);
+            assert!(angular_velocity_before.distance(angular_velocity_after) < 0.01);
+            let angular_acceleration_before = (2.0 * rotation_vector(at)
+                - 5.0 * rotation_vector(before_one)
+                + 4.0 * rotation_vector(before_two)
+                - rotation_vector(before_three))
+                / (step * step);
+            let angular_acceleration_after = (2.0 * rotation_vector(at)
+                - 5.0 * rotation_vector(after_one)
+                + 4.0 * rotation_vector(after_two)
+                - rotation_vector(after_three))
+                / (step * step);
+            assert!(angular_acceleration_before.distance(angular_acceleration_after) < 2.0);
+        }
+
+        let before_end = guard.continuation_transition(transition, 1.0 - step);
+        let before_end_two = guard.continuation_transition(transition, 1.0 - 2.0 * step);
+        let end_velocity = (3.0 * end.translation - 4.0 * before_end.translation
+            + before_end_two.translation)
+            / (2.0 * step);
+        assert!(end_velocity.length() < 0.01);
+        let end_rotation_vector = |pose: LocalPose| {
+            quaternion_log(shortest_rotation(pose.rotation * start.rotation.inverse()))
+        };
+        let end_angular_velocity = (3.0 * end_rotation_vector(end)
+            - 4.0 * end_rotation_vector(before_end)
+            + end_rotation_vector(before_end_two))
+            / (2.0 * step);
+        assert!(end_angular_velocity.length() < 0.01);
     }
 
     #[test]
@@ -2513,6 +3024,27 @@ mod tests {
         let after_interrupt = offset.peek(third);
         assert!(displayed.translation.distance(after_interrupt.translation) < 0.0001);
         assert!(displayed.rotation.angle_between(after_interrupt.rotation) < 0.0001);
+    }
+
+    #[test]
+    fn moving_pose_plan_transition_preserves_target_velocity() {
+        let previous = pose(Vec3::ZERO, Quat::IDENTITY);
+        let current = pose(Vec3::X * 0.2, Quat::from_rotation_y(0.3));
+        let (linear_velocity, angular_velocity) = local_pose_velocity(previous, current, 0.1);
+        let mut offset = JointInertialOffset::default();
+        offset.capture(
+            current,
+            linear_velocity,
+            angular_velocity,
+            current,
+            linear_velocity,
+            angular_velocity,
+        );
+
+        assert!(offset.translation.length() < 1.0e-6);
+        assert!(offset.translation_velocity.length() < 1.0e-6);
+        assert!(offset.rotation.angle_between(Quat::IDENTITY) < 1.0e-6);
+        assert!(offset.angular_velocity.length() < 1.0e-6);
     }
 
     #[test]

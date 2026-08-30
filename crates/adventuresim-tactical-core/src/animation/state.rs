@@ -734,6 +734,83 @@ impl ActionTimeline {
         };
         self
     }
+
+    fn contact_tick(self) -> u64 {
+        self.start_tick.saturating_add(self.preparation_ticks)
+    }
+
+    fn end_tick(self) -> u64 {
+        self.contact_tick().saturating_add(self.recovery_ticks)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+struct QueuedAttack {
+    target_height: f32,
+    animation: AttackAnimation,
+    strike_family: StrikeFamily,
+    hand: AttackHand,
+    curve: AttackCurve,
+    timeline: ActionTimeline,
+    start_coordinate: f32,
+    incoming_tangent: f32,
+}
+
+impl QueuedAttack {
+    fn normalized(mut self) -> Self {
+        self.target_height = if self.target_height.is_finite() {
+            self.target_height.clamp(0.0, 1.0)
+        } else {
+            AttackSpec::default().target_height
+        };
+        self.curve = self.curve.normalized();
+        self.timeline = self.timeline.normalized();
+        self.start_coordinate = finite_clamp(
+            self.start_coordinate,
+            -AttackCurve::maximum_drawback(),
+            1.0 + AttackCurve::maximum_overshoot(),
+            1.0,
+        );
+        self.incoming_tangent = if self.incoming_tangent.is_finite() {
+            self.incoming_tangent.max(0.0)
+        } else {
+            0.0
+        };
+        self
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+enum AttackSequence {
+    Initial,
+    Continuation {
+        start_coordinate: f32,
+        incoming_tangent: f32,
+    },
+}
+
+impl AttackSequence {
+    fn normalized(self) -> Self {
+        match self {
+            Self::Initial => Self::Initial,
+            Self::Continuation {
+                start_coordinate,
+                incoming_tangent,
+            } => Self::Continuation {
+                start_coordinate: finite_clamp(
+                    start_coordinate,
+                    -AttackCurve::maximum_drawback(),
+                    1.0 + AttackCurve::maximum_overshoot(),
+                    1.0,
+                ),
+                incoming_tangent: if incoming_tangent.is_finite() {
+                    incoming_tangent.max(0.0)
+                } else {
+                    0.0
+                },
+            },
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -748,9 +825,10 @@ enum ActionKind {
         animation: AttackAnimation,
         strike_family: StrikeFamily,
         hand: AttackHand,
-        continuation: bool,
+        sequence: AttackSequence,
         curve: AttackCurve,
         timeline: ActionTimeline,
+        queued: Option<QueuedAttack>,
     },
     Block {
         incoming_line: AttackLine,
@@ -781,9 +859,10 @@ impl<'de> Deserialize<'de> for ActionState {
                 animation,
                 strike_family,
                 hand,
-                continuation,
+                sequence,
                 curve,
                 timeline,
+                queued,
             } => ActionKind::Attack {
                 target_height: if target_height.is_finite() {
                     target_height.clamp(0.0, 1.0)
@@ -793,9 +872,10 @@ impl<'de> Deserialize<'de> for ActionState {
                 animation,
                 strike_family,
                 hand,
-                continuation,
+                sequence: sequence.normalized(),
                 curve: curve.normalized(),
                 timeline: timeline.normalized(),
+                queued: queued.map(QueuedAttack::normalized),
             },
             ActionKind::Block {
                 incoming_line,
@@ -960,29 +1040,141 @@ impl AttackCurve {
     /// contact remains exactly 0.5.
     pub fn coordinate(self, phase: f32) -> f32 {
         let phase = finite_clamp(phase, 0.0, 1.0, 0.0);
-        if phase <= 0.5 {
-            let preparation = phase * 2.0;
-            if preparation <= self.tell_fraction {
-                let progress = smoothstep(preparation / self.tell_fraction);
-                -self.drawback * progress
-            } else {
-                let progress =
-                    smoothstep((preparation - self.tell_fraction) / (1.0 - self.tell_fraction));
-                -self.drawback + (1.0 + self.drawback) * progress
-            }
+        let tell_end = self.tell_fraction * 0.5;
+        let follow_through_end = 0.5 + self.follow_through_fraction * 0.5;
+        let [
+            tell_acceleration,
+            contact_acceleration,
+            follow_through_acceleration,
+        ] = self.knot_accelerations();
+        if phase <= tell_end {
+            quintic_hermite(
+                0.0,
+                -self.drawback,
+                0.0,
+                0.0,
+                0.0,
+                tell_acceleration * tell_end * tell_end,
+                phase / tell_end,
+            )
+        } else if phase <= 0.5 {
+            let duration = 0.5 - tell_end;
+            quintic_hermite(
+                -self.drawback,
+                1.0,
+                0.0,
+                self.contact_velocity() * duration,
+                tell_acceleration * duration * duration,
+                contact_acceleration * duration * duration,
+                (phase - tell_end) / duration,
+            )
+        } else if phase <= follow_through_end {
+            let duration = follow_through_end - 0.5;
+            quintic_hermite(
+                1.0,
+                1.0 + self.overshoot,
+                self.contact_velocity() * duration,
+                self.overshoot,
+                contact_acceleration * duration * duration,
+                follow_through_acceleration * duration * duration,
+                (phase - 0.5) / duration,
+            )
         } else {
-            let recovery = (phase - 0.5) * 2.0;
-            if recovery <= self.follow_through_fraction {
-                1.0 + self.overshoot * smoothstep(recovery / self.follow_through_fraction)
-            } else {
-                let progress = smoothstep(
-                    (recovery - self.follow_through_fraction)
-                        / (1.0 - self.follow_through_fraction),
-                );
-                (1.0 + self.overshoot) * (1.0 - progress)
-            }
+            let duration = 1.0 - follow_through_end;
+            let incoming_velocity = self.overshoot / (follow_through_end - 0.5);
+            quintic_hermite(
+                1.0 + self.overshoot,
+                0.0,
+                incoming_velocity * duration,
+                0.0,
+                follow_through_acceleration * duration * duration,
+                0.0,
+                (phase - follow_through_end) / duration,
+            )
         }
     }
+
+    /// A queued continuation consumes the complete post-contact backswing.
+    /// It reaches the furthest frame-0-to-frame-4 extrapolation with a live
+    /// tangent so the follow-up preparation can inherit its momentum.
+    pub fn queued_recovery_coordinate(self, phase: f32) -> f32 {
+        let phase = finite_clamp(phase, 0.0, 1.0, 0.0);
+        let follow_through_end = 0.5 + self.follow_through_fraction * 0.5;
+        if phase <= 0.5 {
+            self.coordinate(phase)
+        } else if phase <= follow_through_end {
+            let duration = follow_through_end - 0.5;
+            let contact_acceleration = self.knot_accelerations()[1];
+            quintic_hermite(
+                1.0,
+                1.0 + self.overshoot,
+                self.contact_velocity() * duration,
+                self.overshoot,
+                contact_acceleration * duration * duration,
+                0.0,
+                (phase - 0.5) / duration,
+            )
+        } else {
+            let duration = follow_through_end - 0.5;
+            let coordinate =
+                1.0 + self.overshoot + (phase - follow_through_end) * self.overshoot / duration;
+            coordinate.min(1.0 + Self::maximum_overshoot())
+        }
+    }
+
+    fn queued_transition_phase(self) -> f32 {
+        0.5 + self.follow_through_fraction * 0.5
+    }
+
+    /// Phase-coordinate speed shared by the strike and follow-through at
+    /// contact. Bounding it by both neighboring secants keeps each quintic
+    /// segment monotone while preventing the old stop-and-restart seam.
+    fn contact_velocity(self) -> f32 {
+        if self.overshoot <= f32::EPSILON {
+            return 0.0;
+        }
+        let strike_duration = 0.5 * (1.0 - self.tell_fraction);
+        let follow_through_duration = 0.5 * self.follow_through_fraction;
+        let strike_secant = (1.0 + self.drawback) / strike_duration;
+        let follow_through_secant = self.overshoot / follow_through_duration;
+        2.0 * strike_secant.min(follow_through_secant)
+    }
+
+    fn knot_accelerations(self) -> [f32; 3] {
+        let tell_duration = self.tell_fraction * 0.5;
+        let strike_duration = 0.5 - tell_duration;
+        let follow_through_duration = self.follow_through_fraction * 0.5;
+        let recovery_duration = 0.5 - follow_through_duration;
+        let tell_secant = -self.drawback / tell_duration;
+        let strike_secant = (1.0 + self.drawback) / strike_duration;
+        let follow_through_secant = self.overshoot / follow_through_duration;
+        let recovery_secant = -(1.0 + self.overshoot) / recovery_duration;
+        [
+            centered_knot_acceleration(tell_secant, strike_secant, tell_duration, strike_duration),
+            centered_knot_acceleration(
+                strike_secant,
+                follow_through_secant,
+                strike_duration,
+                follow_through_duration,
+            ),
+            centered_knot_acceleration(
+                follow_through_secant,
+                recovery_secant,
+                follow_through_duration,
+                recovery_duration,
+            ),
+        ]
+    }
+}
+
+/// The follow-ready pose lies roughly halfway along the authored preparation
+/// path. Global weapon-rotation measurements put the constant-acceleration
+/// crossover at about 58% of the fixed preparation interval, independently of
+/// the source file's arbitrary equal four-frame spacing.
+const FOLLOW_READY_PREPARATION_FRACTION: f32 = 7.0 / 12.0;
+
+pub(super) fn continuation_ready_phase() -> f32 {
+    0.5 * FOLLOW_READY_PREPARATION_FRACTION
 }
 
 fn finite_clamp(value: f32, minimum: f32, maximum: f32, fallback: f32) -> f32 {
@@ -996,6 +1188,45 @@ fn finite_clamp(value: f32, minimum: f32, maximum: f32, fallback: f32) -> f32 {
 fn smoothstep(value: f32) -> f32 {
     let value = value.clamp(0.0, 1.0);
     value * value * (3.0 - 2.0 * value)
+}
+
+fn centered_knot_acceleration(
+    incoming_secant: f32,
+    outgoing_secant: f32,
+    incoming_duration: f32,
+    outgoing_duration: f32,
+) -> f32 {
+    2.0 * (outgoing_secant - incoming_secant) / (incoming_duration + outgoing_duration)
+}
+
+/// Quintic Hermite interpolation with explicit endpoint velocity and
+/// acceleration. Derivatives are expressed in normalized-segment coordinates.
+fn quintic_hermite(
+    start: f32,
+    end: f32,
+    start_velocity: f32,
+    end_velocity: f32,
+    start_acceleration: f32,
+    end_acceleration: f32,
+    progress: f32,
+) -> f32 {
+    let t = progress.clamp(0.0, 1.0);
+    let t2 = t * t;
+    let t3 = t2 * t;
+    let t4 = t3 * t;
+    let t5 = t4 * t;
+    let start_position_basis = 1.0 - 10.0 * t3 + 15.0 * t4 - 6.0 * t5;
+    let start_velocity_basis = t - 6.0 * t3 + 8.0 * t4 - 3.0 * t5;
+    let start_acceleration_basis = 0.5 * (t2 - 3.0 * t3 + 3.0 * t4 - t5);
+    let end_position_basis = 10.0 * t3 - 15.0 * t4 + 6.0 * t5;
+    let end_velocity_basis = -4.0 * t3 + 7.0 * t4 - 3.0 * t5;
+    let end_acceleration_basis = 0.5 * (t3 - 2.0 * t4 + t5);
+    start * start_position_basis
+        + start_velocity * start_velocity_basis
+        + start_acceleration * start_acceleration_basis
+        + end * end_position_basis
+        + end_velocity * end_velocity_basis
+        + end_acceleration * end_acceleration_basis
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -1839,10 +2070,34 @@ impl SkeletonState {
         matches!(
             self.action,
             ActionState(ActionKind::Attack {
-                continuation: true,
+                sequence: AttackSequence::Continuation { .. },
                 ..
             })
         )
+    }
+    pub fn attack_continuation_incoming_tangent(&self) -> Option<f32> {
+        match self.action {
+            ActionState(ActionKind::Attack {
+                sequence:
+                    AttackSequence::Continuation {
+                        incoming_tangent, ..
+                    },
+                ..
+            }) => Some(incoming_tangent),
+            _ => None,
+        }
+    }
+    pub fn attack_continuation_start_coordinate(&self) -> Option<f32> {
+        match self.action {
+            ActionState(ActionKind::Attack {
+                sequence:
+                    AttackSequence::Continuation {
+                        start_coordinate, ..
+                    },
+                ..
+            }) => Some(start_coordinate),
+            _ => None,
+        }
     }
     pub fn attack_curve(&self) -> AttackCurve {
         match self.action {
@@ -1876,8 +2131,10 @@ impl SkeletonState {
     }
 
     /// Selects a legal authored attack at the current action seam. An ordinary
-    /// attack starts only from recovery-complete idle. A second swing may
-    /// replace the first after contact when the pack owns a follow pose.
+    /// attack starts only from recovery-complete idle. A second swing may be
+    /// queued while the initial swing is active when the pack owns a follow
+    /// pose; it still begins only as the first attack reaches its complete
+    /// post-contact backswing.
     pub fn select_main_attack(&self, family: StrikeFamily) -> Option<AttackSpec> {
         let animation = AttackAnimation::initial(family);
         match self.attack_animation() {
@@ -1889,7 +2146,13 @@ impl SkeletonState {
                 if active == animation
                     && self.attack_hand() == AttackHand::Main
                     && !self.attack_is_continuation()
-                    && self.action_phase() >= 0.5
+                    && !matches!(
+                        self.action,
+                        ActionState(ActionKind::Attack {
+                            queued: Some(_),
+                            ..
+                        })
+                    )
                     && self.attack_animations.supports_continuation(animation) =>
             {
                 Some(AttackSpec::main(family, true))
@@ -1917,6 +2180,70 @@ impl SkeletonState {
             | ActionState(ActionKind::Attack { timeline, .. })
             | ActionState(ActionKind::Block { timeline, .. }) => Some(timeline.preparation_ticks),
         }
+    }
+    pub fn attack_has_queued_continuation(&self) -> bool {
+        matches!(
+            self.action,
+            ActionState(ActionKind::Attack {
+                queued: Some(_),
+                ..
+            })
+        )
+    }
+    pub fn action_recovery_ticks(&self) -> Option<u64> {
+        match self.action {
+            ActionState(ActionKind::Idle) => None,
+            ActionState(ActionKind::Dodge { timeline, .. })
+            | ActionState(ActionKind::Attack { timeline, .. })
+            | ActionState(ActionKind::Block { timeline, .. }) => Some(timeline.recovery_ticks),
+        }
+    }
+
+    pub fn action_end_tick(&self) -> Option<u64> {
+        match self.action {
+            ActionState(ActionKind::Idle) => None,
+            ActionState(ActionKind::Dodge { timeline, .. })
+            | ActionState(ActionKind::Attack { timeline, .. })
+            | ActionState(ActionKind::Block { timeline, .. }) => Some(timeline.end_tick()),
+        }
+    }
+
+    /// Tick where a queued attack may enter its authored follow-up
+    /// preparation, after the current attack reaches full follow-through but
+    /// before its ordinary return-to-guard recovery would begin.
+    pub fn attack_continuation_tick(&self) -> Option<u64> {
+        match self.action {
+            ActionState(ActionKind::Attack {
+                curve,
+                timeline,
+                sequence: AttackSequence::Initial,
+                ..
+            }) => {
+                let recovery_progress =
+                    ((curve.queued_transition_phase() - 0.5) * 2.0).clamp(0.0, 1.0);
+                let follow_through_ticks =
+                    (timeline.recovery_ticks as f64 * recovery_progress as f64).ceil() as u64;
+                Some(timeline.contact_tick().saturating_add(follow_through_ticks))
+            }
+            _ => None,
+        }
+    }
+
+    /// Overrides only the visual progress of an admitted action. Tactical
+    /// presentation uses this on its private `PresentedSkeleton`; gameplay
+    /// admission, timing, contact, and outcomes remain authoritative.
+    pub fn set_presentation_action_phase(&mut self, phase: f32) {
+        let timeline = match &mut self.action {
+            ActionState(ActionKind::Idle) => return,
+            ActionState(ActionKind::Dodge { timeline, .. })
+            | ActionState(ActionKind::Attack { timeline, .. })
+            | ActionState(ActionKind::Block { timeline, .. }) => timeline,
+        };
+        timeline.phase = if phase.is_finite() {
+            phase.clamp(0.0, 1.0)
+        } else {
+            timeline.phase
+        };
     }
     pub fn incoming_attack_line(&self) -> AttackLine {
         match self.action {
@@ -2005,35 +2332,73 @@ impl SkeletonState {
         end_tick: u64,
     ) -> Result<(), ActionTransitionError> {
         self.action_admission()?;
-        let may_follow = matches!(
-            self.action,
-            ActionState(ActionKind::Attack {
-                animation,
-                hand: AttackHand::Main,
-                continuation: false,
-                timeline,
-                ..
-            }) if timeline.phase >= 0.5
-                && spec.hand == AttackHand::Main
-                && spec.continuation
-                && spec.animation == animation
-        );
-        if self.action_kind() != SkeletonAction::None && !may_follow {
-            return Err(ActionTransitionError::ActionBusy);
-        }
         let target_height = if spec.target_height.is_finite() {
             spec.target_height.clamp(0.0, 1.0)
         } else {
             AttackSpec::default().target_height
         };
+        if let ActionState(ActionKind::Attack {
+            animation,
+            hand: AttackHand::Main,
+            sequence: AttackSequence::Initial,
+            curve,
+            timeline,
+            queued,
+            ..
+        }) = &mut self.action
+        {
+            let recovery_progress = curve.follow_through_fraction.clamp(0.0, 1.0);
+            let transition_tick = timeline.contact_tick().saturating_add(
+                (timeline.recovery_ticks as f64 * recovery_progress as f64).ceil() as u64,
+            );
+            let may_follow = queued.is_none()
+                && spec.hand == AttackHand::Main
+                && spec.continuation
+                && spec.animation == *animation
+                && start_tick >= transition_tick;
+            if may_follow {
+                let queued_timeline =
+                    ActionTimeline::with_recovery(start_tick, contact_tick, end_tick);
+                let incoming_tangent = curve.overshoot
+                    * queued_timeline.preparation_ticks as f32
+                    * FOLLOW_READY_PREPARATION_FRACTION
+                    / (curve.follow_through_fraction.max(f32::EPSILON)
+                        * timeline.recovery_ticks as f32);
+                let transition_phase = 0.5
+                    + 0.5 * transition_tick.saturating_sub(timeline.contact_tick()) as f32
+                        / timeline.recovery_ticks.max(1) as f32;
+                *queued = Some(QueuedAttack {
+                    target_height,
+                    animation: spec.animation,
+                    strike_family: spec.strike_family,
+                    hand: spec.hand,
+                    curve: spec.curve.normalized(),
+                    timeline: queued_timeline,
+                    start_coordinate: curve.queued_recovery_coordinate(transition_phase),
+                    incoming_tangent,
+                });
+                return Ok(());
+            }
+        }
+        if self.action_kind() != SkeletonAction::None {
+            return Err(ActionTransitionError::ActionBusy);
+        }
         self.action = ActionState(ActionKind::Attack {
             target_height,
             animation: spec.animation,
             strike_family: spec.strike_family,
             hand: spec.hand,
-            continuation: spec.continuation,
+            sequence: if spec.continuation {
+                AttackSequence::Continuation {
+                    start_coordinate: 1.0 + spec.curve.overshoot,
+                    incoming_tangent: 0.0,
+                }
+            } else {
+                AttackSequence::Initial
+            },
             curve: spec.curve.normalized(),
             timeline: ActionTimeline::with_recovery(start_tick, contact_tick, end_tick),
+            queued: None,
         });
         Ok(())
     }
@@ -2058,6 +2423,37 @@ impl SkeletonState {
     /// Advances an action whose semantic contact is phase 0.5. Preparation
     /// and recovery may have different real-time durations.
     pub fn advance_action(&mut self, current_tick: u64) {
+        let queued = match self.action {
+            ActionState(ActionKind::Attack {
+                curve,
+                timeline,
+                queued: Some(queued),
+                ..
+            }) if current_tick
+                >= timeline.contact_tick().saturating_add(
+                    (timeline.recovery_ticks as f64 * curve.follow_through_fraction as f64).ceil()
+                        as u64,
+                ) =>
+            {
+                Some(queued)
+            }
+            _ => None,
+        };
+        if let Some(queued) = queued {
+            self.action = ActionState(ActionKind::Attack {
+                target_height: queued.target_height,
+                animation: queued.animation,
+                strike_family: queued.strike_family,
+                hand: queued.hand,
+                sequence: AttackSequence::Continuation {
+                    start_coordinate: queued.start_coordinate,
+                    incoming_tangent: queued.incoming_tangent,
+                },
+                curve: queued.curve,
+                timeline: queued.timeline,
+                queued: None,
+            });
+        }
         let timeline = match &mut self.action {
             ActionState(ActionKind::Idle) => return,
             ActionState(ActionKind::Dodge { timeline, .. })

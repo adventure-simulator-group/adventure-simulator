@@ -257,7 +257,10 @@ enum ClipLayer {
     /// locomotion layer owns its translation.
     CombatUpper,
     CombatLower,
-    Hands,
+    /// Static equipment grip owns only the subtree below the right wrist.
+    MainHand,
+    /// Static equipment grip owns only the subtree below the left wrist.
+    Offhand,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -308,21 +311,45 @@ impl AnimationRuntime {
 pub(super) struct AnimationPlayback {
     clips: Vec<WeightedClip>,
     extrapolated_spans: Vec<ExtrapolatedSpan>,
+    continuation_spans: Vec<ContinuationSpan>,
     use_authored_bind_pose: bool,
     pub(super) whole_body_mirror: f32,
     pub(super) foot_ik_weights: Vec2,
     weapon_guard: WeaponGuardState,
     ordinary_locomotion_active: bool,
+    direct_sampling: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PoseSamplingCadence {
+    Buffered,
+    Direct,
 }
 
 impl AnimationPlayback {
     pub(super) fn authored_pose_is_ready(&self) -> bool {
         !self.use_authored_bind_pose
-            && (!self.clips.is_empty() || !self.extrapolated_spans.is_empty())
+            && (!self.clips.is_empty()
+                || !self.extrapolated_spans.is_empty()
+                || !self.continuation_spans.is_empty())
     }
 
     pub(super) fn presentation_is_settled(&self) -> bool {
         self.authored_pose_is_ready()
+    }
+
+    fn sampling_cadence(&self) -> PoseSamplingCadence {
+        if !self.direct_sampling
+            && self.extrapolated_spans.is_empty()
+            && self.continuation_spans.is_empty()
+        {
+            PoseSamplingCadence::Buffered
+        } else {
+            // Every action segment follows the authoritative action phase.
+            // Switching only its simple spans back to the 30 Hz clip grid
+            // aliases fast weapon motion and creates a cadence discontinuity.
+            PoseSamplingCadence::Direct
+        }
     }
 }
 
@@ -331,11 +358,13 @@ impl Default for AnimationPlayback {
         Self {
             clips: Vec::new(),
             extrapolated_spans: Vec::new(),
+            continuation_spans: Vec::new(),
             use_authored_bind_pose: true,
             whole_body_mirror: 0.0,
             foot_ik_weights: Vec2::ZERO,
             weapon_guard: WeaponGuardState::Lowered,
             ordinary_locomotion_active: false,
+            direct_sampling: false,
         }
     }
 }
@@ -364,12 +393,34 @@ struct ExtrapolatedSpan {
 }
 
 #[derive(Debug, Clone)]
+struct ContinuationSpan {
+    start: LoadedClip,
+    start_time_seconds: f32,
+    contact: LoadedClip,
+    contact_time_seconds: f32,
+    end: LoadedClip,
+    end_time_seconds: f32,
+    outgoing: LoadedClip,
+    outgoing_time_seconds: f32,
+    finish: LoadedClip,
+    finish_time_seconds: f32,
+    start_coordinate: f32,
+    incoming_tangent: f32,
+    ready_phase: f32,
+    progress: f32,
+    weight: f32,
+    mirrored_weight: f32,
+}
+
+#[derive(Debug, Clone)]
 struct PlaybackPose {
     clips: Vec<WeightedClip>,
     extrapolated_spans: Vec<ExtrapolatedSpan>,
+    continuation_spans: Vec<ContinuationSpan>,
     use_authored_bind_pose: bool,
     whole_body_mirror: f32,
     foot_ik_weights: Vec2,
+    direct_sampling: bool,
 }
 
 #[derive(Component)]
@@ -420,7 +471,8 @@ fn evaluate_skeletons(
         ),
         With<Player>,
     >,
-    weapons: Query<&WeaponItem>,
+    weapons: Query<(&WeaponItem, &ItemProperties)>,
+    equip_slots: Query<&EquipSlot>,
 ) {
     for (entity, skeleton, route_trace, inventory, playback) in players {
         // The preceding chained system directly routes authoritative
@@ -433,12 +485,8 @@ fn evaluate_skeletons(
         };
         let mut weighted = Vec::<WeightedClip>::new();
         let mut extrapolated_spans = Vec::<ExtrapolatedSpan>::new();
-        let split_combat_pelvis = !evaluation.lower_body.is_empty()
-            && skeleton.posture() == Posture::Upright
-            && skeleton.weapon_guard() == WeaponGuardState::Raised
-            && skeleton.raised_locomotion().is_moving()
-            && !skeleton.is_quickstep()
-            && !skeleton.is_posture_transitioning();
+        let mut continuation_spans = Vec::<ContinuationSpan>::new();
+        let split_combat_pelvis = combat_pelvis_is_component_blended(skeleton, &evaluation);
         let base_layer = if split_combat_pelvis {
             ClipLayer::CombatUpper
         } else if !evaluation.lower_body.is_empty() {
@@ -456,6 +504,7 @@ fn evaluate_skeletons(
             sample_resolver.append_layer(
                 &mut weighted,
                 &mut extrapolated_spans,
+                &mut continuation_spans,
                 *sample,
                 base_layer,
             );
@@ -469,6 +518,7 @@ fn evaluate_skeletons(
             sample_resolver.append_layer(
                 &mut weighted,
                 &mut extrapolated_spans,
+                &mut continuation_spans,
                 *sample,
                 lower_layer,
             );
@@ -476,6 +526,10 @@ fn evaluate_skeletons(
         let whole_body_mirror = {
             let total = weighted.iter().map(|clip| clip.weight).sum::<f32>()
                 + extrapolated_spans
+                    .iter()
+                    .map(|span| span.weight)
+                    .sum::<f32>()
+                + continuation_spans
                     .iter()
                     .map(|span| span.weight)
                     .sum::<f32>();
@@ -487,6 +541,10 @@ fn evaluate_skeletons(
                     + extrapolated_spans
                         .iter()
                         .map(|span| span.mirrored_weight)
+                        .sum::<f32>()
+                    + continuation_spans
+                        .iter()
+                        .map(|span| span.mirrored_weight)
                         .sum::<f32>())
                     / total)
                     .clamp(0.0, 1.0)
@@ -494,24 +552,36 @@ fn evaluate_skeletons(
                 0.0
             }
         };
-        if let Some(grip) = equipped_weapon_grip(inventory, &weapons)
-            && let Some(clip) = runtime.grips.get(&grip)
+        if let Some((weapon, properties)) = equipped_main_weapon(inventory, &weapons, &equip_slots)
+            && let Some(clip) = runtime.grips.get(&weapon_grip(&weapon.skill_weights))
         {
-            append_weighted_clip(
-                &mut weighted,
-                &clip.at_anchor_layer(0, ClipLayer::Hands),
-                false,
-                0.0,
-                1.0,
-                None,
-            );
+            let uses_offhand =
+                weapon_uses_offhand(&properties.id, offhand_is_empty(inventory, &equip_slots));
+            let authored_pose_owns_hands = authored_pose_owns_hands(samples);
+            for layer in weapon_grip_layers(authored_pose_owns_hands, uses_offhand)
+                .into_iter()
+                .flatten()
+            {
+                append_weighted_clip(
+                    &mut weighted,
+                    &clip.at_anchor_layer(0, layer),
+                    false,
+                    0.0,
+                    1.0,
+                    None,
+                );
+            }
         }
         let target = PlaybackPose {
-            use_authored_bind_pose: weighted.is_empty() && extrapolated_spans.is_empty(),
+            use_authored_bind_pose: weighted.is_empty()
+                && extrapolated_spans.is_empty()
+                && continuation_spans.is_empty(),
             whole_body_mirror,
             foot_ik_weights: semantic_foot_ik_weights(&evaluation),
+            direct_sampling: !evaluation.action.is_empty(),
             clips: weighted,
             extrapolated_spans,
+            continuation_spans,
         };
         let ordinary_locomotion_candidate = ordinary_locomotion_candidate(skeleton);
         if let Some(mut playback) = playback {
@@ -533,14 +603,27 @@ fn evaluate_skeletons(
             commands.entity(entity).insert(AnimationPlayback {
                 clips: target.clips,
                 extrapolated_spans: target.extrapolated_spans,
+                continuation_spans: target.continuation_spans,
                 use_authored_bind_pose: target.use_authored_bind_pose,
                 whole_body_mirror: target.whole_body_mirror,
                 foot_ik_weights: target.foot_ik_weights,
                 weapon_guard: skeleton.weapon_guard(),
                 ordinary_locomotion_active,
+                direct_sampling: target.direct_sampling,
             });
         }
     }
+}
+
+fn combat_pelvis_is_component_blended(
+    skeleton: &SkeletonState,
+    evaluation: &AnimationEvaluation,
+) -> bool {
+    !evaluation.lower_body.is_empty()
+        && skeleton.posture() == Posture::Upright
+        && skeleton.weapon_guard() == WeaponGuardState::Raised
+        && !skeleton.is_quickstep()
+        && !skeleton.is_posture_transitioning()
 }
 
 fn weapon_grip(skill_weights: &[f32; 9]) -> WeaponGrip {
@@ -551,30 +634,75 @@ fn weapon_grip(skill_weights: &[f32; 9]) -> WeaponGrip {
     }
 }
 
-fn equipped_weapon_grip(
+fn held_item(
     inventory: Option<&InventoryItems>,
-    weapons: &Query<&WeaponItem>,
-) -> Option<WeaponGrip> {
-    inventory
-        .and_then(InventoryItems::holding_weapon)
+    equip_slots: &Query<&EquipSlot>,
+    slot: EquipSlot,
+) -> Option<Entity> {
+    inventory?.iter().find(|&entity| {
+        equip_slots
+            .get(entity)
+            .is_ok_and(|equipped| *equipped == slot)
+    })
+}
+
+fn equipped_main_weapon<'a>(
+    inventory: Option<&InventoryItems>,
+    weapons: &'a Query<(&WeaponItem, &ItemProperties)>,
+    equip_slots: &Query<&EquipSlot>,
+) -> Option<(&'a WeaponItem, &'a ItemProperties)> {
+    held_item(inventory, equip_slots, EquipSlot::HoldingRight)
         .and_then(|entity| weapons.get(entity).ok())
-        .map(|weapon| weapon_grip(&weapon.skill_weights))
+}
+
+fn offhand_is_empty(inventory: Option<&InventoryItems>, equip_slots: &Query<&EquipSlot>) -> bool {
+    held_item(inventory, equip_slots, EquipSlot::HoldingLeft).is_none()
+}
+
+fn authored_pose_owns_hands(samples: &[PoseSample]) -> bool {
+    samples
+        .iter()
+        .any(|sample| sample.pose.is_main_hand_attack())
+}
+
+fn weapon_uses_offhand(item_id: &str, offhand_is_empty: bool) -> bool {
+    offhand_is_empty
+        && item_catalog::weapon_handling(item_id) == Some(item_catalog::WeaponHandling::TwoHanded)
+}
+
+fn weapon_grip_layers(
+    authored_pose_owns_hands: bool,
+    uses_offhand: bool,
+) -> [Option<ClipLayer>; 2] {
+    match (authored_pose_owns_hands, uses_offhand) {
+        (true, true) => [None, None],
+        (false, true) => [Some(ClipLayer::MainHand), Some(ClipLayer::Offhand)],
+        _ => [Some(ClipLayer::MainHand), None],
+    }
 }
 
 fn equipped_animation_pack(
     inventory: Option<&InventoryItems>,
     items: &Query<&ItemProperties, With<WeaponItem>>,
+    equip_slots: &Query<&EquipSlot>,
 ) -> &'static str {
-    let Some(properties) = inventory
-        .and_then(InventoryItems::holding_weapon)
+    let Some(properties) = held_item(inventory, equip_slots, EquipSlot::HoldingRight)
         .and_then(|entity| items.get(entity).ok())
     else {
         return HUMANOID_UNARMED_PACK;
     };
-    animation_pack_for_weapon(&properties.id)
+    animation_pack_for_weapon(
+        &properties.id,
+        weapon_uses_offhand(&properties.id, offhand_is_empty(inventory, equip_slots)),
+    )
 }
 
-fn animation_pack_for_weapon(item_id: &str) -> &'static str {
+fn animation_pack_for_weapon(item_id: &str, uses_offhand: bool) -> &'static str {
+    if item_catalog::weapon_handling(item_id) == Some(item_catalog::WeaponHandling::TwoHanded)
+        && !uses_offhand
+    {
+        return HUMANOID_UNARMED_PACK;
+    }
     if let Some(pack) = item_catalog::weapon_animation_pack(item_id) {
         return pack;
     }
@@ -595,9 +723,11 @@ fn ordinary_locomotion_candidate(skeleton: &SkeletonState) -> bool {
 fn apply_playback_pose(playback: &mut AnimationPlayback, pose: PlaybackPose) {
     playback.clips = pose.clips;
     playback.extrapolated_spans = pose.extrapolated_spans;
+    playback.continuation_spans = pose.continuation_spans;
     playback.use_authored_bind_pose = pose.use_authored_bind_pose;
     playback.whole_body_mirror = pose.whole_body_mirror;
     playback.foot_ik_weights = pose.foot_ik_weights;
+    playback.direct_sampling = pose.direct_sampling;
 }
 
 /// IK ownership follows the direct semantic locomotion samples.
@@ -898,6 +1028,7 @@ fn append_resolved_sample(
     sample: PoseSample,
 ) {
     let mut extrapolated_spans = Vec::new();
+    let mut continuation_spans = Vec::new();
     let locomotion_strides = AuthoredLocomotionStrides::default();
     PoseSampleResolver {
         runtime,
@@ -905,7 +1036,13 @@ fn append_resolved_sample(
         pack,
         locomotion_strides: &locomotion_strides,
     }
-    .append_layer(weighted, &mut extrapolated_spans, sample, ClipLayer::Whole);
+    .append_layer(
+        weighted,
+        &mut extrapolated_spans,
+        &mut continuation_spans,
+        sample,
+        ClipLayer::Whole,
+    );
 }
 
 #[derive(Clone, Copy)]
@@ -921,6 +1058,7 @@ impl PoseSampleResolver<'_> {
         &self,
         weighted: &mut Vec<WeightedClip>,
         extrapolated_spans: &mut Vec<ExtrapolatedSpan>,
+        continuation_spans: &mut Vec<ContinuationSpan>,
         sample: PoseSample,
         layer: ClipLayer,
     ) {
@@ -1141,6 +1279,69 @@ impl PoseSampleResolver<'_> {
                     },
                 });
             }
+            PoseSampling::ContinuationSpan {
+                contact,
+                end,
+                outgoing,
+                finish,
+                start_coordinate,
+                incoming_tangent,
+                ready_phase,
+                progress,
+            } => {
+                let Some(contact) = resolve_anchor(runtime, catalog, pack, contact) else {
+                    append_weighted_anchor(
+                        weighted,
+                        &start,
+                        start.anchor.frame,
+                        sample.weight,
+                        layer,
+                    );
+                    return;
+                };
+                let Some(end) = resolve_anchor(runtime, catalog, pack, end) else {
+                    append_weighted_anchor(
+                        weighted,
+                        &start,
+                        start.anchor.frame,
+                        sample.weight,
+                        layer,
+                    );
+                    return;
+                };
+                let Some(outgoing) = resolve_anchor(runtime, catalog, pack, outgoing) else {
+                    append_weighted_anchor(weighted, &end, end.anchor.frame, sample.weight, layer);
+                    return;
+                };
+                let Some(finish) = resolve_anchor(runtime, catalog, pack, finish) else {
+                    append_weighted_anchor(
+                        weighted,
+                        &outgoing,
+                        outgoing.anchor.frame,
+                        sample.weight,
+                        layer,
+                    );
+                    return;
+                };
+                continuation_spans.push(ContinuationSpan {
+                    start: start.clip.at_anchor_layer(start.anchor.frame, layer),
+                    start_time_seconds: frame_seconds(start.anchor.frame),
+                    contact: contact.clip.at_anchor_layer(contact.anchor.frame, layer),
+                    contact_time_seconds: frame_seconds(contact.anchor.frame),
+                    end: end.clip.at_anchor_layer(end.anchor.frame, layer),
+                    end_time_seconds: frame_seconds(end.anchor.frame),
+                    outgoing: outgoing.clip.at_anchor_layer(outgoing.anchor.frame, layer),
+                    outgoing_time_seconds: frame_seconds(outgoing.anchor.frame),
+                    finish: finish.clip.at_anchor_layer(finish.anchor.frame, layer),
+                    finish_time_seconds: frame_seconds(finish.anchor.frame),
+                    start_coordinate,
+                    incoming_tangent: incoming_tangent.max(0.0),
+                    ready_phase: ready_phase.clamp(f32::EPSILON, 0.5 - f32::EPSILON),
+                    progress: progress.clamp(0.0, 1.0),
+                    weight: sample.weight,
+                    mirrored_weight: if start.mirrored { sample.weight } else { 0.0 },
+                });
+            }
         }
     }
 }
@@ -1271,6 +1472,39 @@ mod contract_tests {
         assert_eq!(combat_cycle_ik_weights(0.625), Vec2::X);
         assert_eq!(combat_cycle_ik_weights(0.75), Vec2::Y);
         assert_eq!(combat_cycle_ik_weights(0.875), Vec2::Y);
+    }
+
+    #[test]
+    fn planted_and_moving_combat_both_component_blend_the_pelvis() {
+        let mut planted = SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised);
+        planted.begin_attack(AttackSpec::default(), 0, 100).unwrap();
+        let planted_evaluation = AnimationEvaluation::from_skeleton(&planted);
+        assert!(!planted_evaluation.action.is_empty());
+        assert!(!planted_evaluation.lower_body.is_empty());
+        assert!(combat_pelvis_is_component_blended(
+            &planted,
+            &planted_evaluation
+        ));
+
+        let moving = planted
+            .clone()
+            .with_raised_locomotion(RaisedLocomotionIntent::moving(Vec2::X, 1.0));
+        let moving_evaluation = AnimationEvaluation::from_skeleton(&moving);
+        assert!(!moving_evaluation.action.is_empty());
+        assert!(combat_pelvis_is_component_blended(
+            &moving,
+            &moving_evaluation
+        ));
+
+        let mut quickstep = SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised);
+        quickstep
+            .begin_dodge(DodgeSpec::quickstep(Vec2::X).unwrap(), 0, 100)
+            .unwrap();
+        let quickstep_evaluation = AnimationEvaluation::from_skeleton(&quickstep);
+        assert!(!combat_pelvis_is_component_blended(
+            &quickstep,
+            &quickstep_evaluation
+        ));
     }
 
     #[test]

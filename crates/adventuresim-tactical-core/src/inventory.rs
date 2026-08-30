@@ -73,6 +73,10 @@ pub struct InventoryItems {
 }
 
 impl InventoryItems {
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = Entity> + '_ {
+        self.items.iter().copied()
+    }
+
     pub fn holding_weapon(&self) -> Option<Entity> {
         self.holding_weapon
     }

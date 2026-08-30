@@ -164,9 +164,16 @@ pub(crate) fn on_melee_attack_started(
         .map_or(0.0, |movement| {
             melee_lunge_movement_delay(movement, &config)
         });
-    let contact_windup = CombatDuration::from_secs_f32(event.windup.as_secs_f32().max(lunge_delay));
+    let sequence_start = if spec.continuation {
+        skeleton.attack_continuation_tick().unwrap_or(start)
+    } else {
+        start
+    };
     let (animation_start_tick, contact_tick, recovery_tick) =
-        delayed_melee_timing_ticks(start, event.windup, lunge_delay, recovery);
+        delayed_melee_timing_ticks(sequence_start, event.windup, lunge_delay, recovery);
+    let contact_windup = CombatDuration::from_secs_f32(
+        contact_tick.saturating_sub(start) as f32 / locomotion_sample_hz(),
+    );
     if skeleton
         .begin_attack_timed(spec, animation_start_tick, contact_tick, recovery_tick)
         .is_err()
@@ -190,7 +197,7 @@ pub(crate) fn on_melee_attack_started(
                 body_part,
                 weapon_reach_metres: weapon_reach,
             },
-            start,
+            animation_start_tick,
             &transforms,
             &dimensions,
             &colliders,
