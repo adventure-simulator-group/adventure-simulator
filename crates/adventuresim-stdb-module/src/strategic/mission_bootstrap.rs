@@ -890,6 +890,9 @@ enum StandaloneMissionFamily {
     General,
 }
 
+const ANIMATION_MISSION_COORDINATE_PREFIX: &str = "animation-";
+const DIAGNOSTIC_MISSION_COORDINATE_PREFIX: &str = "diagnostic-";
+
 fn standalone_mission_family(mission_id: &str) -> Result<StandaloneMissionFamily, String> {
     let (domain, coordinate) = mission_id
         .split_once(':')
@@ -897,12 +900,15 @@ fn standalone_mission_family(mission_id: &str) -> Result<StandaloneMissionFamily
     if domain != "mission" || coordinate.is_empty() {
         return Err("Standalone mission ID has an invalid domain coordinate".into());
     }
-    if let Some(animation_coordinate) = coordinate.strip_prefix("animation-") {
+    if let Some(animation_coordinate) = coordinate.strip_prefix(ANIMATION_MISSION_COORDINATE_PREFIX)
+    {
         if animation_coordinate.is_empty() {
             return Err("Animation mission ID has no coordinate".into());
         }
         Ok(StandaloneMissionFamily::Animation)
-    } else if let Some(diagnostic_coordinate) = coordinate.strip_prefix("diagnostic-") {
+    } else if let Some(diagnostic_coordinate) =
+        coordinate.strip_prefix(DIAGNOSTIC_MISSION_COORDINATE_PREFIX)
+    {
         if diagnostic_coordinate.is_empty() {
             return Err("Diagnostic mission ID has no coordinate".into());
         }

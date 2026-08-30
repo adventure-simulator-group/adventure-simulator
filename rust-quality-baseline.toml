@@ -372,7 +372,7 @@ ceiling = 848
 
 [[files]]
 path = "crates/adventuresim-stdb-module/src/strategic/mission_bootstrap.rs"
-ceiling = 2460
+ceiling = 2489
 
 [[files]]
 path = "crates/adventuresim-stdb-module/src/strategic/travel_reducers.rs"
@@ -460,15 +460,15 @@ ceiling = 790
 
 [[files]]
 path = "crates/adventuresim-tactical-client/src/animation/mod.rs"
-ceiling = 1112
+ceiling = 1299
 
 [[files]]
 path = "crates/adventuresim-tactical-client/src/animation/pose_buffer.rs"
-ceiling = 1677
+ceiling = 2007
 
 [[files]]
 path = "crates/adventuresim-tactical-client/src/animation/presentation.rs"
-ceiling = 543
+ceiling = 664
 
 [[files]]
 path = "crates/adventuresim-tactical-client/src/animation/procedural.rs"
@@ -516,7 +516,7 @@ ceiling = 1873
 
 [[files]]
 path = "crates/adventuresim-tactical-client/src/player.rs"
-ceiling = 1095
+ceiling = 1117
 
 [[files]]
 path = "crates/adventuresim-tactical-client/src/presentation/clouds.rs"
@@ -596,11 +596,11 @@ ceiling = 1092
 
 [[files]]
 path = "crates/adventuresim-tactical-core/src/animation/evaluation.rs"
-ceiling = 582
+ceiling = 599
 
 [[files]]
 path = "crates/adventuresim-tactical-core/src/animation/state.rs"
-ceiling = 2302
+ceiling = 2661
 
 [[files]]
 path = "crates/adventuresim-tactical-core/src/combat_config.rs"
@@ -608,7 +608,7 @@ ceiling = 1345
 
 [[files]]
 path = "crates/adventuresim-tactical-core/src/inventory.rs"
-ceiling = 603
+ceiling = 606
 
 [[files]]
 path = "crates/adventuresim-tactical-core/src/physics.rs"
@@ -628,7 +628,7 @@ ceiling = 674
 
 [[files]]
 path = "crates/adventuresim-tactical-server/src/combat/ingress.rs"
-ceiling = 808
+ceiling = 815
 
 [[files]]
 path = "crates/adventuresim-tactical-server/src/equipment.rs"
@@ -1817,7 +1817,7 @@ ceiling = 171
 [[functions]]
 path = "crates/adventuresim-stdb-module/src/strategic/mission_bootstrap.rs"
 item = "seed_standalone_tactical_mission"
-ceiling = 316
+ceiling = 319
 
 [[functions]]
 path = "crates/adventuresim-stdb-module/src/strategic/mission_bootstrap.rs"
@@ -2112,7 +2112,7 @@ ceiling = 141
 [[functions]]
 path = "crates/adventuresim-tactical-client/src/animation/diagnostics.rs"
 item = 'log_animation_diagnostics@cfg(not(target_family="wasm"))'
-ceiling = 148
+ceiling = 154
 
 [[functions]]
 path = "crates/adventuresim-tactical-client/src/animation/loading.rs"
@@ -2122,12 +2122,12 @@ ceiling = 148
 [[functions]]
 path = "crates/adventuresim-tactical-client/src/animation/mod.rs"
 item = "PoseSampleResolver<'_>::append_layer"
-ceiling = 226
+ceiling = 290
 
 [[functions]]
 path = "crates/adventuresim-tactical-client/src/animation/mod.rs"
 item = "evaluate_skeletons"
-ceiling = 137
+ceiling = 158
 
 [[functions]]
 path = "crates/adventuresim-tactical-client/src/animation/pose_buffer.rs"
@@ -2147,12 +2147,12 @@ ceiling = 219
 [[functions]]
 path = "crates/adventuresim-tactical-client/src/animation/pose_buffer.rs"
 item = "sample_plan"
-ceiling = 204
+ceiling = 331
 
 [[functions]]
 path = "crates/adventuresim-tactical-client/src/animation/pose_buffer.rs"
 item = "update_pose_buffers"
-ceiling = 251
+ceiling = 300
 
 [[functions]]
 path = "crates/adventuresim-tactical-client/src/animation/procedural.rs"
@@ -2207,7 +2207,7 @@ ceiling = 148
 [[functions]]
 path = "crates/adventuresim-tactical-client/src/animation/secondary_physics.rs"
 item = "apply_secondary_bone_physics"
-ceiling = 113
+ceiling = 122
 
 [[functions]]
 path = "crates/adventuresim-tactical-client/src/animation_viewer/capture.rs"
@@ -2292,7 +2292,7 @@ ceiling = 128
 [[functions]]
 path = "crates/adventuresim-tactical-client/src/player.rs"
 item = "try_start_attack"
-ceiling = 166
+ceiling = 175
 
 [[functions]]
 path = "crates/adventuresim-tactical-client/src/presentation/atmosphere.rs"
@@ -2542,7 +2542,7 @@ ceiling = 115
 [[functions]]
 path = "crates/adventuresim-tactical-server/src/combat/ingress.rs"
 item = "on_melee_attack_started"
-ceiling = 125
+ceiling = 132
 
 [[functions]]
 path = "crates/adventuresim-tactical-server/src/combat/melee.rs"
@@ -8595,13 +8595,6 @@ occurrences = 1
 rule = "raw-string-branch"
 path = "crates/adventuresim-stdb-module/src/strategic/mission_bootstrap.rs"
 item = "standalone_mission_family"
-fingerprint = "string:animation-"
-occurrences = 1
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-stdb-module/src/strategic/mission_bootstrap.rs"
-item = "standalone_mission_family"
 fingerprint = "string:mission"
 occurrences = 1
 
@@ -9248,20 +9241,6 @@ path = "crates/adventuresim-tactical-client/src/animation/pose_buffer.rs"
 item = "calibrate_authored_locomotion_strides"
 fingerprint = "string:walk"
 occurrences = 2
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-tactical-client/src/animation/pose_buffer.rs"
-item = "is_hand_animation_joint"
-fingerprint = "string:l_wrist"
-occurrences = 1
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-tactical-client/src/animation/pose_buffer.rs"
-item = "is_hand_animation_joint"
-fingerprint = "string:r_wrist"
-occurrences = 1
 
 [[findings]]
 rule = "raw-string-branch"

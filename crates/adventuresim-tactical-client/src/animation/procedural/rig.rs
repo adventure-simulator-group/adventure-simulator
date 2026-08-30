@@ -152,7 +152,7 @@ impl BoneRole {
         self as usize
     }
 
-    pub(super) fn from_name(name: &str) -> Option<Self> {
+    pub(crate) fn from_name(name: &str) -> Option<Self> {
         Some(match name {
             "body_world" => Self::Root,
             "root" => Self::Pelvis,

@@ -661,12 +661,9 @@ pub(super) fn update_pose_buffers(
             rig.terrain_plants = [None; 2];
         }
         let target = sampled.pose;
-        if let Some(weapon_joint) = rig
-            .definition
-            .joints
-            .iter()
-            .position(|joint| joint.name.as_deref() == Some("r_weapon"))
-        {
+        if let Some(weapon_joint) = rig.definition.joints.iter().position(|joint| {
+            joint.name.as_deref().and_then(BoneRole::from_name) == Some(BoneRole::WeaponRight)
+        }) {
             let mut cache = vec![None; target.len()];
             let weapon = local_pose_global(&rig.definition, &target, weapon_joint, &mut cache);
             commands.entity(owner).insert(AuthoredWeaponTarget {
@@ -1204,13 +1201,14 @@ fn sparse_locomotion_segment(authored_phase: f32) -> (u32, u32, f32) {
 
 fn hand_animation_joint(definition: &RigDefinition, mut joint: usize) -> Option<ClipLayer> {
     loop {
-        if let Some(name) = definition.joints[joint].name.as_deref() {
-            if name.eq_ignore_ascii_case("r_wrist") {
-                return Some(ClipLayer::MainHand);
-            }
-            if name.eq_ignore_ascii_case("l_wrist") {
-                return Some(ClipLayer::Offhand);
-            }
+        match definition.joints[joint]
+            .name
+            .as_deref()
+            .and_then(BoneRole::from_name)
+        {
+            Some(BoneRole::HandRight) => return Some(ClipLayer::MainHand),
+            Some(BoneRole::HandLeft) => return Some(ClipLayer::Offhand),
+            _ => {}
         }
         let parent = definition.joints[joint].parent?;
         joint = parent;
