@@ -1854,9 +1854,7 @@ pub enum Stair {
         rise_metres: f32,
         width_metres: f32,
         tread_count: u16,
-        /// The horizontal flight length. Zero retains the former 3.8 m
-        /// default when an older player-build document is loaded.
-        #[serde(default)]
+        /// The horizontal flight length.
         run_metres: f32,
     },
     Spiral {

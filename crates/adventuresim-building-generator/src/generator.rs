@@ -296,6 +296,7 @@ fn generate_unchecked(
             program.archetype,
             layout_seed.wrapping_add(level as u64),
             level,
+            straight_stair_core.as_ref(),
         )?;
         apply_opening_edits(storey_program, level as u16, &walls, &mut openings, edits)?;
         storeys.push(StoreyPlan {
@@ -2495,12 +2496,7 @@ fn resolve_timber_frame_assembly(
                 // metre occupant prism. `stair_width` is the structural cut;
                 // the route/void below remains the clear one-metre core.
                 width_metres.max(1.0) + 0.36,
-                (if run_metres > 0.0 {
-                    run_metres
-                } else {
-                    STRAIGHT_STAIR_RUN_METRES
-                })
-                .min(dimensions.max_element() - 1.0),
+                run_metres.min(dimensions.max_element() - 1.0),
             )),
             Stair::Spiral { .. } => None,
         })
@@ -4490,6 +4486,7 @@ fn derive_openings(
     archetype: BuildingArchetype,
     seed: u64,
     level: usize,
+    straight_stair_core: Option<&StraightStairCore>,
 ) -> Result<Vec<Opening>, GenerationError> {
     let mut openings = Vec::new();
     let exterior_extent = walls
@@ -4510,6 +4507,57 @@ fn derive_openings(
             ))
         });
     let mut occupied_walls = HashSet::new();
+    let mut required_room_connections = Vec::new();
+
+    if let Some(core) = straight_stair_core.filter(|core| core.serves(level as u16)) {
+        let stair_hall = requirements
+            .iter()
+            .position(|room| room.kind == core.landing_room)
+            .expect("straight stair core landing room was validated before opening derivation")
+            as u16;
+        let flight_index = level as u16 - core.lowest_storey;
+        let axis = direction_vector(core.direction);
+        let landing = if flight_index.is_multiple_of(2) {
+            core.origin
+        } else {
+            core.origin + axis * STRAIGHT_STAIR_RUN_METRES
+        };
+        let reserved_cells = core.reserved_cells.iter().copied().collect::<HashSet<_>>();
+        let Some((wall_index, wall)) = walls
+            .iter()
+            .enumerate()
+            .filter(|(_, wall)| {
+                reserved_cells.contains(&wall.cell)
+                    && wall.outside_room.is_some()
+                    && (wall.inside_room == stair_hall || wall.outside_room == Some(stair_hall))
+            })
+            .min_by(|(_, left), (_, right)| {
+                left.centre()
+                    .distance_squared(landing)
+                    .total_cmp(&right.centre().distance_squared(landing))
+            })
+        else {
+            return Err(GenerationError::UnsatisfiedVerticalCirculation {
+                connection: 0,
+                reason: format!(
+                    "storey {level} has no room-graph doorway adjacent to its stair landing"
+                ),
+            });
+        };
+        let other_room = wall
+            .outside_room
+            .filter(|room| *room != stair_hall)
+            .unwrap_or(wall.inside_room);
+        openings.push(Opening {
+            wall: wall_index,
+            kind: OpeningKind::Door,
+            width_metres: 0.95,
+            sill_metres: 0.0,
+            height_metres: 2.1,
+        });
+        occupied_walls.insert(wall_index);
+        required_room_connections.push((stair_hall, other_room));
+    }
 
     if level == 0 {
         let entrance_room = requirements
@@ -4609,6 +4657,9 @@ fn derive_openings(
         (!*circulation_required, !*preferred, *pair)
     });
     let mut sets = DisjointSets::new(requirements.len());
+    for (left, right) in required_room_connections {
+        sets.union(usize::from(left), usize::from(right));
+    }
     for (_, _, (left, right), candidates) in edges {
         if sets.union(usize::from(left), usize::from(right)) {
             let wall_index = candidates[candidates.len() / 2];

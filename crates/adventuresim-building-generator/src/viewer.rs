@@ -4125,7 +4125,7 @@ fn player_stair_floor_cuts(
                 ..
             } if (base_height_metres + rise_metres - floor_y).abs() < storey_height * 0.08 => {
                 let axis = direction_vector_2d(direction);
-                let run = if run_metres > 0.0 { run_metres } else { 3.8 };
+                let run = run_metres;
                 let end = start + axis * run;
                 // A floor opening must begin where the ascending occupant's
                 // 1.90 m clearance prism first reaches this floor, not only
@@ -13353,7 +13353,7 @@ fn spawn_stair(world: &mut World, palette: &RenderPalette, stair: Stair, origin:
             run_metres,
         } => {
             let forward = direction_vector_2d(direction);
-            let run = if run_metres > 0.0 { run_metres } else { 3.8 };
+            let run = run_metres;
             let count = tread_count.max(1);
             let going = run / f32::from(count);
             let yaw = -forward.y.atan2(forward.x);
@@ -16850,7 +16850,7 @@ mod tests {
             };
             let axis = direction_vector_2d(direction);
             let lateral = Vec2::new(-axis.y, axis.x);
-            let run = if run_metres > 0.0 { run_metres } else { 3.8 };
+            let run = run_metres;
             for tread in 1..tread_count {
                 let progress = f32::from(tread) / f32::from(tread_count);
                 let centre = start + origin + axis * (progress * run);
@@ -16911,25 +16911,12 @@ mod tests {
             -f32::from(depth) * CELL_SIZE_METRES * 0.5,
         );
         let mut wall_query = world.query::<(&PlayerBuildRenderPrism, &EditorVisibilityTarget)>();
-        let upper_walls = wall_query
+        let walls = wall_query
             .iter(&world)
             .filter_map(|(prism, target)| {
-                (target.storey == 1 && target.role == EditorVisibilityRole::Wall).then_some(*prism)
+                (target.role == EditorVisibilityRole::Wall).then_some((target.storey, *prism))
             })
             .collect::<Vec<_>>();
-        let upper_storey = document
-            .assembly
-            .storeys
-            .iter()
-            .find(|storey| storey.level == 1)
-            .expect("town-house fixture has an upper storey");
-        let doorways = upper_storey
-            .openings
-            .iter()
-            .filter(|opening| opening.kind == OpeningKind::Door)
-            .map(|opening| upper_storey.walls[opening.wall].centre() + origin)
-            .collect::<Vec<_>>();
-        assert!(!doorways.is_empty(), "upper storey has room doorways");
         let Stair::Straight {
             start,
             direction,
@@ -16940,8 +16927,7 @@ mod tests {
             panic!("town-house fixture has a straight stair");
         };
         let axis = direction_vector_2d(direction);
-        let run = if run_metres > 0.0 { run_metres } else { 3.8 };
-        let landing = start + origin + axis * run;
+        let run = run_metres;
         let cell_size = 0.10;
         let min = origin + Vec2::splat(0.05);
         let max = origin
@@ -16956,43 +16942,66 @@ mod tests {
         let point = |index: (i32, i32)| {
             min + Vec2::new(index.0 as f32 * cell_size, index.1 as f32 * cell_size)
         };
-        let walkable = |position: Vec2| {
-            position.cmpge(min).all()
-                && position.cmple(max).all()
-                && upper_walls.iter().all(|wall| {
-                    let foot_min = Vec3::new(position.x - 0.45, 3.01, position.y - 0.15);
-                    let foot_max = Vec3::new(position.x + 0.45, 4.91, position.y + 0.15);
-                    foot_max.x <= wall.min.x
-                        || foot_min.x >= wall.max.x
-                        || foot_max.y <= wall.min.y
-                        || foot_min.y >= wall.max.y
-                        || foot_max.z <= wall.min.z
-                        || foot_min.z >= wall.max.z
+        for (level, landing) in [(0, start + origin), (1, start + origin + axis * run)] {
+            let storey = document
+                .assembly
+                .storeys
+                .iter()
+                .find(|storey| storey.level == level)
+                .expect("town-house has both stair landing storeys");
+            let doorways = storey
+                .openings
+                .iter()
+                .filter(|opening| opening.kind == OpeningKind::Door)
+                .map(|opening| storey.walls[opening.wall].centre() + origin)
+                .collect::<Vec<_>>();
+            assert!(!doorways.is_empty(), "storey {level} has room doorways");
+            let storey_walls = walls
+                .iter()
+                .filter_map(|(wall_level, wall)| {
+                    (*wall_level == usize::from(level)).then_some(*wall)
                 })
-        };
-        let start = index(landing);
-        assert!(
-            walkable(point(start)),
-            "upper stair landing is inside a wall"
-        );
-        let mut seen = std::collections::HashSet::from([start]);
-        let mut queue = std::collections::VecDeque::from([start]);
-        while let Some(current) = queue.pop_front() {
-            for offset in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
-                let next = (current.0 + offset.0, current.1 + offset.1);
-                if seen.insert(next) && walkable(point(next)) {
-                    queue.push_back(next);
+                .collect::<Vec<_>>();
+            let floor_y = f32::from(level) * document.assembly.storey_height_metres + 0.01;
+            let walkable = |position: Vec2| {
+                position.cmpge(min).all()
+                    && position.cmple(max).all()
+                    && storey_walls.iter().all(|wall| {
+                        let foot_min = Vec3::new(position.x - 0.45, floor_y, position.y - 0.15);
+                        let foot_max =
+                            Vec3::new(position.x + 0.45, floor_y + 1.90, position.y + 0.15);
+                        foot_max.x <= wall.min.x
+                            || foot_min.x >= wall.max.x
+                            || foot_max.y <= wall.min.y
+                            || foot_min.y >= wall.max.y
+                            || foot_max.z <= wall.min.z
+                            || foot_min.z >= wall.max.z
+                    })
+            };
+            let landing_cell = index(landing);
+            assert!(
+                walkable(point(landing_cell)),
+                "stair landing on storey {level} is inside a wall"
+            );
+            let mut seen = std::collections::HashSet::from([landing_cell]);
+            let mut queue = std::collections::VecDeque::from([landing_cell]);
+            while let Some(current) = queue.pop_front() {
+                for offset in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                    let next = (current.0 + offset.0, current.1 + offset.1);
+                    if seen.insert(next) && walkable(point(next)) {
+                        queue.push_back(next);
+                    }
                 }
             }
+            assert!(
+                doorways.iter().any(|doorway| {
+                    seen.iter()
+                        .map(|cell| point(*cell))
+                        .any(|position| position.distance(*doorway) <= cell_size * 1.5)
+                }),
+                "no 0.90 m-wide, 1.90 m-high route reaches a room doorway from the stair landing on storey {level}"
+            );
         }
-        assert!(
-            doorways.iter().any(|doorway| {
-                seen.iter()
-                    .map(|cell| point(*cell))
-                    .any(|position| position.distance(*doorway) <= cell_size * 1.5)
-            }),
-            "no 0.90 m-wide, 1.90 m-high route reaches an upper room doorway from the stair landing"
-        );
     }
 
     #[test]
