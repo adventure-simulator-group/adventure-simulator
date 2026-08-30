@@ -1022,6 +1022,20 @@ impl AttackCurve {
         }
     }
 
+    /// A queued continuation consumes the complete post-contact backswing.
+    /// Once the configured extrapolation reaches its furthest point, hold
+    /// that frame-0-to-frame-4 extrapolation for the transition into the
+    /// authored follow-up preparation instead of returning to frame 0.
+    pub fn queued_recovery_coordinate(self, phase: f32) -> f32 {
+        let phase = finite_clamp(phase, 0.0, 1.0, 0.0);
+        let follow_through_end = 0.5 + self.follow_through_fraction * 0.5;
+        if phase <= follow_through_end {
+            self.coordinate(phase)
+        } else {
+            1.0 + self.overshoot
+        }
+    }
+
     /// Phase-coordinate speed shared by the strike and follow-through at
     /// contact. Bounding it by both neighboring secants keeps each quintic
     /// segment monotone while preventing the old stop-and-restart seam.
@@ -2006,6 +2020,15 @@ impl SkeletonState {
             | ActionState(ActionKind::Attack { timeline, .. })
             | ActionState(ActionKind::Block { timeline, .. }) => Some(timeline.preparation_ticks),
         }
+    }
+    pub fn attack_has_queued_continuation(&self) -> bool {
+        matches!(
+            self.action,
+            ActionState(ActionKind::Attack {
+                queued: Some(_),
+                ..
+            })
+        )
     }
     pub fn action_recovery_ticks(&self) -> Option<u64> {
         match self.action {

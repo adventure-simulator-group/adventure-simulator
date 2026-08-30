@@ -637,12 +637,27 @@ fn attack_samples(state: &SkeletonState) -> Vec<PoseSample> {
         } else {
             attack_pose(animation)
         };
-    let (pose, end, blend) = if state.attack_is_continuation() && phase < 0.25 {
-        // A continuation begins only after the preceding attack has returned
-        // to guard. Frame 8 is follow-up preparation, not the first attack's
-        // recovery, so approach it from that exact terminal guard pose.
-        (start_guard, recovery_pose(animation), phase * 4.0)
-    } else if state.attack_is_continuation() && phase < 0.5 {
+    if state.attack_is_continuation() && phase < 0.25 {
+        let progress = phase * 4.0;
+        return vec![
+            PoseSample {
+                pose: start_guard,
+                sampling: PoseSampling::CurveSpan {
+                    end: contact,
+                    coordinate: state.attack_curve().queued_recovery_coordinate(1.0),
+                },
+                weight: 1.0 - progress,
+                mirror_lower_body: false,
+            },
+            PoseSample {
+                pose: recovery_pose(animation),
+                sampling: PoseSampling::Anchor,
+                weight: progress,
+                mirror_lower_body: false,
+            },
+        ];
+    }
+    let (pose, end, blend) = if state.attack_is_continuation() && phase < 0.5 {
         (
             recovery_pose(animation),
             continuation_pose(animation),
@@ -653,9 +668,12 @@ fn attack_samples(state: &SkeletonState) -> Vec<PoseSample> {
     } else if phase < 0.5 {
         (start_guard, contact, state.attack_curve().coordinate(phase))
     } else {
-        // Recovery uses the same guard/contact axis in reverse so the curve
-        // can continue beyond contact before returning to guard.
-        (start_guard, contact, state.attack_curve().coordinate(phase))
+        let coordinate = if state.attack_has_queued_continuation() {
+            state.attack_curve().queued_recovery_coordinate(phase)
+        } else {
+            state.attack_curve().coordinate(phase)
+        };
+        (start_guard, contact, coordinate)
     };
     vec![PoseSample {
         pose,
