@@ -916,7 +916,7 @@ fn try_start_attack(
             delayed_melee_contact_seconds(windup_secs, contact_delay);
         spec.curve = curve;
         let sequence_start = if spec.continuation {
-            skeleton.action_end_tick().unwrap_or(start)
+            skeleton.attack_continuation_tick().unwrap_or(start)
         } else {
             start
         };
@@ -965,12 +965,7 @@ fn try_start_attack(
 fn flush_buffered_melee_attacks(
     mut cmd: Commands,
     mut characters: Query<
-        (
-            Entity,
-            &BufferedMeleeAttack,
-            Has<AttackState>,
-            &mut SkeletonState,
-        ),
+        (Entity, &BufferedMeleeAttack, &mut SkeletonState),
         With<ControlledPlayer>,
     >,
     viewer: TacticalPlayerViewer,
@@ -978,10 +973,7 @@ fn flush_buffered_melee_attacks(
     combat_config: Res<TacticalCombatConfig>,
     targeting: CombatTargeting,
 ) {
-    for (entity, buffered, attacking, mut skeleton) in &mut characters {
-        if attacking {
-            continue;
-        }
+    for (entity, buffered, mut skeleton) in &mut characters {
         let Some(spec) = (match buffered.hand {
             AttackHand::Main => skeleton.select_main_attack(buffered.family),
             AttackHand::Offhand => skeleton.select_offhand_attack(buffered.family),
@@ -1031,7 +1023,7 @@ fn flush_buffered_melee_attacks(
             delayed_melee_contact_seconds(windup_secs, contact_delay);
         let spec = AttackSpec { curve, ..spec };
         let sequence_start = if spec.continuation {
-            skeleton.action_end_tick().unwrap_or(start)
+            skeleton.attack_continuation_tick().unwrap_or(start)
         } else {
             start
         };

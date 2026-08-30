@@ -19,6 +19,17 @@ pub enum PoseSampling {
     /// normal span, the coordinate is intentionally allowed outside zero to
     /// one, within the bounds enforced by [`AttackCurve`].
     CurveSpan { end: SemanticPose, coordinate: f32 },
+    /// Carry an extrapolated attack tangent through the full-backswing
+    /// waypoint into authored follow-up preparation, then match the outgoing
+    /// preparation-to-contact tangent at the other endpoint.
+    ContinuationSpan {
+        contact: SemanticPose,
+        end: SemanticPose,
+        outgoing: SemanticPose,
+        start_coordinate: f32,
+        incoming_tangent: f32,
+        progress: f32,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -639,23 +650,21 @@ fn attack_samples(state: &SkeletonState) -> Vec<PoseSample> {
         };
     if state.attack_is_continuation() && phase < 0.25 {
         let progress = phase * 4.0;
-        return vec![
-            PoseSample {
-                pose: start_guard,
-                sampling: PoseSampling::CurveSpan {
-                    end: contact,
-                    coordinate: state.attack_curve().queued_recovery_coordinate(1.0),
-                },
-                weight: 1.0 - progress,
-                mirror_lower_body: false,
+        return vec![PoseSample {
+            pose: start_guard,
+            sampling: PoseSampling::ContinuationSpan {
+                contact,
+                end: recovery_pose(animation),
+                outgoing: continuation_pose(animation),
+                start_coordinate: state
+                    .attack_continuation_start_coordinate()
+                    .unwrap_or(1.0 + state.attack_curve().overshoot),
+                incoming_tangent: state.attack_continuation_incoming_tangent().unwrap_or(0.0),
+                progress,
             },
-            PoseSample {
-                pose: recovery_pose(animation),
-                sampling: PoseSampling::Anchor,
-                weight: progress,
-                mirror_lower_body: false,
-            },
-        ];
+            weight: 1.0,
+            mirror_lower_body: false,
+        }];
     }
     let (pose, end, blend) = if state.attack_is_continuation() && phase < 0.5 {
         (

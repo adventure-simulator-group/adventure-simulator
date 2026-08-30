@@ -165,7 +165,7 @@ pub(crate) fn on_melee_attack_started(
             melee_lunge_movement_delay(movement, &config)
         });
     let sequence_start = if spec.continuation {
-        skeleton.action_end_tick().unwrap_or(start)
+        skeleton.attack_continuation_tick().unwrap_or(start)
     } else {
         start
     };

@@ -150,6 +150,67 @@ impl LocalPose {
             scale: self.scale + (next.scale - self.scale) * coordinate,
         }
     }
+
+    fn continuation_transition(
+        self,
+        contact: Self,
+        end: Self,
+        outgoing: Self,
+        start_coordinate: f32,
+        incoming_tangent: f32,
+        progress: f32,
+    ) -> Self {
+        let start = self.extrapolate(contact, start_coordinate);
+        let progress = progress.clamp(0.0, 1.0);
+        let incoming_rotation = quaternion_log(shortest_rotation(
+            contact.rotation * self.rotation.inverse(),
+        )) * incoming_tangent;
+        let end_rotation =
+            quaternion_log(shortest_rotation(end.rotation * start.rotation.inverse()));
+        let outgoing_rotation = quaternion_log(shortest_rotation(
+            outgoing.rotation * end.rotation.inverse(),
+        ));
+        Self {
+            translation: cubic_hermite_vec3(
+                start.translation,
+                end.translation,
+                (contact.translation - self.translation) * incoming_tangent,
+                outgoing.translation - end.translation,
+                progress,
+            ),
+            rotation: (quaternion_exp(cubic_hermite_vec3(
+                Vec3::ZERO,
+                end_rotation,
+                incoming_rotation,
+                outgoing_rotation,
+                progress,
+            )) * start.rotation)
+                .normalize(),
+            scale: cubic_hermite_vec3(
+                start.scale,
+                end.scale,
+                (contact.scale - self.scale) * incoming_tangent,
+                outgoing.scale - end.scale,
+                progress,
+            ),
+        }
+    }
+}
+
+fn cubic_hermite_vec3(
+    start: Vec3,
+    end: Vec3,
+    start_velocity: Vec3,
+    end_velocity: Vec3,
+    progress: f32,
+) -> Vec3 {
+    let t = progress.clamp(0.0, 1.0);
+    let t2 = t * t;
+    let t3 = t2 * t;
+    start * (2.0 * t3 - 3.0 * t2 + 1.0)
+        + start_velocity * (t3 - 2.0 * t2 + t)
+        + end * (-2.0 * t3 + 3.0 * t2)
+        + end_velocity * (t3 - t2)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -169,6 +230,14 @@ impl PosePlanKey {
             [
                 (span.start.handle.id(), span.start.layer),
                 (span.end.handle.id(), span.end.layer),
+            ]
+        }));
+        clips.extend(playback.continuation_spans.iter().flat_map(|span| {
+            [
+                (span.start.handle.id(), span.start.layer),
+                (span.contact.handle.id(), span.contact.layer),
+                (span.end.handle.id(), span.end.layer),
+                (span.outgoing.handle.id(), span.outgoing.layer),
             ]
         }));
         clips.sort_by_key(|(id, layer)| (*id, *layer as u8));
@@ -653,6 +722,42 @@ fn sample_plan(
         )?;
         baked_spans.push((span, start, end));
     }
+    let mut baked_continuations = Vec::with_capacity(playback.continuation_spans.len());
+    for span in &playback.continuation_spans {
+        let start = get_or_bake(
+            span.start.handle.id(),
+            &span.start.handle,
+            definition,
+            clips,
+            bank,
+            metrics,
+        )?;
+        let contact = get_or_bake(
+            span.contact.handle.id(),
+            &span.contact.handle,
+            definition,
+            clips,
+            bank,
+            metrics,
+        )?;
+        let end = get_or_bake(
+            span.end.handle.id(),
+            &span.end.handle,
+            definition,
+            clips,
+            bank,
+            metrics,
+        )?;
+        let outgoing = get_or_bake(
+            span.outgoing.handle.id(),
+            &span.outgoing.handle,
+            definition,
+            clips,
+            bank,
+            metrics,
+        )?;
+        baked_continuations.push((span, start, contact, end, outgoing));
+    }
     let mut pose = Vec::with_capacity(definition.joints.len());
     let mut locomotion_pelvis_rotation = None;
     for (joint_index, joint) in definition.joints.iter().enumerate() {
@@ -742,6 +847,76 @@ fn sample_plan(
             // so contact cannot introduce a hidden ease-out/ease-in stop.
             let sample = start.extrapolate(end, span.coordinate);
             let sample = sanitize_pose(sample, joint.bind);
+            if pelvis && span.start.layer == ClipLayer::CombatUpper {
+                accumulate_local_pose(
+                    &mut combat_upper,
+                    &mut combat_upper_weight,
+                    sample,
+                    span.weight,
+                );
+                continue;
+            }
+            if pelvis && span.start.layer == ClipLayer::CombatLower {
+                accumulate_local_pose(
+                    &mut combat_lower,
+                    &mut combat_lower_weight,
+                    sample,
+                    span.weight,
+                );
+                continue;
+            }
+            let next_total = accumulated + span.weight;
+            let alpha = if next_total > f32::EPSILON {
+                span.weight / next_total
+            } else {
+                0.0
+            };
+            blended = if accumulated <= f32::EPSILON {
+                sample
+            } else {
+                blended.interpolate(sample, alpha)
+            };
+            accumulated = next_total;
+        }
+        for (span, start_clip, contact_clip, end_clip, outgoing_clip) in &baked_continuations {
+            let included = match span.start.layer {
+                ClipLayer::Whole => true,
+                ClipLayer::Upper => !joint.lower_body,
+                ClipLayer::Lower => joint.lower_body,
+                ClipLayer::CombatUpper => !joint.lower_body || pelvis,
+                ClipLayer::CombatLower => joint.lower_body,
+                ClipLayer::MainHand | ClipLayer::Offhand => false,
+            };
+            if !included || span.weight <= f32::EPSILON || !span.weight.is_finite() {
+                continue;
+            }
+            let start = sanitize_pose(
+                start_clip.sample(joint_index, span.start_time_seconds),
+                joint.bind,
+            );
+            let contact = sanitize_pose(
+                contact_clip.sample(joint_index, span.contact_time_seconds),
+                joint.bind,
+            );
+            let end = sanitize_pose(
+                end_clip.sample(joint_index, span.end_time_seconds),
+                joint.bind,
+            );
+            let outgoing = sanitize_pose(
+                outgoing_clip.sample(joint_index, span.outgoing_time_seconds),
+                joint.bind,
+            );
+            let sample = sanitize_pose(
+                start.continuation_transition(
+                    contact,
+                    end,
+                    outgoing,
+                    span.start_coordinate,
+                    span.incoming_tangent,
+                    span.progress,
+                ),
+                joint.bind,
+            );
             if pelvis && span.start.layer == ClipLayer::CombatUpper {
                 accumulate_local_pose(
                     &mut combat_upper,
@@ -1968,6 +2143,77 @@ mod tests {
         let incoming_angular_velocity = before.rotation.angle_between(contact.rotation) / step;
         let outgoing_angular_velocity = contact.rotation.angle_between(after.rotation) / step;
         assert!((incoming_angular_velocity - outgoing_angular_velocity).abs() < 0.01);
+    }
+
+    #[test]
+    fn continuation_span_matches_incoming_and_outgoing_endpoint_velocity() {
+        let guard = LocalPose {
+            translation: Vec3::ZERO,
+            rotation: Quat::IDENTITY,
+            scale: Vec3::ONE,
+        };
+        let contact = LocalPose {
+            translation: Vec3::X,
+            rotation: Quat::from_rotation_y(0.4),
+            scale: Vec3::ONE,
+        };
+        let preparation = LocalPose {
+            translation: Vec3::new(1.5, 0.2, 0.0),
+            rotation: Quat::from_rotation_y(0.7),
+            scale: Vec3::ONE,
+        };
+        let follow = LocalPose {
+            translation: Vec3::new(1.7, 0.5, 0.1),
+            rotation: Quat::from_rotation_y(1.0),
+            scale: Vec3::ONE,
+        };
+        let coordinate = 1.2;
+        let incoming_tangent = 0.35;
+        let step = 0.0001;
+        let before = guard.extrapolate_unbounded(contact, coordinate - incoming_tangent * step);
+        let start = guard.continuation_transition(
+            contact,
+            preparation,
+            follow,
+            coordinate,
+            incoming_tangent,
+            0.0,
+        );
+        let after = guard.continuation_transition(
+            contact,
+            preparation,
+            follow,
+            coordinate,
+            incoming_tangent,
+            step,
+        );
+        let incoming_translation_velocity = (start.translation - before.translation) / step;
+        let outgoing_translation_velocity = (after.translation - start.translation) / step;
+        assert!(incoming_translation_velocity.distance(outgoing_translation_velocity) < 0.01);
+        let incoming_angular_velocity = before.rotation.angle_between(start.rotation) / step;
+        let outgoing_angular_velocity = start.rotation.angle_between(after.rotation) / step;
+        assert!((incoming_angular_velocity - outgoing_angular_velocity).abs() < 0.01);
+
+        let before_end = guard.continuation_transition(
+            contact,
+            preparation,
+            follow,
+            coordinate,
+            incoming_tangent,
+            1.0 - step,
+        );
+        let end = guard.continuation_transition(
+            contact,
+            preparation,
+            follow,
+            coordinate,
+            incoming_tangent,
+            1.0,
+        );
+        let after_end = preparation.interpolate(follow, step);
+        let incoming_end_velocity = (end.translation - before_end.translation) / step;
+        let outgoing_end_velocity = (after_end.translation - end.translation) / step;
+        assert!(incoming_end_velocity.distance(outgoing_end_velocity) < 0.01);
     }
 
     #[test]

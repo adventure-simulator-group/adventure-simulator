@@ -919,7 +919,14 @@ mod legacy_tests {
         ] {
             let mut weighted = Vec::new();
             let mut spans = Vec::new();
-            sample_resolver.append_layer(&mut weighted, &mut spans, sample, expected_layer);
+            let mut continuations = Vec::new();
+            sample_resolver.append_layer(
+                &mut weighted,
+                &mut spans,
+                &mut continuations,
+                sample,
+                expected_layer,
+            );
             assert_eq!(weighted.len(), 1);
             assert_eq!(weighted[0].clip.layer, expected_layer);
         }
@@ -940,6 +947,7 @@ mod legacy_tests {
         let physical_phase = 0.5;
         let mut weighted = Vec::new();
         let mut spans = Vec::new();
+        let mut continuations = Vec::new();
         let sample_resolver = PoseSampleResolver {
             runtime: &runtime,
             catalog: &catalog,
@@ -949,6 +957,7 @@ mod legacy_tests {
         sample_resolver.append_layer(
             &mut weighted,
             &mut spans,
+            &mut continuations,
             PoseSample {
                 pose: SemanticPose::WalkContact,
                 sampling: PoseSampling::Cycle {
@@ -968,6 +977,7 @@ mod legacy_tests {
         sample_resolver.append_layer(
             &mut weighted,
             &mut spans,
+            &mut continuations,
             PoseSample {
                 pose: SemanticPose::StrafeCycle,
                 sampling: PoseSampling::Cycle {

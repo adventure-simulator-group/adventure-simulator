@@ -311,6 +311,7 @@ impl AnimationRuntime {
 pub(super) struct AnimationPlayback {
     clips: Vec<WeightedClip>,
     extrapolated_spans: Vec<ExtrapolatedSpan>,
+    continuation_spans: Vec<ContinuationSpan>,
     use_authored_bind_pose: bool,
     pub(super) whole_body_mirror: f32,
     pub(super) foot_ik_weights: Vec2,
@@ -327,7 +328,9 @@ enum PoseSamplingCadence {
 impl AnimationPlayback {
     pub(super) fn authored_pose_is_ready(&self) -> bool {
         !self.use_authored_bind_pose
-            && (!self.clips.is_empty() || !self.extrapolated_spans.is_empty())
+            && (!self.clips.is_empty()
+                || !self.extrapolated_spans.is_empty()
+                || !self.continuation_spans.is_empty())
     }
 
     pub(super) fn presentation_is_settled(&self) -> bool {
@@ -335,7 +338,7 @@ impl AnimationPlayback {
     }
 
     fn sampling_cadence(&self) -> PoseSamplingCadence {
-        if self.extrapolated_spans.is_empty() {
+        if self.extrapolated_spans.is_empty() && self.continuation_spans.is_empty() {
             PoseSamplingCadence::Buffered
         } else {
             // CurveSpan poses are already evaluated analytically from the
@@ -351,6 +354,7 @@ impl Default for AnimationPlayback {
         Self {
             clips: Vec::new(),
             extrapolated_spans: Vec::new(),
+            continuation_spans: Vec::new(),
             use_authored_bind_pose: true,
             whole_body_mirror: 0.0,
             foot_ik_weights: Vec2::ZERO,
@@ -384,9 +388,27 @@ struct ExtrapolatedSpan {
 }
 
 #[derive(Debug, Clone)]
+struct ContinuationSpan {
+    start: LoadedClip,
+    start_time_seconds: f32,
+    contact: LoadedClip,
+    contact_time_seconds: f32,
+    end: LoadedClip,
+    end_time_seconds: f32,
+    outgoing: LoadedClip,
+    outgoing_time_seconds: f32,
+    start_coordinate: f32,
+    incoming_tangent: f32,
+    progress: f32,
+    weight: f32,
+    mirrored_weight: f32,
+}
+
+#[derive(Debug, Clone)]
 struct PlaybackPose {
     clips: Vec<WeightedClip>,
     extrapolated_spans: Vec<ExtrapolatedSpan>,
+    continuation_spans: Vec<ContinuationSpan>,
     use_authored_bind_pose: bool,
     whole_body_mirror: f32,
     foot_ik_weights: Vec2,
@@ -454,6 +476,7 @@ fn evaluate_skeletons(
         };
         let mut weighted = Vec::<WeightedClip>::new();
         let mut extrapolated_spans = Vec::<ExtrapolatedSpan>::new();
+        let mut continuation_spans = Vec::<ContinuationSpan>::new();
         let split_combat_pelvis = combat_pelvis_is_component_blended(skeleton, &evaluation);
         let base_layer = if split_combat_pelvis {
             ClipLayer::CombatUpper
@@ -472,6 +495,7 @@ fn evaluate_skeletons(
             sample_resolver.append_layer(
                 &mut weighted,
                 &mut extrapolated_spans,
+                &mut continuation_spans,
                 *sample,
                 base_layer,
             );
@@ -485,6 +509,7 @@ fn evaluate_skeletons(
             sample_resolver.append_layer(
                 &mut weighted,
                 &mut extrapolated_spans,
+                &mut continuation_spans,
                 *sample,
                 lower_layer,
             );
@@ -494,6 +519,10 @@ fn evaluate_skeletons(
                 + extrapolated_spans
                     .iter()
                     .map(|span| span.weight)
+                    .sum::<f32>()
+                + continuation_spans
+                    .iter()
+                    .map(|span| span.weight)
                     .sum::<f32>();
             if total > f32::EPSILON {
                 ((weighted
@@ -501,6 +530,10 @@ fn evaluate_skeletons(
                     .map(|clip| clip.mirrored_weight)
                     .sum::<f32>()
                     + extrapolated_spans
+                        .iter()
+                        .map(|span| span.mirrored_weight)
+                        .sum::<f32>()
+                    + continuation_spans
                         .iter()
                         .map(|span| span.mirrored_weight)
                         .sum::<f32>())
@@ -531,11 +564,14 @@ fn evaluate_skeletons(
             }
         }
         let target = PlaybackPose {
-            use_authored_bind_pose: weighted.is_empty() && extrapolated_spans.is_empty(),
+            use_authored_bind_pose: weighted.is_empty()
+                && extrapolated_spans.is_empty()
+                && continuation_spans.is_empty(),
             whole_body_mirror,
             foot_ik_weights: semantic_foot_ik_weights(&evaluation),
             clips: weighted,
             extrapolated_spans,
+            continuation_spans,
         };
         let ordinary_locomotion_candidate = ordinary_locomotion_candidate(skeleton);
         if let Some(mut playback) = playback {
@@ -557,6 +593,7 @@ fn evaluate_skeletons(
             commands.entity(entity).insert(AnimationPlayback {
                 clips: target.clips,
                 extrapolated_spans: target.extrapolated_spans,
+                continuation_spans: target.continuation_spans,
                 use_authored_bind_pose: target.use_authored_bind_pose,
                 whole_body_mirror: target.whole_body_mirror,
                 foot_ik_weights: target.foot_ik_weights,
@@ -675,6 +712,7 @@ fn ordinary_locomotion_candidate(skeleton: &SkeletonState) -> bool {
 fn apply_playback_pose(playback: &mut AnimationPlayback, pose: PlaybackPose) {
     playback.clips = pose.clips;
     playback.extrapolated_spans = pose.extrapolated_spans;
+    playback.continuation_spans = pose.continuation_spans;
     playback.use_authored_bind_pose = pose.use_authored_bind_pose;
     playback.whole_body_mirror = pose.whole_body_mirror;
     playback.foot_ik_weights = pose.foot_ik_weights;
@@ -978,6 +1016,7 @@ fn append_resolved_sample(
     sample: PoseSample,
 ) {
     let mut extrapolated_spans = Vec::new();
+    let mut continuation_spans = Vec::new();
     let locomotion_strides = AuthoredLocomotionStrides::default();
     PoseSampleResolver {
         runtime,
@@ -985,7 +1024,13 @@ fn append_resolved_sample(
         pack,
         locomotion_strides: &locomotion_strides,
     }
-    .append_layer(weighted, &mut extrapolated_spans, sample, ClipLayer::Whole);
+    .append_layer(
+        weighted,
+        &mut extrapolated_spans,
+        &mut continuation_spans,
+        sample,
+        ClipLayer::Whole,
+    );
 }
 
 #[derive(Clone, Copy)]
@@ -1001,6 +1046,7 @@ impl PoseSampleResolver<'_> {
         &self,
         weighted: &mut Vec<WeightedClip>,
         extrapolated_spans: &mut Vec<ExtrapolatedSpan>,
+        continuation_spans: &mut Vec<ContinuationSpan>,
         sample: PoseSample,
         layer: ClipLayer,
     ) {
@@ -1219,6 +1265,54 @@ impl PoseSampleResolver<'_> {
                     } else {
                         0.0
                     },
+                });
+            }
+            PoseSampling::ContinuationSpan {
+                contact,
+                end,
+                outgoing,
+                start_coordinate,
+                incoming_tangent,
+                progress,
+            } => {
+                let Some(contact) = resolve_anchor(runtime, catalog, pack, contact) else {
+                    append_weighted_anchor(
+                        weighted,
+                        &start,
+                        start.anchor.frame,
+                        sample.weight,
+                        layer,
+                    );
+                    return;
+                };
+                let Some(end) = resolve_anchor(runtime, catalog, pack, end) else {
+                    append_weighted_anchor(
+                        weighted,
+                        &start,
+                        start.anchor.frame,
+                        sample.weight,
+                        layer,
+                    );
+                    return;
+                };
+                let Some(outgoing) = resolve_anchor(runtime, catalog, pack, outgoing) else {
+                    append_weighted_anchor(weighted, &end, end.anchor.frame, sample.weight, layer);
+                    return;
+                };
+                continuation_spans.push(ContinuationSpan {
+                    start: start.clip.at_anchor_layer(start.anchor.frame, layer),
+                    start_time_seconds: frame_seconds(start.anchor.frame),
+                    contact: contact.clip.at_anchor_layer(contact.anchor.frame, layer),
+                    contact_time_seconds: frame_seconds(contact.anchor.frame),
+                    end: end.clip.at_anchor_layer(end.anchor.frame, layer),
+                    end_time_seconds: frame_seconds(end.anchor.frame),
+                    outgoing: outgoing.clip.at_anchor_layer(outgoing.anchor.frame, layer),
+                    outgoing_time_seconds: frame_seconds(outgoing.anchor.frame),
+                    start_coordinate,
+                    incoming_tangent: incoming_tangent.max(0.0),
+                    progress: progress.clamp(0.0, 1.0),
+                    weight: sample.weight,
+                    mirrored_weight: if start.mirrored { sample.weight } else { 0.0 },
                 });
             }
         }

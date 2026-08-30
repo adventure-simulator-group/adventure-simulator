@@ -1234,7 +1234,7 @@ mod legacy_tests {
     }
 
     #[test]
-    fn continuation_waits_for_full_recovery_then_enters_follow_up_preparation() {
+    fn continuation_enters_follow_up_preparation_at_full_backswing() {
         let mut state = SkeletonState::default();
         state.attack_animations = AttackAnimations {
             swing: true,
@@ -1248,24 +1248,34 @@ mod legacy_tests {
             .begin_attack(AttackSpec::new(AttackAnimation::Swing), 10, 20)
             .unwrap();
         state.advance_action(19);
-        assert_eq!(state.select_main_attack(StrikeFamily::Swing), None);
-        state.advance_action(20);
         assert_eq!(
             state.select_main_attack(StrikeFamily::Swing),
             Some(AttackSpec::main(StrikeFamily::Swing, true))
         );
+        let continuation_tick = state.attack_continuation_tick().unwrap();
+        assert!(continuation_tick > 20);
+        assert!(continuation_tick < 30);
         state
             .begin_attack_timed(
                 AttackSpec::main(StrikeFamily::Swing, true),
-                30,
-                40,
-                50,
+                continuation_tick,
+                continuation_tick + 10,
+                continuation_tick + 20,
             )
             .unwrap();
         assert!(!state.attack_is_continuation());
         assert_eq!(state.select_main_attack(StrikeFamily::Swing), None);
 
-        state.advance_action(29);
+        state.advance_action(continuation_tick - 2);
+        let before_recovery = AnimationEvaluation::from_skeleton(&state);
+        let PoseSampling::CurveSpan {
+            coordinate: before_coordinate,
+            ..
+        } = before_recovery.action[0].sampling
+        else {
+            panic!("queued recovery should remain a frame-0-to-frame-4 extrapolation");
+        };
+        state.advance_action(continuation_tick - 1);
         assert!(!state.attack_is_continuation());
         let recovery = AnimationEvaluation::from_skeleton(&state);
         assert_eq!(recovery.action[0].pose, SemanticPose::GuardSwing);
@@ -1273,26 +1283,38 @@ mod legacy_tests {
             panic!("queued recovery should remain a frame-0-to-frame-4 extrapolation");
         };
         assert_eq!(end, SemanticPose::AttackSwing);
-        assert_eq!(coordinate, 1.0 + state.attack_curve().overshoot);
+        assert!(coordinate > before_coordinate);
+        assert!(coordinate < 1.0 + state.attack_curve().overshoot);
 
-        state.advance_action(30);
+        let expected_start_coordinate = state.attack_curve().queued_recovery_coordinate(
+            0.5 + 0.5 * continuation_tick.saturating_sub(20) as f32 / 10.0,
+        );
+        state.advance_action(continuation_tick);
         assert!(state.attack_is_continuation());
         assert_eq!(state.action_phase(), 0.0);
         let follow_up_start = AnimationEvaluation::from_skeleton(&state);
-        assert_eq!(follow_up_start.action.len(), 2);
-        assert_eq!(
-            follow_up_start.action[0].sampling,
-            PoseSampling::CurveSpan {
-                end: SemanticPose::AttackSwing,
-                coordinate: 1.0 + state.attack_curve().overshoot,
-            }
-        );
+        assert_eq!(follow_up_start.action.len(), 1);
+        let PoseSampling::ContinuationSpan {
+            contact,
+            end,
+            outgoing,
+            start_coordinate,
+            incoming_tangent,
+            progress,
+        } = follow_up_start.action[0].sampling
+        else {
+            panic!("follow-up preparation must inherit the full-backswing tangent");
+        };
+        assert_eq!(contact, SemanticPose::AttackSwing);
+        assert_eq!(end, SemanticPose::RecoverSwing);
+        assert_eq!(outgoing, SemanticPose::ContinueSwing);
+        assert_eq!(start_coordinate, expected_start_coordinate);
+        assert!(start_coordinate >= 1.0 + state.attack_curve().overshoot);
+        assert!(incoming_tangent > 0.0);
+        assert_eq!(progress, 0.0);
         assert_eq!(follow_up_start.action[0].weight, 1.0);
-        assert_eq!(follow_up_start.action[1].pose, SemanticPose::RecoverSwing);
-        assert_eq!(follow_up_start.action[1].sampling, PoseSampling::Anchor);
-        assert_eq!(follow_up_start.action[1].weight, 0.0);
 
-        state.advance_action(35);
+        state.advance_action(continuation_tick + 5);
         let prepared = AnimationEvaluation::from_skeleton(&state);
         assert_eq!(prepared.action[0].pose, SemanticPose::RecoverSwing);
         assert_eq!(
