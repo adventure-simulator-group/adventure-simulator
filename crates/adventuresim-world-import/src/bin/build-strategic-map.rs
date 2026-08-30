@@ -1353,7 +1353,7 @@ mod tests {
         let routing = package.routing_roads.last().unwrap();
         assert_eq!(visible, routing);
         assert_eq!(package.roads.last().unwrap().kind, "inferred");
-        let features = terrain_features(&package, Vec::new(), "0".repeat(64), Vec::new());
+        let features = terrain_features::build(&package, Vec::new(), "0".repeat(64));
         assert_eq!(
             features.roads.last().unwrap(),
             &routing.iter().map(|point| point.0).collect::<Vec<_>>()
