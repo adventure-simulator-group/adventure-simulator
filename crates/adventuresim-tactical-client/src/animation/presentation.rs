@@ -1,5 +1,8 @@
 use super::*;
 
+mod attack;
+use attack::advance_presented_attack;
+
 pub struct TacticalAnimationPlugin;
 
 fn playback_tuning() -> AnimationPlaybackConfig {
@@ -248,115 +251,6 @@ fn advance_presented_skeleton_with_strides(
     );
     presented.state = next;
     presented.source_tick = authoritative.locomotion_sample_tick;
-}
-
-/// Advance an already-authoritative ordinary attack on render time. Replicated
-/// fixed-tick phases can repeat for one or more render frames; copying them
-/// directly produces a visible stop followed by a phase jump at contact.
-fn advance_presented_attack(
-    previous: &SkeletonState,
-    authoritative: &SkeletonState,
-    next: &mut SkeletonState,
-    presented: &mut Option<PresentedAttackPhase>,
-    source_changed: bool,
-    delta_seconds: f32,
-) {
-    let same_initial_attack = authoritative.action_kind() == SkeletonAction::Attack
-        && !authoritative.attack_is_continuation()
-        && authoritative.attack_animation() == previous.attack_animation()
-        && authoritative.attack_hand() == previous.attack_hand();
-    let stale_missing_queue = previous.attack_has_queued_continuation()
-        && same_initial_attack
-        && !authoritative.attack_has_queued_continuation()
-        && previous.action_start_tick() == authoritative.action_start_tick()
-        && previous
-            .attack_continuation_tick()
-            .is_some_and(|transition_tick| {
-                authoritative.locomotion_sample_tick
-                    <= transition_tick.saturating_add(playback_tuning().maximum_source_gap_ticks)
-            });
-    let stale_initial_attack = previous.attack_is_continuation()
-        && same_initial_attack
-        && authoritative.attack_continuation_tick() == previous.action_start_tick();
-    let stale_attack_payload = stale_missing_queue || stale_initial_attack;
-    if stale_attack_payload {
-        // Local attack admission can predict the queued continuation one
-        // packet before the server echoes it. Do not let an older replicated
-        // initial-attack payload rewind presentation across that acknowledged
-        // seam while the authoritative continuation is in flight.
-        *next = previous.clone();
-        next.advance_action(authoritative.locomotion_sample_tick);
-    } else if authoritative.attack_has_queued_continuation() {
-        // The queued payload already carries the authoritative continuation
-        // timeline. Enter it locally at the same semantic tick so the rendered
-        // full backswing does not wait an extra replication round trip.
-        next.advance_action(authoritative.locomotion_sample_tick);
-    }
-    let source = next.clone();
-    if source.action_kind() != SkeletonAction::Attack {
-        *presented = None;
-        return;
-    }
-    let Some(start_tick) = source.action_start_tick() else {
-        *presented = None;
-        return;
-    };
-    let animation = source.attack_animation().unwrap_or(AttackAnimation::Thrust);
-    let entering = !presented.is_some_and(|phase| phase.matches(&source));
-    if entering {
-        *presented = Some(PresentedAttackPhase {
-            start_tick,
-            animation,
-            hand: source.attack_hand(),
-            continuation: source.attack_is_continuation(),
-            phase: source.action_phase().clamp(0.0, 1.0),
-            error_remaining: 0.0,
-        });
-        return;
-    }
-
-    let phase = presented.as_mut().expect("matching attack phase exists");
-    let duration_ticks = if phase.phase < 0.5 {
-        source.action_preparation_ticks()
-    } else {
-        source.action_recovery_ticks()
-    }
-    .unwrap_or(1)
-    .max(1);
-    let prediction_delta =
-        delta_seconds.max(0.0) * locomotion_sample_hz() * 0.5 / duration_ticks as f32;
-    let predicted = (phase.phase + prediction_delta).min(1.0);
-    if source_changed && !stale_attack_payload {
-        let measured_error = source.action_phase().clamp(0.0, 1.0) - predicted;
-        if measured_error.abs() > playback_tuning().phase_snap_error {
-            phase.phase = source.action_phase().clamp(phase.phase, 1.0);
-            phase.error_remaining = 0.0;
-            next.set_presentation_action_phase(phase.phase);
-            return;
-        }
-        let measured_drift = if measured_error.abs() <= presentation_phase_drift_deadband() {
-            0.0
-        } else {
-            measured_error - measured_error.signum() * presentation_phase_drift_deadband()
-        };
-        phase.error_remaining += (measured_drift - phase.error_remaining)
-            * playback_tuning().phase_drift_measurement_blend;
-    }
-    let maximum_correction = presentation_phase_correction_rate_per_second() * delta_seconds;
-    let correction = phase
-        .error_remaining
-        .clamp(-maximum_correction, maximum_correction);
-    phase.phase = (predicted + correction).clamp(phase.phase, 1.0);
-    phase.error_remaining -= phase.phase - predicted;
-
-    // Preserve the newest authoritative attack payload and non-action state;
-    // only its client-owned presentation phase is projected between packets.
-    *next = source;
-    next.set_presentation_action_phase(phase.phase);
-
-    debug_assert!(
-        previous.action_kind() != SkeletonAction::Attack || phase.phase >= previous.action_phase()
-    );
 }
 
 /// Keep authored quicksteps on a render-time timeline. Authoritative tactical
@@ -930,6 +824,119 @@ mod authored_cadence_tests {
         assert!(presented.attack_phase.is_some_and(|phase| {
             phase.error_remaining < 0.0 && phase.error_remaining.abs() < 0.05
         }));
+    }
+
+    #[test]
+    fn delayed_attack_packet_converges_without_skipping_authored_motion() {
+        let mut authoritative =
+            SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised);
+        authoritative
+            .begin_attack_timed(AttackSpec::main(StrikeFamily::Swing, true), 0, 17, 28)
+            .unwrap();
+        authoritative.advance_action(5);
+        authoritative = authoritative.with_locomotion_sample_tick(5);
+        let mut presented = PresentedSkeleton::new(authoritative.clone(), None);
+        let strides = AuthoredLocomotionStrides::default();
+        advance_presented_skeleton_with_strides(
+            &mut presented,
+            &authoritative,
+            1.0 / locomotion_sample_hz(),
+            &strides,
+        );
+        let previous_phase = presented.action_phase();
+
+        authoritative.advance_action(13);
+        authoritative = authoritative.with_locomotion_sample_tick(13);
+        assert!(authoritative.action_phase() - previous_phase > playback_tuning().phase_snap_error);
+        advance_presented_skeleton_with_strides(
+            &mut presented,
+            &authoritative,
+            1.0 / locomotion_sample_hz(),
+            &strides,
+        );
+
+        let nominal_delta = 0.5 / 17.0;
+        let maximum_correction =
+            presentation_phase_correction_rate_per_second() / locomotion_sample_hz();
+        assert!(presented.action_phase() > previous_phase);
+        assert!(
+            presented.action_phase()
+                <= previous_phase + nominal_delta + maximum_correction + f32::EPSILON
+        );
+        assert!(presented.action_phase() < authoritative.action_phase());
+    }
+
+    #[test]
+    fn completed_authoritative_attack_finishes_its_presented_tail() {
+        let mut attack = SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised);
+        attack
+            .begin_attack_timed(AttackSpec::main(StrikeFamily::Swing, true), 0, 10, 20)
+            .unwrap();
+        attack.advance_action(17);
+        attack = attack.with_locomotion_sample_tick(17);
+        assert!((attack.action_phase() - 0.85).abs() < 0.0001);
+
+        let mut presented = PresentedSkeleton::new(attack.clone(), None);
+        let strides = AuthoredLocomotionStrides::default();
+        advance_presented_skeleton_with_strides(
+            &mut presented,
+            &attack,
+            1.0 / locomotion_sample_hz(),
+            &strides,
+        );
+
+        let mut idle = attack.with_locomotion_sample_tick(21);
+        idle.advance_action(21);
+        assert_eq!(idle.action_kind(), SkeletonAction::None);
+        for _ in 0..4 {
+            advance_presented_skeleton_with_strides(
+                &mut presented,
+                &idle,
+                1.0 / locomotion_sample_hz(),
+                &strides,
+            );
+        }
+        assert_eq!(presented.action_kind(), SkeletonAction::Attack);
+        assert_eq!(presented.action_phase(), 1.0);
+
+        advance_presented_skeleton_with_strides(
+            &mut presented,
+            &idle,
+            1.0 / locomotion_sample_hz(),
+            &strides,
+        );
+        assert_eq!(presented.action_kind(), SkeletonAction::None);
+    }
+
+    #[test]
+    fn follow_up_recovery_spends_time_on_its_authored_overshoot() {
+        let mut authoritative =
+            SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised);
+        let spec = AttackSpec::main(StrikeFamily::Swing, true);
+        let recovery_scale = 1.0 + spec.curve.overshoot;
+        authoritative.begin_attack_timed(spec, 0, 10, 20).unwrap();
+        authoritative.advance_action(10);
+        assert!(authoritative.attack_is_continuation());
+        assert_eq!(authoritative.action_phase(), 0.5);
+
+        let mut presented = PresentedSkeleton::new(authoritative.clone(), None);
+        let strides = AuthoredLocomotionStrides::default();
+        advance_presented_skeleton_with_strides(
+            &mut presented,
+            &authoritative,
+            1.0 / locomotion_sample_hz(),
+            &strides,
+        );
+        advance_presented_skeleton_with_strides(
+            &mut presented,
+            &authoritative,
+            1.0 / locomotion_sample_hz(),
+            &strides,
+        );
+
+        let expected_delta = 0.5 / (10.0 * recovery_scale);
+        assert!((presented.action_phase() - (0.5 + expected_delta)).abs() < 0.0001);
+        assert_eq!(authoritative.action_phase(), 0.5);
     }
 
     #[test]
