@@ -1119,6 +1119,21 @@ impl AttackCurve {
     }
 }
 
+/// The follow-ready pose lies roughly halfway along the authored preparation
+/// path, but the weapon enters that path much slower than it leaves for the
+/// next contact. Constant-acceleration timing therefore gives the first leg
+/// two thirds of the fixed preparation interval instead of inheriting the
+/// source file's equal four-frame spacing.
+const FOLLOW_READY_PREPARATION_FRACTION: f32 = 2.0 / 3.0;
+
+pub(super) fn continuation_ready_phase() -> f32 {
+    0.5 * FOLLOW_READY_PREPARATION_FRACTION
+}
+
+pub(super) fn continuation_outgoing_tangent_scale() -> f32 {
+    FOLLOW_READY_PREPARATION_FRACTION / (1.0 - FOLLOW_READY_PREPARATION_FRACTION)
+}
+
 fn finite_clamp(value: f32, minimum: f32, maximum: f32, fallback: f32) -> f32 {
     if value.is_finite() {
         value.clamp(minimum, maximum)
@@ -2291,9 +2306,10 @@ impl SkeletonState {
             if may_follow {
                 let queued_timeline =
                     ActionTimeline::with_recovery(start_tick, contact_tick, end_tick);
-                let incoming_tangent = curve.overshoot * queued_timeline.preparation_ticks as f32
-                    / (2.0
-                        * curve.follow_through_fraction.max(f32::EPSILON)
+                let incoming_tangent = curve.overshoot
+                    * queued_timeline.preparation_ticks as f32
+                    * FOLLOW_READY_PREPARATION_FRACTION
+                    / (curve.follow_through_fraction.max(f32::EPSILON)
                         * timeline.recovery_ticks as f32);
                 let transition_phase = 0.5
                     + 0.5 * transition_tick.saturating_sub(timeline.contact_tick()) as f32

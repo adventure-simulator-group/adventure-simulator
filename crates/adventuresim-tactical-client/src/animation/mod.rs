@@ -399,6 +399,7 @@ struct ContinuationSpan {
     outgoing_time_seconds: f32,
     start_coordinate: f32,
     incoming_tangent: f32,
+    outgoing_tangent_scale: f32,
     progress: f32,
     weight: f32,
     mirrored_weight: f32,
@@ -1273,6 +1274,7 @@ impl PoseSampleResolver<'_> {
                 outgoing,
                 start_coordinate,
                 incoming_tangent,
+                outgoing_tangent_scale,
                 progress,
             } => {
                 let Some(contact) = resolve_anchor(runtime, catalog, pack, contact) else {
@@ -1310,6 +1312,7 @@ impl PoseSampleResolver<'_> {
                     outgoing_time_seconds: frame_seconds(outgoing.anchor.frame),
                     start_coordinate,
                     incoming_tangent: incoming_tangent.max(0.0),
+                    outgoing_tangent_scale: outgoing_tangent_scale.max(0.0),
                     progress: progress.clamp(0.0, 1.0),
                     weight: sample.weight,
                     mirrored_weight: if start.mirrored { sample.weight } else { 0.0 },

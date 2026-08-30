@@ -1259,8 +1259,8 @@ mod legacy_tests {
             .begin_attack_timed(
                 AttackSpec::main(StrikeFamily::Swing, true),
                 continuation_tick,
-                continuation_tick + 10,
-                continuation_tick + 20,
+                continuation_tick + 12,
+                continuation_tick + 24,
             )
             .unwrap();
         assert!(!state.attack_is_continuation());
@@ -1300,6 +1300,7 @@ mod legacy_tests {
             outgoing,
             start_coordinate,
             incoming_tangent,
+            outgoing_tangent_scale,
             progress,
         } = follow_up_start.action[0].sampling
         else {
@@ -1311,10 +1312,11 @@ mod legacy_tests {
         assert_eq!(start_coordinate, expected_start_coordinate);
         assert!(start_coordinate >= 1.0 + state.attack_curve().overshoot);
         assert!(incoming_tangent > 0.0);
+        assert!((outgoing_tangent_scale - 2.0).abs() < 1.0e-6);
         assert_eq!(progress, 0.0);
         assert_eq!(follow_up_start.action[0].weight, 1.0);
 
-        state.advance_action(continuation_tick + 5);
+        state.advance_action(continuation_tick + 8);
         let prepared = AnimationEvaluation::from_skeleton(&state);
         assert_eq!(prepared.action[0].pose, SemanticPose::RecoverSwing);
         assert_eq!(
@@ -1324,6 +1326,8 @@ mod legacy_tests {
                 progress: 0.0,
             }
         );
+        state.advance_action(continuation_tick + 12);
+        assert_eq!(state.action_phase(), 0.5);
         assert_eq!(state.select_main_attack(StrikeFamily::Swing), None);
     }
 

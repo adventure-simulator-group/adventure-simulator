@@ -28,6 +28,7 @@ pub enum PoseSampling {
         outgoing: SemanticPose,
         start_coordinate: f32,
         incoming_tangent: f32,
+        outgoing_tangent_scale: f32,
         progress: f32,
     },
 }
@@ -648,8 +649,9 @@ fn attack_samples(state: &SkeletonState) -> Vec<PoseSample> {
         } else {
             attack_pose(animation)
         };
-    if state.attack_is_continuation() && phase < 0.25 {
-        let progress = phase * 4.0;
+    let ready_phase = super::state::continuation_ready_phase();
+    if state.attack_is_continuation() && phase < ready_phase {
+        let progress = phase / ready_phase;
         return vec![PoseSample {
             pose: start_guard,
             sampling: PoseSampling::ContinuationSpan {
@@ -660,6 +662,7 @@ fn attack_samples(state: &SkeletonState) -> Vec<PoseSample> {
                     .attack_continuation_start_coordinate()
                     .unwrap_or(1.0 + state.attack_curve().overshoot),
                 incoming_tangent: state.attack_continuation_incoming_tangent().unwrap_or(0.0),
+                outgoing_tangent_scale: super::state::continuation_outgoing_tangent_scale(),
                 progress,
             },
             weight: 1.0,
@@ -670,7 +673,7 @@ fn attack_samples(state: &SkeletonState) -> Vec<PoseSample> {
         (
             recovery_pose(animation),
             continuation_pose(animation),
-            (phase - 0.25) * 4.0,
+            (phase - ready_phase) / (0.5 - ready_phase),
         )
     } else if state.attack_is_continuation() {
         (continuation_pose(animation), end_guard, (phase - 0.5) * 2.0)

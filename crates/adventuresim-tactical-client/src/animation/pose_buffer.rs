@@ -158,6 +158,7 @@ impl LocalPose {
         outgoing: Self,
         start_coordinate: f32,
         incoming_tangent: f32,
+        outgoing_tangent_scale: f32,
         progress: f32,
     ) -> Self {
         let start = self.extrapolate(contact, start_coordinate);
@@ -169,13 +170,13 @@ impl LocalPose {
             quaternion_log(shortest_rotation(end.rotation * start.rotation.inverse()));
         let outgoing_rotation = quaternion_log(shortest_rotation(
             outgoing.rotation * end.rotation.inverse(),
-        ));
+        )) * outgoing_tangent_scale;
         Self {
             translation: cubic_hermite_vec3(
                 start.translation,
                 end.translation,
                 (contact.translation - self.translation) * incoming_tangent,
-                outgoing.translation - end.translation,
+                (outgoing.translation - end.translation) * outgoing_tangent_scale,
                 progress,
             ),
             rotation: (quaternion_exp(cubic_hermite_vec3(
@@ -190,7 +191,7 @@ impl LocalPose {
                 start.scale,
                 end.scale,
                 (contact.scale - self.scale) * incoming_tangent,
-                outgoing.scale - end.scale,
+                (outgoing.scale - end.scale) * outgoing_tangent_scale,
                 progress,
             ),
         }
@@ -913,6 +914,7 @@ fn sample_plan(
                     outgoing,
                     span.start_coordinate,
                     span.incoming_tangent,
+                    span.outgoing_tangent_scale,
                     span.progress,
                 ),
                 joint.bind,
@@ -2169,6 +2171,7 @@ mod tests {
         };
         let coordinate = 1.2;
         let incoming_tangent = 0.35;
+        let outgoing_tangent_scale = 2.0;
         let step = 0.0001;
         let before = guard.extrapolate_unbounded(contact, coordinate - incoming_tangent * step);
         let start = guard.continuation_transition(
@@ -2177,6 +2180,7 @@ mod tests {
             follow,
             coordinate,
             incoming_tangent,
+            outgoing_tangent_scale,
             0.0,
         );
         let after = guard.continuation_transition(
@@ -2185,6 +2189,7 @@ mod tests {
             follow,
             coordinate,
             incoming_tangent,
+            outgoing_tangent_scale,
             step,
         );
         let incoming_translation_velocity = (start.translation - before.translation) / step;
@@ -2200,6 +2205,7 @@ mod tests {
             follow,
             coordinate,
             incoming_tangent,
+            outgoing_tangent_scale,
             1.0 - step,
         );
         let end = guard.continuation_transition(
@@ -2208,9 +2214,10 @@ mod tests {
             follow,
             coordinate,
             incoming_tangent,
+            outgoing_tangent_scale,
             1.0,
         );
-        let after_end = preparation.interpolate(follow, step);
+        let after_end = preparation.interpolate(follow, step * outgoing_tangent_scale);
         let incoming_end_velocity = (end.translation - before_end.translation) / step;
         let outgoing_end_velocity = (after_end.translation - end.translation) / step;
         assert!(incoming_end_velocity.distance(outgoing_end_velocity) < 0.01);
