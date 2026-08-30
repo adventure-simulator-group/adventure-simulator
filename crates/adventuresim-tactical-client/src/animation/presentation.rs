@@ -33,6 +33,7 @@ pub(crate) struct PresentedSkeleton {
     pub(crate) last_phase_source_changed: bool,
     authored_cadence: Option<AuthoredCadence>,
     quickstep_phase: Option<f32>,
+    attack_phase: Option<PresentedAttackPhase>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -49,6 +50,26 @@ struct AuthoredCadence {
     cadence_capped: bool,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct PresentedAttackPhase {
+    start_tick: u64,
+    animation: AttackAnimation,
+    hand: AttackHand,
+    continuation: bool,
+    phase: f32,
+    error_remaining: f32,
+}
+
+impl PresentedAttackPhase {
+    fn matches(self, state: &SkeletonState) -> bool {
+        state.action_kind() == SkeletonAction::Attack
+            && state.action_start_tick() == Some(self.start_tick)
+            && state.attack_animation() == Some(self.animation)
+            && state.attack_hand() == self.hand
+            && state.attack_is_continuation() == self.continuation
+    }
+}
+
 impl PresentedSkeleton {
     pub(super) fn new(state: SkeletonState, presentation_tick: Option<u64>) -> Self {
         let source_tick = state.locomotion_sample_tick;
@@ -63,6 +84,7 @@ impl PresentedSkeleton {
             last_phase_source_changed: false,
             authored_cadence: None,
             quickstep_phase: None,
+            attack_phase: None,
         }
     }
 }
@@ -209,6 +231,14 @@ fn advance_presented_skeleton_with_strides(
         &mut presented.quickstep_phase,
         delta_seconds,
     );
+    advance_presented_attack(
+        &previous,
+        authoritative,
+        &mut next,
+        &mut presented.attack_phase,
+        source_changed,
+        delta_seconds,
+    );
     apply_authored_cadence(
         &previous,
         &mut next,
@@ -218,6 +248,85 @@ fn advance_presented_skeleton_with_strides(
     );
     presented.state = next;
     presented.source_tick = authoritative.locomotion_sample_tick;
+}
+
+/// Advance an already-authoritative ordinary attack on render time. Replicated
+/// fixed-tick phases can repeat for one or more render frames; copying them
+/// directly produces a visible stop followed by a phase jump at contact.
+fn advance_presented_attack(
+    previous: &SkeletonState,
+    authoritative: &SkeletonState,
+    next: &mut SkeletonState,
+    presented: &mut Option<PresentedAttackPhase>,
+    source_changed: bool,
+    delta_seconds: f32,
+) {
+    if authoritative.action_kind() != SkeletonAction::Attack {
+        *presented = None;
+        return;
+    }
+    let Some(start_tick) = authoritative.action_start_tick() else {
+        *presented = None;
+        return;
+    };
+    let animation = authoritative
+        .attack_animation()
+        .unwrap_or(AttackAnimation::Thrust);
+    let entering = !presented.is_some_and(|phase| phase.matches(authoritative));
+    if entering {
+        *presented = Some(PresentedAttackPhase {
+            start_tick,
+            animation,
+            hand: authoritative.attack_hand(),
+            continuation: authoritative.attack_is_continuation(),
+            phase: authoritative.action_phase().clamp(0.0, 1.0),
+            error_remaining: 0.0,
+        });
+        return;
+    }
+
+    let phase = presented.as_mut().expect("matching attack phase exists");
+    let duration_ticks = if phase.phase < 0.5 {
+        authoritative.action_preparation_ticks()
+    } else {
+        authoritative.action_recovery_ticks()
+    }
+    .unwrap_or(1)
+    .max(1);
+    let prediction_delta =
+        delta_seconds.max(0.0) * locomotion_sample_hz() * 0.5 / duration_ticks as f32;
+    let predicted = (phase.phase + prediction_delta).min(1.0);
+    if source_changed {
+        let measured_error = authoritative.action_phase().clamp(0.0, 1.0) - predicted;
+        if measured_error.abs() > playback_tuning().phase_snap_error {
+            phase.phase = authoritative.action_phase().clamp(phase.phase, 1.0);
+            phase.error_remaining = 0.0;
+            next.set_presentation_action_phase(phase.phase);
+            return;
+        }
+        let measured_drift = if measured_error.abs() <= presentation_phase_drift_deadband() {
+            0.0
+        } else {
+            measured_error - measured_error.signum() * presentation_phase_drift_deadband()
+        };
+        phase.error_remaining += (measured_drift - phase.error_remaining)
+            * playback_tuning().phase_drift_measurement_blend;
+    }
+    let maximum_correction = presentation_phase_correction_rate_per_second() * delta_seconds;
+    let correction = phase
+        .error_remaining
+        .clamp(-maximum_correction, maximum_correction);
+    phase.phase = (predicted + correction).clamp(phase.phase, 1.0);
+    phase.error_remaining -= phase.phase - predicted;
+
+    // Preserve the newest authoritative attack payload and non-action state;
+    // only its client-owned presentation phase is projected between packets.
+    *next = authoritative.clone();
+    next.set_presentation_action_phase(phase.phase);
+
+    debug_assert!(
+        previous.action_kind() != SkeletonAction::Attack || phase.phase >= previous.action_phase()
+    );
 }
 
 /// Keep authored quicksteps on a render-time timeline. Authoritative tactical
@@ -718,6 +827,79 @@ mod authored_cadence_tests {
             / epsilon;
         assert!((slope_before - 1.0).abs() < 0.001);
         assert!(slope_after.abs() < 0.001);
+    }
+
+    #[test]
+    fn ordinary_attack_advances_between_repeated_authoritative_contact_samples() {
+        let mut authoritative =
+            SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised);
+        authoritative
+            .begin_attack(AttackSpec::main(StrikeFamily::Swing, false), 0, 12)
+            .unwrap();
+        authoritative.advance_action(12);
+        assert_eq!(authoritative.action_phase(), 0.5);
+        let mut presented = PresentedSkeleton::new(authoritative.clone(), None);
+        let strides = AuthoredLocomotionStrides::default();
+
+        advance_presented_skeleton_with_strides(
+            &mut presented,
+            &authoritative,
+            1.0 / locomotion_sample_hz(),
+            &strides,
+        );
+        assert_eq!(presented.action_phase(), 0.5);
+
+        // No new server tick: render presentation must cross contact instead
+        // of displaying the same pose for another frame.
+        advance_presented_skeleton_with_strides(
+            &mut presented,
+            &authoritative,
+            1.0 / locomotion_sample_hz(),
+            &strides,
+        );
+        assert!(presented.action_phase() > 0.5);
+        assert!(presented.action_phase() < 0.55);
+        assert_eq!(authoritative.action_phase(), 0.5);
+    }
+
+    #[test]
+    fn ordinary_attack_reconciles_packets_without_reversing_visual_phase() {
+        let mut authoritative =
+            SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised);
+        authoritative
+            .begin_attack(AttackSpec::main(StrikeFamily::Swing, false), 0, 12)
+            .unwrap();
+        authoritative.advance_action(12);
+        let mut presented = PresentedSkeleton::new(authoritative.clone(), None);
+        let strides = AuthoredLocomotionStrides::default();
+        advance_presented_skeleton_with_strides(
+            &mut presented,
+            &authoritative,
+            1.0 / locomotion_sample_hz(),
+            &strides,
+        );
+        advance_presented_skeleton_with_strides(
+            &mut presented,
+            &authoritative,
+            1.0 / locomotion_sample_hz(),
+            &strides,
+        );
+        let predicted = presented.action_phase();
+
+        authoritative.locomotion_sample_tick += 1;
+        authoritative.advance_action(13);
+        advance_presented_skeleton_with_strides(
+            &mut presented,
+            &authoritative,
+            1.0 / locomotion_sample_hz(),
+            &strides,
+        );
+
+        assert!(presented.action_phase() > predicted);
+        assert!(presented.action_phase() <= predicted + 0.05);
+        assert!(presented.attack_phase.is_some_and(|phase| {
+            phase.error_remaining < 0.0 && phase.error_remaining.abs() < 0.05
+        }));
     }
 
     #[test]

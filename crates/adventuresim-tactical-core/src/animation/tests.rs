@@ -1234,7 +1234,7 @@ mod legacy_tests {
     }
 
     #[test]
-    fn continuation_is_available_only_after_contact_and_cannot_chain() {
+    fn continuation_waits_for_full_recovery_then_enters_follow_up_preparation() {
         let mut state = SkeletonState::default();
         state.attack_animations = AttackAnimations {
             swing: true,
@@ -1255,9 +1255,51 @@ mod legacy_tests {
             Some(AttackSpec::main(StrikeFamily::Swing, true))
         );
         state
-            .begin_attack(AttackSpec::main(StrikeFamily::Swing, true), 20, 30)
+            .begin_attack_timed(
+                AttackSpec::main(StrikeFamily::Swing, true),
+                30,
+                40,
+                50,
+            )
             .unwrap();
+        assert!(!state.attack_is_continuation());
+        assert_eq!(state.select_main_attack(StrikeFamily::Swing), None);
+
+        state.advance_action(29);
+        assert!(!state.attack_is_continuation());
+        let recovery = AnimationEvaluation::from_skeleton(&state);
+        assert_eq!(recovery.action[0].pose, SemanticPose::GuardSwing);
+        assert!(matches!(
+            recovery.action[0].sampling,
+            PoseSampling::CurveSpan {
+                end: SemanticPose::AttackSwing,
+                ..
+            }
+        ));
+
         state.advance_action(30);
+        assert!(state.attack_is_continuation());
+        assert_eq!(state.action_phase(), 0.0);
+        let follow_up_start = AnimationEvaluation::from_skeleton(&state);
+        assert_eq!(follow_up_start.action[0].pose, SemanticPose::GuardSwing);
+        assert_eq!(
+            follow_up_start.action[0].sampling,
+            PoseSampling::Span {
+                end: SemanticPose::RecoverSwing,
+                progress: 0.0,
+            }
+        );
+
+        state.advance_action(35);
+        let prepared = AnimationEvaluation::from_skeleton(&state);
+        assert_eq!(prepared.action[0].pose, SemanticPose::RecoverSwing);
+        assert_eq!(
+            prepared.action[0].sampling,
+            PoseSampling::Span {
+                end: SemanticPose::ContinueSwing,
+                progress: 0.0,
+            }
+        );
         assert_eq!(state.select_main_attack(StrikeFamily::Swing), None);
     }
 
@@ -1406,6 +1448,49 @@ mod legacy_tests {
         assert!(uncontrolled.coordinate(0.6) > controlled.coordinate(0.6));
         assert_eq!(uncontrolled.coordinate(0.5), 1.0);
         assert!(uncontrolled.coordinate(1.0).abs() < 1.0e-6);
+    }
+
+    #[test]
+    fn ordinary_attack_crosses_contact_without_stopping_or_changing_velocity() {
+        for curve in [
+            AttackCurve::from_handling(0.03, 5.0),
+            AttackCurve::default(),
+            AttackCurve::from_handling(1.2, 1.0),
+        ] {
+            let step = 0.0025;
+            let contact = curve.coordinate(0.5);
+            let left_velocity = (contact - curve.coordinate(0.5 - step)) / step;
+            let right_velocity = (curve.coordinate(0.5 + step) - contact) / step;
+            assert!(left_velocity > 0.1, "contact must retain forward velocity");
+            assert!(right_velocity > 0.1, "follow-through must continue forward");
+            assert!(
+                (left_velocity - right_velocity).abs() < 0.01,
+                "contact velocity changed from {left_velocity} to {right_velocity}"
+            );
+        }
+    }
+
+    #[test]
+    fn ordinary_attack_remains_monotone_from_drawback_through_follow_through() {
+        for curve in [
+            AttackCurve::from_handling(0.03, 5.0),
+            AttackCurve::default(),
+            AttackCurve::from_handling(1.2, 1.0),
+        ] {
+            let tell_end = curve.tell_fraction * 0.5;
+            let follow_through_end = 0.5 + curve.follow_through_fraction * 0.5;
+            let mut previous = curve.coordinate(tell_end);
+            for sample in 1..=128 {
+                let phase = tell_end
+                    + (follow_through_end - tell_end) * sample as f32 / 128.0;
+                let coordinate = curve.coordinate(phase);
+                assert!(
+                    coordinate + 1.0e-5 >= previous,
+                    "attack reversed at phase {phase}: {previous} -> {coordinate}"
+                );
+                previous = coordinate;
+            }
+        }
     }
 
     #[test]

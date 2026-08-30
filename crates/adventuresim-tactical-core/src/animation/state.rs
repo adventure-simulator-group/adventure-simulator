@@ -734,6 +734,37 @@ impl ActionTimeline {
         };
         self
     }
+
+    fn contact_tick(self) -> u64 {
+        self.start_tick.saturating_add(self.preparation_ticks)
+    }
+
+    fn end_tick(self) -> u64 {
+        self.contact_tick().saturating_add(self.recovery_ticks)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+struct QueuedAttack {
+    target_height: f32,
+    animation: AttackAnimation,
+    strike_family: StrikeFamily,
+    hand: AttackHand,
+    curve: AttackCurve,
+    timeline: ActionTimeline,
+}
+
+impl QueuedAttack {
+    fn normalized(mut self) -> Self {
+        self.target_height = if self.target_height.is_finite() {
+            self.target_height.clamp(0.0, 1.0)
+        } else {
+            AttackSpec::default().target_height
+        };
+        self.curve = self.curve.normalized();
+        self.timeline = self.timeline.normalized();
+        self
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -751,6 +782,7 @@ enum ActionKind {
         continuation: bool,
         curve: AttackCurve,
         timeline: ActionTimeline,
+        queued: Option<QueuedAttack>,
     },
     Block {
         incoming_line: AttackLine,
@@ -784,6 +816,7 @@ impl<'de> Deserialize<'de> for ActionState {
                 continuation,
                 curve,
                 timeline,
+                queued,
             } => ActionKind::Attack {
                 target_height: if target_height.is_finite() {
                     target_height.clamp(0.0, 1.0)
@@ -796,6 +829,7 @@ impl<'de> Deserialize<'de> for ActionState {
                 continuation,
                 curve: curve.normalized(),
                 timeline: timeline.normalized(),
+                queued: queued.map(QueuedAttack::normalized),
             },
             ActionKind::Block {
                 incoming_line,
@@ -960,28 +994,46 @@ impl AttackCurve {
     /// contact remains exactly 0.5.
     pub fn coordinate(self, phase: f32) -> f32 {
         let phase = finite_clamp(phase, 0.0, 1.0, 0.0);
-        if phase <= 0.5 {
-            let preparation = phase * 2.0;
-            if preparation <= self.tell_fraction {
-                let progress = smoothstep(preparation / self.tell_fraction);
-                -self.drawback * progress
-            } else {
-                let progress =
-                    smoothstep((preparation - self.tell_fraction) / (1.0 - self.tell_fraction));
-                -self.drawback + (1.0 + self.drawback) * progress
-            }
+        let tell_end = self.tell_fraction * 0.5;
+        let follow_through_end = 0.5 + self.follow_through_fraction * 0.5;
+        if phase <= tell_end {
+            -self.drawback * smootherstep(phase / tell_end)
+        } else if phase <= 0.5 {
+            let duration = 0.5 - tell_end;
+            quintic_hermite(
+                -self.drawback,
+                1.0,
+                0.0,
+                self.contact_velocity() * duration,
+                (phase - tell_end) / duration,
+            )
+        } else if phase <= follow_through_end {
+            let duration = follow_through_end - 0.5;
+            quintic_hermite(
+                1.0,
+                1.0 + self.overshoot,
+                self.contact_velocity() * duration,
+                0.0,
+                (phase - 0.5) / duration,
+            )
         } else {
-            let recovery = (phase - 0.5) * 2.0;
-            if recovery <= self.follow_through_fraction {
-                1.0 + self.overshoot * smoothstep(recovery / self.follow_through_fraction)
-            } else {
-                let progress = smoothstep(
-                    (recovery - self.follow_through_fraction)
-                        / (1.0 - self.follow_through_fraction),
-                );
-                (1.0 + self.overshoot) * (1.0 - progress)
-            }
+            let progress = smootherstep((phase - follow_through_end) / (1.0 - follow_through_end));
+            (1.0 + self.overshoot) * (1.0 - progress)
         }
+    }
+
+    /// Phase-coordinate speed shared by the strike and follow-through at
+    /// contact. Bounding it by both neighboring secants keeps each quintic
+    /// segment monotone while preventing the old stop-and-restart seam.
+    fn contact_velocity(self) -> f32 {
+        if self.overshoot <= f32::EPSILON {
+            return 0.0;
+        }
+        let strike_duration = 0.5 * (1.0 - self.tell_fraction);
+        let follow_through_duration = 0.5 * self.follow_through_fraction;
+        let strike_secant = (1.0 + self.drawback) / strike_duration;
+        let follow_through_secant = self.overshoot / follow_through_duration;
+        2.0 * strike_secant.min(follow_through_secant)
     }
 }
 
@@ -996,6 +1048,35 @@ fn finite_clamp(value: f32, minimum: f32, maximum: f32, fallback: f32) -> f32 {
 fn smoothstep(value: f32) -> f32 {
     let value = value.clamp(0.0, 1.0);
     value * value * (3.0 - 2.0 * value)
+}
+
+fn smootherstep(value: f32) -> f32 {
+    let value = value.clamp(0.0, 1.0);
+    value * value * value * (value * (value * 6.0 - 15.0) + 10.0)
+}
+
+/// Quintic Hermite interpolation with zero acceleration at both endpoints.
+/// Velocities are expressed in normalized-segment coordinates.
+fn quintic_hermite(
+    start: f32,
+    end: f32,
+    start_velocity: f32,
+    end_velocity: f32,
+    progress: f32,
+) -> f32 {
+    let t = progress.clamp(0.0, 1.0);
+    let t2 = t * t;
+    let t3 = t2 * t;
+    let t4 = t3 * t;
+    let t5 = t4 * t;
+    let start_position_basis = 1.0 - 10.0 * t3 + 15.0 * t4 - 6.0 * t5;
+    let start_velocity_basis = t - 6.0 * t3 + 8.0 * t4 - 3.0 * t5;
+    let end_position_basis = 10.0 * t3 - 15.0 * t4 + 6.0 * t5;
+    let end_velocity_basis = -4.0 * t3 + 7.0 * t4 - 3.0 * t5;
+    start * start_position_basis
+        + start_velocity * start_velocity_basis
+        + end * end_position_basis
+        + end_velocity * end_velocity_basis
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -1876,8 +1957,9 @@ impl SkeletonState {
     }
 
     /// Selects a legal authored attack at the current action seam. An ordinary
-    /// attack starts only from recovery-complete idle. A second swing may
-    /// replace the first after contact when the pack owns a follow pose.
+    /// attack starts only from recovery-complete idle. A second swing may be
+    /// queued after contact when the pack owns a follow pose; it begins only
+    /// after the first attack has completed its authored recovery.
     pub fn select_main_attack(&self, family: StrikeFamily) -> Option<AttackSpec> {
         let animation = AttackAnimation::initial(family);
         match self.attack_animation() {
@@ -1889,6 +1971,13 @@ impl SkeletonState {
                 if active == animation
                     && self.attack_hand() == AttackHand::Main
                     && !self.attack_is_continuation()
+                    && !matches!(
+                        self.action,
+                        ActionState(ActionKind::Attack {
+                            queued: Some(_),
+                            ..
+                        })
+                    )
                     && self.action_phase() >= 0.5
                     && self.attack_animations.supports_continuation(animation) =>
             {
@@ -1917,6 +2006,40 @@ impl SkeletonState {
             | ActionState(ActionKind::Attack { timeline, .. })
             | ActionState(ActionKind::Block { timeline, .. }) => Some(timeline.preparation_ticks),
         }
+    }
+    pub fn action_recovery_ticks(&self) -> Option<u64> {
+        match self.action {
+            ActionState(ActionKind::Idle) => None,
+            ActionState(ActionKind::Dodge { timeline, .. })
+            | ActionState(ActionKind::Attack { timeline, .. })
+            | ActionState(ActionKind::Block { timeline, .. }) => Some(timeline.recovery_ticks),
+        }
+    }
+
+    pub fn action_end_tick(&self) -> Option<u64> {
+        match self.action {
+            ActionState(ActionKind::Idle) => None,
+            ActionState(ActionKind::Dodge { timeline, .. })
+            | ActionState(ActionKind::Attack { timeline, .. })
+            | ActionState(ActionKind::Block { timeline, .. }) => Some(timeline.end_tick()),
+        }
+    }
+
+    /// Overrides only the visual progress of an admitted action. Tactical
+    /// presentation uses this on its private `PresentedSkeleton`; gameplay
+    /// admission, timing, contact, and outcomes remain authoritative.
+    pub fn set_presentation_action_phase(&mut self, phase: f32) {
+        let timeline = match &mut self.action {
+            ActionState(ActionKind::Idle) => return,
+            ActionState(ActionKind::Dodge { timeline, .. })
+            | ActionState(ActionKind::Attack { timeline, .. })
+            | ActionState(ActionKind::Block { timeline, .. }) => timeline,
+        };
+        timeline.phase = if phase.is_finite() {
+            phase.clamp(0.0, 1.0)
+        } else {
+            timeline.phase
+        };
     }
     pub fn incoming_attack_line(&self) -> AttackLine {
         match self.action {
@@ -2005,27 +2128,41 @@ impl SkeletonState {
         end_tick: u64,
     ) -> Result<(), ActionTransitionError> {
         self.action_admission()?;
-        let may_follow = matches!(
-            self.action,
-            ActionState(ActionKind::Attack {
-                animation,
-                hand: AttackHand::Main,
-                continuation: false,
-                timeline,
-                ..
-            }) if timeline.phase >= 0.5
-                && spec.hand == AttackHand::Main
-                && spec.continuation
-                && spec.animation == animation
-        );
-        if self.action_kind() != SkeletonAction::None && !may_follow {
-            return Err(ActionTransitionError::ActionBusy);
-        }
         let target_height = if spec.target_height.is_finite() {
             spec.target_height.clamp(0.0, 1.0)
         } else {
             AttackSpec::default().target_height
         };
+        if let ActionState(ActionKind::Attack {
+            animation,
+            hand: AttackHand::Main,
+            continuation: false,
+            timeline,
+            queued,
+            ..
+        }) = &mut self.action
+        {
+            let may_follow = timeline.phase >= 0.5
+                && queued.is_none()
+                && spec.hand == AttackHand::Main
+                && spec.continuation
+                && spec.animation == *animation
+                && start_tick >= timeline.end_tick();
+            if may_follow {
+                *queued = Some(QueuedAttack {
+                    target_height,
+                    animation: spec.animation,
+                    strike_family: spec.strike_family,
+                    hand: spec.hand,
+                    curve: spec.curve.normalized(),
+                    timeline: ActionTimeline::with_recovery(start_tick, contact_tick, end_tick),
+                });
+                return Ok(());
+            }
+        }
+        if self.action_kind() != SkeletonAction::None {
+            return Err(ActionTransitionError::ActionBusy);
+        }
         self.action = ActionState(ActionKind::Attack {
             target_height,
             animation: spec.animation,
@@ -2034,6 +2171,7 @@ impl SkeletonState {
             continuation: spec.continuation,
             curve: spec.curve.normalized(),
             timeline: ActionTimeline::with_recovery(start_tick, contact_tick, end_tick),
+            queued: None,
         });
         Ok(())
     }
@@ -2058,6 +2196,26 @@ impl SkeletonState {
     /// Advances an action whose semantic contact is phase 0.5. Preparation
     /// and recovery may have different real-time durations.
     pub fn advance_action(&mut self, current_tick: u64) {
+        let queued = match self.action {
+            ActionState(ActionKind::Attack {
+                timeline,
+                queued: Some(queued),
+                ..
+            }) if current_tick >= timeline.end_tick() => Some(queued),
+            _ => None,
+        };
+        if let Some(queued) = queued {
+            self.action = ActionState(ActionKind::Attack {
+                target_height: queued.target_height,
+                animation: queued.animation,
+                strike_family: queued.strike_family,
+                hand: queued.hand,
+                continuation: true,
+                curve: queued.curve,
+                timeline: queued.timeline,
+                queued: None,
+            });
+        }
         let timeline = match &mut self.action {
             ActionState(ActionKind::Idle) => return,
             ActionState(ActionKind::Dodge { timeline, .. })

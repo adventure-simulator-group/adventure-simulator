@@ -88,6 +88,88 @@ impl BakedClip {
         }
     }
 
+    /// Samples the authored motion timeline without treating a semantic anchor
+    /// as an interpolation endpoint. Times outside the clip retain the nearest
+    /// authored tangent, which keeps readable attack drawback available while
+    /// allowing contact to flow into the following authored frames.
+    fn sample_unclamped(&self, joint: usize, time_seconds: f32) -> LocalPose {
+        if (0.0..=self.duration).contains(&time_seconds) {
+            return self.sample(joint, time_seconds);
+        }
+        if time_seconds < 0.0 {
+            let next_time = self.frame_dt.min(self.duration);
+            if next_time <= f32::EPSILON {
+                return self.sample(joint, 0.0);
+            }
+            return self
+                .sample(joint, 0.0)
+                .extrapolate_unbounded(self.sample(joint, next_time), time_seconds / next_time);
+        }
+
+        let previous_time = (self.duration - self.frame_dt).max(0.0);
+        let interval = self.duration - previous_time;
+        if interval <= f32::EPSILON {
+            return self.sample(joint, self.duration);
+        }
+        self.sample(joint, previous_time).extrapolate_unbounded(
+            self.sample(joint, self.duration),
+            1.0 + (time_seconds - self.duration) / interval,
+        )
+    }
+
+    /// Carries the incoming authored velocity across `end_time_seconds`, then
+    /// decays that correction into the following authored motion. The next
+    /// semantic anchor is one span later for tactical attack clips.
+    fn sample_curve_span(
+        &self,
+        joint: usize,
+        start_time_seconds: f32,
+        end_time_seconds: f32,
+        coordinate: f32,
+    ) -> LocalPose {
+        let span_seconds = (end_time_seconds - start_time_seconds).abs();
+        let authored_time =
+            start_time_seconds + (end_time_seconds - start_time_seconds) * coordinate;
+        let mut authored = self.sample_unclamped(joint, authored_time);
+        if coordinate <= 1.0 || span_seconds <= f32::EPSILON {
+            return authored;
+        }
+
+        let tangent_interval = self.frame_dt.min(span_seconds);
+        let incoming_start = self.sample_unclamped(joint, end_time_seconds - tangent_interval);
+        let contact = self.sample_unclamped(joint, end_time_seconds);
+        let outgoing_end = self.sample_unclamped(joint, end_time_seconds + tangent_interval);
+        let correction_progress =
+            ((authored_time - end_time_seconds) / span_seconds).clamp(0.0, 1.0);
+        let smooth_progress = correction_progress.powi(3)
+            * (correction_progress * (correction_progress * 6.0 - 15.0) + 10.0);
+        let correction_seconds =
+            (authored_time - end_time_seconds).max(0.0) * (1.0 - smooth_progress);
+        let incoming_translation_velocity =
+            (contact.translation - incoming_start.translation) / tangent_interval;
+        let outgoing_translation_velocity =
+            (outgoing_end.translation - contact.translation) / tangent_interval;
+        authored.translation +=
+            (incoming_translation_velocity - outgoing_translation_velocity) * correction_seconds;
+
+        let incoming_angular_velocity = quaternion_angular_velocity(
+            contact.rotation,
+            incoming_start.rotation,
+            tangent_interval,
+        );
+        let outgoing_angular_velocity =
+            quaternion_angular_velocity(outgoing_end.rotation, contact.rotation, tangent_interval);
+        let angular_correction =
+            (incoming_angular_velocity - outgoing_angular_velocity) * correction_seconds;
+        authored.rotation =
+            (quaternion_exp(angular_correction * 0.5) * authored.rotation).normalize();
+
+        let incoming_scale_velocity = (contact.scale - incoming_start.scale) / tangent_interval;
+        let outgoing_scale_velocity = (outgoing_end.scale - contact.scale) / tangent_interval;
+        authored.scale += (incoming_scale_velocity - outgoing_scale_velocity) * correction_seconds;
+        authored
+    }
+
     fn memory_bytes(&self) -> usize {
         self.tracks
             .iter()
@@ -138,6 +220,10 @@ impl LocalPose {
             -AttackCurve::maximum_drawback(),
             1.0 + AttackCurve::maximum_overshoot(),
         );
+        self.extrapolate_unbounded(next, coordinate)
+    }
+
+    fn extrapolate_unbounded(self, next: Self, coordinate: f32) -> Self {
         let relative = shortest_rotation(next.rotation * self.rotation.inverse());
         Self {
             translation: self.translation + (next.translation - self.translation) * coordinate,
@@ -466,13 +552,11 @@ pub(super) fn update_pose_buffers(
         else {
             continue;
         };
-        let terrain = terrain_ik_enabled
-            .0
+        let locomotion_ik_owns = procedural::authored_locomotion_ik_owns(skeleton);
+        let terrain = (terrain_ik_enabled.0 && locomotion_ik_owns)
             .then(|| terrain.single().ok())
             .flatten();
-        if procedural::authored_locomotion_ik_owns(skeleton)
-            && (terrain.is_some() || sampled.locomotion_pelvis_rotation.is_some())
-        {
+        if terrain.is_some() || sampled.locomotion_pelvis_rotation.is_some() {
             let definition = Arc::clone(&rig.definition);
             // Buffered joint poses are relative to the authored scene, not to
             // the controller entity. The scene is translated from the
@@ -540,18 +624,29 @@ pub(super) fn update_pose_buffers(
             rig.plan = Some(key);
             rig.active = true;
         } else {
-            let due = samples_due(rig.sample_accumulator);
-            if due > 0 {
-                rig.previous = rig.next.clone();
+            if playback.sampling_cadence() == PoseSamplingCadence::Direct {
+                // The semantic curve supplies the continuous target. Preserve
+                // transition inertialization, but do not quantize its normal
+                // updates through the authored-clip sampling accumulator.
+                rig.previous.clone_from(&target);
                 rig.next = target;
-                rig.sample_accumulator =
-                    (rig.sample_accumulator - pose_sample_seconds() * due as f32).max(0.0);
+                rig.sample_accumulator = 0.0;
+                rig.interpolation_alpha = 1.0;
+            } else {
+                let due = samples_due(rig.sample_accumulator);
+                if due > 0 {
+                    rig.previous = rig.next.clone();
+                    rig.next = target;
+                    rig.sample_accumulator =
+                        (rig.sample_accumulator - pose_sample_seconds() * due as f32).max(0.0);
+                }
+                // Terrain IK has already modified `next`. Interpolate local
+                // joint transforms from the preceding solved sample to that
+                // upcoming solved sample; no post-interpolation contact toggle
+                // is needed.
+                rig.interpolation_alpha =
+                    (rig.sample_accumulator / pose_sample_seconds()).clamp(0.0, 1.0);
             }
-            // Terrain IK has already modified `next`. Interpolate local joint
-            // transforms from the preceding solved sample to that upcoming
-            // solved sample; no post-interpolation contact toggle is needed.
-            rig.interpolation_alpha =
-                (rig.sample_accumulator / pose_sample_seconds()).clamp(0.0, 1.0);
         }
     }
 }
@@ -660,7 +755,7 @@ fn sample_plan(
                 ClipLayer::Lower => joint.lower_body,
                 ClipLayer::CombatUpper => !joint.lower_body || pelvis,
                 ClipLayer::CombatLower => joint.lower_body,
-                ClipLayer::Hands => false,
+                ClipLayer::MainHand | ClipLayer::Offhand => false,
             };
             if !included || weighted.weight <= f32::EPSILON || !weighted.weight.is_finite() {
                 continue;
@@ -710,7 +805,7 @@ fn sample_plan(
                 ClipLayer::Lower => joint.lower_body,
                 ClipLayer::CombatUpper => !joint.lower_body || pelvis,
                 ClipLayer::CombatLower => joint.lower_body,
-                ClipLayer::Hands => false,
+                ClipLayer::MainHand | ClipLayer::Offhand => false,
             };
             if !included || span.weight <= f32::EPSILON || !span.weight.is_finite() {
                 continue;
@@ -723,7 +818,19 @@ fn sample_plan(
                 end_clip.sample(joint_index, span.end_time_seconds),
                 joint.bind,
             );
-            let sample = sanitize_pose(start.extrapolate(end, span.coordinate), joint.bind);
+            let sample = if span.start.handle.id() == span.end.handle.id()
+                && span.start.layer == span.end.layer
+            {
+                start_clip.sample_curve_span(
+                    joint_index,
+                    span.start_time_seconds,
+                    span.end_time_seconds,
+                    span.coordinate,
+                )
+            } else {
+                start.extrapolate(end, span.coordinate)
+            };
+            let sample = sanitize_pose(sample, joint.bind);
             if pelvis && span.start.layer == ClipLayer::CombatUpper {
                 accumulate_local_pose(
                     &mut combat_upper,
@@ -764,11 +871,11 @@ fn sample_plan(
             } else {
                 joint.bind
             };
-        if is_hand_animation_joint(definition, joint_index) {
+        if let Some(hand) = hand_animation_joint(definition, joint_index) {
             let mut hand_pose = joint.bind;
             let mut hand_weight = 0.0_f32;
             for (weighted, clip, _) in &baked {
-                if weighted.clip.layer != ClipLayer::Hands
+                if weighted.clip.layer != hand
                     || !clip.tracks[joint_index].animated
                     || weighted.weight <= f32::EPSILON
                     || !weighted.weight.is_finite()
@@ -861,20 +968,17 @@ fn sparse_locomotion_segment(authored_phase: f32) -> (u32, u32, f32) {
     (start, (start + 1) % 4, t * t * (3.0 - 2.0 * t))
 }
 
-fn is_hand_animation_joint(definition: &RigDefinition, mut joint: usize) -> bool {
+fn hand_animation_joint(definition: &RigDefinition, mut joint: usize) -> Option<ClipLayer> {
     loop {
-        if definition.joints[joint]
-            .name
-            .as_deref()
-            .is_some_and(|name| {
-                name.eq_ignore_ascii_case("l_wrist") || name.eq_ignore_ascii_case("r_wrist")
-            })
-        {
-            return true;
+        if let Some(name) = definition.joints[joint].name.as_deref() {
+            if name.eq_ignore_ascii_case("r_wrist") {
+                return Some(ClipLayer::MainHand);
+            }
+            if name.eq_ignore_ascii_case("l_wrist") {
+                return Some(ClipLayer::Offhand);
+            }
         }
-        let Some(parent) = definition.joints[joint].parent else {
-            return false;
-        };
+        let parent = definition.joints[joint].parent?;
         joint = parent;
     }
 }
@@ -1861,12 +1965,24 @@ mod tests {
             ],
         };
 
-        assert!(!is_hand_animation_joint(&definition, 0));
-        assert!(!is_hand_animation_joint(&definition, 1));
-        assert!(is_hand_animation_joint(&definition, 2));
-        assert!(is_hand_animation_joint(&definition, 3));
-        assert!(is_hand_animation_joint(&definition, 4));
-        assert!(is_hand_animation_joint(&definition, 5));
+        assert_eq!(hand_animation_joint(&definition, 0), None);
+        assert_eq!(hand_animation_joint(&definition, 1), None);
+        assert_eq!(
+            hand_animation_joint(&definition, 2),
+            Some(ClipLayer::MainHand)
+        );
+        assert_eq!(
+            hand_animation_joint(&definition, 3),
+            Some(ClipLayer::MainHand)
+        );
+        assert_eq!(
+            hand_animation_joint(&definition, 4),
+            Some(ClipLayer::Offhand)
+        );
+        assert_eq!(
+            hand_animation_joint(&definition, 5),
+            Some(ClipLayer::Offhand)
+        );
     }
 
     fn pose(translation: Vec3, rotation: Quat) -> LocalPose {
@@ -1916,6 +2032,39 @@ mod tests {
                 .rotation
                 .angle_between(Quat::from_rotation_y(0.75))
                 < 1.0e-4
+        );
+    }
+
+    #[test]
+    fn authored_curve_span_conserves_contact_velocity_into_follow_frames() {
+        let clip = BakedClip {
+            duration: 2.0,
+            frame_dt: 1.0,
+            frames: 3,
+            tracks: vec![BoneTrack {
+                translations: vec![Vec3::ZERO, Vec3::X, Vec3::X * 3.0],
+                rotations: vec![
+                    Quat::IDENTITY,
+                    Quat::from_rotation_y(0.2),
+                    Quat::from_rotation_y(0.6),
+                ],
+                scales: vec![Vec3::ONE; 3],
+                animated: true,
+            }],
+        };
+
+        let step = 0.001;
+        let before = clip.sample_curve_span(0, 0.0, 1.0, 1.0 - step);
+        let contact = clip.sample_curve_span(0, 0.0, 1.0, 1.0);
+        let after = clip.sample_curve_span(0, 0.0, 1.0, 1.0 + step);
+        let incoming_velocity = (contact.translation.x - before.translation.x) / step;
+        let outgoing_velocity = (after.translation.x - contact.translation.x) / step;
+        assert!((incoming_velocity - outgoing_velocity).abs() < 0.01);
+
+        let follow = clip.sample_curve_span(0, 0.0, 1.0, 1.5);
+        assert!(
+            follow.translation.x > 1.5,
+            "the corrected span must still enter the authored follow frames"
         );
     }
 

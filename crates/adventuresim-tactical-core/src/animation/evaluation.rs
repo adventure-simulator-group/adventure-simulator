@@ -638,7 +638,10 @@ fn attack_samples(state: &SkeletonState) -> Vec<PoseSample> {
             attack_pose(animation)
         };
     let (pose, end, blend) = if state.attack_is_continuation() && phase < 0.25 {
-        (contact, recovery_pose(animation), phase * 4.0)
+        // A continuation begins only after the preceding attack has returned
+        // to guard. Frame 8 is follow-up preparation, not the first attack's
+        // recovery, so approach it from that exact terminal guard pose.
+        (start_guard, recovery_pose(animation), phase * 4.0)
     } else if state.attack_is_continuation() && phase < 0.5 {
         (
             recovery_pose(animation),

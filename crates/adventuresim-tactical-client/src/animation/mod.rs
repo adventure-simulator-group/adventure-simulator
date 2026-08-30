@@ -257,7 +257,10 @@ enum ClipLayer {
     /// locomotion layer owns its translation.
     CombatUpper,
     CombatLower,
-    Hands,
+    /// Static equipment grip owns only the subtree below the right wrist.
+    MainHand,
+    /// Static equipment grip owns only the subtree below the left wrist.
+    Offhand,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -315,6 +318,12 @@ pub(super) struct AnimationPlayback {
     ordinary_locomotion_active: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PoseSamplingCadence {
+    Buffered,
+    Direct,
+}
+
 impl AnimationPlayback {
     pub(super) fn authored_pose_is_ready(&self) -> bool {
         !self.use_authored_bind_pose
@@ -323,6 +332,17 @@ impl AnimationPlayback {
 
     pub(super) fn presentation_is_settled(&self) -> bool {
         self.authored_pose_is_ready()
+    }
+
+    fn sampling_cadence(&self) -> PoseSamplingCadence {
+        if self.extrapolated_spans.is_empty() {
+            PoseSamplingCadence::Buffered
+        } else {
+            // CurveSpan poses are already evaluated analytically from the
+            // authoritative attack phase. Resampling them onto the 30 Hz clip
+            // grid aliases fast weapon motion against the 64 Hz tactical tick.
+            PoseSamplingCadence::Direct
+        }
     }
 }
 
@@ -420,7 +440,8 @@ fn evaluate_skeletons(
         ),
         With<Player>,
     >,
-    weapons: Query<&WeaponItem>,
+    weapons: Query<(&WeaponItem, &ItemProperties)>,
+    equip_slots: Query<&EquipSlot>,
 ) {
     for (entity, skeleton, route_trace, inventory, playback) in players {
         // The preceding chained system directly routes authoritative
@@ -433,12 +454,7 @@ fn evaluate_skeletons(
         };
         let mut weighted = Vec::<WeightedClip>::new();
         let mut extrapolated_spans = Vec::<ExtrapolatedSpan>::new();
-        let split_combat_pelvis = !evaluation.lower_body.is_empty()
-            && skeleton.posture() == Posture::Upright
-            && skeleton.weapon_guard() == WeaponGuardState::Raised
-            && skeleton.raised_locomotion().is_moving()
-            && !skeleton.is_quickstep()
-            && !skeleton.is_posture_transitioning();
+        let split_combat_pelvis = combat_pelvis_is_component_blended(skeleton, &evaluation);
         let base_layer = if split_combat_pelvis {
             ClipLayer::CombatUpper
         } else if !evaluation.lower_body.is_empty() {
@@ -494,17 +510,25 @@ fn evaluate_skeletons(
                 0.0
             }
         };
-        if let Some(grip) = equipped_weapon_grip(inventory, &weapons)
-            && let Some(clip) = runtime.grips.get(&grip)
+        if let Some((weapon, properties)) = equipped_main_weapon(inventory, &weapons, &equip_slots)
+            && let Some(clip) = runtime.grips.get(&weapon_grip(&weapon.skill_weights))
         {
-            append_weighted_clip(
-                &mut weighted,
-                &clip.at_anchor_layer(0, ClipLayer::Hands),
-                false,
-                0.0,
-                1.0,
-                None,
-            );
+            let uses_offhand =
+                weapon_uses_offhand(&properties.id, offhand_is_empty(inventory, &equip_slots));
+            let authored_pose_owns_hands = authored_pose_owns_hands(samples);
+            for layer in weapon_grip_layers(authored_pose_owns_hands, uses_offhand)
+                .into_iter()
+                .flatten()
+            {
+                append_weighted_clip(
+                    &mut weighted,
+                    &clip.at_anchor_layer(0, layer),
+                    false,
+                    0.0,
+                    1.0,
+                    None,
+                );
+            }
         }
         let target = PlaybackPose {
             use_authored_bind_pose: weighted.is_empty() && extrapolated_spans.is_empty(),
@@ -543,6 +567,17 @@ fn evaluate_skeletons(
     }
 }
 
+fn combat_pelvis_is_component_blended(
+    skeleton: &SkeletonState,
+    evaluation: &AnimationEvaluation,
+) -> bool {
+    !evaluation.lower_body.is_empty()
+        && skeleton.posture() == Posture::Upright
+        && skeleton.weapon_guard() == WeaponGuardState::Raised
+        && !skeleton.is_quickstep()
+        && !skeleton.is_posture_transitioning()
+}
+
 fn weapon_grip(skill_weights: &[f32; 9]) -> WeaponGrip {
     if skill_weights[0] > f32::EPSILON {
         WeaponGrip::Polearm
@@ -551,30 +586,75 @@ fn weapon_grip(skill_weights: &[f32; 9]) -> WeaponGrip {
     }
 }
 
-fn equipped_weapon_grip(
+fn held_item(
     inventory: Option<&InventoryItems>,
-    weapons: &Query<&WeaponItem>,
-) -> Option<WeaponGrip> {
-    inventory
-        .and_then(InventoryItems::holding_weapon)
+    equip_slots: &Query<&EquipSlot>,
+    slot: EquipSlot,
+) -> Option<Entity> {
+    inventory?.iter().find(|&entity| {
+        equip_slots
+            .get(entity)
+            .is_ok_and(|equipped| *equipped == slot)
+    })
+}
+
+fn equipped_main_weapon<'a>(
+    inventory: Option<&InventoryItems>,
+    weapons: &'a Query<(&WeaponItem, &ItemProperties)>,
+    equip_slots: &Query<&EquipSlot>,
+) -> Option<(&'a WeaponItem, &'a ItemProperties)> {
+    held_item(inventory, equip_slots, EquipSlot::HoldingRight)
         .and_then(|entity| weapons.get(entity).ok())
-        .map(|weapon| weapon_grip(&weapon.skill_weights))
+}
+
+fn offhand_is_empty(inventory: Option<&InventoryItems>, equip_slots: &Query<&EquipSlot>) -> bool {
+    held_item(inventory, equip_slots, EquipSlot::HoldingLeft).is_none()
+}
+
+fn authored_pose_owns_hands(samples: &[PoseSample]) -> bool {
+    samples
+        .iter()
+        .any(|sample| sample.pose.is_main_hand_attack())
+}
+
+fn weapon_uses_offhand(item_id: &str, offhand_is_empty: bool) -> bool {
+    offhand_is_empty
+        && item_catalog::weapon_handling(item_id) == Some(item_catalog::WeaponHandling::TwoHanded)
+}
+
+fn weapon_grip_layers(
+    authored_pose_owns_hands: bool,
+    uses_offhand: bool,
+) -> [Option<ClipLayer>; 2] {
+    match (authored_pose_owns_hands, uses_offhand) {
+        (true, true) => [None, None],
+        (false, true) => [Some(ClipLayer::MainHand), Some(ClipLayer::Offhand)],
+        _ => [Some(ClipLayer::MainHand), None],
+    }
 }
 
 fn equipped_animation_pack(
     inventory: Option<&InventoryItems>,
     items: &Query<&ItemProperties, With<WeaponItem>>,
+    equip_slots: &Query<&EquipSlot>,
 ) -> &'static str {
-    let Some(properties) = inventory
-        .and_then(InventoryItems::holding_weapon)
+    let Some(properties) = held_item(inventory, equip_slots, EquipSlot::HoldingRight)
         .and_then(|entity| items.get(entity).ok())
     else {
         return HUMANOID_UNARMED_PACK;
     };
-    animation_pack_for_weapon(&properties.id)
+    animation_pack_for_weapon(
+        &properties.id,
+        weapon_uses_offhand(&properties.id, offhand_is_empty(inventory, equip_slots)),
+    )
 }
 
-fn animation_pack_for_weapon(item_id: &str) -> &'static str {
+fn animation_pack_for_weapon(item_id: &str, uses_offhand: bool) -> &'static str {
+    if item_catalog::weapon_handling(item_id) == Some(item_catalog::WeaponHandling::TwoHanded)
+        && !uses_offhand
+    {
+        return HUMANOID_UNARMED_PACK;
+    }
     if let Some(pack) = item_catalog::weapon_animation_pack(item_id) {
         return pack;
     }
@@ -1271,6 +1351,39 @@ mod contract_tests {
         assert_eq!(combat_cycle_ik_weights(0.625), Vec2::X);
         assert_eq!(combat_cycle_ik_weights(0.75), Vec2::Y);
         assert_eq!(combat_cycle_ik_weights(0.875), Vec2::Y);
+    }
+
+    #[test]
+    fn planted_and_moving_combat_both_component_blend_the_pelvis() {
+        let mut planted = SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised);
+        planted.begin_attack(AttackSpec::default(), 0, 100).unwrap();
+        let planted_evaluation = AnimationEvaluation::from_skeleton(&planted);
+        assert!(!planted_evaluation.action.is_empty());
+        assert!(!planted_evaluation.lower_body.is_empty());
+        assert!(combat_pelvis_is_component_blended(
+            &planted,
+            &planted_evaluation
+        ));
+
+        let moving = planted
+            .clone()
+            .with_raised_locomotion(RaisedLocomotionIntent::moving(Vec2::X, 1.0));
+        let moving_evaluation = AnimationEvaluation::from_skeleton(&moving);
+        assert!(!moving_evaluation.action.is_empty());
+        assert!(combat_pelvis_is_component_blended(
+            &moving,
+            &moving_evaluation
+        ));
+
+        let mut quickstep = SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised);
+        quickstep
+            .begin_dodge(DodgeSpec::quickstep(Vec2::X).unwrap(), 0, 100)
+            .unwrap();
+        let quickstep_evaluation = AnimationEvaluation::from_skeleton(&quickstep);
+        assert!(!combat_pelvis_is_component_blended(
+            &quickstep,
+            &quickstep_evaluation
+        ));
     }
 
     #[test]

@@ -692,6 +692,20 @@ impl SemanticPose {
         Self::SupineTransition,
     ];
 
+    pub const fn is_main_hand_attack(self) -> bool {
+        matches!(
+            self,
+            Self::GuardSwing
+                | Self::AttackSwing
+                | Self::RecoverSwing
+                | Self::ContinueSwing
+                | Self::GuardThrust
+                | Self::AttackThrust
+                | Self::RecoverThrust
+                | Self::ContinueThrust
+        )
+    }
+
     pub fn as_str(self) -> &'static str {
         use SemanticPose::*;
         match self {

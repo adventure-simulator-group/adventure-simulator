@@ -109,11 +109,12 @@ pub(super) fn evaluate_semantic_route_paths(
     runtime: Res<AnimationRuntime>,
     players: Query<(Entity, &PresentedSkeleton, Option<&InventoryItems>), With<Player>>,
     items: Query<&ItemProperties, With<WeaponItem>>,
+    equip_slots: Query<&EquipSlot>,
 ) {
     for (entity, skeleton, inventory) in &players {
         let mut resolved = skeleton.clone();
         resolved.state.animation_pack =
-            super::equipped_animation_pack(inventory, &items).to_owned();
+            super::equipped_animation_pack(inventory, &items, &equip_slots).to_owned();
         resolved.state.attack_animations = runtime
             .library
             .attack_animations(&resolved.state.animation_pack);

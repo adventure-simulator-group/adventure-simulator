@@ -915,12 +915,16 @@ fn try_start_attack(
         let (animation_delay, contact_seconds) =
             delayed_melee_contact_seconds(windup_secs, contact_delay);
         spec.curve = curve;
-        match skeleton.begin_attack_timed(
-            spec,
-            start + delay_ticks(animation_delay),
-            start + animation_ticks(contact_seconds),
-            start + animation_ticks(contact_seconds + recovery_secs),
-        ) {
+        let sequence_start = if spec.continuation {
+            skeleton.action_end_tick().unwrap_or(start)
+        } else {
+            start
+        };
+        let animation_start = sequence_start + delay_ticks(animation_delay);
+        let contact_tick = sequence_start + animation_ticks(contact_seconds);
+        let recovery_tick = sequence_start + animation_ticks(contact_seconds + recovery_secs);
+        let contact_from_input = contact_tick.saturating_sub(start) as f32 / locomotion_sample_hz();
+        match skeleton.begin_attack_timed(spec, animation_start, contact_tick, recovery_tick) {
             Ok(()) => {}
             Err(ActionTransitionError::ActionBusy) => {
                 cmd.entity(entity).insert(BufferedMeleeAttack {
@@ -935,8 +939,8 @@ fn try_start_attack(
         }
         cmd.entity(entity)
             .insert(AttackState::new(
-                contact_seconds,
-                contact_seconds,
+                contact_from_input,
+                contact_from_input,
                 reach,
                 false,
                 target,
@@ -1021,21 +1025,25 @@ fn flush_buffered_melee_attacks(
         let (animation_delay, contact_seconds) =
             delayed_melee_contact_seconds(windup_secs, contact_delay);
         let spec = AttackSpec { curve, ..spec };
+        let sequence_start = if spec.continuation {
+            skeleton.action_end_tick().unwrap_or(start)
+        } else {
+            start
+        };
+        let animation_start = sequence_start + delay_ticks(animation_delay);
+        let contact_tick = sequence_start + animation_ticks(contact_seconds);
+        let recovery_tick = sequence_start + animation_ticks(contact_seconds + recovery_secs);
+        let contact_from_input = contact_tick.saturating_sub(start) as f32 / locomotion_sample_hz();
         if skeleton
-            .begin_attack_timed(
-                spec,
-                start + delay_ticks(animation_delay),
-                start + animation_ticks(contact_seconds),
-                start + animation_ticks(contact_seconds + recovery_secs),
-            )
+            .begin_attack_timed(spec, animation_start, contact_tick, recovery_tick)
             .is_err()
         {
             continue;
         }
         cmd.entity(entity)
             .insert(AttackState::new(
-                contact_seconds,
-                contact_seconds,
+                contact_from_input,
+                contact_from_input,
                 reach,
                 false,
                 target,

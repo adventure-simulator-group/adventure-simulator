@@ -229,7 +229,7 @@ fn collect_loaded_grips(
             LoadedClip {
                 handle: clip_handle.clone(),
                 duration_seconds: clip.duration(),
-                layer: ClipLayer::Hands,
+                layer: ClipLayer::MainHand,
             },
         );
         runtime.processed_grips.insert(grip);
