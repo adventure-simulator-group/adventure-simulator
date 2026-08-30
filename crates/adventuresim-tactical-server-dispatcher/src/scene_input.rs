@@ -6,7 +6,9 @@ use std::{
 use adventuresim_core::weather::{WORLD_WEATHER_SEED, weather_at};
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_terrain::{Cell, Surface, TerrainPack};
-use adventuresim_world_schema::{BASIS_POINTS_PER_WHOLE, coordinates::Wgs84CoordinateE7};
+use adventuresim_world_schema::{
+    BASIS_POINTS_PER_WHOLE, TerrainFeature, coordinates::Wgs84CoordinateE7,
+};
 use fabelgeist_determinism::mix64;
 use sha2::{Digest, Sha256};
 
@@ -25,6 +27,10 @@ const PEAK_SAMPLE_RADIUS_FACTOR: f64 = 0.4;
 const HILLY_DETAIL_AMPLITUDE_METRES: f32 = 0.45;
 const RANDOM_DETAIL_SCALE: u64 = 10_000;
 const RANDOM_DETAIL_BUCKETS: u64 = RANDOM_DETAIL_SCALE * 2 + 1;
+const SCARP_DEFAULT_THROW_CM: u16 = 800;
+const SCARP_DEFAULT_HALF_LENGTH_CM: u16 = 4_500;
+const SCARP_DEFAULT_HALF_WIDTH_CM: u16 = 1_800;
+const SCARP_DEFAULT_COLLAR_CM: u16 = 400;
 
 #[derive(Clone, Copy)]
 struct VistaLodSpec {
@@ -147,6 +153,7 @@ pub fn build_imported_scene(
         lunar_phase_minute,
         absolute_elevation_metres: center.elevation_m,
         playable,
+        fault_scarp: nearest_fault_scarp(pack.terrain_features(), coordinates, seed),
         vista,
         weather: weather_at(
             WORLD_WEATHER_SEED,
@@ -158,6 +165,98 @@ pub fn build_imported_scene(
     };
     input.validate().map_err(|error| error.to_string())?;
     Ok(input)
+}
+
+fn nearest_fault_scarp(
+    terrain_features: &[TerrainFeature],
+    center: Wgs84CoordinateE7,
+    seed: u64,
+) -> Option<FaultScarpRecipe> {
+    let latitude = center.latitude().degrees();
+    let longitude = center.longitude().degrees();
+    let longitude_scale =
+        (METRES_PER_LATITUDE_DEGREE * latitude.to_radians().cos()).max(MIN_LONGITUDE_SCALE);
+    let playable_half_extent =
+        f64::from(PLAYABLE_SIDE - 1) * f64::from(PLAYABLE_SPACING_METRES) * 0.5;
+    let mut nearest: Option<(f64, [f64; 2], [i32; 2], FaultScarpLod)> = None;
+    for feature in terrain_features {
+        let TerrainFeature::MappedFault(fault) = feature;
+        for segment in fault.trace.windows(2) {
+            let a = [
+                (segment[0].longitude() - longitude) * longitude_scale,
+                (segment[0].latitude() - latitude) * METRES_PER_LATITUDE_DEGREE,
+            ];
+            let b = [
+                (segment[1].longitude() - longitude) * longitude_scale,
+                (segment[1].latitude() - latitude) * METRES_PER_LATITUDE_DEGREE,
+            ];
+            let tangent = [b[0] - a[0], b[1] - a[1]];
+            let length_squared = tangent[0] * tangent[0] + tangent[1] * tangent[1];
+            if length_squared < 1.0 {
+                continue;
+            }
+            let fraction =
+                (-(a[0] * tangent[0] + a[1] * tangent[1]) / length_squared).clamp(0.0, 1.0);
+            let closest = [a[0] + tangent[0] * fraction, a[1] + tangent[1] * fraction];
+            let origin_cm = [
+                (closest[0] * 100.0).round() as i32,
+                (closest[1] * 100.0).round() as i32,
+            ];
+            let distance_squared = closest[0] * closest[0] + closest[1] * closest[1];
+            let Some(lod) = scarp_lod(closest, tangent, playable_half_extent) else {
+                continue;
+            };
+            if nearest.is_none_or(|(best, _, _, _)| distance_squared < best) {
+                nearest = Some((distance_squared, tangent, origin_cm, lod));
+            }
+        }
+    }
+    let (_, tangent, origin_cm, lod) = nearest?;
+    let length = (tangent[0] * tangent[0] + tangent[1] * tangent[1]).sqrt();
+    Some(FaultScarpRecipe {
+        seed,
+        // The closest point is the canonical mapped trace projected into the
+        // scene's east/north frame. LOD changes sampling resolution only; the
+        // feature's position and physical dimensions remain canonical.
+        origin_cm,
+        tangent_permyriad: [
+            (tangent[0] / length * 10_000.0).round() as i16,
+            (tangent[1] / length * 10_000.0).round() as i16,
+        ],
+        throw_cm: SCARP_DEFAULT_THROW_CM,
+        half_length_cm: SCARP_DEFAULT_HALF_LENGTH_CM,
+        half_width_cm: SCARP_DEFAULT_HALF_WIDTH_CM,
+        collar_cm: SCARP_DEFAULT_COLLAR_CM,
+        lod,
+    })
+}
+
+fn scarp_lod(
+    origin_metres: [f64; 2],
+    tangent: [f64; 2],
+    playable_half_extent: f64,
+) -> Option<FaultScarpLod> {
+    if origin_metres
+        .into_iter()
+        .all(|coordinate| coordinate.abs() <= playable_half_extent)
+    {
+        return Some(FaultScarpLod::Detail);
+    }
+    let length = (tangent[0] * tangent[0] + tangent[1] * tangent[1]).sqrt();
+    let unit = [tangent[0] / length, tangent[1] / length];
+    let half_length = f64::from(SCARP_DEFAULT_HALF_LENGTH_CM) / 100.0;
+    let half_width = f64::from(SCARP_DEFAULT_HALF_WIDTH_CM) / 100.0;
+    let extent = [
+        unit[0].abs() * half_length + unit[1].abs() * half_width,
+        unit[1].abs() * half_length + unit[0].abs() * half_width,
+    ];
+    origin_metres
+        .into_iter()
+        .zip(extent)
+        .all(|(coordinate, footprint_extent)| {
+            coordinate.abs() <= playable_half_extent + footprint_extent
+        })
+        .then_some(FaultScarpLod::Fringe)
 }
 
 pub fn materialize_scene_input(
@@ -304,6 +403,7 @@ fn deterministic_detail(seed: u64, x: u16, z: u16) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use adventuresim_world_schema::{MappedFault, TravelGeometryPoint};
     use std::{io::Write, time::SystemTime};
 
     use adventuresim_terrain::{CHUNK_SIDE, Entry, Manifest, TerrainPurpose};
@@ -358,6 +458,10 @@ mod tests {
         assert_eq!(input.vista.lods[0].width, 41);
         assert_eq!(input.vista.lods[2].spacing_metres, 1_000.0);
         assert_eq!(input.vista.lods[2].width, 51);
+        let fault_scarp = input
+            .fault_scarp
+            .expect("terrain-pack feature should produce a scarp");
+        assert!((1_050..=1_180).contains(&fault_scarp.origin_cm[1]));
         assert!(
             input
                 .playable
@@ -379,6 +483,55 @@ mod tests {
 
         drop(pack);
         fs::remove_dir_all(directory).expect("remove terrain fixture directory");
+    }
+
+    #[test]
+    fn nearby_fault_keeps_its_canonical_offset_and_source_orientation() {
+        let center = Wgs84CoordinateE7::new(510_000_000, 100_000_000).unwrap();
+        let faults = vec![TerrainFeature::MappedFault(MappedFault {
+            id: "DE:test".into(),
+            local_name: Some("fixture".into()),
+            classification: None,
+            mapped_active: false,
+            mapped_capable: false,
+            trace: vec![
+                TravelGeometryPoint::new(9.99, 51.0001).unwrap(),
+                TravelGeometryPoint::new(10.01, 51.0001).unwrap(),
+            ],
+        })];
+        let recipe = nearest_fault_scarp(&faults, center, 42).unwrap();
+        assert!(recipe.tangent_permyriad[0] > 9_900);
+        assert!(recipe.tangent_permyriad[1].abs() < 100);
+        assert_eq!(recipe.origin_cm[0], 0);
+        assert!((1_050..=1_180).contains(&recipe.origin_cm[1]));
+        assert_eq!(recipe.throw_cm, 800);
+        assert_eq!(recipe.half_length_cm, SCARP_DEFAULT_HALF_LENGTH_CM);
+        assert_eq!(recipe.half_width_cm, SCARP_DEFAULT_HALF_WIDTH_CM);
+        assert_eq!(recipe.lod, FaultScarpLod::Detail);
+    }
+
+    #[test]
+    fn overlapping_fault_uses_coarser_lod_without_changing_its_extent() {
+        let center = Wgs84CoordinateE7::new(510_000_000, 100_000_000).unwrap();
+        let latitude_offset = 60.0 / METRES_PER_LATITUDE_DEGREE;
+        let faults = vec![TerrainFeature::MappedFault(MappedFault {
+            id: "DE:fringe".into(),
+            local_name: None,
+            classification: None,
+            mapped_active: false,
+            mapped_capable: false,
+            trace: vec![
+                TravelGeometryPoint::new(9.99, 51.0 + latitude_offset).unwrap(),
+                TravelGeometryPoint::new(10.01, 51.0 + latitude_offset).unwrap(),
+            ],
+        })];
+
+        let recipe = nearest_fault_scarp(&faults, center, 42).unwrap();
+
+        assert!((5_950..=6_050).contains(&recipe.origin_cm[1]));
+        assert_eq!(recipe.half_length_cm, SCARP_DEFAULT_HALF_LENGTH_CM);
+        assert_eq!(recipe.half_width_cm, SCARP_DEFAULT_HALF_WIDTH_CM);
+        assert_eq!(recipe.lod, FaultScarpLod::Fringe);
     }
 
     fn constant_final_pack() -> (TerrainPack, PathBuf) {
@@ -439,6 +592,17 @@ mod tests {
             cultivation_source_sha256: "3".repeat(64),
             cultivated_square_count: 1,
             cultivated_native_cells: 1,
+            terrain_features: vec![TerrainFeature::MappedFault(MappedFault {
+                id: "DE:pack-fixture".into(),
+                local_name: Some("pack fixture".into()),
+                classification: None,
+                mapped_active: false,
+                mapped_capable: false,
+                trace: vec![
+                    TravelGeometryPoint::new(10.49, 50.5001).unwrap(),
+                    TravelGeometryPoint::new(10.51, 50.5001).unwrap(),
+                ],
+            })],
             entries,
             package_sha256: "0".repeat(64),
         };

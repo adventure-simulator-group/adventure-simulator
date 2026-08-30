@@ -1,4 +1,6 @@
-use adventuresim_tactical_core::prelude::{SceneEnvironment, SceneGround, SceneId, SceneTerrain};
+use adventuresim_tactical_core::prelude::{
+    SceneEnvironment, SceneGround, SceneId, SceneTerrain, TerrainTransitionCollar,
+};
 use bevy::{
     color::{ColorToComponents, LinearRgba},
     ecs::change_detection::DetectChanges,
@@ -39,7 +41,10 @@ mod instanced_grass;
 mod instanced_understory;
 mod litter;
 mod loose_stone;
+mod scene_mask;
 mod understory;
+
+use scene_mask::{GroundScatterSceneQuery, scatter_ground_without_patch};
 
 #[cfg(all(feature = "instanced-grass", not(target_family = "wasm")))]
 pub(in crate::presentation) use instanced_grass::InstancedGrassPlugin;
@@ -633,16 +638,7 @@ fn foliage_transform(
     reason = "Bevy injects independently borrowed scene, asset, cache, and procedural-resource state"
 )]
 pub(super) fn present_ground_scatter(
-    scenes: Query<
-        (
-            Entity,
-            &SceneId,
-            &SceneTerrain,
-            &SceneGround,
-            &SceneEnvironment,
-        ),
-        Without<GroundScatterPresented>,
-    >,
+    scenes: GroundScatterSceneQuery,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut foliage_materials: ResMut<Assets<TacticalFoliageMaterial>>,
@@ -660,9 +656,12 @@ pub(super) fn present_ground_scatter(
     #[cfg(all(feature = "instanced-grass", not(target_family = "wasm")))]
     mut shrub_leaf_materials: ResMut<Assets<TacticalShrubLeafInstancedMaterial>>,
 ) {
-    for (entity, scene_id, terrain, ground, environment) in &scenes {
+    for (entity, scene_id, terrain, ground, environment, fault_scarp) in &scenes {
         let started = web_time::Instant::now();
         tracing::info!("Generating tactical ground scatter");
+        let masked_ground = fault_scarp
+            .map(|recipe| scatter_ground_without_patch(ground, recipe.transition_collar()));
+        let ground = masked_ground.as_ref().unwrap_or(ground);
         spawn_ground_foliage(
             &mut commands,
             &mut meshes,

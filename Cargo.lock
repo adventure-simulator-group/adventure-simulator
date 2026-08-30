@@ -239,6 +239,7 @@ dependencies = [
  "fabelgeist-determinism",
  "noiz",
  "postcard",
+ "rayon",
  "serde",
  "serde_json",
  "sha2",

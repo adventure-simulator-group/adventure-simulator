@@ -1,8 +1,4 @@
-use std::{
-    fs::{self, File},
-    io::{BufReader, Read},
-    path::Path,
-};
+use std::{fs, path::Path};
 
 use adventuresim_world_schema::{
     CURRENT_INFERENCE_RULES_VERSION, SourceAccess, SourceContentIdentity, SourceLicense,
@@ -13,6 +9,11 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::{Error, Result};
+
+mod fault;
+mod hash;
+pub(crate) use fault::source as faults;
+use hash::{sha256_file, sha256_json};
 
 const MAX_TEXT: usize = 4_096;
 const MAX_NOTICES: usize = 12;
@@ -42,31 +43,6 @@ struct ViabundusFile {
     sha256: String,
     url: String,
     size: u64,
-}
-
-pub(crate) fn sha256_file(path: &Path) -> Result<String> {
-    let mut reader = BufReader::new(File::open(path)?);
-    let mut digest = Sha256::new();
-    let mut buffer = [0_u8; 64 * 1024];
-    loop {
-        let read = reader.read(&mut buffer)?;
-        if read == 0 {
-            break;
-        }
-        digest.update(&buffer[..read]);
-    }
-    Ok(format!("{:x}", digest.finalize()))
-}
-
-fn sha256_json(path: &Path) -> Result<String> {
-    let value: serde_json::Value = serde_json::from_slice(&fs::read(path)?).map_err(|error| {
-        Error::Validation(format!(
-            "invalid source manifest {}: {error}",
-            path.display()
-        ))
-    })?;
-    let canonical = serde_json::to_vec(&value)?;
-    Ok(format!("{:x}", Sha256::digest(canonical)))
 }
 
 #[expect(
@@ -1010,7 +986,7 @@ mod tests {
     fn fixture_digest_is_stable() {
         assert_eq!(
             digest(1544, SpatialGridSpec::default(), &[fixture()]).unwrap(),
-            "e06cf6c350bb3b109c9be774c9f169a94952bdf21943015965a1e7dd91e5830d"
+            "4db541327cea1a8692096e3bcba0afe9fdf842095db73cd46d0c251a05eb77f8"
         );
     }
 

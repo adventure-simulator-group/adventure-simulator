@@ -79,8 +79,6 @@ fn validate_inferred_geometry(
 }
 
 pub fn validate(world: &CompiledWorld) -> Result<()> {
-    crate::sources::industries::validate_semantics(world)?;
-    crate::sources::economies::validate_semantics(world)?;
     if world.metadata.schema_version != WORLD_SCHEMA_VERSION {
         return Err(Error::Validation(format!(
             "schema version {} is not supported (expected {WORLD_SCHEMA_VERSION})",
@@ -132,6 +130,7 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
         (report.tree_species_rasters_read > 0, "eu-trees4f-v2"),
         (report.soil_rasters_read > 0, "soilgrids-v2-rolling"),
         (report.geology_features_read > 0, "egdi-surface-geology-1m"),
+        (report.fault_features_read > 0, "hike-fault-db-v17b"),
         (
             report.religion_regions_read > 0,
             "ieg-religion-1544-curated",
@@ -161,6 +160,8 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
             "canonical source manifest set does not match build evidence (expected {expected:?}, got {actual:?})"
         )));
     }
+
+    crate::terrain_feature_validation::validate_world_semantics(world)?;
 
     let node_ids: HashSet<_> = world.nodes.iter().map(|node| node.id).collect();
     let node_coordinates = world
@@ -898,6 +899,7 @@ mod tests {
             settlements: Vec::new(),
             settlement_aliases: Vec::new(),
             settlement_descriptions: Vec::new(),
+            terrain_features: Vec::new(),
             report: WorldBuildReport::default(),
         }
     }

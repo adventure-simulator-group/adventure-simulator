@@ -25,6 +25,7 @@ avian3d.workspace = true
 bevy_ahoy.workspace = true
 strum = { version = "0.28", features = ["derive"] }
 noiz.workspace = true
+rayon.workspace = true
 
 [lints]
 workspace = true

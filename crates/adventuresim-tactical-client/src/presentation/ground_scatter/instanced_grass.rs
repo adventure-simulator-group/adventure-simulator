@@ -14,7 +14,7 @@
 
 use std::sync::Arc;
 
-use adventuresim_tactical_core::prelude::{SceneEnvironment, SceneGround, SceneId, SceneTerrain};
+use adventuresim_tactical_core::prelude::{SceneEnvironment, SceneGround, SceneTerrain};
 use bevy::{
     camera::{primitives::Aabb, visibility::NoFrustumCulling},
     color::{Color, LinearRgba},
@@ -69,28 +69,19 @@ impl Plugin for InstancedGrassPlugin {
 
 /// Marks scenes whose instanced sward has been generated.
 #[derive(Component)]
-struct InstancedGrassPresented;
+pub(super) struct InstancedGrassPresented;
 
 /// Instanced counterpart of the grass portion of `present_ground_scatter`.
 /// Runs independently so the legacy scatter path keeps its signature; the
 /// legacy grass spawn itself is compiled out while this module is active.
 fn present_instanced_grass(
-    scenes: Query<
-        (
-            Entity,
-            &SceneId,
-            &SceneTerrain,
-            &SceneGround,
-            &SceneEnvironment,
-        ),
-        Without<InstancedGrassPresented>,
-    >,
+    scenes: super::scene_mask::InstancedGrassSceneQuery,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<TacticalGrassInstancedMaterial>>,
     settings: Res<crate::presentation::TacticalGraphicsSettings>,
 ) {
-    for (entity, _scene_id, terrain, ground, environment) in &scenes {
+    for (entity, _scene_id, terrain, ground, environment, fault_scarp) in &scenes {
         if !settings.config.grass.enabled {
             commands.entity(entity).insert(InstancedGrassPresented);
             continue;
@@ -104,6 +95,10 @@ fn present_instanced_grass(
             bps(environment.weather.snow_cover_bps),
         ) * settings.config.grass.density_scale;
         let wind_scale = 0.16 + bps(environment.weather.wind_speed_bps) * 0.36;
+        let masked_ground = fault_scarp.map(|recipe| {
+            super::scene_mask::scatter_ground_without_patch(ground, recipe.transition_collar())
+        });
+        let ground = masked_ground.as_ref().unwrap_or(ground);
         spawn(
             &mut commands,
             &mut meshes,

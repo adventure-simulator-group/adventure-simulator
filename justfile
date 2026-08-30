@@ -188,6 +188,13 @@ init-geology:
 verify-geology:
     @{{ python_bin }} scripts/world_source_init.py egdi --verify-only
 
+plan-faults:
+    @{{ python_bin }} scripts/world_source_init.py hike --plan
+init-faults:
+    @{{ python_bin }} scripts/world_source_init.py hike --init
+verify-faults:
+    @{{ python_bin }} scripts/world_source_init.py hike --verify-only
+
 plan-religion:
     @{{ python_bin }} scripts/world_source_init.py religion --plan
 init-religion:

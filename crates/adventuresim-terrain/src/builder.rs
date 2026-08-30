@@ -11,16 +11,8 @@ use std::{
 };
 use tiff::decoder::{Decoder, DecodingResult};
 
-#[derive(Default)]
-pub struct Features {
-    pub roads: Vec<Vec<[f64; 2]>>,
-    pub water: Vec<Vec<Vec<[f64; 2]>>>,
-    pub wetlands: Vec<Vec<Vec<[f64; 2]>>>,
-    pub wetland_source_sha256: String,
-    pub cultivated: Vec<Vec<Vec<[f64; 2]>>>,
-    pub cultivation_source_sha256: String,
-    pub cultivation_rules_version: u16,
-}
+mod features;
+pub use features::Features;
 
 pub fn build(
     elevation_dir: &Path,
@@ -43,8 +35,7 @@ pub fn build(
         east.ceil() as i16,
         north.ceil() as i16,
     ];
-    let mut entries = Vec::new();
-    let mut pack = Vec::new();
+    let (mut entries, mut pack) = (Vec::new(), Vec::new());
     let mut cultivated_native_cells = 0_u64;
     for south in source_bounds[1]..source_bounds[3] {
         for west in source_bounds[0]..source_bounds[2] {
@@ -199,6 +190,7 @@ pub fn build(
         cultivation_source_sha256: features.cultivation_source_sha256.clone(),
         cultivated_square_count: features.cultivated.len() as u64,
         cultivated_native_cells,
+        terrain_features: features.terrain_features.clone(),
         entries,
         package_sha256: "0".repeat(64),
     };

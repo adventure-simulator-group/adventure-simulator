@@ -120,8 +120,8 @@ def validate_runtime_sources(repository: Path) -> tuple[dict[str, object], dict[
         fail("strategic map tile pack does not match its manifest")
 
     terrain = load_json(repository / SOURCE_PATHS["strategic-map/terrain-routing-v3.json"])
-    if terrain.get("schema") != 6 or terrain.get("purpose") != "final":
-        fail("terrain routing package is not the final schema-6 runtime pack")
+    if terrain.get("schema") != 7 or terrain.get("purpose") != "final":
+        fail("terrain routing package is not the final schema-7 runtime pack")
     if (
         terrain.get("cultivation_grid_crs") != "EPSG:3035"
         or terrain.get("cultivation_grid_resolution_m") != 1000
