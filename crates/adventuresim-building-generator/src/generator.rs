@@ -3060,7 +3060,9 @@ fn resolve_timber_frame_assembly(
         let approach_centre = opening.frame.origin + opening.frame.outward * 0.75;
         let threshold_centre = opening.frame.origin;
         let vestibule_centre = opening.frame.origin - opening.frame.outward * 0.75;
-        ground_route_position = opening.frame.origin - opening.frame.outward * 1.15;
+        let entry_route_clearance_metres = 0.10_f32;
+        ground_route_position =
+            vestibule_centre - opening.frame.outward * entry_route_clearance_metres;
         for (id, centre, depth) in [
             (approach, approach_centre, 0.90_f32),
             (threshold, threshold_centre, 0.35_f32),
@@ -22646,6 +22648,17 @@ mod tests {
             crate::audit_plan(&plan)
                 .iter()
                 .any(|issue| issue.code == "invalid_vertical_circulation")
+        );
+    }
+
+    #[test]
+    fn town_house_seed_one_has_a_clear_timber_entry_to_stair_route() {
+        let plan = generate(&BuildingProgram::fixture(BuildingArchetype::TownHouse, 1))
+            .expect("town-house seed one has a traversable timber route");
+        assert!(
+            crate::audit_plan(&plan)
+                .iter()
+                .all(|issue| issue.code != "invalid_timber_circulation")
         );
     }
 
