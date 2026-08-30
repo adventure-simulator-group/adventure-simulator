@@ -923,7 +923,12 @@ fn try_start_attack(
         let animation_start = sequence_start + delay_ticks(animation_delay);
         let contact_tick = sequence_start + animation_ticks(contact_seconds);
         let recovery_tick = sequence_start + animation_ticks(contact_seconds + recovery_secs);
-        let contact_from_input = contact_tick.saturating_sub(start) as f32 / locomotion_sample_hz();
+        let contact_from_input = melee_contact_delay_from_input(
+            &skeleton,
+            spec.continuation,
+            contact_tick,
+            contact_seconds,
+        );
         match skeleton.begin_attack_timed(spec, animation_start, contact_tick, recovery_tick) {
             Ok(()) => {}
             Err(ActionTransitionError::ActionBusy) => {
@@ -1033,7 +1038,12 @@ fn flush_buffered_melee_attacks(
         let animation_start = sequence_start + delay_ticks(animation_delay);
         let contact_tick = sequence_start + animation_ticks(contact_seconds);
         let recovery_tick = sequence_start + animation_ticks(contact_seconds + recovery_secs);
-        let contact_from_input = contact_tick.saturating_sub(start) as f32 / locomotion_sample_hz();
+        let contact_from_input = melee_contact_delay_from_input(
+            &skeleton,
+            spec.continuation,
+            contact_tick,
+            contact_seconds,
+        );
         if skeleton
             .begin_attack_timed(spec, animation_start, contact_tick, recovery_tick)
             .is_err()
@@ -1168,6 +1178,19 @@ fn on_parry_fired(
     cmd.client_trigger(DefendRequest::Parry);
 }
 
+fn melee_contact_delay_from_input(
+    skeleton: &SkeletonState,
+    continuation: bool,
+    contact_tick: u64,
+    ordinary_contact_seconds: f32,
+) -> f32 {
+    if continuation {
+        contact_tick.saturating_sub(skeleton.locomotion_sample_tick) as f32 / locomotion_sample_hz()
+    } else {
+        ordinary_contact_seconds
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1193,6 +1216,20 @@ mod tests {
             state.facing_timer.remaining(),
             state.pre_hit_timer.remaining(),
             "facing remains active from input through delayed contact"
+        );
+    }
+
+    #[test]
+    fn continuation_cooldown_uses_the_replicated_animation_clock() {
+        let skeleton = SkeletonState::default().with_locomotion_sample_tick(700);
+
+        assert_eq!(
+            melee_contact_delay_from_input(&skeleton, true, 732, 0.3),
+            0.5
+        );
+        assert_eq!(
+            melee_contact_delay_from_input(&skeleton, false, 732, 0.3),
+            0.3
         );
     }
 
