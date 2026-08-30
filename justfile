@@ -188,6 +188,13 @@ init-geology:
 verify-geology:
     @{{ python_bin }} scripts/world_source_init.py egdi --verify-only
 
+plan-faults:
+    @{{ python_bin }} scripts/world_source_init.py hike --plan
+init-faults:
+    @{{ python_bin }} scripts/world_source_init.py hike --init
+verify-faults:
+    @{{ python_bin }} scripts/world_source_init.py hike --verify-only
+
 plan-religion:
     @{{ python_bin }} scripts/world_source_init.py religion --plan
 init-religion:
@@ -638,6 +645,7 @@ fmt-check:
     @cargo fmt --manifest-path crates/fabelgeist-numpy-storage/Cargo.toml -- --check
 
 lint: verify-db-client
+    @cargo run --package fabelgeist-rust-quality -- check .
     @cargo clippy --package adventuresim-tactical-client --lib --target wasm32-unknown-unknown -- -D warnings
     @cargo clippy --workspace --all-targets --all-features -- -D warnings
     @cargo clippy --manifest-path crates/adventuresim-character-creator/Cargo.toml --all-targets --all-features -- -D warnings

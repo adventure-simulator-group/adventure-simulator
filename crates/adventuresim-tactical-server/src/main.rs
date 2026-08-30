@@ -6,6 +6,7 @@ mod equipment;
 mod mission;
 mod player_projection;
 mod stdb;
+mod terrain_collision;
 
 use std::{net::SocketAddr, num::NonZeroU32, path::PathBuf};
 
@@ -840,14 +841,15 @@ fn setup_stdb_callbacks(conn: Res<SpacetimeDb>) {
 fn on_scene_terrain_added(
     event: On<Add, SceneTerrain>,
     mut commands: Commands,
-    query: Query<&SceneTerrain>,
+    query: Query<(&SceneTerrain, Option<&FaultScarpRecipe>)>,
 ) -> Result {
-    let terrain = query.get(event.entity)?;
+    let (terrain, recipe) = query.get(event.entity)?;
+    let collider = terrain_collision::collider(terrain, recipe)?;
     commands.entity(event.entity).insert((
         Replicated,
         RigidBody::Static,
         CollisionLayers::new(TACTICAL_TERRAIN_LAYER, LayerMask::ALL),
-        terrain.collider(),
+        collider,
     ));
     Ok(())
 }
@@ -892,6 +894,7 @@ fn on_server_started(
         );
         let scene_id = input.scene_key.clone();
         let terrain = generated.terrain;
+        let terrain_patch = generated.terrain_patch;
         let ground = generated.ground;
         let environment = input.environment_snapshot(generated.digest);
         let obstacles = generated.obstacles;
@@ -934,18 +937,15 @@ fn on_server_started(
                 Transform::from_xyz(x, y, z).with_rotation(Quat::from_rotation_y(yaw)),
             ));
         }
-        let terrain_collider = terrain.collider();
-        let mut scene = commands.spawn((
-            Replicated,
-            SceneId(scene_id),
+        terrain_collision::spawn_scene(
+            &mut commands,
+            scene_id,
             terrain,
             ground,
-            RigidBody::Static,
-            CollisionLayers::new(TACTICAL_TERRAIN_LAYER, LayerMask::ALL),
-            terrain_collider,
-            Transform::default(),
-        ));
-        scene.insert(environment);
+            environment,
+            terrain_patch.as_ref(),
+            input.fault_scarp,
+        );
     }
     commands.spawn((
         RigidBody::Static,

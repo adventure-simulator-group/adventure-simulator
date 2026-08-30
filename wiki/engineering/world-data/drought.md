@@ -7,7 +7,7 @@ Severity Index (PDSI) across Europe and the Mediterranean.
 - Pinned release: OWDA v1.0, dataset DOI
   [`10.25921/rjm6-mq74`](https://doi.org/10.25921/rjm6-mq74).
 - Authoritative file URL:
-  <https://www.ncei.noaa.gov/pub/data/paleo/drought/owda.nc>
+  <https://www.ncei.noaa.gov/pub/data/paleo/treering/reconstructions/europe/owda.nc>
 - Publication: Cook et al. (2015), *Old World megadroughts and pluvials during
   the Common Era*, DOI
   [`10.1126/sciadv.1500561`](https://doi.org/10.1126/sciadv.1500561).

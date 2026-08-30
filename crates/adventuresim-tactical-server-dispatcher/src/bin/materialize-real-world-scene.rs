@@ -36,7 +36,6 @@ struct Args {
     /// Final compressed terrain pack paired with terrain-manifest.
     #[arg(long, default_value = "target/strategic-map/terrain-routing-v3.pack")]
     terrain_pack: PathBuf,
-
     /// Directory for immutable coordinate-derived scene documents.
     #[arg(long, default_value = "target/tactical-real-world-scenes")]
     output_dir: PathBuf,

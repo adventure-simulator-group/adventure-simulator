@@ -3,6 +3,9 @@ use std::{fs, path::PathBuf};
 use adventuresim_core::weather::{Precipitation, WEATHER_RULES_VERSION, WeatherSnapshot};
 use adventuresim_tactical_core::prelude::*;
 
+#[path = "generate_scene_fixtures/fault.rs"]
+mod fault;
+
 const DEFAULT_TEST_MINUTE: u64 = 339_840 + 10 * 60;
 
 #[derive(Clone, Copy)]
@@ -14,6 +17,7 @@ struct Fixture {
     environment: fn(f32, f32) -> EnvironmentalSample,
     weather: WeatherSnapshot,
     vista: VistaKind,
+    fault_scarp: Option<FaultScarpRecipe>,
 }
 
 #[derive(Clone, Copy)]
@@ -48,16 +52,9 @@ fn main() {
     }
 }
 
-fn fixtures() -> [Fixture; 13] {
+fn fixtures() -> [Fixture; 14] {
     [
-        fixture(
-            "flat-dry-grassland",
-            "grassland",
-            47_101,
-            flat,
-            dry_open,
-            clear(),
-        ),
+        fault::flat_fixture(),
         fixture(
             "steep-open-hillside",
             "hillside",
@@ -66,6 +63,7 @@ fn fixtures() -> [Fixture; 13] {
             rocky_open,
             clear(),
         ),
+        fault::fixture(),
         fixture(
             "dense-woodland",
             "woodland",
@@ -179,6 +177,7 @@ const fn fixture(
         environment,
         weather,
         vista: VistaKind::Ordinary,
+        fault_scarp: None,
     }
 }
 
@@ -195,6 +194,7 @@ fn build_fixture(fixture: Fixture) -> TacticalSceneInput {
         lunar_phase_minute: fixture.weather.interval_start_minute,
         absolute_elevation_metres: 42,
         playable: grid(9, 9, 12.5, fixture.terrain, fixture.environment),
+        fault_scarp: fixture.fault_scarp,
         vista: vista(
             fixture.vista,
             fixture.environment,

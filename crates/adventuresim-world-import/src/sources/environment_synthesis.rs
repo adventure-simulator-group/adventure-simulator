@@ -35,10 +35,7 @@ enum NaturalCover {
 pub(crate) fn finalize(mut draft: FinalizedSoilWorldDraft) -> Result<CompiledWorld> {
     crate::manifest::canonicalize(&mut draft.sources)?;
     let manifest_digest = crate::manifest::digest(draft.year, draft.spatial_grid, &draft.sources)?;
-    let mut direct = 0;
-    let mut derived = 0;
-    let mut fallback = 0;
-    let mut tie_breaks = 0;
+    let (mut direct, mut derived, mut fallback, mut tie_breaks) = (0, 0, 0, 0);
     let settlements = draft
         .settlements
         .into_iter()
@@ -132,6 +129,7 @@ pub(crate) fn finalize(mut draft: FinalizedSoilWorldDraft) -> Result<CompiledWor
         settlements,
         settlement_aliases: draft.settlement_aliases,
         settlement_descriptions: draft.settlement_descriptions,
+        terrain_features: Vec::new(),
         report: draft.report,
     })
 }

@@ -89,7 +89,6 @@ fn main() {
         "Loaded final terrain pack once for tactical sampling"
     );
     let terrain = Arc::new(terrain);
-
     // Shared state for tracking spawned missions and port allocation
     let spawned: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
     let next_port: Arc<Mutex<u16>> = Arc::new(Mutex::new(args.base_port));

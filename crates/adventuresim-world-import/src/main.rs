@@ -25,6 +25,8 @@ use clap::Parser;
 use reqwest::{Url, blocking::Client};
 use serde_json::{Value, json};
 
+mod geology_cli;
+
 const WORLD_YEAR: i32 = 1544;
 /// Conservative upper bound for one complete JSON reducer-call body.
 const MAX_REDUCER_REQUEST_BYTES: usize = 512 * 1024;
@@ -46,8 +48,8 @@ struct Args {
     tree_species_archive: PathBuf,
     #[arg(long, default_value_os_t = default_soilgrids_directory())]
     soilgrids_dir: PathBuf,
-    #[arg(long, default_value_os_t = default_geology_geopackage())]
-    geology_geopackage: PathBuf,
+    #[command(flatten)]
+    geology: geology_cli::GeologyArgs,
     #[arg(long, default_value_os_t = default_religion_regions())]
     religion_regions: PathBuf,
     #[arg(long, default_value_os_t = default_drought_netcdf())]
@@ -168,7 +170,8 @@ fn run(args: Args) -> Result<()> {
                 potential_vegetation: &args.potential_vegetation_dir,
                 tree_species: &args.tree_species_archive,
                 soilgrids: &args.soilgrids_dir,
-                geology: &args.geology_geopackage,
+                geology: &args.geology.geopackage,
+                faults: &args.geology.faults,
                 religion_regions: &args.religion_regions,
                 drought: &args.drought_netcdf,
                 hydrology: &args.hydrology_dir,
@@ -1370,10 +1373,6 @@ fn default_soilgrids_directory() -> PathBuf {
     repository_root().join("target/world-data-sources/prepared/soilgrids")
 }
 
-fn default_geology_geopackage() -> PathBuf {
-    repository_root().join("target/world-data-sources/raw/geology/GeologicUnitView.gpkg")
-}
-
 fn default_religion_regions() -> PathBuf {
     repository_root().join("assets/world-data/ieg-religion-1544.csv")
 }
@@ -1450,6 +1449,7 @@ mod tests {
             settlements: Vec::new(),
             settlement_aliases: Vec::new(),
             settlement_descriptions: Vec::new(),
+            terrain_features: Vec::new(),
             report: WorldBuildReport::default(),
         };
         let default_bytes = serde_json::to_vec(&world(1_000)).unwrap();
@@ -1498,6 +1498,7 @@ mod tests {
             settlements: vec![],
             settlement_aliases: vec![],
             settlement_descriptions: vec![],
+            terrain_features: vec![],
             report: WorldBuildReport::default(),
         };
         let audit = manifest_audit_markdown(&world).unwrap();
@@ -1554,6 +1555,7 @@ mod tests {
                 settlements: vec![],
                 settlement_aliases: vec![],
                 settlement_descriptions: vec![],
+                terrain_features: vec![],
                 report: WorldBuildReport::default(),
             },
             &"b".repeat(64),
@@ -1577,6 +1579,7 @@ mod tests {
                 settlements: vec![],
                 settlement_aliases: vec![],
                 settlement_descriptions: vec![],
+                terrain_features: vec![],
                 report: WorldBuildReport::default(),
             },
             &"b".repeat(64),
@@ -1600,6 +1603,7 @@ mod tests {
                 settlements: vec![],
                 settlement_aliases: vec![],
                 settlement_descriptions: vec![],
+                terrain_features: vec![],
                 report: WorldBuildReport::default(),
             },
             &"b".repeat(64),

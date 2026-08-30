@@ -4,14 +4,12 @@ use adventuresim_world_schema::BASIS_POINTS_PER_WHOLE;
 use avian3d::prelude::*;
 use bevy::platform::hash::RandomState;
 use bevy::prelude::*;
-#[cfg(feature = "meshgen")]
-use bevy::{
-    asset::RenderAssetUsages,
-    mesh::{Indices, PrimitiveTopology},
-};
 use noiz::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::hash::BuildHasher;
+
+#[cfg(test)]
+use crate::terrain_transition::TerrainTransitionCollar;
 
 /// Terrain generator shared by the authoritative server and deterministic
 /// presentation fixtures. Keeping the implementation here prevents animation
@@ -529,15 +527,7 @@ impl SceneTerrain {
     fn mesh_with_stride(&self, stride: usize) -> Mesh {
         let (positions, indices, uvs) = self.mesh_components_with_stride(stride);
 
-        let mut mesh = Mesh::new(
-            PrimitiveTopology::TriangleList,
-            RenderAssetUsages::RENDER_WORLD,
-        );
-        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
-        mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
-        mesh.insert_indices(Indices::U32(indices));
-
-        mesh.with_computed_area_weighted_normals()
+        self.mesh_from_components(positions, indices, uvs)
     }
 
     #[cfg(test)]
@@ -549,6 +539,14 @@ impl SceneTerrain {
     fn mesh_components_with_stride(
         &self,
         stride: usize,
+    ) -> (Vec<[f32; 3]>, Vec<u32>, Vec<[f32; 2]>) {
+        self.mesh_components_with_stride_filtered(stride, |_| true)
+    }
+
+    pub(crate) fn mesh_components_with_stride_filtered(
+        &self,
+        stride: usize,
+        keep_cell: impl Fn(Vec2) -> bool,
     ) -> (Vec<[f32; 3]>, Vec<u32>, Vec<[f32; 2]>) {
         let stride = stride.max(1);
         let xs = (0..self.grid_width()).step_by(stride).collect::<Vec<_>>();
@@ -586,15 +584,23 @@ impl SceneTerrain {
         for x in 0..xs.len() - 1 {
             for z in 0..zs.len() - 1 {
                 let i = (z * xs.len() + x) as u32;
-
-                indices.extend_from_slice(&[
-                    i,
-                    i + xs.len() as u32,
-                    i + 1,
-                    i + 1,
-                    i + xs.len() as u32,
-                    i + xs.len() as u32 + 1,
-                ]);
+                let cell_triangles = [
+                    [i, i + xs.len() as u32, i + 1],
+                    [i + 1, i + xs.len() as u32, i + xs.len() as u32 + 1],
+                ];
+                for triangle in cell_triangles {
+                    let centre = triangle
+                        .iter()
+                        .map(|&index| {
+                            let position = positions[index as usize];
+                            Vec2::new(position[0], position[2])
+                        })
+                        .sum::<Vec2>()
+                        / 3.0;
+                    if keep_cell(centre) {
+                        indices.extend_from_slice(&triangle);
+                    }
+                }
             }
         }
 
@@ -605,6 +611,40 @@ impl SceneTerrain {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn transition_collar_removes_only_the_heightfield_interior() {
+        let terrain = SceneTerrain::new(10, 10, 1.0, |_| 0.0);
+        let collar = TerrainTransitionCollar::irregular_ellipse(
+            Vec2::ZERO,
+            Vec2::X,
+            3.0,
+            3.0,
+            1.0,
+            0,
+            0.0,
+            0,
+        )
+        .unwrap();
+        let (_, full_indices, _) = terrain.mesh_components_with_stride(1);
+        let (positions, cut_indices, _) =
+            terrain.mesh_components_with_stride_and_transition(1, collar);
+
+        assert!(cut_indices.len() < full_indices.len());
+        for triangle in cut_indices.as_chunks::<3>().0 {
+            let centre = triangle
+                .iter()
+                .map(|&index| Vec3::from_array(positions[index as usize]))
+                .sum::<Vec3>()
+                / 3.0;
+            assert!(!collar.cuts_out(Vec2::new(centre.x, centre.z)));
+        }
+        assert!(collar.cuts_out(Vec2::ZERO));
+        assert!(collar.cuts_out(Vec2::new(2.5, 0.0)));
+        assert!(!collar.cuts_out(Vec2::new(3.0, 0.0)));
+        assert!(collar.contains(Vec2::new(2.5, 0.0)));
+        assert!(!collar.contains(Vec2::splat(2.5)));
+    }
 
     #[test]
     fn ground_grid_queries_discrete_centered_samples_and_rejects_invalid_data() {

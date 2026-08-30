@@ -1,6 +1,6 @@
 {
-  "schema_version": 3,
-  "generation_version": 10,
+  "schema_version": 4,
+  "generation_version": 18,
   "seed": 47107,
   "scene_key": "snowfield",
   "source": {
@@ -831,6 +831,7 @@
       }
     ]
   },
+  "fault_scarp": null,
   "vista": {
     "lods": [
       {

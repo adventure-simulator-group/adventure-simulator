@@ -37,7 +37,7 @@ SKY_MINUTES = {"sun": 172 * 1440 + 12 * 60, "sun-detail": 172 * 1440 + 19 * 60,
 EXPECTED_PIPELINE = "tactical_scene_native_capture_v6"
 EXPECTED_PROFILE_VERSION = 15
 EXPECTED_CAMERA_VERSION = 9
-EXPECTED_GENERATION_VERSION = 8
+EXPECTED_GENERATION_VERSION = 18
 EXPECTED_RESOLUTION = [1280, 720]
 EXPECTED_PRESENTATION_REQUEST = {
     "shadows": True,
@@ -88,6 +88,10 @@ CURATED_ENVIRONMENTS = (
     EnvironmentCase(
         "steep-open-hillside",
         ("beauty-ground", "rock-detail", "terrain-grazing-detail", "horizon"),
+    ),
+    EnvironmentCase(
+        "fault-scarp-cliff",
+        ("fault-scarp", "fault-scarp-seam", "horizon"),
     ),
     EnvironmentCase(
         "flat-dry-grassland",

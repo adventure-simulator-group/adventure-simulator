@@ -81,6 +81,19 @@ governed by the repository-root generation rule instead.
 
 ## Lints, tests, and optimization
 
+- The `fabelgeist-rust-quality check` command enforces the semantic-value
+  registry, raw-string branching rules, Cargo lint inheritance, and the
+  500-line file and 100-line function no-growth ceilings. `just lint` runs it
+  automatically.
+- Keep legitimate fixtures, authored catalogs, shader source, and external
+  boundary adapters in `rust-quality.toml`. Every scope or exception must be
+  narrow and reasoned; the checker rejects entries that no longer match.
+- Use the checker's `census` subcommand to review repeated values. Its output is
+  advisory: repetition suggests a concept worth reviewing but does not make an
+  otherwise ordinary value illegal.
+- After splitting an oversized module or migrating a semantic family, run the
+  `baseline` subcommand and apply only the reductions relevant to that change.
+  Never raise a ceiling to accommodate new production debt.
 - Use `#[expect(..., reason = "...")]` for a localized lint exception. Reserve
   `#[allow(...)]` for generated code and macro expansions where `#[expect]`
   cannot be used reliably.
