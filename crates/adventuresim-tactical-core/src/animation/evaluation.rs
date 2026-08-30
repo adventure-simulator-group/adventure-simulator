@@ -20,15 +20,16 @@ pub enum PoseSampling {
     /// one, within the bounds enforced by [`AttackCurve`].
     CurveSpan { end: SemanticPose, coordinate: f32 },
     /// Carry an extrapolated attack tangent through the full-backswing
-    /// waypoint into authored follow-up preparation, then match the outgoing
-    /// preparation-to-contact tangent at the other endpoint.
+    /// waypoint and every authored follow-up anchor with one C2-continuous
+    /// path, ending at the next guard with zero velocity.
     ContinuationSpan {
         contact: SemanticPose,
         end: SemanticPose,
         outgoing: SemanticPose,
+        finish: SemanticPose,
         start_coordinate: f32,
         incoming_tangent: f32,
-        outgoing_tangent_scale: f32,
+        ready_phase: f32,
         progress: f32,
     },
 }
@@ -649,35 +650,26 @@ fn attack_samples(state: &SkeletonState) -> Vec<PoseSample> {
         } else {
             attack_pose(animation)
         };
-    let ready_phase = super::state::continuation_ready_phase();
-    if state.attack_is_continuation() && phase < ready_phase {
-        let progress = phase / ready_phase;
+    if state.attack_is_continuation() {
         return vec![PoseSample {
             pose: start_guard,
             sampling: PoseSampling::ContinuationSpan {
                 contact,
                 end: recovery_pose(animation),
                 outgoing: continuation_pose(animation),
+                finish: end_guard,
                 start_coordinate: state
                     .attack_continuation_start_coordinate()
                     .unwrap_or(1.0 + state.attack_curve().overshoot),
                 incoming_tangent: state.attack_continuation_incoming_tangent().unwrap_or(0.0),
-                outgoing_tangent_scale: super::state::continuation_outgoing_tangent_scale(),
-                progress,
+                ready_phase: continuation_ready_phase(),
+                progress: phase,
             },
             weight: 1.0,
             mirror_lower_body: false,
         }];
     }
-    let (pose, end, blend) = if state.attack_is_continuation() && phase < 0.5 {
-        (
-            recovery_pose(animation),
-            continuation_pose(animation),
-            (phase - ready_phase) / (0.5 - ready_phase),
-        )
-    } else if state.attack_is_continuation() {
-        (continuation_pose(animation), end_guard, (phase - 0.5) * 2.0)
-    } else if phase < 0.5 {
+    let (pose, end, blend) = if phase < 0.5 {
         (start_guard, contact, state.attack_curve().coordinate(phase))
     } else {
         let coordinate = if state.attack_has_queued_continuation() {
@@ -689,16 +681,9 @@ fn attack_samples(state: &SkeletonState) -> Vec<PoseSample> {
     };
     vec![PoseSample {
         pose,
-        sampling: if state.attack_is_continuation() {
-            PoseSampling::Span {
-                end,
-                progress: blend,
-            }
-        } else {
-            PoseSampling::CurveSpan {
-                end,
-                coordinate: blend,
-            }
+        sampling: PoseSampling::CurveSpan {
+            end,
+            coordinate: blend,
         },
         weight: 1.0,
         mirror_lower_body: false,

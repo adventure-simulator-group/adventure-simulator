@@ -175,37 +175,25 @@ def calculate_motion(samples: list[MotionSample]) -> MotionSeries:
         raise ValueError("an attack cycle needs at least three rendered samples")
     start_time = samples[0].elapsed_seconds
     times = [sample.elapsed_seconds - start_time for sample in samples]
-    linear_velocities: list[Vector3] = [(0.0, 0.0, 0.0)]
-    angular_velocities: list[Vector3] = [(0.0, 0.0, 0.0)]
-    for previous, current in zip(samples, samples[1:]):
-        seconds = current.elapsed_seconds - previous.elapsed_seconds
-        if not math.isfinite(seconds) or seconds <= 0.0:
-            raise ValueError("attack samples must have strictly increasing elapsed_seconds")
-        linear_velocities.append(
-            tuple(component / seconds for component in subtract(current.position, previous.position))
+    if any(
+        not math.isfinite(current - previous) or current <= previous
+        for previous, current in zip(times, times[1:])
+    ):
+        raise ValueError("attack samples must have strictly increasing elapsed_seconds")
+    linear_velocities = vector_derivative(times, [sample.position for sample in samples])
+    interval_times = [(left + right) * 0.5 for left, right in zip(times, times[1:])]
+    interval_angular_velocities = [
+        angular_velocity(previous.rotation, current.rotation, right - left)
+        for previous, current, left, right in zip(
+            samples, samples[1:], times, times[1:]
         )
-        angular_velocities.append(angular_velocity(previous.rotation, current.rotation, seconds))
-
-    linear_accelerations: list[Vector3] = [(0.0, 0.0, 0.0)]
-    angular_accelerations: list[Vector3] = [(0.0, 0.0, 0.0)]
-    for index in range(1, len(samples)):
-        seconds = samples[index].elapsed_seconds - samples[index - 1].elapsed_seconds
-        linear_accelerations.append(
-            tuple(
-                (current - previous) / seconds
-                for current, previous in zip(
-                    linear_velocities[index], linear_velocities[index - 1], strict=True
-                )
-            )
-        )
-        angular_accelerations.append(
-            tuple(
-                (current - previous) / seconds
-                for current, previous in zip(
-                    angular_velocities[index], angular_velocities[index - 1], strict=True
-                )
-            )
-        )
+    ]
+    angular_velocities = [
+        interpolate_vector_series(interval_times, interval_angular_velocities, time)
+        for time in times
+    ]
+    linear_accelerations = vector_derivative(times, linear_velocities)
+    angular_accelerations = vector_derivative(times, angular_velocities)
     return MotionSeries(
         times,
         [vector_length(value) for value in linear_velocities],
@@ -213,6 +201,66 @@ def calculate_motion(samples: list[MotionSample]) -> MotionSeries:
         [vector_length(value) for value in linear_accelerations],
         [vector_length(value) for value in angular_accelerations],
     )
+
+
+def vector_derivative(times: list[float], values: list[Vector3]) -> list[Vector3]:
+    """Second-order derivatives at irregularly spaced sample timestamps."""
+    if len(times) != len(values) or len(times) < 3:
+        raise ValueError("vector derivatives need at least three matching samples")
+    derivatives: list[Vector3] = []
+    for index in range(len(values)):
+        if index == 0:
+            first = times[1] - times[0]
+            second = times[2] - times[1]
+            coefficients = (
+                -(2.0 * first + second) / (first * (first + second)),
+                (first + second) / (first * second),
+                -first / (second * (first + second)),
+            )
+            points = values[:3]
+        elif index == len(values) - 1:
+            first = times[-2] - times[-3]
+            second = times[-1] - times[-2]
+            coefficients = (
+                second / (first * (first + second)),
+                -(first + second) / (first * second),
+                (first + 2.0 * second) / (second * (first + second)),
+            )
+            points = values[-3:]
+        else:
+            first = times[index] - times[index - 1]
+            second = times[index + 1] - times[index]
+            coefficients = (
+                -second / (first * (first + second)),
+                (second - first) / (first * second),
+                first / (second * (first + second)),
+            )
+            points = values[index - 1 : index + 2]
+        derivatives.append(
+            tuple(
+                sum(coefficient * point[component] for coefficient, point in zip(coefficients, points, strict=True))
+                for component in range(3)
+            )  # type: ignore[arg-type]
+        )
+    return derivatives
+
+
+def interpolate_vector_series(
+    times: list[float], values: list[Vector3], time: float
+) -> Vector3:
+    """Linearly interpolate or extrapolate a timestamped vector series."""
+    if len(times) != len(values) or len(times) < 2:
+        raise ValueError("vector interpolation needs at least two matching samples")
+    right = next((index for index, sample_time in enumerate(times) if sample_time >= time), len(times) - 1)
+    left = max(0, right - 1)
+    if left == right:
+        right = 1
+    span = times[right] - times[left]
+    alpha = (time - times[left]) / span
+    return tuple(
+        start + (end - start) * alpha
+        for start, end in zip(values[left], values[right], strict=True)
+    )  # type: ignore[return-value]
 
 
 def sampling(sample: MotionSample) -> tuple[str, dict[str, object]]:
@@ -253,12 +301,37 @@ def pose_markers(samples: list[MotionSample]) -> list[PoseMarker]:
                 contact_marked = True
         if current_kind == "ContinuationSpan" and previous_kind != "ContinuationSpan":
             markers.append(PoseMarker(relative_time, "full backswing (extrapolated)"))
+        if previous_kind == "ContinuationSpan" and current_kind == "ContinuationSpan":
+            previous_progress = float(previous_payload.get("progress", 0.0))
+            current_progress = float(current_payload.get("progress", 0.0))
+            ready_phase = float(current_payload.get("ready_phase", 0.0))
+            continuation_boundaries = (
+                (ready_phase, current_payload.get("end")),
+                (0.5, current_payload.get("outgoing")),
+            )
+            for boundary, label in continuation_boundaries:
+                if (
+                    label is not None
+                    and previous_progress < boundary <= current_progress
+                    and current_progress > previous_progress
+                ):
+                    fraction = (boundary - previous_progress) / (
+                        current_progress - previous_progress
+                    )
+                    crossing = previous.elapsed_seconds + fraction * (
+                        current.elapsed_seconds - previous.elapsed_seconds
+                    )
+                    markers.append(PoseMarker(crossing - start, str(label)))
         previous_kind, previous_payload = current_kind, current_payload
         previous_pose = current_pose
         previous = current
 
     last_kind, last_payload = sampling(samples[-1])
-    end_pose = last_payload.get("end") if last_kind in {"Span", "CurveSpan"} else None
+    end_pose = (
+        last_payload.get("finish")
+        if last_kind == "ContinuationSpan"
+        else last_payload.get("end") if last_kind in {"Span", "CurveSpan"} else None
+    )
     if end_pose is not None:
         markers.append(PoseMarker(samples[-1].elapsed_seconds - start, str(end_pose)))
     markers.sort(key=lambda marker: marker.time)

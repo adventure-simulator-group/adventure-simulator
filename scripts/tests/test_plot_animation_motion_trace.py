@@ -56,8 +56,8 @@ class PlotAnimationMotionTraceTests(unittest.TestCase):
             samples = MODULE.load_attack_cycles(trace, "r_weapon")[0]
             series = MODULE.calculate_motion(samples)
 
-        self.assertAlmostEqual(series.linear_speed[-1], 0.45, places=6)
-        self.assertAlmostEqual(series.angular_speed[-1], 0.45, places=6)
+        self.assertAlmostEqual(series.linear_speed[-1], 0.5, places=6)
+        self.assertAlmostEqual(series.angular_speed[-1], 0.5, places=6)
         self.assertAlmostEqual(series.linear_acceleration[-1], 1.0, places=6)
         self.assertAlmostEqual(series.angular_acceleration[-1], 1.0, places=6)
 
@@ -88,6 +88,36 @@ class PlotAnimationMotionTraceTests(unittest.TestCase):
         )
         self.assertGreater(markers[1].time, 0.1)
         self.assertLess(markers[1].time, 0.2)
+
+    def test_marks_internal_boundaries_of_a_unified_continuation_span(self):
+        payload = {
+            "end": "recover_swing",
+            "outgoing": "continue_swing",
+            "finish": "guard_swing",
+            "ready_phase": 7.0 / 24.0,
+        }
+        samples = [
+            MODULE.MotionSample(
+                index,
+                progress,
+                (0.0, 0.0, 0.0),
+                (0.0, 0.0, 0.0, 1.0),
+                {
+                    "pose": "guard_swing",
+                    "sampling": {"ContinuationSpan": payload | {"progress": progress}},
+                },
+            )
+            for index, progress in enumerate((0.0, 0.2, 0.4, 0.6, 0.9), 1)
+        ]
+
+        markers = MODULE.pose_markers(samples)
+
+        self.assertEqual(
+            [marker.label for marker in markers],
+            ["guard_swing", "recover_swing", "continue_swing", "guard_swing"],
+        )
+        self.assertAlmostEqual(markers[1].time, 7.0 / 24.0)
+        self.assertAlmostEqual(markers[2].time, 0.5)
 
     def test_renders_four_aligned_plots_with_top_markers_and_bottom_time_axis(self):
         with tempfile.TemporaryDirectory() as directory:

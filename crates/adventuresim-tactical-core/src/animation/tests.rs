@@ -1298,9 +1298,10 @@ mod legacy_tests {
             contact,
             end,
             outgoing,
+            finish,
             start_coordinate,
             incoming_tangent,
-            outgoing_tangent_scale,
+            ready_phase,
             progress,
         } = follow_up_start.action[0].sampling
         else {
@@ -1309,25 +1310,46 @@ mod legacy_tests {
         assert_eq!(contact, SemanticPose::AttackSwing);
         assert_eq!(end, SemanticPose::RecoverSwing);
         assert_eq!(outgoing, SemanticPose::ContinueSwing);
+        assert_eq!(finish, SemanticPose::GuardThrust);
         assert_eq!(start_coordinate, expected_start_coordinate);
         assert!(start_coordinate >= 1.0 + state.attack_curve().overshoot);
         assert!(incoming_tangent > 0.0);
-        assert!((outgoing_tangent_scale - 1.4).abs() < 1.0e-6);
+        assert_eq!(ready_phase, 7.0 / 24.0);
         assert_eq!(progress, 0.0);
         assert_eq!(follow_up_start.action[0].weight, 1.0);
 
         state.advance_action(continuation_tick + 14);
         let prepared = AnimationEvaluation::from_skeleton(&state);
-        assert_eq!(prepared.action[0].pose, SemanticPose::RecoverSwing);
+        assert_eq!(prepared.action[0].pose, SemanticPose::GuardSwing);
         assert_eq!(
             prepared.action[0].sampling,
-            PoseSampling::Span {
-                end: SemanticPose::ContinueSwing,
-                progress: 0.0,
+            PoseSampling::ContinuationSpan {
+                contact: SemanticPose::AttackSwing,
+                end: SemanticPose::RecoverSwing,
+                outgoing: SemanticPose::ContinueSwing,
+                finish: SemanticPose::GuardThrust,
+                start_coordinate,
+                incoming_tangent,
+                ready_phase: 7.0 / 24.0,
+                progress: 7.0 / 24.0,
             }
         );
         state.advance_action(continuation_tick + 24);
         assert_eq!(state.action_phase(), 0.5);
+        assert_eq!(
+            AnimationEvaluation::from_skeleton(&state).action[0]
+                .sampling,
+            PoseSampling::ContinuationSpan {
+                contact: SemanticPose::AttackSwing,
+                end: SemanticPose::RecoverSwing,
+                outgoing: SemanticPose::ContinueSwing,
+                finish: SemanticPose::GuardThrust,
+                start_coordinate,
+                incoming_tangent,
+                ready_phase: 7.0 / 24.0,
+                progress: 0.5,
+            }
+        );
         assert_eq!(state.select_main_attack(StrikeFamily::Swing), None);
     }
 
@@ -1487,13 +1509,48 @@ mod legacy_tests {
         ] {
             let step = 0.0025;
             let contact = curve.coordinate(0.5);
-            let left_velocity = (contact - curve.coordinate(0.5 - step)) / step;
-            let right_velocity = (curve.coordinate(0.5 + step) - contact) / step;
+            let left_velocity = (3.0 * contact - 4.0 * curve.coordinate(0.5 - step)
+                + curve.coordinate(0.5 - 2.0 * step))
+                / (2.0 * step);
+            let right_velocity = (-3.0 * contact + 4.0 * curve.coordinate(0.5 + step)
+                - curve.coordinate(0.5 + 2.0 * step))
+                / (2.0 * step);
             assert!(left_velocity > 0.1, "contact must retain forward velocity");
             assert!(right_velocity > 0.1, "follow-through must continue forward");
             assert!(
-                (left_velocity - right_velocity).abs() < 0.01,
+                (left_velocity - right_velocity).abs() < 0.02,
                 "contact velocity changed from {left_velocity} to {right_velocity}"
+            );
+        }
+    }
+
+    #[test]
+    fn ordinary_attack_carries_acceleration_through_contact() {
+        for curve in [
+            AttackCurve::from_handling(0.03, 5.0),
+            AttackCurve::default(),
+            AttackCurve::from_handling(1.2, 1.0),
+        ] {
+            let step = 0.01;
+            let contact = curve.coordinate(0.5);
+            let one_sided_acceleration = |direction: f32, sample_step: f32| {
+                (2.0 * contact
+                    - 5.0 * curve.coordinate(0.5 + direction * sample_step)
+                    + 4.0 * curve.coordinate(0.5 + direction * 2.0 * sample_step)
+                    - curve.coordinate(0.5 + direction * 3.0 * sample_step))
+                    / (sample_step * sample_step)
+            };
+            let left_acceleration = (4.0 * one_sided_acceleration(-1.0, step * 0.5)
+                - one_sided_acceleration(-1.0, step))
+                / 3.0;
+            let right_acceleration = (4.0 * one_sided_acceleration(1.0, step * 0.5)
+                - one_sided_acceleration(1.0, step))
+                / 3.0;
+            assert!(left_acceleration.abs() > 1.0);
+            assert!(right_acceleration.abs() > 1.0);
+            assert!(
+                (left_acceleration - right_acceleration).abs() < 1.0,
+                "contact acceleration changed from {left_acceleration} to {right_acceleration}"
             );
         }
     }

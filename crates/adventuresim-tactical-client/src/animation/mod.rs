@@ -317,6 +317,7 @@ pub(super) struct AnimationPlayback {
     pub(super) foot_ik_weights: Vec2,
     weapon_guard: WeaponGuardState,
     ordinary_locomotion_active: bool,
+    direct_sampling: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -338,12 +339,15 @@ impl AnimationPlayback {
     }
 
     fn sampling_cadence(&self) -> PoseSamplingCadence {
-        if self.extrapolated_spans.is_empty() && self.continuation_spans.is_empty() {
+        if !self.direct_sampling
+            && self.extrapolated_spans.is_empty()
+            && self.continuation_spans.is_empty()
+        {
             PoseSamplingCadence::Buffered
         } else {
-            // CurveSpan poses are already evaluated analytically from the
-            // authoritative attack phase. Resampling them onto the 30 Hz clip
-            // grid aliases fast weapon motion against the 64 Hz tactical tick.
+            // Every action segment follows the authoritative action phase.
+            // Switching only its simple spans back to the 30 Hz clip grid
+            // aliases fast weapon motion and creates a cadence discontinuity.
             PoseSamplingCadence::Direct
         }
     }
@@ -360,6 +364,7 @@ impl Default for AnimationPlayback {
             foot_ik_weights: Vec2::ZERO,
             weapon_guard: WeaponGuardState::Lowered,
             ordinary_locomotion_active: false,
+            direct_sampling: false,
         }
     }
 }
@@ -397,9 +402,11 @@ struct ContinuationSpan {
     end_time_seconds: f32,
     outgoing: LoadedClip,
     outgoing_time_seconds: f32,
+    finish: LoadedClip,
+    finish_time_seconds: f32,
     start_coordinate: f32,
     incoming_tangent: f32,
-    outgoing_tangent_scale: f32,
+    ready_phase: f32,
     progress: f32,
     weight: f32,
     mirrored_weight: f32,
@@ -413,6 +420,7 @@ struct PlaybackPose {
     use_authored_bind_pose: bool,
     whole_body_mirror: f32,
     foot_ik_weights: Vec2,
+    direct_sampling: bool,
 }
 
 #[derive(Component)]
@@ -570,6 +578,7 @@ fn evaluate_skeletons(
                 && continuation_spans.is_empty(),
             whole_body_mirror,
             foot_ik_weights: semantic_foot_ik_weights(&evaluation),
+            direct_sampling: !evaluation.action.is_empty(),
             clips: weighted,
             extrapolated_spans,
             continuation_spans,
@@ -600,6 +609,7 @@ fn evaluate_skeletons(
                 foot_ik_weights: target.foot_ik_weights,
                 weapon_guard: skeleton.weapon_guard(),
                 ordinary_locomotion_active,
+                direct_sampling: target.direct_sampling,
             });
         }
     }
@@ -717,6 +727,7 @@ fn apply_playback_pose(playback: &mut AnimationPlayback, pose: PlaybackPose) {
     playback.use_authored_bind_pose = pose.use_authored_bind_pose;
     playback.whole_body_mirror = pose.whole_body_mirror;
     playback.foot_ik_weights = pose.foot_ik_weights;
+    playback.direct_sampling = pose.direct_sampling;
 }
 
 /// IK ownership follows the direct semantic locomotion samples.
@@ -1272,9 +1283,10 @@ impl PoseSampleResolver<'_> {
                 contact,
                 end,
                 outgoing,
+                finish,
                 start_coordinate,
                 incoming_tangent,
-                outgoing_tangent_scale,
+                ready_phase,
                 progress,
             } => {
                 let Some(contact) = resolve_anchor(runtime, catalog, pack, contact) else {
@@ -1301,6 +1313,16 @@ impl PoseSampleResolver<'_> {
                     append_weighted_anchor(weighted, &end, end.anchor.frame, sample.weight, layer);
                     return;
                 };
+                let Some(finish) = resolve_anchor(runtime, catalog, pack, finish) else {
+                    append_weighted_anchor(
+                        weighted,
+                        &outgoing,
+                        outgoing.anchor.frame,
+                        sample.weight,
+                        layer,
+                    );
+                    return;
+                };
                 continuation_spans.push(ContinuationSpan {
                     start: start.clip.at_anchor_layer(start.anchor.frame, layer),
                     start_time_seconds: frame_seconds(start.anchor.frame),
@@ -1310,9 +1332,11 @@ impl PoseSampleResolver<'_> {
                     end_time_seconds: frame_seconds(end.anchor.frame),
                     outgoing: outgoing.clip.at_anchor_layer(outgoing.anchor.frame, layer),
                     outgoing_time_seconds: frame_seconds(outgoing.anchor.frame),
+                    finish: finish.clip.at_anchor_layer(finish.anchor.frame, layer),
+                    finish_time_seconds: frame_seconds(finish.anchor.frame),
                     start_coordinate,
                     incoming_tangent: incoming_tangent.max(0.0),
-                    outgoing_tangent_scale: outgoing_tangent_scale.max(0.0),
+                    ready_phase: ready_phase.clamp(f32::EPSILON, 0.5 - f32::EPSILON),
                     progress: progress.clamp(0.0, 1.0),
                     weight: sample.weight,
                     mirrored_weight: if start.mirrored { sample.weight } else { 0.0 },

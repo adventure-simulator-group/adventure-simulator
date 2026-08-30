@@ -112,9 +112,10 @@ struct ContinuationTransition {
     contact: LocalPose,
     ready: LocalPose,
     outgoing: LocalPose,
+    finish: LocalPose,
     start_coordinate: f32,
     incoming_tangent: f32,
-    outgoing_tangent_scale: f32,
+    ready_phase: f32,
 }
 
 #[derive(Debug)]
@@ -164,58 +165,127 @@ impl LocalPose {
     fn continuation_transition(self, transition: ContinuationTransition, progress: f32) -> Self {
         let start = self.extrapolate(transition.contact, transition.start_coordinate);
         let progress = progress.clamp(0.0, 1.0);
-        let incoming_rotation = quaternion_log(shortest_rotation(
-            transition.contact.rotation * self.rotation.inverse(),
-        )) * transition.incoming_tangent;
-        let end_rotation = quaternion_log(shortest_rotation(
-            transition.ready.rotation * start.rotation.inverse(),
-        ));
-        let outgoing_rotation = quaternion_log(shortest_rotation(
-            transition.outgoing.rotation * transition.ready.rotation.inverse(),
-        )) * transition.outgoing_tangent_scale;
+        let ready_phase = transition
+            .ready_phase
+            .clamp(f32::EPSILON, 0.5 - f32::EPSILON);
+        let knots = [0.0, ready_phase, 0.5, 1.0];
+        let incoming_scale = transition.incoming_tangent / ready_phase;
+        let rotation_values = [
+            Vec3::ZERO,
+            quaternion_log(shortest_rotation(
+                transition.ready.rotation * start.rotation.inverse(),
+            )),
+            quaternion_log(shortest_rotation(
+                transition.outgoing.rotation * start.rotation.inverse(),
+            )),
+            quaternion_log(shortest_rotation(
+                transition.finish.rotation * start.rotation.inverse(),
+            )),
+        ];
         Self {
-            translation: cubic_hermite_vec3(
-                start.translation,
-                transition.ready.translation,
-                (transition.contact.translation - self.translation) * transition.incoming_tangent,
-                (transition.outgoing.translation - transition.ready.translation)
-                    * transition.outgoing_tangent_scale,
+            translation: clamped_cubic_spline_vec3(
+                knots,
+                [
+                    start.translation,
+                    transition.ready.translation,
+                    transition.outgoing.translation,
+                    transition.finish.translation,
+                ],
+                (transition.contact.translation - self.translation) * incoming_scale,
+                Vec3::ZERO,
                 progress,
             ),
-            rotation: (quaternion_exp(cubic_hermite_vec3(
+            rotation: (quaternion_exp(clamped_cubic_spline_vec3(
+                knots,
+                rotation_values,
+                quaternion_log(shortest_rotation(
+                    transition.contact.rotation * self.rotation.inverse(),
+                )) * incoming_scale,
                 Vec3::ZERO,
-                end_rotation,
-                incoming_rotation,
-                outgoing_rotation,
                 progress,
             )) * start.rotation)
                 .normalize(),
-            scale: cubic_hermite_vec3(
-                start.scale,
-                transition.ready.scale,
-                (transition.contact.scale - self.scale) * transition.incoming_tangent,
-                (transition.outgoing.scale - transition.ready.scale)
-                    * transition.outgoing_tangent_scale,
+            scale: clamped_cubic_spline_vec3(
+                knots,
+                [
+                    start.scale,
+                    transition.ready.scale,
+                    transition.outgoing.scale,
+                    transition.finish.scale,
+                ],
+                (transition.contact.scale - self.scale) * incoming_scale,
+                Vec3::ZERO,
                 progress,
             ),
         }
     }
 }
 
-fn cubic_hermite_vec3(
-    start: Vec3,
-    end: Vec3,
+fn clamped_cubic_spline_vec3(
+    knots: [f32; 4],
+    values: [Vec3; 4],
     start_velocity: Vec3,
     end_velocity: Vec3,
     progress: f32,
 ) -> Vec3 {
-    let t = progress.clamp(0.0, 1.0);
-    let t2 = t * t;
-    let t3 = t2 * t;
-    start * (2.0 * t3 - 3.0 * t2 + 1.0)
-        + start_velocity * (t3 - 2.0 * t2 + t)
-        + end * (-2.0 * t3 + 3.0 * t2)
-        + end_velocity * (t3 - t2)
+    let second_derivatives =
+        clamped_cubic_second_derivatives(knots, values, start_velocity, end_velocity);
+    let progress = progress.clamp(knots[0], knots[3]);
+    let segment = if progress <= knots[1] {
+        0
+    } else if progress <= knots[2] {
+        1
+    } else {
+        2
+    };
+    let start = knots[segment];
+    let end = knots[segment + 1];
+    let duration = end - start;
+    let a = (end - progress) / duration;
+    let b = (progress - start) / duration;
+    values[segment] * a
+        + values[segment + 1] * b
+        + (second_derivatives[segment] * (a * a * a - a)
+            + second_derivatives[segment + 1] * (b * b * b - b))
+            * (duration * duration / 6.0)
+}
+
+fn clamped_cubic_second_derivatives(
+    knots: [f32; 4],
+    values: [Vec3; 4],
+    start_velocity: Vec3,
+    end_velocity: Vec3,
+) -> [Vec3; 4] {
+    let intervals = [
+        knots[1] - knots[0],
+        knots[2] - knots[1],
+        knots[3] - knots[2],
+    ];
+    let lower = [0.0, intervals[0], intervals[1], intervals[2]];
+    let mut diagonal = [
+        2.0 * intervals[0],
+        2.0 * (intervals[0] + intervals[1]),
+        2.0 * (intervals[1] + intervals[2]),
+        2.0 * intervals[2],
+    ];
+    let upper = [intervals[0], intervals[1], intervals[2], 0.0];
+    let mut right = [
+        6.0 * ((values[1] - values[0]) / intervals[0] - start_velocity),
+        6.0 * ((values[2] - values[1]) / intervals[1] - (values[1] - values[0]) / intervals[0]),
+        6.0 * ((values[3] - values[2]) / intervals[2] - (values[2] - values[1]) / intervals[1]),
+        6.0 * (end_velocity - (values[3] - values[2]) / intervals[2]),
+    ];
+    for row in 1..4 {
+        let factor = lower[row] / diagonal[row - 1];
+        diagonal[row] -= factor * upper[row - 1];
+        right[row] -= right[row - 1] * factor;
+    }
+    let mut result = [Vec3::ZERO; 4];
+    result[3] = right[3] / diagonal[3];
+    for row in (0..3).rev() {
+        result[row] = (right[row] - result[row + 1] * upper[row]) / diagonal[row];
+    }
+    result
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -243,6 +313,7 @@ impl PosePlanKey {
                 (span.contact.handle.id(), span.contact.layer),
                 (span.end.handle.id(), span.end.layer),
                 (span.outgoing.handle.id(), span.outgoing.layer),
+                (span.finish.handle.id(), span.finish.layer),
             ]
         }));
         clips.sort_by_key(|(id, layer)| (*id, *layer as u8));
@@ -265,6 +336,8 @@ pub(super) struct PoseBufferRig {
     last_evaluation_tick: Option<u64>,
     decay_delta_seconds: f32,
     offsets: Vec<JointInertialOffset>,
+    target_linear_velocities: Vec<Vec3>,
+    target_angular_velocities: Vec<Vec3>,
     terrain_plants: [Option<AuthoredContactPlant>; 2],
     plan: Option<PosePlanKey>,
     active: bool,
@@ -290,13 +363,8 @@ impl PoseBufferRig {
 
     fn displayed_velocity(&self, joint: usize) -> (Vec3, Vec3) {
         (
-            (self.next[joint].translation - self.previous[joint].translation)
-                / pose_sample_seconds(),
-            quaternion_angular_velocity(
-                self.next[joint].rotation,
-                self.previous[joint].rotation,
-                pose_sample_seconds(),
-            ),
+            self.target_linear_velocities[joint] + self.offsets[joint].translation_velocity,
+            self.target_angular_velocities[joint] + self.offsets[joint].angular_velocity,
         )
     }
 }
@@ -488,6 +556,8 @@ pub(super) fn update_pose_buffers(
                 last_evaluation_tick: None,
                 decay_delta_seconds: 0.0,
                 offsets: vec![JointInertialOffset::default(); joint_count],
+                target_linear_velocities: vec![Vec3::ZERO; joint_count],
+                target_angular_velocities: vec![Vec3::ZERO; joint_count],
                 terrain_plants: [None; 2],
                 plan: None,
                 active: false,
@@ -533,6 +603,8 @@ pub(super) fn update_pose_buffers(
         if rig.frozen {
             rig.sample_accumulator = 0.0;
             rig.interpolation_alpha = 0.0;
+            rig.target_linear_velocities.fill(Vec3::ZERO);
+            rig.target_angular_velocities.fill(Vec3::ZERO);
         }
         rig.frozen = false;
 
@@ -581,6 +653,18 @@ pub(super) fn update_pose_buffers(
             rig.terrain_plants = [None; 2];
         }
         let target = sampled.pose;
+        let direct_sampling = playback.sampling_cadence() == PoseSamplingCadence::Direct;
+        let target_velocities = target
+            .iter()
+            .zip(&rig.next)
+            .map(|(target, previous)| {
+                if rig.active && direct_sampling {
+                    local_pose_velocity(*previous, *target, delta_seconds)
+                } else {
+                    (Vec3::ZERO, Vec3::ZERO)
+                }
+            })
+            .collect::<Vec<_>>();
         if transition {
             let capture_displayed = rig.active;
             for (joint, target_pose) in target.iter().copied().enumerate() {
@@ -605,9 +689,13 @@ pub(super) fn update_pose_buffers(
                     linear_velocity,
                     angular_velocity,
                     target_pose,
-                    Vec3::ZERO,
-                    Vec3::ZERO,
+                    target_velocities[joint].0,
+                    target_velocities[joint].1,
                 );
+            }
+            for (joint, (linear, angular)) in target_velocities.iter().copied().enumerate() {
+                rig.target_linear_velocities[joint] = linear;
+                rig.target_angular_velocities[joint] = angular;
             }
             rig.previous.clone_from(&target);
             rig.next = target;
@@ -616,7 +704,7 @@ pub(super) fn update_pose_buffers(
             rig.plan = Some(key);
             rig.active = true;
         } else {
-            if playback.sampling_cadence() == PoseSamplingCadence::Direct {
+            if direct_sampling {
                 // The semantic curve supplies the continuous target. Preserve
                 // transition inertialization, but do not quantize its normal
                 // updates through the authored-clip sampling accumulator.
@@ -624,11 +712,25 @@ pub(super) fn update_pose_buffers(
                 rig.next = target;
                 rig.sample_accumulator = 0.0;
                 rig.interpolation_alpha = 1.0;
+                for (joint, (linear, angular)) in target_velocities.iter().copied().enumerate() {
+                    rig.target_linear_velocities[joint] = linear;
+                    rig.target_angular_velocities[joint] = angular;
+                }
             } else {
                 let due = samples_due(rig.sample_accumulator);
                 if due > 0 {
                     rig.previous = rig.next.clone();
                     rig.next = target;
+                    let sample_seconds = pose_sample_seconds() * due as f32;
+                    for joint in 0..rig.next.len() {
+                        let (linear, angular) = local_pose_velocity(
+                            rig.previous[joint],
+                            rig.next[joint],
+                            sample_seconds,
+                        );
+                        rig.target_linear_velocities[joint] = linear;
+                        rig.target_angular_velocities[joint] = angular;
+                    }
                     rig.sample_accumulator =
                         (rig.sample_accumulator - pose_sample_seconds() * due as f32).max(0.0);
                 }
@@ -688,7 +790,9 @@ fn sample_plan(
     metrics: &mut PoseBufferMetrics,
 ) -> Option<SampledPlan> {
     if playback.use_authored_bind_pose
-        || (playback.clips.is_empty() && playback.extrapolated_spans.is_empty())
+        || (playback.clips.is_empty()
+            && playback.extrapolated_spans.is_empty()
+            && playback.continuation_spans.is_empty())
     {
         return Some(SampledPlan {
             pose: definition.joints.iter().map(|joint| joint.bind).collect(),
@@ -761,7 +865,15 @@ fn sample_plan(
             bank,
             metrics,
         )?;
-        baked_continuations.push((span, start, contact, end, outgoing));
+        let finish = get_or_bake(
+            span.finish.handle.id(),
+            &span.finish.handle,
+            definition,
+            clips,
+            bank,
+            metrics,
+        )?;
+        baked_continuations.push((span, start, contact, end, outgoing, finish));
     }
     let mut pose = Vec::with_capacity(definition.joints.len());
     let mut locomotion_pelvis_rotation = None;
@@ -883,7 +995,9 @@ fn sample_plan(
             };
             accumulated = next_total;
         }
-        for (span, start_clip, contact_clip, end_clip, outgoing_clip) in &baked_continuations {
+        for (span, start_clip, contact_clip, end_clip, outgoing_clip, finish_clip) in
+            &baked_continuations
+        {
             let included = match span.start.layer {
                 ClipLayer::Whole => true,
                 ClipLayer::Upper => !joint.lower_body,
@@ -911,15 +1025,20 @@ fn sample_plan(
                 outgoing_clip.sample(joint_index, span.outgoing_time_seconds),
                 joint.bind,
             );
+            let finish = sanitize_pose(
+                finish_clip.sample(joint_index, span.finish_time_seconds),
+                joint.bind,
+            );
             let sample = sanitize_pose(
                 start.continuation_transition(
                     ContinuationTransition {
                         contact,
                         ready: end,
                         outgoing,
+                        finish,
                         start_coordinate: span.start_coordinate,
                         incoming_tangent: span.incoming_tangent,
-                        outgoing_tangent_scale: span.outgoing_tangent_scale,
+                        ready_phase: span.ready_phase,
                     },
                     span.progress,
                 ),
@@ -2008,6 +2127,17 @@ fn quaternion_angular_velocity(next: Quat, current: Quat, delta_seconds: f32) ->
     scaled_angle_axis(shortest_rotation(next * current.inverse())) / delta_seconds.max(1e-5)
 }
 
+fn local_pose_velocity(
+    previous: LocalPose,
+    current: LocalPose,
+    delta_seconds: f32,
+) -> (Vec3, Vec3) {
+    (
+        (current.translation - previous.translation) / delta_seconds.max(1.0e-5),
+        quaternion_angular_velocity(current.rotation, previous.rotation, delta_seconds),
+    )
+}
+
 fn halflife_to_damping(halflife: f32) -> f32 {
     (4.0 * core::f32::consts::LN_2) / (halflife + 1e-5)
 }
@@ -2154,7 +2284,7 @@ mod tests {
     }
 
     #[test]
-    fn continuation_span_matches_incoming_and_outgoing_endpoint_velocity() {
+    fn continuation_spline_interpolates_anchors_and_preserves_derivatives() {
         let guard = LocalPose {
             translation: Vec3::ZERO,
             rotation: Quat::IDENTITY,
@@ -2175,34 +2305,110 @@ mod tests {
             rotation: Quat::from_rotation_y(1.0),
             scale: Vec3::ONE,
         };
+        let finish = LocalPose {
+            translation: Vec3::new(0.2, 0.1, -0.1),
+            rotation: Quat::from_rotation_y(0.1),
+            scale: Vec3::ONE,
+        };
         let coordinate = 1.2;
         let incoming_tangent = 0.35;
-        let outgoing_tangent_scale = 2.0;
+        let ready_phase = 7.0 / 24.0;
         let transition = ContinuationTransition {
             contact,
             ready: preparation,
             outgoing: follow,
+            finish,
             start_coordinate: coordinate,
             incoming_tangent,
-            outgoing_tangent_scale,
+            ready_phase,
         };
-        let step = 0.0001;
-        let before = guard.extrapolate_unbounded(contact, coordinate - incoming_tangent * step);
+        let step = 0.0005;
+        let before = guard
+            .extrapolate_unbounded(contact, coordinate - incoming_tangent * step / ready_phase);
         let start = guard.continuation_transition(transition, 0.0);
         let after = guard.continuation_transition(transition, step);
         let incoming_translation_velocity = (start.translation - before.translation) / step;
         let outgoing_translation_velocity = (after.translation - start.translation) / step;
-        assert!(incoming_translation_velocity.distance(outgoing_translation_velocity) < 0.01);
+        assert!(incoming_translation_velocity.distance(outgoing_translation_velocity) < 0.02);
         let incoming_angular_velocity = before.rotation.angle_between(start.rotation) / step;
         let outgoing_angular_velocity = start.rotation.angle_between(after.rotation) / step;
-        assert!((incoming_angular_velocity - outgoing_angular_velocity).abs() < 0.01);
+        assert!((incoming_angular_velocity - outgoing_angular_velocity).abs() < 0.02);
+
+        let ready = guard.continuation_transition(transition, ready_phase);
+        let outgoing = guard.continuation_transition(transition, 0.5);
+        let end = guard.continuation_transition(transition, 1.0);
+        assert!(ready.translation.distance(preparation.translation) < 0.0001);
+        assert!(ready.rotation.angle_between(preparation.rotation) < 0.0001);
+        assert!(outgoing.translation.distance(follow.translation) < 0.0001);
+        assert!(outgoing.rotation.angle_between(follow.rotation) < 0.0001);
+        assert!(end.translation.distance(finish.translation) < 0.0001);
+        assert!(end.rotation.angle_between(finish.rotation) < 0.0001);
+
+        let step = 0.002;
+        for seam in [ready_phase, 0.5] {
+            let before_three = guard.continuation_transition(transition, seam - 3.0 * step);
+            let before_two = guard.continuation_transition(transition, seam - 2.0 * step);
+            let before_one = guard.continuation_transition(transition, seam - step);
+            let at = guard.continuation_transition(transition, seam);
+            let after_one = guard.continuation_transition(transition, seam + step);
+            let after_two = guard.continuation_transition(transition, seam + 2.0 * step);
+            let after_three = guard.continuation_transition(transition, seam + 3.0 * step);
+            let velocity_before = (3.0 * at.translation - 4.0 * before_one.translation
+                + before_two.translation)
+                / (2.0 * step);
+            let velocity_after = (-3.0 * at.translation + 4.0 * after_one.translation
+                - after_two.translation)
+                / (2.0 * step);
+            assert!(velocity_before.distance(velocity_after) < 0.01);
+            let acceleration_before = (2.0 * at.translation - 5.0 * before_one.translation
+                + 4.0 * before_two.translation
+                - before_three.translation)
+                / (step * step);
+            let acceleration_after = (2.0 * at.translation - 5.0 * after_one.translation
+                + 4.0 * after_two.translation
+                - after_three.translation)
+                / (step * step);
+            assert!(acceleration_before.distance(acceleration_after) < 2.0);
+
+            let rotation_vector = |pose: LocalPose| {
+                quaternion_log(shortest_rotation(pose.rotation * start.rotation.inverse()))
+            };
+            let angular_velocity_before = (3.0 * rotation_vector(at)
+                - 4.0 * rotation_vector(before_one)
+                + rotation_vector(before_two))
+                / (2.0 * step);
+            let angular_velocity_after = (-3.0 * rotation_vector(at)
+                + 4.0 * rotation_vector(after_one)
+                - rotation_vector(after_two))
+                / (2.0 * step);
+            assert!(angular_velocity_before.distance(angular_velocity_after) < 0.01);
+            let angular_acceleration_before = (2.0 * rotation_vector(at)
+                - 5.0 * rotation_vector(before_one)
+                + 4.0 * rotation_vector(before_two)
+                - rotation_vector(before_three))
+                / (step * step);
+            let angular_acceleration_after = (2.0 * rotation_vector(at)
+                - 5.0 * rotation_vector(after_one)
+                + 4.0 * rotation_vector(after_two)
+                - rotation_vector(after_three))
+                / (step * step);
+            assert!(angular_acceleration_before.distance(angular_acceleration_after) < 2.0);
+        }
 
         let before_end = guard.continuation_transition(transition, 1.0 - step);
-        let end = guard.continuation_transition(transition, 1.0);
-        let after_end = preparation.interpolate(follow, step * outgoing_tangent_scale);
-        let incoming_end_velocity = (end.translation - before_end.translation) / step;
-        let outgoing_end_velocity = (after_end.translation - end.translation) / step;
-        assert!(incoming_end_velocity.distance(outgoing_end_velocity) < 0.01);
+        let before_end_two = guard.continuation_transition(transition, 1.0 - 2.0 * step);
+        let end_velocity = (3.0 * end.translation - 4.0 * before_end.translation
+            + before_end_two.translation)
+            / (2.0 * step);
+        assert!(end_velocity.length() < 0.01);
+        let end_rotation_vector = |pose: LocalPose| {
+            quaternion_log(shortest_rotation(pose.rotation * start.rotation.inverse()))
+        };
+        let end_angular_velocity = (3.0 * end_rotation_vector(end)
+            - 4.0 * end_rotation_vector(before_end)
+            + end_rotation_vector(before_end_two))
+            / (2.0 * step);
+        assert!(end_angular_velocity.length() < 0.01);
     }
 
     #[test]
@@ -2799,6 +3005,27 @@ mod tests {
         let after_interrupt = offset.peek(third);
         assert!(displayed.translation.distance(after_interrupt.translation) < 0.0001);
         assert!(displayed.rotation.angle_between(after_interrupt.rotation) < 0.0001);
+    }
+
+    #[test]
+    fn moving_pose_plan_transition_preserves_target_velocity() {
+        let previous = pose(Vec3::ZERO, Quat::IDENTITY);
+        let current = pose(Vec3::X * 0.2, Quat::from_rotation_y(0.3));
+        let (linear_velocity, angular_velocity) = local_pose_velocity(previous, current, 0.1);
+        let mut offset = JointInertialOffset::default();
+        offset.capture(
+            current,
+            linear_velocity,
+            angular_velocity,
+            current,
+            linear_velocity,
+            angular_velocity,
+        );
+
+        assert!(offset.translation.length() < 1.0e-6);
+        assert!(offset.translation_velocity.length() < 1.0e-6);
+        assert!(offset.rotation.angle_between(Quat::IDENTITY) < 1.0e-6);
+        assert!(offset.angular_velocity.length() < 1.0e-6);
     }
 
     #[test]

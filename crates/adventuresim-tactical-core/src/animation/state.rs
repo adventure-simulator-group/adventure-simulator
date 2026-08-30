@@ -1042,8 +1042,21 @@ impl AttackCurve {
         let phase = finite_clamp(phase, 0.0, 1.0, 0.0);
         let tell_end = self.tell_fraction * 0.5;
         let follow_through_end = 0.5 + self.follow_through_fraction * 0.5;
+        let [
+            tell_acceleration,
+            contact_acceleration,
+            follow_through_acceleration,
+        ] = self.knot_accelerations();
         if phase <= tell_end {
-            -self.drawback * smootherstep(phase / tell_end)
+            quintic_hermite(
+                0.0,
+                -self.drawback,
+                0.0,
+                0.0,
+                0.0,
+                tell_acceleration * tell_end * tell_end,
+                phase / tell_end,
+            )
         } else if phase <= 0.5 {
             let duration = 0.5 - tell_end;
             quintic_hermite(
@@ -1051,6 +1064,8 @@ impl AttackCurve {
                 1.0,
                 0.0,
                 self.contact_velocity() * duration,
+                tell_acceleration * duration * duration,
+                contact_acceleration * duration * duration,
                 (phase - tell_end) / duration,
             )
         } else if phase <= follow_through_end {
@@ -1060,6 +1075,8 @@ impl AttackCurve {
                 1.0 + self.overshoot,
                 self.contact_velocity() * duration,
                 self.overshoot,
+                contact_acceleration * duration * duration,
+                follow_through_acceleration * duration * duration,
                 (phase - 0.5) / duration,
             )
         } else {
@@ -1069,6 +1086,8 @@ impl AttackCurve {
                 1.0 + self.overshoot,
                 0.0,
                 incoming_velocity * duration,
+                0.0,
+                follow_through_acceleration * duration * duration,
                 0.0,
                 (phase - follow_through_end) / duration,
             )
@@ -1085,11 +1104,14 @@ impl AttackCurve {
             self.coordinate(phase)
         } else if phase <= follow_through_end {
             let duration = follow_through_end - 0.5;
+            let contact_acceleration = self.knot_accelerations()[1];
             quintic_hermite(
                 1.0,
                 1.0 + self.overshoot,
                 self.contact_velocity() * duration,
                 self.overshoot,
+                contact_acceleration * duration * duration,
+                0.0,
                 (phase - 0.5) / duration,
             )
         } else {
@@ -1117,6 +1139,32 @@ impl AttackCurve {
         let follow_through_secant = self.overshoot / follow_through_duration;
         2.0 * strike_secant.min(follow_through_secant)
     }
+
+    fn knot_accelerations(self) -> [f32; 3] {
+        let tell_duration = self.tell_fraction * 0.5;
+        let strike_duration = 0.5 - tell_duration;
+        let follow_through_duration = self.follow_through_fraction * 0.5;
+        let recovery_duration = 0.5 - follow_through_duration;
+        let tell_secant = -self.drawback / tell_duration;
+        let strike_secant = (1.0 + self.drawback) / strike_duration;
+        let follow_through_secant = self.overshoot / follow_through_duration;
+        let recovery_secant = -(1.0 + self.overshoot) / recovery_duration;
+        [
+            centered_knot_acceleration(tell_secant, strike_secant, tell_duration, strike_duration),
+            centered_knot_acceleration(
+                strike_secant,
+                follow_through_secant,
+                strike_duration,
+                follow_through_duration,
+            ),
+            centered_knot_acceleration(
+                follow_through_secant,
+                recovery_secant,
+                follow_through_duration,
+                recovery_duration,
+            ),
+        ]
+    }
 }
 
 /// The follow-ready pose lies roughly halfway along the authored preparation
@@ -1127,10 +1175,6 @@ const FOLLOW_READY_PREPARATION_FRACTION: f32 = 7.0 / 12.0;
 
 pub(super) fn continuation_ready_phase() -> f32 {
     0.5 * FOLLOW_READY_PREPARATION_FRACTION
-}
-
-pub(super) fn continuation_outgoing_tangent_scale() -> f32 {
-    FOLLOW_READY_PREPARATION_FRACTION / (1.0 - FOLLOW_READY_PREPARATION_FRACTION)
 }
 
 fn finite_clamp(value: f32, minimum: f32, maximum: f32, fallback: f32) -> f32 {
@@ -1146,18 +1190,24 @@ fn smoothstep(value: f32) -> f32 {
     value * value * (3.0 - 2.0 * value)
 }
 
-fn smootherstep(value: f32) -> f32 {
-    let value = value.clamp(0.0, 1.0);
-    value * value * value * (value * (value * 6.0 - 15.0) + 10.0)
+fn centered_knot_acceleration(
+    incoming_secant: f32,
+    outgoing_secant: f32,
+    incoming_duration: f32,
+    outgoing_duration: f32,
+) -> f32 {
+    2.0 * (outgoing_secant - incoming_secant) / (incoming_duration + outgoing_duration)
 }
 
-/// Quintic Hermite interpolation with zero acceleration at both endpoints.
-/// Velocities are expressed in normalized-segment coordinates.
+/// Quintic Hermite interpolation with explicit endpoint velocity and
+/// acceleration. Derivatives are expressed in normalized-segment coordinates.
 fn quintic_hermite(
     start: f32,
     end: f32,
     start_velocity: f32,
     end_velocity: f32,
+    start_acceleration: f32,
+    end_acceleration: f32,
     progress: f32,
 ) -> f32 {
     let t = progress.clamp(0.0, 1.0);
@@ -1167,12 +1217,16 @@ fn quintic_hermite(
     let t5 = t4 * t;
     let start_position_basis = 1.0 - 10.0 * t3 + 15.0 * t4 - 6.0 * t5;
     let start_velocity_basis = t - 6.0 * t3 + 8.0 * t4 - 3.0 * t5;
+    let start_acceleration_basis = 0.5 * (t2 - 3.0 * t3 + 3.0 * t4 - t5);
     let end_position_basis = 10.0 * t3 - 15.0 * t4 + 6.0 * t5;
     let end_velocity_basis = -4.0 * t3 + 7.0 * t4 - 3.0 * t5;
+    let end_acceleration_basis = 0.5 * (t3 - 2.0 * t4 + t5);
     start * start_position_basis
         + start_velocity * start_velocity_basis
+        + start_acceleration * start_acceleration_basis
         + end * end_position_basis
         + end_velocity * end_velocity_basis
+        + end_acceleration * end_acceleration_basis
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
