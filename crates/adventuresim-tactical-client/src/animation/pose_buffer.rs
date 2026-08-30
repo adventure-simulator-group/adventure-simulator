@@ -88,88 +88,6 @@ impl BakedClip {
         }
     }
 
-    /// Samples the authored motion timeline without treating a semantic anchor
-    /// as an interpolation endpoint. Times outside the clip retain the nearest
-    /// authored tangent, which keeps readable attack drawback available while
-    /// allowing contact to flow into the following authored frames.
-    fn sample_unclamped(&self, joint: usize, time_seconds: f32) -> LocalPose {
-        if (0.0..=self.duration).contains(&time_seconds) {
-            return self.sample(joint, time_seconds);
-        }
-        if time_seconds < 0.0 {
-            let next_time = self.frame_dt.min(self.duration);
-            if next_time <= f32::EPSILON {
-                return self.sample(joint, 0.0);
-            }
-            return self
-                .sample(joint, 0.0)
-                .extrapolate_unbounded(self.sample(joint, next_time), time_seconds / next_time);
-        }
-
-        let previous_time = (self.duration - self.frame_dt).max(0.0);
-        let interval = self.duration - previous_time;
-        if interval <= f32::EPSILON {
-            return self.sample(joint, self.duration);
-        }
-        self.sample(joint, previous_time).extrapolate_unbounded(
-            self.sample(joint, self.duration),
-            1.0 + (time_seconds - self.duration) / interval,
-        )
-    }
-
-    /// Carries the incoming authored velocity across `end_time_seconds`, then
-    /// decays that correction into the following authored motion. The next
-    /// semantic anchor is one span later for tactical attack clips.
-    fn sample_curve_span(
-        &self,
-        joint: usize,
-        start_time_seconds: f32,
-        end_time_seconds: f32,
-        coordinate: f32,
-    ) -> LocalPose {
-        let span_seconds = (end_time_seconds - start_time_seconds).abs();
-        let authored_time =
-            start_time_seconds + (end_time_seconds - start_time_seconds) * coordinate;
-        let mut authored = self.sample_unclamped(joint, authored_time);
-        if coordinate <= 1.0 || span_seconds <= f32::EPSILON {
-            return authored;
-        }
-
-        let tangent_interval = self.frame_dt.min(span_seconds);
-        let incoming_start = self.sample_unclamped(joint, end_time_seconds - tangent_interval);
-        let contact = self.sample_unclamped(joint, end_time_seconds);
-        let outgoing_end = self.sample_unclamped(joint, end_time_seconds + tangent_interval);
-        let correction_progress =
-            ((authored_time - end_time_seconds) / span_seconds).clamp(0.0, 1.0);
-        let smooth_progress = correction_progress.powi(3)
-            * (correction_progress * (correction_progress * 6.0 - 15.0) + 10.0);
-        let correction_seconds =
-            (authored_time - end_time_seconds).max(0.0) * (1.0 - smooth_progress);
-        let incoming_translation_velocity =
-            (contact.translation - incoming_start.translation) / tangent_interval;
-        let outgoing_translation_velocity =
-            (outgoing_end.translation - contact.translation) / tangent_interval;
-        authored.translation +=
-            (incoming_translation_velocity - outgoing_translation_velocity) * correction_seconds;
-
-        let incoming_angular_velocity = quaternion_angular_velocity(
-            contact.rotation,
-            incoming_start.rotation,
-            tangent_interval,
-        );
-        let outgoing_angular_velocity =
-            quaternion_angular_velocity(outgoing_end.rotation, contact.rotation, tangent_interval);
-        let angular_correction =
-            (incoming_angular_velocity - outgoing_angular_velocity) * correction_seconds;
-        authored.rotation =
-            (quaternion_exp(angular_correction * 0.5) * authored.rotation).normalize();
-
-        let incoming_scale_velocity = (contact.scale - incoming_start.scale) / tangent_interval;
-        let outgoing_scale_velocity = (outgoing_end.scale - contact.scale) / tangent_interval;
-        authored.scale += (incoming_scale_velocity - outgoing_scale_velocity) * correction_seconds;
-        authored
-    }
-
     fn memory_bytes(&self) -> usize {
         self.tracks
             .iter()
@@ -818,18 +736,11 @@ fn sample_plan(
                 end_clip.sample(joint_index, span.end_time_seconds),
                 joint.bind,
             );
-            let sample = if span.start.handle.id() == span.end.handle.id()
-                && span.start.layer == span.end.layer
-            {
-                start_clip.sample_curve_span(
-                    joint_index,
-                    span.start_time_seconds,
-                    span.end_time_seconds,
-                    span.coordinate,
-                )
-            } else {
-                start.extrapolate(end, span.coordinate)
-            };
+            // CurveSpan is defined by its two semantic anchors, not the keys
+            // authored between or after them. Applying their transform delta
+            // directly gives one constant spatial path through coordinate 1,
+            // so contact cannot introduce a hidden ease-out/ease-in stop.
+            let sample = start.extrapolate(end, span.coordinate);
             let sample = sanitize_pose(sample, joint.bind);
             if pelvis && span.start.layer == ClipLayer::CombatUpper {
                 accumulate_local_pose(
@@ -2036,36 +1947,27 @@ mod tests {
     }
 
     #[test]
-    fn authored_curve_span_conserves_contact_velocity_into_follow_frames() {
-        let clip = BakedClip {
-            duration: 2.0,
-            frame_dt: 1.0,
-            frames: 3,
-            tracks: vec![BoneTrack {
-                translations: vec![Vec3::ZERO, Vec3::X, Vec3::X * 3.0],
-                rotations: vec![
-                    Quat::IDENTITY,
-                    Quat::from_rotation_y(0.2),
-                    Quat::from_rotation_y(0.6),
-                ],
-                scales: vec![Vec3::ONE; 3],
-                animated: true,
-            }],
+    fn anchor_curve_span_conserves_transform_velocity_through_contact() {
+        let start = LocalPose {
+            translation: Vec3::ZERO,
+            rotation: Quat::IDENTITY,
+            scale: Vec3::ONE,
         };
-
+        let end = LocalPose {
+            translation: Vec3::X,
+            rotation: Quat::from_rotation_y(0.2),
+            scale: Vec3::ONE,
+        };
         let step = 0.001;
-        let before = clip.sample_curve_span(0, 0.0, 1.0, 1.0 - step);
-        let contact = clip.sample_curve_span(0, 0.0, 1.0, 1.0);
-        let after = clip.sample_curve_span(0, 0.0, 1.0, 1.0 + step);
+        let before = start.extrapolate(end, 1.0 - step);
+        let contact = start.extrapolate(end, 1.0);
+        let after = start.extrapolate(end, 1.0 + step);
         let incoming_velocity = (contact.translation.x - before.translation.x) / step;
         let outgoing_velocity = (after.translation.x - contact.translation.x) / step;
         assert!((incoming_velocity - outgoing_velocity).abs() < 0.01);
-
-        let follow = clip.sample_curve_span(0, 0.0, 1.0, 1.5);
-        assert!(
-            follow.translation.x > 1.5,
-            "the corrected span must still enter the authored follow frames"
-        );
+        let incoming_angular_velocity = before.rotation.angle_between(contact.rotation) / step;
+        let outgoing_angular_velocity = contact.rotation.angle_between(after.rotation) / step;
+        assert!((incoming_angular_velocity - outgoing_angular_velocity).abs() < 0.01);
     }
 
     #[test]
