@@ -28,3 +28,8 @@ workspace = true
 name = "building-viewer"
 path = "src/main.rs"
 doc = false
+
+[[bin]]
+name = "building-lod-viewer"
+path = "src/bin/building-lod-viewer.rs"
+doc = false
