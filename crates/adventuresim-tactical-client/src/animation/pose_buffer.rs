@@ -37,6 +37,14 @@ pub(crate) struct PoseBufferMetrics {
     pub(crate) culled_character_count: usize,
 }
 
+/// Rig-local semantic target before inertialization, secondary physics, IK,
+/// and hierarchical render transforms modify the weapon-driving chain.
+#[derive(Component, Debug, Clone, Copy)]
+pub(crate) struct AuthoredWeaponTarget {
+    pub(crate) translation: Vec3,
+    pub(crate) rotation: Quat,
+}
+
 #[derive(Resource, Default)]
 pub(super) struct RigDefinitions(HashMap<String, Arc<RigDefinition>>);
 
@@ -653,6 +661,19 @@ pub(super) fn update_pose_buffers(
             rig.terrain_plants = [None; 2];
         }
         let target = sampled.pose;
+        if let Some(weapon_joint) = rig
+            .definition
+            .joints
+            .iter()
+            .position(|joint| joint.name.as_deref() == Some("r_weapon"))
+        {
+            let mut cache = vec![None; target.len()];
+            let weapon = local_pose_global(&rig.definition, &target, weapon_joint, &mut cache);
+            commands.entity(owner).insert(AuthoredWeaponTarget {
+                translation: weapon.translation,
+                rotation: weapon.rotation,
+            });
+        }
         let direct_sampling = playback.sampling_cadence() == PoseSamplingCadence::Direct;
         let target_velocities = target
             .iter()

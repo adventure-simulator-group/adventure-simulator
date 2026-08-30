@@ -126,7 +126,9 @@ def frame_is_attack(frame: dict[str, object]) -> bool:
     return frame.get("action") == "Attack" and bool(evaluation_action_sample(frame))
 
 
-def load_attack_cycles(path: Path, bone_name: str) -> list[list[MotionSample]]:
+def load_attack_cycles(
+    path: Path, bone_name: str, transform_source: str = "final"
+) -> list[list[MotionSample]]:
     cycles: list[list[MotionSample]] = []
     active: list[MotionSample] = []
     previous_frame: int | None = None
@@ -154,7 +156,16 @@ def load_attack_cycles(path: Path, bone_name: str) -> list[list[MotionSample]]:
             if active and previous_frame is not None and scenario_frame != previous_frame + 1:
                 cycles.append(active)
                 active = []
-            position, rotation = subject_relative_transform(frame, bone)
+            if transform_source == "authored":
+                target = frame.get("authored_weapon_target")
+                if not isinstance(target, dict):
+                    raise ValueError(
+                        f"attack frame {scenario_frame} has no authored weapon target"
+                    )
+                position = tuple(target["translation"])  # type: ignore[assignment]
+                rotation = normalize_quaternion(target["rotation_xyzw"])  # type: ignore[arg-type]
+            else:
+                position, rotation = subject_relative_transform(frame, bone)
             active.append(
                 MotionSample(
                     scenario_frame,
@@ -455,6 +466,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("trace", type=Path, help="real-client animation-state JSONL")
     parser.add_argument("--output", type=Path, required=True, help="destination SVG")
     parser.add_argument("--bone", default="r_weapon", help="global bone name to measure")
+    parser.add_argument(
+        "--source",
+        choices=("final", "authored"),
+        default="final",
+        help="final rendered bone or pre-procedural authored weapon target",
+    )
     parser.add_argument("--cycle", type=int, default=-1, help="zero-based attack chain; negative indexes count from the end")
     return parser.parse_args()
 
@@ -462,7 +479,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     try:
-        cycles = load_attack_cycles(args.trace, args.bone)
+        cycles = load_attack_cycles(args.trace, args.bone, args.source)
         if not cycles:
             raise ValueError("trace contains no rendered attack cycles")
         try:
@@ -478,6 +495,7 @@ def main() -> int:
     summary = {
         "attack_cycle_count": len(cycles),
         "bone": args.bone,
+        "source": args.source,
         "duration_seconds": series.times[-1],
         "markers": [{"time_seconds": marker.time, "pose": marker.label} for marker in markers],
         "maximums": {

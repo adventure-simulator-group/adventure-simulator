@@ -22,6 +22,10 @@ def frame(index, time, position, angle, pose, sampling, action="Attack"):
         "action": action,
         "subject_translation": [10.0, 0.0, -4.0],
         "subject_rotation_xyzw": [0.0, 0.0, 0.0, 1.0],
+        "authored_weapon_target": {
+            "translation": [position, 0.0, 0.0],
+            "rotation_xyzw": [0.0, 0.0, math.sin(half), math.cos(half)],
+        },
         "evaluation": {
             "action": []
             if action != "Attack"
@@ -58,6 +62,19 @@ class PlotAnimationMotionTraceTests(unittest.TestCase):
 
         self.assertAlmostEqual(series.linear_speed[-1], 0.5, places=6)
         self.assertAlmostEqual(series.angular_speed[-1], 0.5, places=6)
+        self.assertAlmostEqual(series.linear_acceleration[-1], 1.0, places=6)
+        self.assertAlmostEqual(series.angular_acceleration[-1], 1.0, places=6)
+
+    def test_can_measure_the_pre_procedural_authored_weapon_target(self):
+        with tempfile.TemporaryDirectory() as directory:
+            trace = Path(directory) / "trace.jsonl"
+            trace.write_text(
+                "".join(json.dumps(item) + "\n" for item in captured_frames()),
+                encoding="utf-8",
+            )
+            samples = MODULE.load_attack_cycles(trace, "r_weapon", "authored")[0]
+            series = MODULE.calculate_motion(samples)
+
         self.assertAlmostEqual(series.linear_acceleration[-1], 1.0, places=6)
         self.assertAlmostEqual(series.angular_acceleration[-1], 1.0, places=6)
 
