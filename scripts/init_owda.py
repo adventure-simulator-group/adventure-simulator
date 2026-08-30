@@ -15,7 +15,7 @@ from pathlib import Path
 
 
 VERSION = "1.0"
-SOURCE_URL = "https://www.ncei.noaa.gov/pub/data/paleo/drought/owda.nc"
+SOURCE_URL = "https://www.ncei.noaa.gov/pub/data/paleo/treering/reconstructions/europe/owda.nc"
 DATASET_DOI = "10.25921/rjm6-mq74"
 PAPER_DOI = "10.1126/sciadv.1500561"
 EXPECTED_SIZE = 228_226_363
