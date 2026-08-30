@@ -107,6 +107,16 @@ struct LocalPose {
     scale: Vec3,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct ContinuationTransition {
+    contact: LocalPose,
+    ready: LocalPose,
+    outgoing: LocalPose,
+    start_coordinate: f32,
+    incoming_tangent: f32,
+    outgoing_tangent_scale: f32,
+}
+
 #[derive(Debug)]
 struct SampledPlan {
     pose: Vec<LocalPose>,
@@ -151,32 +161,25 @@ impl LocalPose {
         }
     }
 
-    fn continuation_transition(
-        self,
-        contact: Self,
-        end: Self,
-        outgoing: Self,
-        start_coordinate: f32,
-        incoming_tangent: f32,
-        outgoing_tangent_scale: f32,
-        progress: f32,
-    ) -> Self {
-        let start = self.extrapolate(contact, start_coordinate);
+    fn continuation_transition(self, transition: ContinuationTransition, progress: f32) -> Self {
+        let start = self.extrapolate(transition.contact, transition.start_coordinate);
         let progress = progress.clamp(0.0, 1.0);
         let incoming_rotation = quaternion_log(shortest_rotation(
-            contact.rotation * self.rotation.inverse(),
-        )) * incoming_tangent;
-        let end_rotation =
-            quaternion_log(shortest_rotation(end.rotation * start.rotation.inverse()));
+            transition.contact.rotation * self.rotation.inverse(),
+        )) * transition.incoming_tangent;
+        let end_rotation = quaternion_log(shortest_rotation(
+            transition.ready.rotation * start.rotation.inverse(),
+        ));
         let outgoing_rotation = quaternion_log(shortest_rotation(
-            outgoing.rotation * end.rotation.inverse(),
-        )) * outgoing_tangent_scale;
+            transition.outgoing.rotation * transition.ready.rotation.inverse(),
+        )) * transition.outgoing_tangent_scale;
         Self {
             translation: cubic_hermite_vec3(
                 start.translation,
-                end.translation,
-                (contact.translation - self.translation) * incoming_tangent,
-                (outgoing.translation - end.translation) * outgoing_tangent_scale,
+                transition.ready.translation,
+                (transition.contact.translation - self.translation) * transition.incoming_tangent,
+                (transition.outgoing.translation - transition.ready.translation)
+                    * transition.outgoing_tangent_scale,
                 progress,
             ),
             rotation: (quaternion_exp(cubic_hermite_vec3(
@@ -189,9 +192,10 @@ impl LocalPose {
                 .normalize(),
             scale: cubic_hermite_vec3(
                 start.scale,
-                end.scale,
-                (contact.scale - self.scale) * incoming_tangent,
-                (outgoing.scale - end.scale) * outgoing_tangent_scale,
+                transition.ready.scale,
+                (transition.contact.scale - self.scale) * transition.incoming_tangent,
+                (transition.outgoing.scale - transition.ready.scale)
+                    * transition.outgoing_tangent_scale,
                 progress,
             ),
         }
@@ -909,12 +913,14 @@ fn sample_plan(
             );
             let sample = sanitize_pose(
                 start.continuation_transition(
-                    contact,
-                    end,
-                    outgoing,
-                    span.start_coordinate,
-                    span.incoming_tangent,
-                    span.outgoing_tangent_scale,
+                    ContinuationTransition {
+                        contact,
+                        ready: end,
+                        outgoing,
+                        start_coordinate: span.start_coordinate,
+                        incoming_tangent: span.incoming_tangent,
+                        outgoing_tangent_scale: span.outgoing_tangent_scale,
+                    },
                     span.progress,
                 ),
                 joint.bind,
@@ -2172,26 +2178,18 @@ mod tests {
         let coordinate = 1.2;
         let incoming_tangent = 0.35;
         let outgoing_tangent_scale = 2.0;
+        let transition = ContinuationTransition {
+            contact,
+            ready: preparation,
+            outgoing: follow,
+            start_coordinate: coordinate,
+            incoming_tangent,
+            outgoing_tangent_scale,
+        };
         let step = 0.0001;
         let before = guard.extrapolate_unbounded(contact, coordinate - incoming_tangent * step);
-        let start = guard.continuation_transition(
-            contact,
-            preparation,
-            follow,
-            coordinate,
-            incoming_tangent,
-            outgoing_tangent_scale,
-            0.0,
-        );
-        let after = guard.continuation_transition(
-            contact,
-            preparation,
-            follow,
-            coordinate,
-            incoming_tangent,
-            outgoing_tangent_scale,
-            step,
-        );
+        let start = guard.continuation_transition(transition, 0.0);
+        let after = guard.continuation_transition(transition, step);
         let incoming_translation_velocity = (start.translation - before.translation) / step;
         let outgoing_translation_velocity = (after.translation - start.translation) / step;
         assert!(incoming_translation_velocity.distance(outgoing_translation_velocity) < 0.01);
@@ -2199,24 +2197,8 @@ mod tests {
         let outgoing_angular_velocity = start.rotation.angle_between(after.rotation) / step;
         assert!((incoming_angular_velocity - outgoing_angular_velocity).abs() < 0.01);
 
-        let before_end = guard.continuation_transition(
-            contact,
-            preparation,
-            follow,
-            coordinate,
-            incoming_tangent,
-            outgoing_tangent_scale,
-            1.0 - step,
-        );
-        let end = guard.continuation_transition(
-            contact,
-            preparation,
-            follow,
-            coordinate,
-            incoming_tangent,
-            outgoing_tangent_scale,
-            1.0,
-        );
+        let before_end = guard.continuation_transition(transition, 1.0 - step);
+        let end = guard.continuation_transition(transition, 1.0);
         let after_end = preparation.interpolate(follow, step * outgoing_tangent_scale);
         let incoming_end_velocity = (end.translation - before_end.translation) / step;
         let outgoing_end_velocity = (after_end.translation - end.translation) / step;

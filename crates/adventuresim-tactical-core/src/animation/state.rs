@@ -1120,11 +1120,10 @@ impl AttackCurve {
 }
 
 /// The follow-ready pose lies roughly halfway along the authored preparation
-/// path, but the weapon enters that path much slower than it leaves for the
-/// next contact. Constant-acceleration timing therefore gives the first leg
-/// two thirds of the fixed preparation interval instead of inheriting the
-/// source file's equal four-frame spacing.
-const FOLLOW_READY_PREPARATION_FRACTION: f32 = 2.0 / 3.0;
+/// path. Global weapon-rotation measurements put the constant-acceleration
+/// crossover at about 58% of the fixed preparation interval, independently of
+/// the source file's arbitrary equal four-frame spacing.
+const FOLLOW_READY_PREPARATION_FRACTION: f32 = 7.0 / 12.0;
 
 pub(super) fn continuation_ready_phase() -> f32 {
     0.5 * FOLLOW_READY_PREPARATION_FRACTION
