@@ -4,11 +4,14 @@
 //! walls, opening assemblies, timber members, floors, and roof framing. It is
 //! render-only; tactical collision remains independently compiled.
 
+use std::collections::BTreeSet;
+
 use bevy::math::{Quat, Vec2, Vec3};
 
 use crate::{
     BuildingLodMaterial, BuildingPlan, LodMesh, ResolvedSolid, ResolvedSolidShape, RoofMaterial,
-    SolidRole, WallMaterialClass, WallStyle, tessellate_roof_enclosure, tessellate_roof_face,
+    SolidRole, WallMaterialClass, WallStyle, compile_operable_doors, tessellate_roof_enclosure,
+    tessellate_roof_face,
 };
 
 const TEXTURE_REPEAT_METRES: f32 = 2.0;
@@ -36,9 +39,28 @@ impl BuildingDetail {
 
 /// Compiles the authoritative high-detail representation used in playable space.
 pub fn compile_building_detail(plan: &BuildingPlan) -> BuildingDetail {
+    compile_detail(plan, &BTreeSet::new())
+}
+
+/// Compiles high detail while reserving operable exterior leaves for dynamic entities.
+pub fn compile_static_building_detail(plan: &BuildingPlan) -> BuildingDetail {
+    let dynamic_door_solids = compile_operable_doors(plan)
+        .into_iter()
+        .map(|door| door.source)
+        .collect::<BTreeSet<_>>();
+    compile_detail(plan, &dynamic_door_solids)
+}
+
+fn compile_detail(
+    plan: &BuildingPlan,
+    excluded_solids: &BTreeSet<crate::ResolvedItemId>,
+) -> BuildingDetail {
     let mut detail = BuildingDetail { meshes: Vec::new() };
 
     for solid in &plan.resolved_geometry.solids {
+        if excluded_solids.contains(&solid.id) {
+            continue;
+        }
         if matches!(solid.shape, ResolvedSolidShape::RoundTowerShell { .. }) {
             continue;
         }
@@ -386,6 +408,22 @@ mod tests {
                 .iter()
                 .any(|mesh| mesh.material == BuildingLodMaterial::Floor)
         );
+    }
+
+    #[test]
+    fn static_playable_detail_reserves_operable_leaves_for_dynamic_entities() {
+        let plan = generate(&BuildingProgram::fixture(BuildingArchetype::TownHouse, 42)).unwrap();
+        let self_contained = compile_building_detail(&plan);
+        let static_detail = compile_static_building_detail(&plan);
+        let triangle_count = |detail: &BuildingDetail| {
+            detail
+                .meshes
+                .iter()
+                .map(|mesh| mesh.indices.len() / 3)
+                .sum::<usize>()
+        };
+
+        assert!(triangle_count(&static_detail) < triangle_count(&self_contained));
     }
 
     #[test]

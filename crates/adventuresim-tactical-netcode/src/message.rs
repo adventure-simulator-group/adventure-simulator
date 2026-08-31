@@ -131,6 +131,10 @@ pub enum EquipmentAction {
         #[entities]
         item: Entity,
     },
+    OpenDoor {
+        #[entities]
+        door: Entity,
+    },
 }
 
 /// Durable edge identity for jumping over the unreliable continuous-input
@@ -273,6 +277,27 @@ mod equipment_action_mapping_tests {
         assert!(matches!(
             request.action,
             EquipmentAction::Pickup { item: found } if found == mapped_item
+        ));
+    }
+
+    #[test]
+    fn request_maps_door_target_nested_inside_equipment_action() {
+        let door = Entity::from_bits(5);
+        let mapped_door = Entity::from_bits(15);
+        let mut request = EquipmentActionRequest {
+            actor: Entity::from_bits(1),
+            sequence: 1,
+            expected_revision: 0,
+            hand: EquipmentHand::Right,
+            expected_hand_item: None,
+            action: EquipmentAction::OpenDoor { door },
+        };
+
+        request.map_entities(&mut (door, mapped_door));
+
+        assert!(matches!(
+            request.action,
+            EquipmentAction::OpenDoor { door: found } if found == mapped_door
         ));
     }
 }

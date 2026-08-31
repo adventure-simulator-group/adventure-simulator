@@ -28,10 +28,10 @@ fn timber_member_audit_polygon(
     let normal = Vec2::new(-axis.y, axis.x);
     let half = member.section_metres.max_element() * 0.5;
     timber_audit_polygon([
-        start - axis * half - normal * half,
-        end + axis * half - normal * half,
-        end + axis * half + normal * half,
-        start - axis * half + normal * half,
+        start - normal * half,
+        end - normal * half,
+        end + normal * half,
+        start + normal * half,
     ])
 }
 

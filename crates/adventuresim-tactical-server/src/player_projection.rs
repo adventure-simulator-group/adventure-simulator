@@ -2170,6 +2170,7 @@ pub(crate) fn on_player_added(
         AuthoritativeInputTick::default(),
         CharacterMotionSnapshot::default(),
         QuickstepPush::default(),
+        DoorPassageExemptions::default(),
     ));
     Ok(())
 }

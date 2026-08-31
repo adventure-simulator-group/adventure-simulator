@@ -66,6 +66,7 @@ impl Plugin for AdventureSimulatorReplicationPlugin {
                 serialize_scene_building,
                 deserialize_scene_building,
             ))
+            .replicate::<SceneDoor>()
             .add_client_event::<JoinRequest>(Channel::Ordered)
             .add_server_event::<ReconnectCapability>(Channel::Ordered)
             .add_server_event::<SceneVistaBundle>(Channel::Ordered)
@@ -153,5 +154,24 @@ mod tests {
         postcard_utils::to_extend_mut(&building, &mut bytes).unwrap();
 
         assert!(bevy_replicon::postcard::from_bytes::<SceneBuilding>(&bytes).is_err());
+    }
+
+    #[test]
+    fn scene_door_round_trips_through_replication_codec() {
+        let door = SceneDoor {
+            building_id: 7,
+            opening_id: 11,
+            size_metres: Vec3::new(1.0, 2.1, 0.07),
+            doorway_centre_metres: Vec3::new(3.0, 1.05, -2.0),
+            tangent: Vec3::X,
+            outward: Vec3::NEG_Z,
+        };
+        let mut bytes = Vec::new();
+        postcard_utils::to_extend_mut(&door, &mut bytes).unwrap();
+
+        assert_eq!(
+            bevy_replicon::postcard::from_bytes::<SceneDoor>(&bytes).unwrap(),
+            door
+        );
     }
 }

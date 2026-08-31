@@ -29,14 +29,17 @@ use bevy_egui::{EguiContexts, EguiPrimaryContextPass, EguiTextureHandle, egui};
 use bevy_mod_outline::{OutlineMode, OutlinePlugin, OutlineVolume};
 use serde::Deserialize;
 
+mod grab_world;
+
+use grab_world::*;
+
 use crate::{
     animation::{
         AuthoredBindTransform, BoneRole, HandSide, HeldWeaponConstraint, HumanoidRig, MhrBone,
         authored_bind_global,
     },
     player::ClientPlayer,
-    presentation::TacticalGameplayCamera,
-    targeting::auto_aim_candidate,
+    presentation::GrabTargetOutline,
 };
 
 const PICKUP_RANGE_M: f32 = 2.0;
@@ -151,7 +154,8 @@ enum GrabSelection {
         depth: u16,
     },
     Hand(EquipmentHand),
-    Scene(Entity),
+    SceneItem(Entity),
+    Door(Entity),
 }
 
 #[derive(Resource, Default)]
@@ -212,10 +216,7 @@ struct WeaponIconCacheKey {
 #[derive(Component)]
 struct ItemPlaceholder(Entity);
 
-#[derive(Component)]
-struct PickupOutline(Entity);
-
-#[derive(Deserialize)]
+#[derive(Component, Deserialize)]
 struct ProceduralEquipmentManifest {
     assets: Vec<ProceduralEquipmentManifestAsset>,
 }
@@ -332,10 +333,6 @@ fn key_code(input: &str) -> Option<KeyCode> {
     })
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "Bevy injects grab controls, ownership topology, camera, scene-item, and spatial state independently"
-)]
 fn update_grab_input(
     mut commands: Commands,
     time: Res<Time>,
@@ -346,12 +343,7 @@ fn update_grab_input(
     topologies: Query<(Entity, &ItemOf, &EquipmentTopology, &ItemProperties)>,
     properties: Query<&ItemProperties>,
     action_states: Query<&EquipmentActionState>,
-    cameras: Query<&GlobalTransform, With<TacticalGameplayCamera>>,
-    scene_items: Query<
-        (Entity, &GlobalTransform, &TacticalEquipmentPhysical),
-        With<TacticalSceneItem>,
-    >,
-    spatial: SpatialQuery,
+    world_targets: WorldGrabTargets,
     mut session: ResMut<GrabSession>,
 ) {
     session.invalid_flash_remaining =
@@ -368,10 +360,10 @@ fn update_grab_input(
     }
     let Some(hand) = session.active else { return };
     let held = held_item(actor, hand, &item_owners);
-    session.selection = scene_grab_selection(
+    session.selection = world_grab_selection(
         session.selection,
         held.is_some(),
-        auto_aim_scene_item(actor_transform, &cameras, &scene_items, &spatial),
+        world_targets.pointed(actor_transform),
     );
 
     for mapping in INPUT_ADDRESS_MAPPINGS {
@@ -430,7 +422,8 @@ fn update_grab_input(
             destination,
             expected_destination: held_item(actor, destination, &item_owners),
         },
-        Some(GrabSelection::Scene(item)) => EquipmentAction::Pickup { item },
+        Some(GrabSelection::SceneItem(item)) => EquipmentAction::Pickup { item },
+        Some(GrabSelection::Door(door)) => EquipmentAction::OpenDoor { door },
         None if held.is_some() => EquipmentAction::Drop,
         None => {
             session.active = None;
@@ -450,67 +443,6 @@ fn update_grab_input(
     session.active = None;
     session.selection = None;
     session.repeated_input = None;
-}
-
-fn auto_aim_scene_item(
-    actor: &GlobalTransform,
-    cameras: &Query<&GlobalTransform, With<TacticalGameplayCamera>>,
-    scene_items: &Query<
-        (Entity, &GlobalTransform, &TacticalEquipmentPhysical),
-        With<TacticalSceneItem>,
-    >,
-    spatial: &SpatialQuery,
-) -> Option<Entity> {
-    let camera = cameras.single().ok()?;
-    let origin = actor.translation() + Vec3::Y * 0.6;
-    auto_aim_candidate(
-        camera.translation(),
-        camera.forward().as_vec3(),
-        actor.translation(),
-        PICKUP_RANGE_M,
-        scene_items
-            .iter()
-            .filter_map(|(entity, transform, physical)| {
-                let position = transform.transform_point(-physical.anchor_offset_m);
-                let sight = position - origin;
-                let distance = sight.length();
-                let visible = distance > f32::EPSILON
-                    && spatial
-                        .cast_ray(
-                            origin,
-                            Dir3::new(sight / distance).ok()?,
-                            distance,
-                            true,
-                            &SpatialQueryFilter::from_mask(TACTICAL_TERRAIN_LAYER),
-                        )
-                        .is_none();
-                visible.then_some((entity, position, entity.to_bits()))
-            }),
-    )
-}
-
-fn scene_grab_selection(
-    selection: Option<GrabSelection>,
-    hand_occupied: bool,
-    pointed: Option<Entity>,
-) -> Option<GrabSelection> {
-    if hand_occupied || !matches!(selection, None | Some(GrabSelection::Scene(_))) {
-        return selection;
-    }
-    pointed.map(GrabSelection::Scene)
-}
-
-fn update_pickup_outlines(
-    session: Res<GrabSession>,
-    mut outlines: Query<(&PickupOutline, &mut OutlineVolume)>,
-) {
-    for (outline, mut volume) in &mut outlines {
-        volume.visible = pickup_outline_selected(outline.0, session.selection);
-    }
-}
-
-fn pickup_outline_selected(item: Entity, selection: Option<GrabSelection>) -> bool {
-    matches!(selection, Some(GrabSelection::Scene(selected)) if selected == item)
 }
 
 #[derive(Clone, Copy)]
@@ -1172,7 +1104,7 @@ fn draw_slot_hud(
             }
 
             if held.is_none()
-                && let Some(GrabSelection::Scene(entity)) = session.selection
+                && let Some(GrabSelection::SceneItem(entity)) = session.selection
                 && let Ok((_, item)) = scene_items.get(entity)
             {
                 let icon = item_catalog::definition(&item.id)
@@ -1425,7 +1357,7 @@ fn spawn_item_placeholders(
                         Mesh3d(part.mesh),
                         MeshMaterial3d(part.material),
                         Transform::from_translation(-generated.grip),
-                        PickupOutline(item),
+                        GrabTargetOutline(item),
                         OutlineVolume {
                             visible: false,
                             colour: Color::WHITE,
@@ -1452,7 +1384,7 @@ fn spawn_item_placeholders(
                 // The root is the authored grip. Box centre is offset from it;
                 // local +Y remains the weapon-tip direction.
                 Transform::from_translation(-physical.anchor_offset_m),
-                PickupOutline(item),
+                GrabTargetOutline(item),
                 OutlineVolume {
                     visible: false,
                     colour: Color::WHITE,
@@ -1615,7 +1547,7 @@ fn resolve_procedural_equipment_models(
                 inverse_bindposes: skin.inverse_bind_matrices.clone(),
                 joint_names,
             },
-            PickupOutline(placeholder.0),
+            GrabTargetOutline(placeholder.0),
             OutlineVolume {
                 visible: false,
                 colour: Color::WHITE,
@@ -2335,19 +2267,23 @@ mod tests {
     }
 
     #[test]
-    fn pickup_outline_is_visible_only_for_the_selected_scene_item() {
+    fn grab_outline_is_visible_only_for_the_selected_world_target() {
         let selected = Entity::from_bits(1);
         let other = Entity::from_bits(2);
 
-        assert!(pickup_outline_selected(
+        assert!(grab_target_outline_selected(
             selected,
-            Some(GrabSelection::Scene(selected))
+            Some(GrabSelection::SceneItem(selected))
         ));
-        assert!(!pickup_outline_selected(
+        assert!(!grab_target_outline_selected(
             other,
-            Some(GrabSelection::Scene(selected))
+            Some(GrabSelection::SceneItem(selected))
         ));
-        assert!(!pickup_outline_selected(selected, None));
+        assert!(grab_target_outline_selected(
+            selected,
+            Some(GrabSelection::Door(selected))
+        ));
+        assert!(!grab_target_outline_selected(selected, None));
     }
 
     #[test]
@@ -2389,13 +2325,26 @@ mod tests {
     fn empty_hand_tracks_the_pointed_scene_item_for_release() {
         let first = Entity::from_bits(21);
         let second = Entity::from_bits(22);
-        let selection = scene_grab_selection(None, false, Some(first));
-        assert_eq!(selection, Some(GrabSelection::Scene(first)));
+        let selection = world_grab_selection(None, false, Some(GrabSelection::SceneItem(first)));
+        assert_eq!(selection, Some(GrabSelection::SceneItem(first)));
         assert_eq!(
-            scene_grab_selection(selection, false, Some(second)),
-            Some(GrabSelection::Scene(second))
+            world_grab_selection(selection, false, Some(GrabSelection::SceneItem(second)),),
+            Some(GrabSelection::SceneItem(second))
         );
-        assert_eq!(scene_grab_selection(selection, false, None), None);
+        assert_eq!(world_grab_selection(selection, false, None), None);
+    }
+
+    #[test]
+    fn empty_hand_tracks_a_pointed_door_but_an_occupied_hand_does_not() {
+        let door = Entity::from_bits(24);
+        assert_eq!(
+            world_grab_selection(None, false, Some(GrabSelection::Door(door))),
+            Some(GrabSelection::Door(door))
+        );
+        assert_eq!(
+            world_grab_selection(None, true, Some(GrabSelection::Door(door))),
+            None
+        );
     }
 
     #[test]
@@ -2405,7 +2354,11 @@ mod tests {
             depth: 0,
         });
         assert_eq!(
-            scene_grab_selection(selection, false, Some(Entity::from_bits(23))),
+            world_grab_selection(
+                selection,
+                false,
+                Some(GrabSelection::SceneItem(Entity::from_bits(23))),
+            ),
             selection
         );
     }

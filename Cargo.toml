@@ -82,6 +82,7 @@ avian3d = { version = "0.7.0", default-features = false, features = [
   "parry-f32",
   "parallel",
   "default-collider",
+  "xpbd_joints",
 ] }
 bevy_ahoy = { version = "0.2.0", default-features = false, features = [
   "serialize",

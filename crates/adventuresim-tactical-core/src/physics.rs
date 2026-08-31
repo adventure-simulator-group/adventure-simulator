@@ -521,7 +521,7 @@ impl Plugin for AdventureSimulatorPhysicsPlugin {
         app.init_resource::<crate::combat_config::TacticalCombatConfig>();
         if self.enable_simulation {
             app.add_plugins((
-                PhysicsPlugins::new(FixedPostUpdate),
+                crate::doors::tactical_physics_plugins(),
                 AhoyPlugins::new(FixedPostUpdate),
             ))
             .add_systems(

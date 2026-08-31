@@ -1,7 +1,7 @@
 use adventuresim_building_generator::{
     BuildingLodLevel, BuildingLodMaterial, BuildingProgram, LodMesh, RoofMaterial,
     WallMaterialClass, compile_building_collision, compile_building_detail, compile_building_lod,
-    generate,
+    compile_static_building_detail, generate,
 };
 use bevy::{
     ecs::hierarchy::ChildSpawnerCommands,
@@ -52,6 +52,7 @@ struct CompiledBuildingBatch {
 #[derive(Clone)]
 struct CompiledBuildingLevels {
     program: BuildingProgram,
+    dynamic_doors: bool,
     floor_offset_metres: f32,
     lod0: Vec<CompiledBuildingBatch>,
     lod1: Vec<CompiledBuildingBatch>,
@@ -78,7 +79,7 @@ pub(crate) struct TacticalBuildingMaterials {
 }
 
 impl TacticalBuildingMaterials {
-    fn get(&self, material: BuildingLodMaterial) -> Handle<StandardMaterial> {
+    pub(super) fn get(&self, material: BuildingLodMaterial) -> Handle<StandardMaterial> {
         match material {
             BuildingLodMaterial::Wall(WallMaterialClass::TimberInfill) => self.plaster.clone(),
             BuildingLodMaterial::Wall(WallMaterialClass::CivilianMasonry) => self.brick.clone(),
@@ -168,7 +169,7 @@ pub(in crate::presentation) fn on_scene_building_added(
     mut cache: ResMut<TacticalBuildingMeshCache>,
 ) -> Result {
     let building = buildings.get(event.entity)?;
-    let compiled = cached_building_levels(&mut cache, &building.program, &mut meshes)?;
+    let compiled = cached_building_levels(&mut cache, &building.program, true, &mut meshes)?;
     commands
         .entity(event.entity)
         .insert(Visibility::default())
@@ -196,7 +197,8 @@ pub(in crate::presentation) fn on_scene_vista_buildings(
     }
 
     for placement in &bundle.distant_buildings {
-        let compiled = cached_building_levels(&mut cache, &placement.program(), &mut meshes)?;
+        let compiled =
+            cached_building_levels(&mut cache, &placement.program(), false, &mut meshes)?;
         commands
             .spawn((
                 Name::new(format!("Distant city building {}", placement.id)),
@@ -226,9 +228,14 @@ pub(in crate::presentation) fn on_scene_vista_buildings(
 fn cached_building_levels(
     cache: &mut TacticalBuildingMeshCache,
     program: &BuildingProgram,
+    dynamic_doors: bool,
     meshes: &mut Assets<Mesh>,
 ) -> Result<CompiledBuildingLevels> {
-    if let Some(compiled) = cache.0.iter().find(|compiled| compiled.program == *program) {
+    if let Some(compiled) = cache
+        .0
+        .iter()
+        .find(|compiled| compiled.program == *program && compiled.dynamic_doors == dynamic_doors)
+    {
         return Ok(compiled.clone());
     }
 
@@ -236,7 +243,11 @@ fn cached_building_levels(
     let collision = compile_building_collision(&plan);
     let local_origin = collision.bounds.centre();
     let floor_offset_metres = local_origin.y - collision.bounds.min.y;
-    let detail = compile_building_detail(&plan);
+    let detail = if dynamic_doors {
+        compile_static_building_detail(&plan)
+    } else {
+        compile_building_detail(&plan)
+    };
     let facade = compile_building_lod(&plan, BuildingLodLevel::Facade);
     let shell = compile_building_lod(&plan, BuildingLodLevel::Shell);
     let compile_batches = |source: &[LodMesh], meshes: &mut Assets<Mesh>| {
@@ -251,6 +262,7 @@ fn cached_building_levels(
     };
     let compiled = CompiledBuildingLevels {
         program: program.clone(),
+        dynamic_doors,
         floor_offset_metres,
         lod0: compile_batches(&detail.meshes, meshes),
         lod1: compile_batches(&facade.meshes, meshes),
@@ -288,7 +300,7 @@ fn spawn_building_levels(
     }
 }
 
-fn building_lod_visibility(level: BuildingRenderLevel) -> VisibilityRange {
+pub(super) fn building_lod_visibility(level: BuildingRenderLevel) -> VisibilityRange {
     match level {
         BuildingRenderLevel::Lod0 => VisibilityRange {
             start_margin: 0.0..0.0,

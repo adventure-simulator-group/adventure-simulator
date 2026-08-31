@@ -30,7 +30,8 @@ use crate::scene_ground::tree_leaf_litter_probability;
 pub(crate) mod buildings;
 
 pub use buildings::{
-    DistantBuildingPlacement, GeneratedBuilding, SceneBuilding, TacticalBuildingPlacement,
+    DistantBuildingPlacement, GeneratedBuilding, SceneBuilding, SceneDoor,
+    TacticalBuildingPlacement,
 };
 
 pub const TACTICAL_SCENE_SCHEMA_VERSION: u16 = 5;

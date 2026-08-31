@@ -612,15 +612,38 @@ fn timber_member_wall_polygon(
     };
     let start = project(member.start);
     let end = project(member.end);
+    timber_member_end_face_polygon(start, end, member.section_metres.max_element() * 0.5)
+}
+
+fn timber_member_end_face_polygon(start: Vec2, end: Vec2, half: f32) -> Polygon<f32> {
     let axis = (end - start).normalize_or_zero();
     let normal = Vec2::new(-axis.y, axis.x);
-    let half = member.section_metres.max_element() * 0.5;
+    // `start` and `end` are the centres of the member's end faces. Extending
+    // the subtraction along `axis` by another half section cuts unsupported
+    // wedges out of the infill at every timber joint because the rendered
+    // cuboid does not extend beyond those faces.
     closed_polygon([
-        start - axis * half - normal * half,
-        end + axis * half - normal * half,
-        end + axis * half + normal * half,
-        start - axis * half + normal * half,
+        start - normal * half,
+        end - normal * half,
+        end + normal * half,
+        start + normal * half,
     ])
+}
+
+#[cfg(test)]
+mod wall_infill_tests {
+    use super::*;
+
+    #[test]
+    fn timber_subtraction_stops_at_the_rendered_member_end_faces() {
+        let polygon = timber_member_end_face_polygon(Vec2::new(1.0, 2.0), Vec2::new(3.0, 2.0), 0.25);
+        let coordinates = &polygon.exterior().0;
+
+        assert_eq!(coordinates[0], Coord { x: 1.0, y: 1.75 });
+        assert_eq!(coordinates[1], Coord { x: 3.0, y: 1.75 });
+        assert_eq!(coordinates[2], Coord { x: 3.0, y: 2.25 });
+        assert_eq!(coordinates[3], Coord { x: 1.0, y: 2.25 });
+    }
 }
 
 fn triangulate_panel_polygon(polygon: &Polygon<f32>) -> Vec<[Vec2; 3]> {

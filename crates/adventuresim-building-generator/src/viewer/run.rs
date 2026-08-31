@@ -1369,9 +1369,11 @@ pub(crate) fn run(
         if let Some(document) = &player_build_document {
             setup_player_build_scene(world, document);
         }
-        world
-            .run_system_once(update_editor_visibility)
-            .expect("editor visibility system must run after initial scene setup");
+        if editor {
+            world
+                .run_system_once(update_editor_visibility)
+                .expect("editor visibility system must run after initial scene setup");
+        }
     })
     .add_systems(Last, capture_when_ready);
     let exit = app.run();

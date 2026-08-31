@@ -9,6 +9,12 @@ use adventuresim_tactical_netcode::{
 use bevy::prelude::*;
 use std::collections::{HashMap, HashSet, VecDeque};
 
+mod environment;
+mod lifecycle;
+
+use environment::EquipmentEnvironment;
+pub(crate) use lifecycle::{purge_equipment_lifecycle, reconnect_equipment_lifecycle};
+
 const PICKUP_RANGE_M: f32 = 2.0;
 
 pub(crate) struct TacticalEquipmentPlugin;
@@ -27,30 +33,6 @@ pub(crate) struct PendingEquipmentActions(VecDeque<(Entity, EquipmentActionReque
 
 #[derive(Resource, Default)]
 pub(crate) struct LastEquipmentSequence(HashMap<Entity, u32>);
-
-pub(crate) fn reconnect_equipment_lifecycle(
-    old: Entity,
-    new: Entity,
-    pending: &mut PendingEquipmentActions,
-    sequences: &mut LastEquipmentSequence,
-) {
-    pending
-        .0
-        .retain(|(actor, _)| *actor != old && *actor != new);
-    sequences.0.remove(&new);
-    if let Some(sequence) = sequences.0.remove(&old) {
-        sequences.0.insert(new, sequence);
-    }
-}
-
-pub(crate) fn purge_equipment_lifecycle(
-    actor: Entity,
-    pending: &mut PendingEquipmentActions,
-    sequences: &mut LastEquipmentSequence,
-) {
-    pending.0.retain(|(queued, _)| *queued != actor);
-    sequences.0.remove(&actor);
-}
 
 const MAX_PENDING_PER_ACTOR: usize = 4;
 
@@ -112,7 +94,7 @@ fn process_equipment_actions(
     players: Query<(&Transform, &CharacterLook), With<Player>>,
     mut action_states: Query<&mut EquipmentActionState>,
     items: Query<ItemView<'_>>,
-    spatial: SpatialQuery,
+    mut environment: EquipmentEnvironment,
 ) {
     // Exactly one action is validated and committed per frame. Deferred ECS
     // mutations are therefore applied before another queued action can read
@@ -231,7 +213,7 @@ fn process_equipment_actions(
             request.hand,
             &players,
             &items,
-            &spatial,
+            &environment.spatial,
         ),
         EquipmentAction::Pickup { item } => pickup(
             &mut commands,
@@ -240,27 +222,32 @@ fn process_equipment_actions(
             item,
             &players,
             &items,
-            &spatial,
+            &environment.spatial,
         ),
+        EquipmentAction::OpenDoor { door } => {
+            authoritative_hand_item.is_none()
+                && environment.doors.try_open_from_inside(controlled, door)
+        }
     };
-    if accepted {
-        sequences.0.insert(controlled, request.sequence);
-        state.revision = state.revision.wrapping_add(1);
-        info!(
-            actor = ?controlled,
-            sequence = request.sequence,
-            revision = state.revision,
-            action = ?request.action,
-            "Committed tactical equipment action"
-        );
-    } else {
-        warn!(
-            actor = ?controlled,
-            sequence = request.sequence,
-            action = ?request.action,
-            "Rejected tactical equipment action during authoritative transfer validation"
-        );
+    record_action_outcome(accepted, controlled, request, &mut sequences, &mut state);
+}
+
+fn record_action_outcome(
+    accepted: bool,
+    controlled: Entity,
+    request: EquipmentActionRequest,
+    sequences: &mut LastEquipmentSequence,
+    state: &mut EquipmentActionState,
+) {
+    if !accepted {
+        warn!(actor = ?controlled, sequence = request.sequence, action = ?request.action,
+            "Rejected tactical equipment action during authoritative transfer validation");
+        return;
     }
+    sequences.0.insert(controlled, request.sequence);
+    state.revision = state.revision.wrapping_add(1);
+    info!(actor = ?controlled, sequence = request.sequence, revision = state.revision,
+        action = ?request.action, "Committed tactical equipment action");
 }
 
 fn sequence_is_newer(candidate: u32, previous: u32) -> bool {

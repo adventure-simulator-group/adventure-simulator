@@ -13,6 +13,7 @@ mod atmosphere;
 mod buildings;
 mod clouds;
 mod config;
+mod doors;
 mod environment;
 pub(crate) mod ground_scatter;
 mod obstacles;
@@ -28,6 +29,7 @@ mod weather;
 use atmosphere::*;
 use buildings::*;
 use clouds::*;
+pub(crate) use doors::{DoorPresentationPlugin, GrabTargetOutline};
 use environment::*;
 use ground_scatter::*;
 use obstacles::on_scene_obstacle_added;
@@ -167,6 +169,23 @@ impl Default for TacticalPresentationPlugin {
     }
 }
 
+struct TacticalWeatherAndDoorPlugin;
+
+impl Plugin for TacticalWeatherAndDoorPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_plugins(MaterialPlugin::<TacticalWeatherMaterial>::default())
+            .add_plugins(DoorPresentationPlugin);
+    }
+}
+
+fn tactical_global_ambient_light() -> GlobalAmbientLight {
+    GlobalAmbientLight {
+        color: Color::srgb(0.36, 0.48, 0.72),
+        brightness: 0.6,
+        ..default()
+    }
+}
+
 impl Plugin for TacticalPresentationPlugin {
     fn build(&self, app: &mut App) {
         // GPU-instanced grass renders through bevy_eidolon on native builds;
@@ -193,7 +212,7 @@ impl Plugin for TacticalPresentationPlugin {
         ))
         // Split from the tuple above so the material-plugin group stays within
         // Bevy's 15-element `Plugins` tuple arity limit.
-        .add_plugins(MaterialPlugin::<TacticalWeatherMaterial>::default())
+        .add_plugins(TacticalWeatherAndDoorPlugin)
         // Tactical play uses one compact close-range cascade for whichever
         // celestial light is active. Keep the map allocation identical in the
         // game and all tactical review viewers.
@@ -206,11 +225,7 @@ impl Plugin for TacticalPresentationPlugin {
         .init_resource::<TacticalCameraSetup>()
         // The sky observer preserves this low, cool floor at night and restores
         // physically scaled diffuse sky irradiance during daylight.
-        .insert_resource(GlobalAmbientLight {
-            color: Color::srgb(0.36, 0.48, 0.72),
-            brightness: 0.6,
-            ..default()
-        })
+        .insert_resource(tactical_global_ambient_light())
         .add_systems(
             Startup,
             (

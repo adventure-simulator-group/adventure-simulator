@@ -53,6 +53,18 @@ pub struct SceneBuilding {
     pub quarter_turns: u8,
 }
 
+/// Compact identity and dimensions for one server-authoritative operable leaf.
+#[derive(Clone, Copy, Debug, PartialEq, Component, Serialize, Deserialize)]
+#[component(immutable)]
+pub struct SceneDoor {
+    pub building_id: u64,
+    pub opening_id: u64,
+    pub size_metres: bevy::math::Vec3,
+    pub doorway_centre_metres: bevy::math::Vec3,
+    pub tangent: bevy::math::Vec3,
+    pub outward: bevy::math::Vec3,
+}
+
 #[derive(Clone, Debug)]
 pub struct GeneratedBuilding {
     pub placement: TacticalBuildingPlacement,
