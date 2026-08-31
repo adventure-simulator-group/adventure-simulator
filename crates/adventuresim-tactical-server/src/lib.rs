@@ -33,7 +33,8 @@ pub mod stdb;
 #[derive(bevy::prelude::Resource, Default)]
 pub(crate) struct Args {
     pub(crate) enemy_combat_scale_bps: u32,
-    pub(crate) animation_behavior_lab: bool,
+    pub(crate) enemy_fixture: Option<adventuresim_core::tactical_fixture::TacticalEnemyFixture>,
+    pub(crate) required_enemy_kills: u32,
     pub(crate) spacetimedb_url: String,
     pub(crate) spacetimedb_module: String,
 }

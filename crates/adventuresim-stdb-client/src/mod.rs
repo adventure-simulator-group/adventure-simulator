@@ -2642,7 +2642,7 @@ pub enum Reducer {
         character_id: u64,
         mission_id: String,
         scene_key: String,
-        required_enemy_kills: u32,
+        enemy_fixture_yaml: String,
         tactical_claim: String,
     },
     SelectBrowserCharacter {
@@ -4366,14 +4366,14 @@ impl __sdk::Reducer for Reducer {
                 character_id,
                 mission_id,
                 scene_key,
-                required_enemy_kills,
+                enemy_fixture_yaml,
                 tactical_claim,
 }             => __sats::bsatn::to_vec(&seed_standalone_tactical_mission_reducer::SeedStandaloneTacticalMissionArgs {
                 bootstrap_token: bootstrap_token.clone(),
                 character_id: character_id.clone(),
                 mission_id: mission_id.clone(),
                 scene_key: scene_key.clone(),
-                required_enemy_kills: required_enemy_kills.clone(),
+                enemy_fixture_yaml: enemy_fixture_yaml.clone(),
                 tactical_claim: tactical_claim.clone(),
 }),
             Reducer::SelectBrowserCharacter{

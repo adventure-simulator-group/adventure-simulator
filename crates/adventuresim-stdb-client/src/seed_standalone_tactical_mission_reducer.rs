@@ -11,7 +11,7 @@ pub(super) struct SeedStandaloneTacticalMissionArgs {
     pub character_id: u64,
     pub mission_id: String,
     pub scene_key: String,
-    pub required_enemy_kills: u32,
+    pub enemy_fixture_yaml: String,
     pub tactical_claim: String,
 }
 
@@ -22,7 +22,7 @@ impl From<SeedStandaloneTacticalMissionArgs> for super::Reducer {
             character_id: args.character_id,
             mission_id: args.mission_id,
             scene_key: args.scene_key,
-            required_enemy_kills: args.required_enemy_kills,
+            enemy_fixture_yaml: args.enemy_fixture_yaml,
             tactical_claim: args.tactical_claim,
         }
     }
@@ -49,7 +49,7 @@ pub trait seed_standalone_tactical_mission {
         character_id: u64,
         mission_id: String,
         scene_key: String,
-        required_enemy_kills: u32,
+        enemy_fixture_yaml: String,
         tactical_claim: String,
     ) -> __sdk::Result<()> {
         self.seed_standalone_tactical_mission_then(
@@ -57,7 +57,7 @@ pub trait seed_standalone_tactical_mission {
             character_id,
             mission_id,
             scene_key,
-            required_enemy_kills,
+            enemy_fixture_yaml,
             tactical_claim,
             |_, _| {},
         )
@@ -75,7 +75,7 @@ pub trait seed_standalone_tactical_mission {
         character_id: u64,
         mission_id: String,
         scene_key: String,
-        required_enemy_kills: u32,
+        enemy_fixture_yaml: String,
         tactical_claim: String,
 
         callback: impl FnOnce(
@@ -93,7 +93,7 @@ impl seed_standalone_tactical_mission for super::RemoteReducers {
         character_id: u64,
         mission_id: String,
         scene_key: String,
-        required_enemy_kills: u32,
+        enemy_fixture_yaml: String,
         tactical_claim: String,
 
         callback: impl FnOnce(
@@ -108,7 +108,7 @@ impl seed_standalone_tactical_mission for super::RemoteReducers {
                 character_id,
                 mission_id,
                 scene_key,
-                required_enemy_kills,
+                enemy_fixture_yaml,
                 tactical_claim,
             },
             callback,

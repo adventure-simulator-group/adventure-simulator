@@ -35,6 +35,11 @@ ROOT = Path(__file__).resolve().parents[1]
 MODULE_DIR = ROOT / "crates" / "adventuresim-stdb-module"
 CLIENT_DIR = ROOT / "crates" / "adventuresim-stdb-client" / "src"
 TACTICAL_ENV_FILE = ROOT / ".env.tactical"
+ENEMY_FIXTURE_MAX_BYTES = 16 * 1024
+ANIMATION_ENEMY_FIXTURE = "animation-demo"
+PASSIVE_ENEMY_FIXTURE = "passive-bandit"
+STANDARD_ENEMY_FIXTURE = "standard-bandit"
+DEFAULT_SCENE_INPUT = "dense-woodland"
 
 
 @dataclass
@@ -103,6 +108,39 @@ class TacticalPlayMode(str, Enum):
     DIAGNOSTIC = "diagnostic"
     COMBAT = "combat"
     NETWORKING = "networking"
+
+
+def default_enemy_fixture(mode: TacticalPlayMode) -> str:
+    if mode is TacticalPlayMode.ANIMATION:
+        return ANIMATION_ENEMY_FIXTURE
+    if mode is TacticalPlayMode.COMBAT:
+        return STANDARD_ENEMY_FIXTURE
+    return PASSIVE_ENEMY_FIXTURE
+
+
+def resolve_fixture_path(
+    selector: str, directory: str, extension: str,
+) -> Path:
+    fixture_path = Path(selector)
+    if len(fixture_path.parts) == 1 and not fixture_path.suffix:
+        fixture_path = Path(directory) / f"{selector}.{extension}"
+    if not fixture_path.is_absolute():
+        fixture_path = ROOT / fixture_path
+    return fixture_path
+
+
+def read_enemy_fixture(path: str) -> str:
+    fixture_path = resolve_fixture_path(path, "assets/tactical-enemies", "yaml")
+    try:
+        length = fixture_path.stat().st_size
+    except OSError as error:
+        raise ValueError(f"could not inspect enemy fixture {path!r}: {error}") from error
+    if length == 0 or length > ENEMY_FIXTURE_MAX_BYTES:
+        raise ValueError("enemy fixture must contain between 1 byte and 16 KiB")
+    try:
+        return fixture_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        raise ValueError(f"could not read enemy fixture {path!r}: {error}") from error
 
 
 class ObsWebSocket:
@@ -903,6 +941,32 @@ def seed(server: str, database: str, bootstrap_token: str) -> int:
         client.close()
 
 
+def seed_standalone_tactical_mission(
+    server: str,
+    database: str,
+    bootstrap_token: str,
+    character_id: int,
+    mission_id: str,
+    scene_key: str,
+    enemy_fixture_yaml: str,
+    tactical_claim: str,
+) -> int:
+    """Call the tactical seed reducer with a JSON body so multiline YAML is
+    escaped as one string instead of being parsed as raw CLI argument text."""
+    client = _SeedHttpClient(server, database, bootstrap_token)
+    try:
+        return client.call(
+            "seed_standalone_tactical_mission",
+            character_id,
+            mission_id,
+            scene_key,
+            enemy_fixture_yaml,
+            tactical_claim,
+        )
+    finally:
+        client.close()
+
+
 def spacetime_auth_token() -> str:
     """Return the CLI's authenticated token without printing or persisting it."""
     result = run_checked(["spacetime", "login", "show", "--token"])
@@ -1212,7 +1276,7 @@ def write_tactical_env_file(
     mission_id: str,
     scene_key: str,
     character_id: int,
-    enemy_count: int,
+    enemy_fixture: str,
     tactical_claim: str | None,
     scene_input: str | None = None,
     profile: str | None = None,
@@ -1228,7 +1292,7 @@ def write_tactical_env_file(
             f"TACTICAL_MISSION_ID={mission_id}",
             f"TACTICAL_SCENE_KEY={scene_key}",
             f"TACTICAL_CHARACTER_ID={character_id}",
-            f"TACTICAL_BOTS={enemy_count}",
+            f"TACTICAL_ENEMY_FIXTURE={enemy_fixture}",
     ]
     if tactical_claim is not None:
         # The advanced/manual workflow needs the one-use claim. The supervised
@@ -1594,7 +1658,7 @@ def run_profile(
     mission_id: str = "mission:test-mission",
     scene_key: str = "woodland",
     character_id: int = 0,
-    enemy_count: int = 3,
+    enemy_fixture: str = STANDARD_ENEMY_FIXTURE,
     scene_input: str | None = None,
 ) -> int:
     values = profile_values(name, base_port)
@@ -1661,20 +1725,18 @@ def run_profile(
 
             if mode is ProfileMode.TACTICAL:
                 tactical_claim = secrets.token_hex(32)
-                result = run_checked([
-                    "spacetime", "call", "--server", server, database,
-                    "seed_standalone_tactical_mission", bootstrap_token,
-                    str(character_id), mission_id, scene_key, str(enemy_count),
-                    tactical_claim,
-                ])
-                write_console(result.stdout)
-                if result.returncode:
+                enemy_fixture_yaml = read_enemy_fixture(enemy_fixture)
+                result = seed_standalone_tactical_mission(
+                    server, database, bootstrap_token, character_id, mission_id,
+                    scene_key, enemy_fixture_yaml, tactical_claim,
+                )
+                if result:
                     print("standalone tactical mission seed failed; refusing to hide the reducer error.", file=sys.stderr)
-                    return result.returncode
+                    return result
                 write_tactical_env_file(
                     url=server, database=database, port=int(values["tactical_port"]),
                     mission_id=mission_id, scene_key=scene_key,
-                    character_id=character_id, enemy_count=enemy_count,
+                    character_id=character_id, enemy_fixture=enemy_fixture,
                     tactical_claim=tactical_claim,
                     scene_input=scene_input,
                 )
@@ -1783,7 +1845,7 @@ def reseed_tactical_mission(
     mission_id_prefix: str = "mission:test-mission",
     scene_key: str = "hills",
     character_id: int = 0,
-    enemy_count: int = 3,
+    enemy_fixture: str = STANDARD_ENEMY_FIXTURE,
     if_live: bool = False,
 ) -> int:
     """Seed a fresh standalone tactical mission against an already-running
@@ -1822,20 +1884,19 @@ def reseed_tactical_mission(
     # character + inventory, party, and mission), so skip the strategic bootstrap.
     mission_id = f"{mission_id_prefix}-{secrets.token_hex(4)}"
     tactical_claim = secrets.token_hex(32)
-    result = run_checked([
-        "spacetime", "call", "--server", server, database,
-        "seed_standalone_tactical_mission", bootstrap_token,
-        str(character_id), mission_id, scene_key, str(enemy_count), tactical_claim,
-    ])
-    write_console(result.stdout)
-    if result.returncode:
+    enemy_fixture_yaml = read_enemy_fixture(enemy_fixture)
+    result = seed_standalone_tactical_mission(
+        server, database, bootstrap_token, character_id, mission_id, scene_key,
+        enemy_fixture_yaml, tactical_claim,
+    )
+    if result:
         print("standalone tactical mission seed failed; refusing to hide the reducer error.", file=sys.stderr)
-        return result.returncode
+        return result
     values = profile_values(profile, base_port)
     write_tactical_env_file(
         url=server, database=database, port=int(values["tactical_port"]),
         mission_id=mission_id, scene_key=scene_key,
-        character_id=character_id, enemy_count=enemy_count,
+        character_id=character_id, enemy_fixture=enemy_fixture,
         tactical_claim=tactical_claim,
     )
     print("")
@@ -1985,7 +2046,7 @@ def tactical_session_config(
     mode: TacticalPlayMode,
     mission_id: str,
     character_id: int,
-    enemy_count: int,
+    enemy_fixture: str,
     session_id: str,
     scene_input: str | None = None,
     graphics_config: str = "assets/config/tactical-graphics.yaml",
@@ -2006,7 +2067,7 @@ def tactical_session_config(
         "tactical_port": values["tactical_port"],
         "mission_id": mission_id,
         "character_id": character_id,
-        "enemy_count": enemy_count,
+        "enemy_fixture": enemy_fixture,
         "play_mode": mode.value,
         "combat_enabled": mode in (TacticalPlayMode.ANIMATION, TacticalPlayMode.COMBAT),
         "native_client": mode is not TacticalPlayMode.NETWORKING,
@@ -2618,12 +2679,15 @@ def tactical_play(
     capture_source: str = "window",
     render_backend: str = "auto",
     scene_input: str | None = None,
+    enemy_fixture: str | None = None,
     input_script: str | None = None,
     client_profile: str = "dev",
     frame_timing_seconds: float | None = None,
     frame_timing_warmup_seconds: float = 5.0,
 ) -> int:
     benchmark = StartupBenchmark.start()
+    enemy_fixture = enemy_fixture or default_enemy_fixture(mode)
+    enemy_fixture_yaml = read_enemy_fixture(enemy_fixture)
     if input_script and mode is not TacticalPlayMode.DIAGNOSTIC:
         raise ValueError("--input-script is only valid for tactical-play diagnostic")
     if frame_timing_seconds is not None:
@@ -2659,9 +2723,8 @@ def tactical_play(
     mission_id = f"mission:{mode.value}-{session_id[:12]}"
     # Physical custody deliberately reserves zero as an invalid identity.
     character_id = 1
-    enemy_count = 4 if mode is TacticalPlayMode.ANIMATION else 1
     config = tactical_session_config(
-        values, mode, mission_id, character_id, enemy_count, session_id, scene_input,
+        values, mode, mission_id, character_id, enemy_fixture, session_id, scene_input,
         graphics_config,
         window_capture, capture_source, render_backend,
         input_script, client_profile, frame_timing_seconds,
@@ -2746,13 +2809,11 @@ def tactical_play(
 
             tactical_claim = secrets.token_hex(32)
             phase_started_at = time.monotonic()
-            result = run_checked([
-                "spacetime", "call", "--server", server_url, database,
-                "seed_standalone_tactical_mission", bootstrap_token,
-                str(character_id), mission_id, "woodland", str(enemy_count), tactical_claim,
-            ])
-            if result.returncode:
-                write_console(result.stdout)
+            result = seed_standalone_tactical_mission(
+                server_url, database, bootstrap_token, character_id, mission_id,
+                "woodland", enemy_fixture_yaml, tactical_claim,
+            )
+            if result:
                 raise RuntimeError("standalone tactical mission seed failed")
             benchmark.record("standalone tactical mission seed", phase_started_at)
             if not profile_cache_hit:
@@ -2764,7 +2825,7 @@ def tactical_play(
                 mission_id=mission_id,
                 scene_key="woodland",
                 character_id=character_id,
-                enemy_count=enemy_count,
+                enemy_fixture=enemy_fixture,
                 tactical_claim=None,
                 scene_input=scene_input,
                 profile=profile,
@@ -2794,11 +2855,10 @@ def tactical_play(
                 str(server_executable), "--addr", f"0.0.0.0:{values['tactical_port']}",
                 "--mission-id", mission_id, "--scene-key", "woodland",
                 "--spacetimedb-url", server_url, "--spacetimedb-module", database,
-                "--expected-party-members", "1", "--required-enemy-kills", str(enemy_count),
+                "--expected-party-members", "1", "--required-enemy-kills", "1",
                 "--enemy-combat-scale-bps", str(combat_scale), "--no-timeout",
+                "--enemy-fixture", enemy_fixture,
             ]
-            if mode is TacticalPlayMode.ANIMATION:
-                server_command.append("--animation-behavior-lab")
             if scene_input:
                 server_command.extend(["--scene-input", scene_input])
             server_process = spawn_recorded(
@@ -3078,9 +3138,9 @@ def create_parser() -> argparse.ArgumentParser:
     runner.add_argument("--mode", choices=[m.value for m in ProfileMode], default=ProfileMode.STRATEGIC.value)
     runner.add_argument("--mission-id", default="mission:test-mission")
     runner.add_argument("--scene-key", default="woodland")
-    runner.add_argument("--scene-input", default="assets/tactical-scenes/dense-woodland.json")
+    runner.add_argument("--scene-input", default=DEFAULT_SCENE_INPUT)
+    runner.add_argument("--enemy-fixture", default=STANDARD_ENEMY_FIXTURE)
     runner.add_argument("--character-id", type=int, default=1)
-    runner.add_argument("--enemy-count", type=int, default=3)
     runner.add_argument("name")
     runner.add_argument("base_port", type=int)
     verifier = sub.add_parser("verify-profile")
@@ -3114,8 +3174,9 @@ def create_parser() -> argparse.ArgumentParser:
         "--render-backend", choices=("auto", "vulkan", "dx12"), default="auto"
     )
     tactical_play_parser.add_argument(
-        "--scene-input", default="assets/tactical-scenes/dense-woodland.json"
+        "--scene-input", default=DEFAULT_SCENE_INPUT
     )
+    tactical_play_parser.add_argument("--enemy-fixture")
     tactical_play_parser.add_argument("--input-script")
     tactical_play_parser.add_argument(
         "--client-profile", choices=("dev", "release"), default="dev"
@@ -3130,7 +3191,7 @@ def create_parser() -> argparse.ArgumentParser:
     reseeder.add_argument("--mission-id-prefix", default="mission:test-mission")
     reseeder.add_argument("--scene-key", default="hills")
     reseeder.add_argument("--character-id", type=int, default=1)
-    reseeder.add_argument("--enemy-count", type=int, default=3)
+    reseeder.add_argument("--enemy-fixture", default=STANDARD_ENEMY_FIXTURE)
     reseeder.add_argument(
         "--if-live", action="store_true",
         help="Exit 0 without printing an error if no live instance is found, "
@@ -3172,7 +3233,7 @@ def main() -> int:
             return run_profile(
                 args.name, args.base_port, mode=ProfileMode(args.mode),
                 mission_id=args.mission_id, scene_key=args.scene_key,
-                character_id=args.character_id, enemy_count=args.enemy_count,
+                character_id=args.character_id, enemy_fixture=args.enemy_fixture,
                 scene_input=args.scene_input,
             )
         if args.command == "verify-profile":
@@ -3189,7 +3250,7 @@ def main() -> int:
                 TacticalPlayMode(args.mode), args.base_port, args.graphics_config,
                 args.presentation_trace, args.window_capture,
                 args.capture_source, args.render_backend, args.scene_input,
-                args.input_script, args.client_profile, args.frame_timing_seconds,
+                args.enemy_fixture, args.input_script, args.client_profile, args.frame_timing_seconds,
                 args.frame_timing_warmup_seconds,
             )
         if args.command == "tactical-status":
@@ -3200,7 +3261,7 @@ def main() -> int:
             return reseed_tactical_mission(
                 args.name, args.base_port, mission_id_prefix=args.mission_id_prefix,
                 scene_key=args.scene_key, character_id=args.character_id,
-                enemy_count=args.enemy_count, if_live=args.if_live,
+                enemy_fixture=args.enemy_fixture, if_live=args.if_live,
             )
     except (ValueError, RuntimeError) as error:
         print(f"error: {error}", file=sys.stderr)

@@ -59,9 +59,21 @@ networking, replication, terrain, and rendering behavior. The viewer is the
 fast deterministic check; it is not a replacement for that native run when a
 defect depends on live gameplay.
 
-Animation mode seeds four named combat targets: a passive bandit, an
+Animation mode seeds five named combat targets: a passive bandit, an
 omnidirectional shield blocker that doesn't turn toward the player, an
-aiming directional dodger, and a passive demi-lancer in three-quarter armor.
+aiming directional dodger, a munition-plate dodger in half armor, and a passive
+demi-lancer in three-quarter armor.
+Their names, loadouts, and behavior roles come from
+`assets/tactical-enemies/animation-demo.yaml`; changing that roster does not
+require recompiling Rust. Enemy fixtures and `--scene-input` are independent,
+so any enemy YAML can run in any environment. For example:
+
+```sh
+python scripts/dev_stack.py tactical-play animation \
+  --scene-input flat-dry-grassland \
+  --enemy-fixture animation-demo
+```
+
 The targets use ordinary combat statistics and equipment rules. Their behavior
 is assembled from independent offense, guard, facing, reactive-defense, and
 get-up packages, so a test target can defend without inheriting unrelated

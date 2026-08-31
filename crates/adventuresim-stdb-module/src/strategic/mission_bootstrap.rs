@@ -481,63 +481,6 @@ pub fn dev_bootstrap_gallery_validate(
 /// launch the tactical server with (as `ADVENTURESIM_TACTICAL_CLAIM`); only
 /// its hash is stored, mirroring [`crate::tactical::authorize_tactical_server_claim`].
 /// Gated by the same development capability as [`bootstrap_development_world`].
-fn configure_animation_lab_enemies(
-    ctx: &ReducerContext,
-    hostile_group_id: &str,
-) -> Result<(), String> {
-    use adventuresim_core::starting_character::StartingSlot;
-    use adventuresim_core::tactical_fixture::AnimationLabEnemyRole;
-
-    const PADDED_BASE: &[(&str, StartingSlot)] = &[
-        ("quilted_sleeve", StartingSlot::LeftArm),
-        ("quilted_sleeve", StartingSlot::RightArm),
-        ("arming_cap", StartingSlot::Head),
-        ("arming_doublet", StartingSlot::Chest),
-        ("padded_skirt", StartingSlot::Stomach),
-        ("padded_chausses", StartingSlot::LeftLeg),
-        ("padded_chausses", StartingSlot::RightLeg),
-    ];
-
-    let enemy_ids = crate::world_actor::context_character_ids(ctx, hostile_group_id);
-    if enemy_ids.len() != AnimationLabEnemyRole::ALL.len() {
-        return Err(format!(
-            "Animation lab requires exactly {} enemies, got {}",
-            AnimationLabEnemyRole::ALL.len(),
-            enemy_ids.len()
-        ));
-    }
-    for (character_id, role) in enemy_ids.into_iter().zip(AnimationLabEnemyRole::ALL) {
-        let mut character = ctx
-            .db
-            .character()
-            .id()
-            .find(character_id)
-            .ok_or("Animation lab enemy disappeared")?;
-        character.name = role.name().into();
-        ctx.db.character().id().update(character);
-
-        let mut loadout = PADDED_BASE.to_vec();
-        match role {
-            AnimationLabEnemyRole::Passive | AnimationLabEnemyRole::Dodger => {}
-            AnimationLabEnemyRole::ShieldBlocker => {
-                loadout.push(("buckler", StartingSlot::LeftHand));
-            }
-            AnimationLabEnemyRole::DemiLancer => {
-                loadout.extend([
-                    ("morion", StartingSlot::Head),
-                    ("cuirass", StartingSlot::Chest),
-                    ("tassets", StartingSlot::Stomach),
-                    ("vambrace", StartingSlot::LeftArm),
-                    ("vambrace", StartingSlot::RightArm),
-                ]);
-            }
-        }
-        crate::character::replace_development_loadout(ctx, character_id, &loadout)?;
-        crate::character::add_and_equip_basic_clothing(ctx, character_id)?;
-    }
-    Ok(())
-}
-
 /// Gives the native diagnostic the same two-handed weapon path that its
 /// scripted attack is intended to validate. The standalone database is
 /// disposable, so this may replace the seeded character's equipped roots
@@ -567,7 +510,7 @@ pub fn seed_standalone_tactical_mission(
     character_id: u64,
     mission_id: String,
     scene_key: String,
-    required_enemy_kills: u32,
+    enemy_fixture_yaml: String,
     tactical_claim: String,
 ) -> Result<(), String> {
     if !adventuresim_core::simulation_security::simulation_bootstrap_authorized(
@@ -576,6 +519,8 @@ pub fn seed_standalone_tactical_mission(
     ) {
         return Err("Development bootstrap is disabled or unauthorized".into());
     }
+    let enemy_fixture = parse_tactical_enemy_fixture(&enemy_fixture_yaml)?;
+    let required_enemy_kills = enemy_fixture.enemy_count();
     if ctx
         .db
         .tactical_server_request_authority()
@@ -700,9 +645,7 @@ pub fn seed_standalone_tactical_mission(
         &group.enemy_type,
         group.enemy_count,
     )?;
-    if standalone_mission_family == StandaloneMissionFamily::Animation {
-        configure_animation_lab_enemies(ctx, &hostile_group_id)?;
-    }
+    configure_tactical_enemy_fixture(ctx, &hostile_group_id, &enemy_fixture)?;
     let objective_id = format!("objective:standalone:{mission_id}");
     if ctx.db.case_authority().id().find(&case_id).is_none() {
         use adventuresim_core::case::{

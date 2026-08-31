@@ -325,9 +325,9 @@ _spawner-stop:
 # fully standalone instead: the server loads that reflected world state at
 # startup rather than generating fresh procedural terrain, and never
 # connects to SpacetimeDB at all (no `tactical-isolated` needed first).
-tactical mission_id=env_var_or_default("TACTICAL_MISSION_ID", "test-mission") scene_key=env_var_or_default("TACTICAL_SCENE_KEY", "woodland") bots=env_var_or_default("TACTICAL_BOTS", "3") port=env_var_or_default("TACTICAL_PORT", tactical_port) url=env_var_or_default("TACTICAL_SPACETIMEDB_URL", spacetime_url) module=env_var_or_default("TACTICAL_SPACETIMEDB_MODULE", spacetime_module) enemy_combat_scale_bps=env_var_or_default("TACTICAL_ENEMY_COMBAT_SCALE_BPS", "10000") brp_port=env_var_or_default("TACTICAL_BRP_PORT", "") world_dump=env_var_or_default("TACTICAL_WORLD_DUMP", "") scene_input=env_var_or_default("TACTICAL_SCENE_INPUT", "assets/tactical-scenes/dense-woodland.json"):
-    @if [ {{ quote(world_dump) }} = "" ]; then {{ python_bin }} scripts/dev_stack.py reseed-tactical-mission --if-live --scene-key {{ quote(scene_key) }} --enemy-count {{ quote(bots) }} tactical-dev 23200; fi
-    @MISSION_ID={{ quote(mission_id) }}; if [ -f .env.tactical ] && [ {{ quote(world_dump) }} = "" ]; then FRESH=$(grep '^TACTICAL_MISSION_ID=' .env.tactical | cut -d= -f2-); [ -n "$FRESH" ] && MISSION_ID="$FRESH"; FRESH_CLAIM=$(grep '^ADVENTURESIM_TACTICAL_CLAIM=' .env.tactical | cut -d= -f2-); [ -n "$FRESH_CLAIM" ] && export ADVENTURESIM_TACTICAL_CLAIM="$FRESH_CLAIM"; fi; cargo run --package adventuresim-tactical-server --features "debug" -- --addr "0.0.0.0:{{ port }}" --mission-id "$MISSION_ID" --scene-key {{ quote(scene_key) }} --scene-input {{ quote(scene_input) }} --spacetimedb-url {{ url }} --spacetimedb-module {{ module }} --expected-party-members 1 --required-enemy-kills {{ bots }} --enemy-combat-scale-bps {{ enemy_combat_scale_bps }} --no-timeout {{ if brp_port != "" { "--brp-port " + brp_port } else { "" } }} {{ if world_dump != "" { "--world-dump " + quote(world_dump) } else { "" } }}
+tactical mission_id=env_var_or_default("TACTICAL_MISSION_ID", "test-mission") scene_key=env_var_or_default("TACTICAL_SCENE_KEY", "woodland") enemy_fixture=env_var_or_default("TACTICAL_ENEMY_FIXTURE", "standard-bandit") port=env_var_or_default("TACTICAL_PORT", tactical_port) url=env_var_or_default("TACTICAL_SPACETIMEDB_URL", spacetime_url) module=env_var_or_default("TACTICAL_SPACETIMEDB_MODULE", spacetime_module) enemy_combat_scale_bps=env_var_or_default("TACTICAL_ENEMY_COMBAT_SCALE_BPS", "10000") brp_port=env_var_or_default("TACTICAL_BRP_PORT", "") world_dump=env_var_or_default("TACTICAL_WORLD_DUMP", "") scene_input=env_var_or_default("TACTICAL_SCENE_INPUT", "dense-woodland"):
+    @if [ {{ quote(world_dump) }} = "" ]; then {{ python_bin }} scripts/dev_stack.py reseed-tactical-mission --if-live --scene-key {{ quote(scene_key) }} --enemy-fixture {{ quote(enemy_fixture) }} tactical-dev 23200; fi
+    @MISSION_ID={{ quote(mission_id) }}; if [ -f .env.tactical ] && [ {{ quote(world_dump) }} = "" ]; then FRESH=$(grep '^TACTICAL_MISSION_ID=' .env.tactical | cut -d= -f2-); [ -n "$FRESH" ] && MISSION_ID="$FRESH"; FRESH_CLAIM=$(grep '^ADVENTURESIM_TACTICAL_CLAIM=' .env.tactical | cut -d= -f2-); [ -n "$FRESH_CLAIM" ] && export ADVENTURESIM_TACTICAL_CLAIM="$FRESH_CLAIM"; fi; cargo run --package adventuresim-tactical-server --features "debug" -- --addr "0.0.0.0:{{ port }}" --mission-id "$MISSION_ID" --scene-key {{ quote(scene_key) }} --scene-input {{ quote(scene_input) }} --spacetimedb-url {{ url }} --spacetimedb-module {{ module }} --expected-party-members 1 --required-enemy-kills 1 --enemy-combat-scale-bps {{ enemy_combat_scale_bps }} --no-timeout {{ if brp_port != "" { "--brp-port " + brp_port } else { "" } }} {{ if world_dump != "" { "--world-dump " + quote(world_dump) } else { "--enemy-fixture " + quote(enemy_fixture) } }}
 
 # Run a native tactical client (for testing `just tactical`). Defaults come
 # from `.env.tactical` when present, same as `tactical` above. Set brp_port
@@ -350,8 +350,8 @@ client-headless id=env_var_or_default("TACTICAL_CHARACTER_ID", "0") port=env_var
 # No strategic layer, no WASM build - just the DB plus a mission. Writes
 # .env.tactical so a bare `just tactical` / `just client` (no arguments) in
 # other terminals targets it automatically.
-tactical-isolated profile="tactical-dev" base_port="23200" mission_id="mission:test-mission" scene_key="woodland" character_id="1" bots="3" scene_input="assets/tactical-scenes/dense-woodland.json": preflight _build-tactical-unverified
-    @{{ python_bin }} scripts/dev_stack.py run-profile --mode tactical {{ quote(profile) }} {{ quote(base_port) }} --mission-id {{ quote(mission_id) }} --scene-key {{ quote(scene_key) }} --character-id {{ quote(character_id) }} --enemy-count {{ quote(bots) }} --scene-input {{ quote(scene_input) }}
+tactical-isolated profile="tactical-dev" base_port="23200" mission_id="mission:test-mission" scene_key="woodland" character_id="1" enemy_fixture="standard-bandit" scene_input="dense-woodland": preflight _build-tactical-unverified
+    @{{ python_bin }} scripts/dev_stack.py run-profile --mode tactical {{ quote(profile) }} {{ quote(base_port) }} --mission-id {{ quote(mission_id) }} --scene-key {{ quote(scene_key) }} --character-id {{ quote(character_id) }} --enemy-fixture {{ quote(enemy_fixture) }} --scene-input {{ quote(scene_input) }}
 
 # Seed a fresh standalone tactical mission against an already-running
 # `tactical-isolated` instance (leave that one running in its terminal),
@@ -359,19 +359,19 @@ tactical-isolated profile="tactical-dev" base_port="23200" mission_id="mission:t
 # `spacetime publish`. Mission gets a randomized ID suffix each call so it
 # never collides with a still-bound mission from a prior/crashed attempt.
 # Rewrites .env.tactical so `just tactical` / `just client` pick it up.
-tactical-reseed profile="tactical-dev" base_port="23200" mission_id_prefix="mission:test-mission" scene_key="hills" character_id="1" bots="3":
-    @{{ python_bin }} scripts/dev_stack.py reseed-tactical-mission {{ quote(profile) }} {{ quote(base_port) }} --mission-id-prefix {{ quote(mission_id_prefix) }} --scene-key {{ quote(scene_key) }} --character-id {{ quote(character_id) }} --enemy-count {{ quote(bots) }}
+tactical-reseed profile="tactical-dev" base_port="23200" mission_id_prefix="mission:test-mission" scene_key="hills" character_id="1" enemy_fixture="standard-bandit":
+    @{{ python_bin }} scripts/dev_stack.py reseed-tactical-mission {{ quote(profile) }} {{ quote(base_port) }} --mission-id-prefix {{ quote(mission_id_prefix) }} --scene-key {{ quote(scene_key) }} --character-id {{ quote(character_id) }} --enemy-fixture {{ quote(enemy_fixture) }}
 
 # Build and supervise a complete disposable native tactical test session.
 # animation disables combat, diagnostic runs scripted real-client input and
 # records every animation frame, combat uses normal enemies, and networking
 # omits the client while retaining the validated database/server fixture.
-tactical-play mode="animation" base_port="24920" graphics_config="assets/config/tactical-graphics.yaml" presentation_trace="auto" window_capture="auto" capture_source="window" render_backend="auto" scene_input="assets/tactical-scenes/dense-woodland.json" input_script="" client_profile="dev" frame_timing_seconds="" frame_timing_warmup_seconds="5": preflight verify-db-client
-    @{{ python_bin }} scripts/dev_stack.py tactical-play {{ quote(mode) }} {{ quote(base_port) }} --graphics-config {{ quote(graphics_config) }} --presentation-trace {{ quote(presentation_trace) }} --window-capture {{ quote(window_capture) }} --capture-source {{ quote(capture_source) }} --render-backend {{ quote(render_backend) }} --scene-input {{ quote(scene_input) }} --client-profile {{ quote(client_profile) }} --frame-timing-warmup-seconds {{ quote(frame_timing_warmup_seconds) }} {{ if input_script != "" { "--input-script " + quote(input_script) } else { "" } }} {{ if frame_timing_seconds != "" { "--frame-timing-seconds " + quote(frame_timing_seconds) } else { "" } }}
+tactical-play mode="animation" base_port="24920" graphics_config="assets/config/tactical-graphics.yaml" presentation_trace="auto" window_capture="auto" capture_source="window" render_backend="auto" scene_input="dense-woodland" enemy_fixture="" input_script="" client_profile="dev" frame_timing_seconds="" frame_timing_warmup_seconds="5": preflight verify-db-client
+    @{{ python_bin }} scripts/dev_stack.py tactical-play {{ quote(mode) }} {{ quote(base_port) }} --graphics-config {{ quote(graphics_config) }} --presentation-trace {{ quote(presentation_trace) }} --window-capture {{ quote(window_capture) }} --capture-source {{ quote(capture_source) }} --render-backend {{ quote(render_backend) }} --scene-input {{ quote(scene_input) }} --client-profile {{ quote(client_profile) }} --frame-timing-warmup-seconds {{ quote(frame_timing_warmup_seconds) }} {{ if enemy_fixture != "" { "--enemy-fixture " + quote(enemy_fixture) } else { "" } }} {{ if input_script != "" { "--input-script " + quote(input_script) } else { "" } }} {{ if frame_timing_seconds != "" { "--frame-timing-seconds " + quote(frame_timing_seconds) } else { "" } }}
 
 # Benchmark steady raised-guard locomotion in all four cardinal directions.
 # It records transforms only: OBS and PresentMon are deliberately disabled.
-animation-direction-benchmark base_port="24920" graphics_config="assets/config/tactical-graphics.yaml" render_backend="auto" scene_input="assets/tactical-scenes/dense-woodland.json":
+animation-direction-benchmark base_port="24920" graphics_config="assets/config/tactical-graphics.yaml" render_backend="auto" scene_input="dense-woodland":
     @just tactical-play mode=diagnostic base_port={{ quote(base_port) }} graphics_config={{ quote(graphics_config) }} presentation_trace=off window_capture=off render_backend={{ quote(render_backend) }} scene_input={{ quote(scene_input) }} input_script=scripts/animation_direction_benchmark.json
 
 # Plot subject-relative bone speed and acceleration across one captured attack chain.
@@ -379,12 +379,12 @@ animation-motion-graph trace output="target/animation-motion/r-weapon.svg" bone=
     @{{ python_bin }} scripts/plot_animation_motion_trace.py {{ quote(trace) }} --output {{ quote(output) }} --bone {{ quote(bone) }} --cycle {{ quote(cycle) }} --source {{ quote(source) }}
 
 # Exercise authored quickstep playback while guard is released during flight.
-animation-quickstep-guard-release base_port="24920" graphics_config="assets/config/tactical-graphics.yaml" render_backend="auto" scene_input="assets/tactical-scenes/dense-woodland.json":
+animation-quickstep-guard-release base_port="24920" graphics_config="assets/config/tactical-graphics.yaml" render_backend="auto" scene_input="dense-woodland":
     @just tactical-play mode=diagnostic base_port={{ quote(base_port) }} graphics_config={{ quote(graphics_config) }} presentation_trace=off window_capture=off render_backend={{ quote(render_backend) }} scene_input={{ quote(scene_input) }} input_script=scripts/animation_quickstep_guard_release.json
 
 # Capture the real flat-terrain quickstep used by authored-motion parity analysis.
 animation-quickstep-parity-capture base_port="24920" graphics_config="assets/config/tactical-graphics.yaml" render_backend="auto":
-    @just tactical-play mode=diagnostic base_port={{ quote(base_port) }} graphics_config={{ quote(graphics_config) }} presentation_trace=off window_capture=off render_backend={{ quote(render_backend) }} scene_input=assets/tactical-scenes/flat-dry-grassland.json input_script=scripts/animation_quickstep_parity.json
+    @just tactical-play mode=diagnostic base_port={{ quote(base_port) }} graphics_config={{ quote(graphics_config) }} presentation_trace=off window_capture=off render_backend={{ quote(render_backend) }} scene_input=flat-dry-grassland input_script=scripts/animation_quickstep_parity.json
 
 # Compare a captured real-client quickstep against the original five-key motion.
 animation-quickstep-parity-analyze trace report="target/dodge-investigation/quickstep-parity.json":
@@ -398,13 +398,13 @@ tactical-scene-capture fixture="dense-woodland" output="" settle_frames="12" abs
 # Capture the production animation scene from the third-person spawn camera at
 # eight fixed yaw angles plus four live tree-obstruction boom checks, with
 # natural tree LODs and vista presentation enabled.
-tactical-animation-play-capture output="target/tactical-scene-captures/animation-play" settle_frames="12" scene_input="assets/tactical-scenes/dense-woodland.json":
+tactical-animation-play-capture output="target/tactical-scene-captures/animation-play" settle_frames="12" scene_input="dense-woodland":
     @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --scene-input {{ quote(scene_input) }} --profile animation-play --settle-frames {{ quote(settle_frames) }} --output {{ quote(output) }}
 
 # Capture the first cold approach, retreat, and identical warm second approach
 # through every natural tree LOD handoff. Only the distant-card warmup settles;
 # traversal plates intentionally preserve the first renderable frame.
-tactical-tree-cold-traversal-capture output="target/tactical-scene-captures/tree-cold-traversal" scene_input="assets/tactical-scenes/dense-woodland.json":
+tactical-tree-cold-traversal-capture output="target/tactical-scene-captures/tree-cold-traversal" scene_input="dense-woodland":
     @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --scene-input {{ quote(scene_input) }} --profile tree-cold-traversal --settle-frames 12 --output {{ quote(output) }}
 
 # Capture the production tactical scene sampled from the final real-world
