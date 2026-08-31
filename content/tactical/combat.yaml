@@ -1,4 +1,8 @@
-schema_version: 3
+schema_version: 4
+
+resolution:
+  armed_attack_energy_transfer: 0.4
+  stagger_resistance_joules_per_kg: 4.0
 
 realtime_authority:
   defense: { reflex_window_seconds: 0.5, roll_dodge_effectiveness: 0.35 }

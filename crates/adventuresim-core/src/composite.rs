@@ -323,6 +323,7 @@ where
     )]
     pub fn resolve_melee_attack(
         &self,
+        parameters: crate::combat::CombatResolutionParameters,
         side: BodySide,
         attack_style: MeleeAttackStyle,
         defender: &Self,
@@ -338,6 +339,7 @@ where
             &self.body,
             &self.essentials,
             &self.equipment,
+            parameters,
             side,
             attack_style,
             hit_precision,
@@ -392,8 +394,13 @@ where
         )
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "ranged resolution names configured physics and independent decision inputs"
+    )]
     pub fn resolve_ranged_attack(
         &self,
+        parameters: crate::combat::CombatResolutionParameters,
         defender: &Self,
         defender_categories: &[BestiaryCategory],
         defender_response: DefenderResponse,
@@ -407,6 +414,7 @@ where
             &self.body,
             &self.essentials,
             &self.equipment,
+            parameters,
             hit_precision,
             self.precision_damage_multiplier_cap(defender_categories),
             flanking,

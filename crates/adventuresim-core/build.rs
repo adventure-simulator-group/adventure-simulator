@@ -8,6 +8,8 @@ use std::{
     env, fs,
     path::{Path, PathBuf},
 };
+#[path = "build/combat_resolution.rs"]
+mod combat_resolution;
 #[path = "src/combat_style.rs"]
 mod combat_style;
 #[expect(
@@ -47,6 +49,7 @@ fn main() {
     println!("cargo:rustc-check-cfg=cfg(runtime_catalog)");
     println!("cargo:rustc-cfg=runtime_catalog");
     let root = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("../..");
+    combat_resolution::compile(&root);
     compile_organizations(&root);
     compile_items(&root);
     compile_road_encounters(&root);

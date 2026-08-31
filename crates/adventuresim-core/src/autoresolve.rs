@@ -10,7 +10,6 @@ const FORMATION_SPACING_METERS: f32 = 2.0;
 const COMBAT_ROUND_SECONDS: f32 = 1.0;
 const REFERENCE_MELEE_ATTACK_SECONDS: f32 = 1.0;
 const MIN_MOVEMENT_SPEED_METERS_PER_SECOND: f32 = 0.25;
-
 #[derive(Clone, Debug)]
 pub struct CombatBody {
     pub health: [f32; 7],
@@ -157,8 +156,7 @@ pub struct CombatArmor {
 }
 
 impl CombatArmor {
-    /// Anatomical material protection covers the full body and does not
-    /// restrict movement, while using the ordinary armor damage calculation.
+    /// Full-body anatomical protection using the ordinary armor calculation.
     pub fn innate(resistance: f32, padding: f32) -> Self {
         Self {
             resistance,
@@ -355,8 +353,7 @@ pub struct Combatant {
     pub skills: CombatSkills,
     /// Physical creature facets used to select the attacker's anatomical lore.
     pub bestiary_categories: Vec<BestiaryCategory>,
-    /// Incapacitation from strategic factors not recomputed inside the battle,
-    /// such as fear, hunger, and thirst.
+    /// Strategic incapacitation not recomputed in battle, such as fear or hunger.
     pub starting_incapacitation: f32,
     pub starting_blood_fraction: f32,
     #[doc(hidden)]
@@ -1548,11 +1545,11 @@ fn melee_exchange(
 ) -> AttackResult {
     let attacker_equipment = attacker.equipment.for_melee();
     let attacker_view = attacker.view_with_equipment(&attacker_equipment);
-    let defender_view = defender.view_with_equipment(&defender.equipment);
     attacker_view.resolve_melee_attack(
+        crate::combat::EMBEDDED_COMBAT_RESOLUTION_PARAMETERS,
         attacker.equipment.holding_side,
         attacker_equipment.weapon_preferred_melee_style(),
-        &defender_view,
+        &defender.view_with_equipment(&defender.equipment),
         &defender.bestiary_categories,
         response,
         precision,
@@ -1560,7 +1557,6 @@ fn melee_exchange(
         crate::combat::MeleeContactLocation::for_equipment(part, &defender.equipment),
     )
 }
-
 fn ranged_exchange(
     attacker: &Combatant,
     defender: &Combatant,
@@ -1571,9 +1567,9 @@ fn ranged_exchange(
 ) -> AttackResult {
     let attacker_equipment = attacker.equipment.for_ranged();
     let attacker_view = attacker.view_with_equipment(&attacker_equipment);
-    let defender_view = defender.view_with_equipment(&defender.equipment);
     attacker_view.resolve_ranged_attack(
-        &defender_view,
+        crate::combat::EMBEDDED_COMBAT_RESOLUTION_PARAMETERS,
+        &defender.view_with_equipment(&defender.equipment),
         &defender.bestiary_categories,
         response,
         precision,

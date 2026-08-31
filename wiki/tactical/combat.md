@@ -253,7 +253,6 @@ quickly it is regenerated.
 # direct hits by trained warrior in joules: halberd ~120, longsword ~70, shortsword ~30 dagger ~20
 # longbow arrow 80
 # kg: armored knight ~90, goblin ~40
-const STAGGER_RESISTANCE_JOULES_PER_KG = 10
 const UPPER_MUSCLE_KG_PER_STRENGTH = 5
 const MUSCLE_KG_TO_JOULES = 2
 const UPPER_MUSCLE_KG_TO_PUNCH_KG = 0.1
@@ -266,8 +265,10 @@ fn balance_damage(attacker, defender, attack_directness):
 	punch_kg = UPPER_MUSCLE_KG_TO_PUNCH_KG * attacker_upper_muscle_kg
 	striking_mass_kg = punch_kg + attacker.weapon.mass_kg * (1 + attacker.weapon.balance_factor * attacker.weapon.length_meters)
 	joules_of_attack = attacker_upper_muscle_kg * MUSCLE_KG_TO_JOULES * striking_kg
+	if attacker.weapon:
+		joules_of_attack *= combat_config.resolution.armed_attack_energy_transfer
 	imparted_joules = attack_directness * joules_of_attack
-	resistance = STAGGER_RESISTANCE_JOULES_PER_KG * defender.mass_kg
+	resistance = combat_config.resolution.stagger_resistance_joules_per_kg * defender.mass_kg
 	defender.imbalance += imparted_joules / resistance
 ```
 ### Exhaustion (grey)

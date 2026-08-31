@@ -1,5 +1,12 @@
 # Animation development guide
 
+## Runtime parameter ownership
+
+Animation tuning is authored in `content/tactical/combat.yaml` through the
+typed schema owned by `adventuresim-tactical-core::combat_config`. Do not add a
+client-local tuning constant or fallback value; consume the validated,
+server-supplied `TacticalCombatConfig` field.
+
 ## Validation authority
 
 For defects reported in live tactical play, the native client/server diagnostic

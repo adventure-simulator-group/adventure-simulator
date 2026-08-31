@@ -2,8 +2,10 @@ use std::{f32, ops::Mul};
 
 use serde::{Deserialize, Serialize};
 
+mod config;
 mod targeting;
 
+pub use config::{CombatResolutionParameters, EMBEDDED_COMBAT_RESOLUTION_PARAMETERS};
 pub use targeting::{
     MeleeContactLocation, melee_attack_accuracy_by_parts, melee_attack_value_by_parts,
     melee_contact_location, whole_body_armor_coverage,
@@ -77,7 +79,6 @@ pub fn derive_combat_starting_condition(
 const UPPER_MUSCLE_KG_PER_STRENGTH: f32 = 5.0;
 const MUSCLE_KG_TO_JOULES: f32 = 2.0;
 const UPPER_MUSCLE_KG_TO_PUNCH_KG: f32 = 0.1;
-const STAGGER_RESISTANCE_JOULES_PER_KG: f32 = 10.0;
 /// Empty-hand contacts move a whole body much more readily than they cause
 /// disabling tissue injury. This resistance puts canonical John Fabelgeist's
 /// ordinary connected punch into a 70 kg opponent at roughly 40% imbalance.
@@ -194,6 +195,7 @@ pub fn resolve_melee_attack_by_parts(
     attacker_body: &impl PlayerBody,
     attacker_essentials: &impl PlayerEssentials,
     attacker_equip: &impl PlayerEquipment,
+    parameters: CombatResolutionParameters,
     attacker_side: BodySide,
     attack_style: crate::combat_style::MeleeAttackStyle,
     hit_precision: f32,
@@ -234,10 +236,7 @@ pub fn resolve_melee_attack_by_parts(
         defender_essentials,
         defender_equip,
     );
-    let armor_contact = contact.armor_contact
-        && !(attacker_equip.weapon_is_precise()
-            && attack > 1.0 + whole_body_armor_coverage(defender_equip));
-
+    let armor_contact = attack_reaches_armor(attack, contact, attacker_equip, defender_equip);
     match attack {
         // (7) Avoided attack, bounded overextension/rebound to attacker.
         ..0.0 => AttackResult::ToAttacker {
@@ -246,18 +245,18 @@ pub fn resolve_melee_attack_by_parts(
                 attacker_attr,
                 attacker_body,
                 attacker_equip,
+                parameters,
                 defender_response,
             ),
             contact_force: if matches!(defender_response, DefenderResponse::Parry { .. }) {
-                attack_force(attacker_attr, attacker_body, attacker_equip)
+                attack_force(attacker_attr, attacker_body, attacker_equip, parameters)
                     * accuracy.clamp(0.0, 1.0)
             } else {
                 0.0
             },
             physical_contact: matches!(defender_response, DefenderResponse::Parry { .. }),
         },
-        // (9) A precise attack that beat whole-body coverage reaches the
-        // server-authored gap instead of letting input choose an exposed limb.
+        // Precise attacks that beat whole-body coverage reach the server-authored gap.
         1.0.. if !armor_contact && attacker_equip.weapon_is_precise() => {
             calculate_damage(
                 1.0,
@@ -268,6 +267,7 @@ pub fn resolve_melee_attack_by_parts(
                 defender_body,
                 defender_equip,
                 false,
+                parameters,
             ) * precision_damage_multiplier(
                 attack - 1.0 - whole_body_armor_coverage(defender_equip),
                 precision_damage_multiplier_cap,
@@ -283,8 +283,20 @@ pub fn resolve_melee_attack_by_parts(
             defender_body,
             defender_equip,
             armor_contact,
+            parameters,
         ),
     }
+}
+
+fn attack_reaches_armor(
+    attack: f32,
+    contact: MeleeContactLocation,
+    attacker_equip: &impl PlayerEquipment,
+    defender_equip: &impl PlayerEquipment,
+) -> bool {
+    contact.armor_contact
+        && !(attacker_equip.weapon_is_precise()
+            && attack > 1.0 + whole_body_armor_coverage(defender_equip))
 }
 
 fn avoided_attack_balance_damage(
@@ -292,6 +304,7 @@ fn avoided_attack_balance_damage(
     attacker_attr: &impl PlayerAttributes,
     attacker_body: &impl PlayerBody,
     attacker_equip: &impl PlayerEquipment,
+    parameters: CombatResolutionParameters,
     defender_response: DefenderResponse,
 ) -> f32 {
     let response_scale = match defender_response {
@@ -302,12 +315,13 @@ fn avoided_attack_balance_damage(
     let resistance_per_kg = if attacker_equip.weapon_is_unarmed() {
         UNARMED_STAGGER_RESISTANCE_JOULES_PER_KG
     } else {
-        STAGGER_RESISTANCE_JOULES_PER_KG
+        parameters.stagger_resistance_joules_per_kg
     };
     let whole_body_mass = attacker_body.body_weight() + attacker_equip.inventory_weight();
     let resistance = resistance_per_kg * whole_body_mass.max(f32::EPSILON);
-    let committed_impulse =
-        attack_force(attacker_attr, attacker_body, attacker_equip) * accuracy.clamp(0.0, 1.0) * 0.5;
+    let committed_impulse = attack_force(attacker_attr, attacker_body, attacker_equip, parameters)
+        * accuracy.clamp(0.0, 1.0)
+        * 0.5;
     (committed_impulse / resistance * response_scale).clamp(0.0, MAX_AVOIDED_ATTACK_BALANCE_DAMAGE)
 }
 
@@ -324,6 +338,7 @@ pub fn resolve_ranged_attack_by_parts(
     attacker_body: &impl PlayerBody,
     attacker_essentials: &impl PlayerEssentials,
     attacker_equip: &impl PlayerEquipment,
+    parameters: CombatResolutionParameters,
     hit_precision: f32,
     precision_damage_multiplier_cap: f32,
     flanking: f32,
@@ -392,6 +407,7 @@ pub fn resolve_ranged_attack_by_parts(
                 defender_body,
                 defender_equip,
                 false,
+                parameters,
             ) * precision_damage_multiplier(critical, precision_damage_multiplier_cap);
         }
     }
@@ -403,6 +419,7 @@ pub fn resolve_ranged_attack_by_parts(
         defender_body,
         defender_equip,
         true,
+        parameters,
     )
 }
 
@@ -454,6 +471,7 @@ fn attack_force(
     attr: &impl PlayerAttributes,
     body: &impl PlayerBody,
     equip: &impl PlayerEquipment,
+    parameters: CombatResolutionParameters,
 ) -> f32 {
     let strength =
         attr.limb_attr_by_weight_by_parts(LimbAttribute::Strength, body, LimbWeights::both_arms());
@@ -461,7 +479,12 @@ fn attack_force(
     let punch_kg = UPPER_MUSCLE_KG_TO_PUNCH_KG * upper_muscle_kg;
     let striking_mass_kg =
         punch_kg + equip.weapon_weight() * (1.0 + equip.weapon_balance() * equip.weapon_reach());
-    upper_muscle_kg * MUSCLE_KG_TO_JOULES * striking_mass_kg
+    let weapon_transfer = if equip.weapon_is_unarmed() {
+        1.0
+    } else {
+        parameters.armed_attack_energy_transfer
+    };
+    upper_muscle_kg * MUSCLE_KG_TO_JOULES * striking_mass_kg * weapon_transfer
 }
 
 #[expect(
@@ -477,18 +500,21 @@ fn calculate_damage(
     defender_body: &impl PlayerBody,
     defender_equip: &impl PlayerEquipment,
     armor_applies: bool,
+    parameters: CombatResolutionParameters,
 ) -> AttackResult {
     calculate_damage_from_force(
         attack,
-        attack_force(attacker_attr, attacker_body, attacker_equip),
+        attack_force(attacker_attr, attacker_body, attacker_equip, parameters),
         attacker_equip,
         defender_body_part,
         defender_body,
         defender_equip,
         armor_applies,
+        parameters,
     )
 }
 
+#[expect(clippy::too_many_arguments, reason = "independent combat facets")]
 fn calculate_damage_from_force(
     attack: f32,
     full_force: f32,
@@ -497,6 +523,7 @@ fn calculate_damage_from_force(
     defender_body: &impl PlayerBody,
     defender_equip: &impl PlayerEquipment,
     armor_applies: bool,
+    parameters: CombatResolutionParameters,
 ) -> AttackResult {
     let attack = attack.clamp(0.0, 1.0);
 
@@ -519,7 +546,7 @@ fn calculate_damage_from_force(
     let stagger_resistance_per_kg = if unarmed {
         UNARMED_STAGGER_RESISTANCE_JOULES_PER_KG
     } else {
-        STAGGER_RESISTANCE_JOULES_PER_KG
+        parameters.stagger_resistance_joules_per_kg
     };
     let defender_stagger_resistance = stagger_resistance_per_kg
         * (defender_equip.inventory_weight() + defender_body.body_weight());
@@ -717,6 +744,7 @@ mod tests {
             &StubBody,
             &defender,
             true,
+            EMBEDDED_COMBAT_RESOLUTION_PARAMETERS,
         );
         let AttackResult::ToDefender {
             cut_damage,
@@ -729,7 +757,74 @@ mod tests {
         };
         assert_eq!(cut_damage, 0.0);
         assert_eq!(blunt_damage, 80.0);
-        assert_eq!(balance_damage, 50.0 / (70.0 * 10.0));
+        assert_eq!(
+            balance_damage,
+            50.0 / (70.0 * EMBEDDED_COMBAT_RESOLUTION_PARAMETERS.stagger_resistance_joules_per_kg)
+        );
+    }
+
+    #[test]
+    fn johns_longsword_glances_off_munition_plate() {
+        let john = crate::starting_character::default_character("combat-matchups");
+        let john_body = MatchupCombatant {
+            name: &john.name,
+            weight_kg: 70.0,
+            will_check: john.skills.will,
+        };
+        let longsword = CombatEquipment {
+            weapon: Some(CombatWeapon {
+                weight: 1.5,
+                penetration: 1.0,
+                melee_reach: 1.25,
+                balance: 0.45,
+                slash: true,
+                pierce: true,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let mut munition_armor = CombatEquipment {
+            inventory_weight: 15.95,
+            ..Default::default()
+        };
+        munition_armor.armor[crate::autoresolve::body_part_index(BodyPart::Head)] = CombatArmor {
+            resistance: 115.0,
+            padding: 60.0,
+            flexibility: 27.0 / 115.0,
+            range_of_motion: 0.78,
+            coverage: 0.7475,
+        };
+
+        let force = attack_force(
+            &john.attributes,
+            &john_body,
+            &longsword,
+            EMBEDDED_COMBAT_RESOLUTION_PARAMETERS,
+        );
+        assert_in_window("John longsword energy", force, (69.0, 70.0));
+        let result = calculate_damage_from_force(
+            1.0,
+            force,
+            &longsword,
+            BodyPart::Head,
+            &john_body,
+            &munition_armor,
+            true,
+            EMBEDDED_COMBAT_RESOLUTION_PARAMETERS,
+        );
+        let AttackResult::ToDefender {
+            cut_damage,
+            blunt_damage,
+            balance_damage,
+            ..
+        } = result
+        else {
+            panic!("a plate contact must land on the defender");
+        };
+        assert_eq!(cut_damage, 0.0);
+        assert_eq!(blunt_damage, 0.0);
+        assert_in_window("munition plate imbalance", balance_damage, (0.09, 0.11));
+        assert_eq!(health_damage_from_attack(result, BodyPart::Head), 0.0);
     }
 
     #[test]
@@ -805,6 +900,7 @@ mod tests {
                 &john_body,
                 &StubEssentials,
                 &unarmed,
+                EMBEDDED_COMBAT_RESOLUTION_PARAMETERS,
                 BodySide::Right,
                 crate::combat_style::MeleeAttackStyle::Swing,
                 1.0,
@@ -901,6 +997,7 @@ mod tests {
                 &john_body,
                 &StubEssentials,
                 &unarmed,
+                EMBEDDED_COMBAT_RESOLUTION_PARAMETERS,
                 BodySide::Right,
                 crate::combat_style::MeleeAttackStyle::Swing,
                 1.0,
@@ -959,6 +1056,7 @@ mod tests {
             &StubBody,
             &defender,
             true,
+            EMBEDDED_COMBAT_RESOLUTION_PARAMETERS,
         );
         let stronger = calculate_damage_from_force(
             1.0,
@@ -968,6 +1066,7 @@ mod tests {
             &StubBody,
             &defender,
             true,
+            EMBEDDED_COMBAT_RESOLUTION_PARAMETERS,
         );
 
         assert!(matches!(
@@ -1005,6 +1104,7 @@ mod tests {
             &StubBody,
             &CombatEquipment::default(),
             true,
+            EMBEDDED_COMBAT_RESOLUTION_PARAMETERS,
         );
         assert!(matches!(
             result,
