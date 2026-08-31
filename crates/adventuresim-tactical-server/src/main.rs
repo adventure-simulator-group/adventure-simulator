@@ -51,7 +51,7 @@ use crate::{
 };
 
 const MISSION_TIMEOUT_SECS: f32 = 300.0;
-const DEFAULT_SCENE_INPUT: &str = "assets/tactical-scenes/dense-woodland.json";
+const DEFAULT_SCENE_INPUT: &str = "dense-woodland";
 const DEFAULT_COMBAT_CONFIG: &str = "content/tactical/combat.yaml";
 
 #[derive(Parser, Debug, Clone, Resource)]
@@ -68,20 +68,20 @@ struct Args {
     scene_key: String,
     /// Exact versioned scene input. Defaults to the committed dense woodland
     /// fixture for standalone tactical development.
-    #[arg(long)]
+    #[arg(long, value_parser = bot::resolve_scene_fixture)]
     scene_input: Option<PathBuf>,
     /// Versioned tactical combat tuning loaded once for this server process.
     #[arg(long)]
     combat_config: Option<PathBuf>,
+    /// Standalone enemy roster; selected independently from the scene input.
+    #[arg(long, value_parser = bot::load_enemy_fixture)]
+    enemy_fixture: Option<adventuresim_core::tactical_fixture::TacticalEnemyFixture>,
     #[arg(long)]
     required_enemy_kills: u32,
     #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
     expected_party_members: u32,
     #[arg(long)]
     enemy_combat_scale_bps: u32,
-    /// Install the passive/block/dodge/armored animation laboratory packages.
-    #[arg(long, action = ArgAction::SetTrue)]
-    animation_behavior_lab: bool,
     #[arg(long, default_value = "http://localhost:3000")]
     spacetimedb_url: String,
     #[arg(long, default_value = "adventuresim-stdb-module")]
@@ -103,13 +103,7 @@ struct Args {
 }
 
 fn default_scene_input_path() -> PathBuf {
-    let working_directory_path = PathBuf::from(DEFAULT_SCENE_INPUT);
-    if working_directory_path.is_file() {
-        return working_directory_path;
-    }
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .join(DEFAULT_SCENE_INPUT)
+    bot::resolve_scene_fixture(DEFAULT_SCENE_INPUT).expect("fixture path resolution is infallible")
 }
 
 fn default_combat_config_path() -> PathBuf {
@@ -183,7 +177,7 @@ mod tests {
 }
 
 fn main() {
-    let args = Args::parse();
+    let args = bot::apply_enemy_fixture(Args::parse());
     #[cfg(feature = "debug")]
     let brp_port = args.brp_port;
     #[cfg(feature = "debug")]
@@ -597,10 +591,10 @@ mod debug_dump_world_tests {
             tactical_claim: String::new(),
             scene_key: "woodland".into(),
             scene_input: None,
+            enemy_fixture: None,
             required_enemy_kills: 1,
             expected_party_members: 1,
             enemy_combat_scale_bps: 0,
-            animation_behavior_lab: false,
             spacetimedb_url: String::new(),
             spacetimedb_module: String::new(),
             timeout: 0.0,

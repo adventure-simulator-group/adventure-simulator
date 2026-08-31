@@ -1,22 +1,47 @@
 mod defense;
 mod offense;
 
-use adventuresim_core::item_references::ARROW_ID;
+use adventuresim_core::{
+    fixture_path::resolve_fixture_path,
+    item_references::ARROW_ID,
+    tactical_fixture::{TacticalEnemyBehavior, TacticalEnemyFixture},
+};
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::{
     bevy_replicon::prelude::FromClient,
     message::{DefendRequest, MeleeActionRequest},
 };
 use bevy::prelude::*;
-use std::cmp::Ordering;
+use std::{cmp::Ordering, path::PathBuf};
 
 use crate::{
+    Args,
     combat::{
         CombatDuration, CombatSet, DefendIntent, MeleeAttackStartedIntent, RangedAttackIntent,
         RangedAttackStartedIntent, ReportedPrecision, TacticalCombatSide,
     },
     player_projection::begin_get_up_transition_configured,
 };
+
+pub(crate) fn resolve_scene_fixture(selector: &str) -> Result<PathBuf, String> {
+    Ok(resolve_fixture_path(
+        selector,
+        "assets/tactical-scenes",
+        "json",
+    ))
+}
+
+pub(crate) fn load_enemy_fixture(selector: &str) -> Result<TacticalEnemyFixture, String> {
+    let path = resolve_fixture_path(selector, "assets/tactical-enemies", "yaml");
+    TacticalEnemyFixture::load(&path)
+}
+
+pub(crate) fn apply_enemy_fixture(mut args: Args) -> Args {
+    if let Some(fixture) = &args.enemy_fixture {
+        args.required_enemy_kills = fixture.enemy_count();
+    }
+    args
+}
 pub use defense::{DefenseChances, ReactiveDefenseAi};
 use defense::{
     on_attack_started, on_targeted_attack_started, on_targeted_ranged_attack_started,
@@ -53,6 +78,16 @@ pub enum CombatantBehaviorPackage {
 pub struct CombatantBehaviorPackages(pub Vec<CombatantBehaviorPackage>);
 
 impl CombatantBehaviorPackages {
+    #[must_use]
+    pub fn from_fixture(behavior: TacticalEnemyBehavior, config: &TacticalCombatConfig) -> Self {
+        match behavior {
+            TacticalEnemyBehavior::Passive => Self::passive(),
+            TacticalEnemyBehavior::StandardCombat => Self::standard_combat(config),
+            TacticalEnemyBehavior::AlwaysBlockWithoutFacing => Self::always_block_without_facing(),
+            TacticalEnemyBehavior::AlwaysDodge => Self::always_dodge(),
+        }
+    }
+
     #[must_use]
     pub fn standard_combat(config: &TacticalCombatConfig) -> Self {
         let defense = &config.ai.ordinary.defense;
@@ -256,6 +291,19 @@ mod tests {
 
     use super::defense::PendingBotReaction;
     use super::*;
+
+    #[test]
+    fn fixture_stems_resolve_for_direct_server_commands() {
+        assert!(
+            resolve_scene_fixture("dense-woodland")
+                .unwrap()
+                .ends_with("assets/tactical-scenes/dense-woodland.json")
+        );
+        assert_eq!(
+            load_enemy_fixture("animation-demo").unwrap().enemy_count(),
+            5
+        );
+    }
     use crate::combat::{MeleeAttackAuthority, MeleeAttackIntent, PendingDefenderResponse};
     use crate::player_projection::AuthoritativePostureIntent;
 
@@ -442,17 +490,24 @@ mod tests {
             .add_systems(Update, materialize_behavior_packages);
         let blocker = app
             .world_mut()
-            .spawn(CombatantBehaviorPackages::always_block_without_facing())
+            .spawn(CombatantBehaviorPackages::from_fixture(
+                TacticalEnemyBehavior::AlwaysBlockWithoutFacing,
+                &TacticalCombatConfig::default(),
+            ))
             .id();
         let standard = app
             .world_mut()
-            .spawn(CombatantBehaviorPackages::standard_combat(
+            .spawn(CombatantBehaviorPackages::from_fixture(
+                TacticalEnemyBehavior::StandardCombat,
                 &TacticalCombatConfig::default(),
             ))
             .id();
         let dodger = app
             .world_mut()
-            .spawn(CombatantBehaviorPackages::always_dodge())
+            .spawn(CombatantBehaviorPackages::from_fixture(
+                TacticalEnemyBehavior::AlwaysDodge,
+                &TacticalCombatConfig::default(),
+            ))
             .id();
 
         app.update();

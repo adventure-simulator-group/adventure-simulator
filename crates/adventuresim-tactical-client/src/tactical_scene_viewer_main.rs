@@ -22,6 +22,15 @@ use std::path::PathBuf;
 use clap::{Parser, ValueEnum};
 
 #[cfg(not(target_family = "wasm"))]
+fn resolve_scene_fixture(selector: &str) -> Result<PathBuf, String> {
+    Ok(adventuresim_core::fixture_path::resolve_fixture_path(
+        selector,
+        "assets/tactical-scenes",
+        "json",
+    ))
+}
+
+#[cfg(not(target_family = "wasm"))]
 #[derive(Clone, Copy, Debug, Default, ValueEnum)]
 enum CaptureProfile {
     /// Existing exhaustive semantic presentation suite (23 recorded views).
@@ -43,8 +52,8 @@ struct Args {
     #[arg(long, conflicts_with = "scene_input")]
     fixture: Option<String>,
 
-    /// Explicit TacticalSceneInput JSON path.
-    #[arg(long, conflicts_with = "fixture")]
+    /// TacticalSceneInput fixture stem or explicit JSON path.
+    #[arg(long, conflicts_with = "fixture", value_parser = resolve_scene_fixture)]
     scene_input: Option<PathBuf>,
 
     /// Fresh output directory. A timestamped directory is chosen when omitted.

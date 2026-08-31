@@ -202,6 +202,39 @@ class WorkflowTests(unittest.TestCase):
             dev_stack.spacetime_auth_token()
         self.assertNotIn("unexpected secret output", str(error.exception))
 
+    def test_seed_http_client_json_escapes_multiline_yaml(self):
+        client = object.__new__(dev_stack._SeedHttpClient)
+        client._bootstrap_token = "bootstrap"
+        client._database = "database"
+        client._headers = {"Content-Type": "application/json"}
+        client._request = mock.Mock(return_value=(200, ""))
+        yaml = "version: 1\nenemies:\n  - name: Dodger\n"
+
+        self.assertEqual(client.call("seed_standalone_tactical_mission", 1, yaml), 0)
+
+        body = client._request.call_args.args[1]
+        self.assertIn("\\n", body)
+        self.assertEqual(json.loads(body), ["bootstrap", 1, yaml])
+
+    @mock.patch.object(dev_stack, "_SeedHttpClient")
+    def test_standalone_tactical_seed_uses_json_http_boundary(self, client_type):
+        client = client_type.return_value
+        client.call.return_value = 0
+        yaml = "version: 1\nenemies: []\n"
+
+        self.assertEqual(
+            dev_stack.seed_standalone_tactical_mission(
+                "http://localhost:1", "db", "token", 7, "mission", "woodland",
+                yaml, "claim",
+            ),
+            0,
+        )
+        client.call.assert_called_once_with(
+            "seed_standalone_tactical_mission", 7, "mission", "woodland", yaml,
+            "claim",
+        )
+        client.close.assert_called_once_with()
+
     @mock.patch.object(dev_stack, "_SeedHttpClient")
     def test_seed_propagates_reducer_failure(self, client_type):
         client = client_type.return_value
@@ -351,9 +384,9 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(args.mode, "tactical")
         self.assertEqual(args.mission_id, "mission:test-mission")
         self.assertEqual(args.scene_key, "woodland")
-        self.assertEqual(args.scene_input, "assets/tactical-scenes/dense-woodland.json")
+        self.assertEqual(args.scene_input, dev_stack.DEFAULT_SCENE_INPUT)
         self.assertEqual(args.character_id, 1)
-        self.assertEqual(args.enemy_count, 3)
+        self.assertEqual(args.enemy_fixture, dev_stack.STANDARD_ENEMY_FIXTURE)
 
     def test_binding_diff_detects_changed_and_extra_files(self):
         with tempfile.TemporaryDirectory() as left, tempfile.TemporaryDirectory() as right:
@@ -449,7 +482,7 @@ class WorkflowTests(unittest.TestCase):
                 mission_id="test-mission",
                 scene_key="hills",
                 character_id=0,
-                enemy_count=3,
+                enemy_fixture="assets/tactical-enemies/standard-bandit.yaml",
                 tactical_claim="deadbeef",
             )
             content = dev_stack.TACTICAL_ENV_FILE.read_text()
@@ -459,7 +492,10 @@ class WorkflowTests(unittest.TestCase):
             self.assertIn("TACTICAL_MISSION_ID=test-mission", content)
             self.assertIn("TACTICAL_SCENE_KEY=hills", content)
             self.assertIn("TACTICAL_CHARACTER_ID=0", content)
-            self.assertIn("TACTICAL_BOTS=3", content)
+            self.assertIn(
+                "TACTICAL_ENEMY_FIXTURE=assets/tactical-enemies/standard-bandit.yaml",
+                content,
+            )
             self.assertIn("ADVENTURESIM_TACTICAL_CLAIM=deadbeef", content)
             dev_stack.remove_tactical_env_file()
             self.assertFalse(dev_stack.TACTICAL_ENV_FILE.exists())
@@ -476,7 +512,7 @@ class WorkflowTests(unittest.TestCase):
                 mission_id="mission:animation-123",
                 scene_key="hills",
                 character_id=0,
-                enemy_count=1,
+                enemy_fixture="assets/tactical-enemies/animation-demo.yaml",
                 tactical_claim=None,
                 profile="tactical-play-animation",
                 worktree_fingerprint_value="abc123",
@@ -516,6 +552,11 @@ class WorkflowTests(unittest.TestCase):
             "tactical-play", "animation", "--client-profile", "release",
             "--frame-timing-seconds", "15", "--frame-timing-warmup-seconds", "5",
         ])
+        independent_fixtures = parser.parse_args([
+            "tactical-play", "animation",
+            "--scene-input", "flat-dry-grassland",
+            "--enemy-fixture", "passive-bandit",
+        ])
         self.assertEqual(animation.base_port, 24920)
         self.assertEqual(animation.presentation_trace, "auto")
         self.assertEqual(diagnostic.mode, "diagnostic")
@@ -532,6 +573,29 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(timed_release.client_profile, "release")
         self.assertEqual(timed_release.frame_timing_seconds, 15.0)
         self.assertEqual(timed_release.frame_timing_warmup_seconds, 5.0)
+        self.assertEqual(
+            independent_fixtures.scene_input,
+            "flat-dry-grassland",
+        )
+        self.assertEqual(
+            independent_fixtures.enemy_fixture,
+            "passive-bandit",
+        )
+
+    def test_fixture_stems_resolve_and_explicit_paths_are_preserved(self):
+        self.assertEqual(
+            dev_stack.resolve_fixture_path(
+                "animation-demo", "assets/tactical-enemies", "yaml"
+            ),
+            dev_stack.ROOT / "assets/tactical-enemies/animation-demo.yaml",
+        )
+        explicit = "tmp/custom-enemies.yml"
+        self.assertEqual(
+            dev_stack.resolve_fixture_path(
+                explicit, "assets/tactical-enemies", "yaml"
+            ),
+            dev_stack.ROOT / explicit,
+        )
 
     def test_removed_graphics_presets_are_rejected(self):
         parser = dev_stack.create_parser()
@@ -930,6 +994,23 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(
             dev_stack.tactical_combat_scale(dev_stack.TacticalPlayMode.COMBAT), 10_000
         )
+
+    def test_tactical_modes_choose_declarative_enemy_defaults(self):
+        self.assertEqual(
+            dev_stack.default_enemy_fixture(dev_stack.TacticalPlayMode.ANIMATION),
+            dev_stack.ANIMATION_ENEMY_FIXTURE,
+        )
+        self.assertEqual(
+            dev_stack.default_enemy_fixture(dev_stack.TacticalPlayMode.COMBAT),
+            dev_stack.STANDARD_ENEMY_FIXTURE,
+        )
+        for mode in (
+            dev_stack.TacticalPlayMode.DIAGNOSTIC,
+            dev_stack.TacticalPlayMode.NETWORKING,
+        ):
+            self.assertEqual(
+                dev_stack.default_enemy_fixture(mode), dev_stack.PASSIVE_ENEMY_FIXTURE
+            )
 
     @mock.patch.object(dev_stack, "profile_values")
     @mock.patch.object(dev_stack, "build_tactical_play", return_value=9)

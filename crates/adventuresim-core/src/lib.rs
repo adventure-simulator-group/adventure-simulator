@@ -23,6 +23,7 @@ pub mod equipment;
 pub mod errantry;
 pub mod essential;
 pub mod filth;
+pub mod fixture_path;
 pub mod food;
 pub mod foraging;
 pub mod herbalism;

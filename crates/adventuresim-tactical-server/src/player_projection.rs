@@ -1,8 +1,6 @@
 use std::collections::BTreeMap;
 
-use adventuresim_core::{
-    attribute::PlayerAttributeValues, tactical_fixture::AnimationLabEnemyRole,
-};
+use adventuresim_core::{attribute::PlayerAttributeValues, tactical_fixture::TacticalEnemyFixture};
 use adventuresim_stdb_client::*;
 use adventuresim_tactical_core::animation::dive_launch_root_rotation;
 use adventuresim_tactical_core::{inventory::ItemProperties, prelude::*};
@@ -508,7 +506,7 @@ pub(crate) fn spawn_connected_players(
         spawn_connected_player(
             &player,
             args.enemy_combat_scale_bps,
-            args.animation_behavior_lab,
+            args.enemy_fixture.as_ref(),
             &mut cmd,
             &q_loading,
             &q_scene,
@@ -520,30 +518,23 @@ pub(crate) fn spawn_connected_players(
 fn spawn_connected_player(
     player: &ConnectedPlayer,
     enemy_combat_scale_bps: u32,
-    animation_behavior_lab: bool,
+    enemy_fixture: Option<&TacticalEnemyFixture>,
     cmd: &mut Commands,
     q_loading: &Query<(Entity, &LoadingPlayer)>,
     q_scene: &Query<&SceneTerrain>,
     combat_config: &TacticalCombatConfig,
 ) {
     let entity = if player.mission_side == TacticalMissionSide::Enemy {
-        let packages = if animation_behavior_lab {
-            match AnimationLabEnemyRole::from_name(&player.character.name) {
-                Some(AnimationLabEnemyRole::ShieldBlocker) => {
-                    CombatantBehaviorPackages::always_block_without_facing()
-                }
-                Some(AnimationLabEnemyRole::Dodger) => CombatantBehaviorPackages::always_dodge(),
-                Some(AnimationLabEnemyRole::Passive | AnimationLabEnemyRole::DemiLancer) => {
-                    CombatantBehaviorPackages::passive()
-                }
-                None => {
-                    warn!(
-                        name = player.character.name,
-                        "Animation lab enemy has no recognized behavior role; leaving passive"
-                    );
-                    CombatantBehaviorPackages::passive()
-                }
-            }
+        let packages = if let Some(fixture) = enemy_fixture {
+            let enemy = fixture
+                .enemy_named(&player.character.name)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "seeded enemy '{}' is absent from the loaded enemy fixture",
+                        player.character.name
+                    )
+                });
+            CombatantBehaviorPackages::from_fixture(enemy.behavior, combat_config)
         } else if enemy_combat_scale_bps > 0 {
             CombatantBehaviorPackages::standard_combat(combat_config)
         } else {

@@ -121,6 +121,7 @@ dependencies = [
  "enumflags2",
  "fabelgeist-determinism",
  "serde",
+ "serde-saphyr",
  "serde_json",
  "sha2",
  "spacetimedb",
@@ -202,6 +203,7 @@ dependencies = [
 name = "adventuresim-tactical-client"
 version = "0.1.0"
 dependencies = [
+ "adventuresim-core",
  "adventuresim-tactical-core",
  "adventuresim-tactical-netcode",
  "adventuresim-weapon-model",
