@@ -1,23 +1,27 @@
-use std::{
-    cell::Cell,
-    sync::{
-        OnceLock, RwLock,
-        atomic::{AtomicU64, Ordering},
-    },
-};
-
-use adventuresim_core::body::BodyPart;
+use adventuresim_core::{body::BodyPart, combat::CombatResolutionParameters};
 use bevy::prelude::Resource;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
-pub const TACTICAL_COMBAT_CONFIG_SCHEMA_VERSION: u16 = 3;
+use crate::physics::{
+    TACTICAL_GRAVITY_METRES_PER_SECOND_SQUARED as GRAVITY,
+    TACTICAL_MAXIMUM_STEP_HEIGHT_METRES as MAXIMUM_STEP_HEIGHT,
+    TACTICAL_MAXIMUM_WALKABLE_SLOPE_DEGREES as MAXIMUM_WALKABLE_SLOPE,
+};
+
+mod runtime;
+pub use runtime::{
+    runtime_animation_config, runtime_combat_presentation_config, runtime_melee_authority_config,
+};
+
+pub const TACTICAL_COMBAT_CONFIG_SCHEMA_VERSION: u16 = 4;
 
 #[derive(Clone, Debug, PartialEq, Resource, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TacticalCombatConfig {
     pub schema_version: u16,
+    pub resolution: CombatResolutionParameters,
     pub realtime_authority: RealtimeAuthorityConfig,
     pub movement: TacticalMovementConfig,
     pub ai: TacticalAiConfig,
@@ -497,12 +501,23 @@ pub enum TacticalCombatConfigError {
     Serialization(String),
 }
 
+impl From<&'static str> for TacticalCombatConfigError {
+    fn from(message: &'static str) -> Self {
+        Self::Validation(message)
+    }
+}
+
+fn validate_schema_version(schema_version: u16) -> Result<(), TacticalCombatConfigError> {
+    (schema_version == TACTICAL_COMBAT_CONFIG_SCHEMA_VERSION)
+        .then_some(())
+        .ok_or(TacticalCombatConfigError::SchemaVersion)
+}
+
 impl TacticalCombatConfig {
     pub fn validate(&self) -> Result<(), TacticalCombatConfigError> {
-        if self.schema_version != TACTICAL_COMBAT_CONFIG_SCHEMA_VERSION {
-            return Err(TacticalCombatConfigError::SchemaVersion);
-        }
+        validate_schema_version(self.schema_version)?;
         let finite_nonnegative = |value: f32| value.is_finite() && value >= 0.0;
+        self.resolution.validate()?;
         let authority = &self.realtime_authority;
         let authority_values = [
             authority.defense.reflex_window_seconds,
@@ -536,7 +551,6 @@ impl TacticalCombatConfig {
                 "authority values exceed compiled safety bounds",
             ));
         }
-
         let movement = &self.movement;
         let movement_values = [
             movement.speeds_metres_per_second.walk,
@@ -1002,66 +1016,6 @@ impl TacticalCombatConfig {
             .map(|byte| format!("{byte:02x}"))
             .collect())
     }
-
-    /// Makes a validated process-lifetime snapshot available to animation
-    /// code that runs below Bevy's system-parameter boundary.
-    pub fn install_runtime_snapshot(&self) -> Result<(), TacticalCombatConfigError> {
-        self.validate()?;
-        *runtime_config_lock()
-            .write()
-            .expect("tactical combat config lock should not be poisoned") = self.clone();
-        RUNTIME_CONFIG_VERSION.fetch_add(1, Ordering::Release);
-        Ok(())
-    }
-}
-
-static RUNTIME_CONFIG: OnceLock<RwLock<TacticalCombatConfig>> = OnceLock::new();
-static RUNTIME_CONFIG_VERSION: AtomicU64 = AtomicU64::new(0);
-
-thread_local! {
-    static CACHED_ANIMATION_CONFIG: Cell<Option<(u64, TacticalAnimationConfig)>> = const {
-        Cell::new(None)
-    };
-}
-
-fn runtime_config_lock() -> &'static RwLock<TacticalCombatConfig> {
-    RUNTIME_CONFIG.get_or_init(|| RwLock::new(TacticalCombatConfig::default()))
-}
-
-/// Returns the active animation tuning selected from runtime YAML. The value
-/// is copied so animation evaluation never holds a synchronization guard.
-pub fn runtime_animation_config() -> TacticalAnimationConfig {
-    let version = RUNTIME_CONFIG_VERSION.load(Ordering::Acquire);
-    CACHED_ANIMATION_CONFIG.with(|cache| {
-        if let Some((cached_version, config)) = cache.get()
-            && cached_version == version
-        {
-            return config;
-        }
-        let config = runtime_config_lock()
-            .read()
-            .expect("tactical combat config lock should not be poisoned")
-            .animation;
-        cache.set(Some((version, config)));
-        config
-    })
-}
-
-pub fn runtime_combat_presentation_config() -> CombatPresentationConfig {
-    runtime_config_lock()
-        .read()
-        .expect("tactical combat config lock should not be poisoned")
-        .presentation
-        .clone()
-}
-
-pub fn runtime_melee_authority_config() -> MeleeAuthorityConfig {
-    runtime_config_lock()
-        .read()
-        .expect("tactical combat config lock should not be poisoned")
-        .realtime_authority
-        .melee
-        .clone()
 }
 
 const fn body_part_index(part: BodyPart) -> usize {
@@ -1080,6 +1034,7 @@ impl Default for TacticalCombatConfig {
     fn default() -> Self {
         Self {
             schema_version: TACTICAL_COMBAT_CONFIG_SCHEMA_VERSION,
+            resolution: adventuresim_core::combat::EMBEDDED_COMBAT_RESOLUTION_PARAMETERS,
             realtime_authority: RealtimeAuthorityConfig {
                 defense: DefenseAuthorityConfig {
                     reflex_window_seconds: 0.5,
@@ -1123,8 +1078,7 @@ impl Default for TacticalCombatConfig {
                 prone_lateral_speed_scale: 0.375,
                 prone_effort_scale: 3.0,
                 motor: CharacterMotorConfig {
-                    gravity_metres_per_second_squared:
-                        crate::physics::TACTICAL_GRAVITY_METRES_PER_SECOND_SQUARED,
+                    gravity_metres_per_second_squared: GRAVITY,
                     fallback_character_mass_kg: 80.0,
                     reference_ground_drive_force_newtons: 1_000.0,
                     reference_ground_braking_force_newtons: 1_200.0,
@@ -1152,9 +1106,8 @@ impl Default for TacticalCombatConfig {
                     traction_coefficient: 0.9,
                     slide_drag_coefficient: 0.65,
                     air_control_force_scale: 0.08,
-                    maximum_step_height_metres: crate::physics::TACTICAL_MAXIMUM_STEP_HEIGHT_METRES,
-                    maximum_walkable_slope_degrees:
-                        crate::physics::TACTICAL_MAXIMUM_WALKABLE_SLOPE_DEGREES,
+                    maximum_step_height_metres: MAXIMUM_STEP_HEIGHT,
+                    maximum_walkable_slope_degrees: MAXIMUM_WALKABLE_SLOPE,
                 },
                 maneuvers: ManeuverTimingConfig {
                     get_up_seconds: 51.0 / 64.0,
@@ -1462,6 +1415,17 @@ mod tests {
     fn duplicate_hitbox_is_rejected() {
         let mut config = TacticalCombatConfig::default();
         config.targeting.body_part_hitboxes[1].body_part = BodyPart::Head;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn nonphysical_combat_resolution_is_rejected() {
+        let mut config = TacticalCombatConfig::default();
+        config.resolution.armed_attack_energy_transfer = 0.0;
+        assert!(config.validate().is_err());
+
+        let mut config = TacticalCombatConfig::default();
+        config.resolution.stagger_resistance_joules_per_kg = f32::INFINITY;
         assert!(config.validate().is_err());
     }
 

@@ -64,6 +64,7 @@ pub(super) fn resolve_melee_contact(
     attacker: &TacticalPlayerView<'_, '_, '_>,
     defender: &TacticalPlayerView<'_, '_, '_>,
     defender_categories: &[BestiaryCategory],
+    parameters: adventuresim_core::combat::CombatResolutionParameters,
     attacker_side: BodySide,
     attack_style: MeleeAttackStyle,
     defender_response: DefenderResponse,
@@ -81,6 +82,7 @@ pub(super) fn resolve_melee_contact(
         sample,
     );
     let result = attacker.resolve_melee_attack(
+        parameters,
         attacker_side,
         attack_style,
         defender,

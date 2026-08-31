@@ -161,8 +161,12 @@ mod tests {
     fn combat_tuning_is_read_from_the_runtime_yaml_file() {
         let canonical = std::fs::read_to_string(default_combat_config_path())
             .expect("committed tactical combat config should be readable");
-        let modified = canonical.replacen("{ walk: 1.7,", "{ walk: 1.8,", 1);
-        assert_ne!(modified, canonical, "test must modify the walk speed");
+        let modified = canonical.replacen(
+            "armed_attack_energy_transfer: 0.4",
+            "armed_attack_energy_transfer: 0.35",
+            1,
+        );
+        assert_ne!(modified, canonical, "test must modify combat resolution");
         let path = std::env::temp_dir().join(format!(
             "fabelgeist-combat-config-runtime-{}.yaml",
             std::process::id()
@@ -171,7 +175,7 @@ mod tests {
         let loaded = load_combat_config(&path).expect("modified runtime YAML should load");
         std::fs::remove_file(&path).expect("temporary combat config should be removable");
 
-        assert_eq!(loaded.movement.speeds_metres_per_second.walk, 1.8);
+        assert_eq!(loaded.resolution.armed_attack_energy_transfer, 0.35);
         assert_ne!(loaded, TacticalCombatConfig::default());
     }
 }

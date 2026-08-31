@@ -110,13 +110,10 @@ pub(super) fn resolve_ranged_attack(
         }
     }
     let cooldown = CombatDuration::from_secs_f32(config.realtime_authority.ranged.cooldown_seconds);
-    let Some(authorized) = authority.authorize_shot(validated, now, cooldown) else {
+    let Some(shot) = authority.authorize_shot(validated, now, cooldown) else {
         return;
     };
-    let shot = authorized;
-
-    // Only an otherwise-authorized shot reaches the global inventory scan.
-    // A dry fire still consumes its windup/cooldown, bounding repeated scans.
+    // Only an authorized shot scans inventory; dry fire still consumes its cooldown.
     let ammo = q_ammo.iter().find(|(_, owner, properties, quantity)| {
         owner.0 == shot.attacker() && properties.id == ARROW_ID && quantity.0.get() > 0
     });
@@ -162,6 +159,7 @@ pub(super) fn resolve_ranged_attack(
         .get(target)
         .unwrap_or(&fallback_categories);
     let result = attacker_view.resolve_ranged_attack(
+        config.resolution,
         &defender_view,
         &defender_categories.0,
         defender_response,

@@ -171,6 +171,7 @@ pub(super) fn resolve_melee_attack(
         &attacker_view,
         &defender_view,
         &defender_categories.0,
+        config.resolution,
         attacker_side,
         attack_style,
         defender_response,
