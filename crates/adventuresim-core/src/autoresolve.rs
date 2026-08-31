@@ -1557,7 +1557,7 @@ fn melee_exchange(
         response,
         precision,
         flanking,
-        part,
+        crate::combat::MeleeContactLocation::for_equipment(part, &defender.equipment),
     )
 }
 
@@ -2093,7 +2093,7 @@ mod tests {
             padding: 10_000.0,
             flexibility: 0.0,
             range_of_motion: 1.0,
-            coverage: 0.0,
+            coverage: 0.2,
         });
 
         let critical = melee_exchange(

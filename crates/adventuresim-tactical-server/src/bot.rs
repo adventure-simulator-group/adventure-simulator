@@ -612,7 +612,6 @@ mod tests {
                 strike_family: StrikeFamily::Swing,
                 hand: AttackHand::Main,
                 target: None,
-                body_part: None,
             },
         };
 
@@ -670,7 +669,6 @@ mod tests {
                 strike_family: StrikeFamily::Swing,
                 hand: AttackHand::Main,
                 target: None,
-                body_part: None,
             },
         });
         app.world_mut().flush();

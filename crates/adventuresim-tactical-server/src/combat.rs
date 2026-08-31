@@ -1,6 +1,7 @@
 mod authority;
 mod condition;
 mod consequence;
+mod contact;
 mod ingress;
 mod melee;
 mod protocol;

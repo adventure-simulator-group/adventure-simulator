@@ -114,6 +114,7 @@ pub(super) fn resolve_melee_attack(
             return;
         }
     };
+    let contact_sample = event.contact_sample;
     let line_of_sight = authoritative_line_of_sight(
         &spatial,
         &q_scene_items,
@@ -147,10 +148,7 @@ pub(super) fn resolve_melee_attack(
         info!(attack_key, attacker = ?attack.attacker(), target = ?attack.target(), body_part = ?attack.body_part(), outcome = "failed", reason = "missing_striking_side", "melee_attack_resolved");
         return;
     };
-    let attacker_has_weapon = viewer
-        .inventory
-        .get_for_attack(entity, hand)
-        .has_striking_item();
+    let attacker_has_weapon = super::contact::attacker_has_weapon(&viewer, entity, hand);
 
     let pending = q_pending.get(attack.target()).ok();
     let defender_response = resolve_defender_response(
@@ -169,15 +167,16 @@ pub(super) fn resolve_melee_attack(
         .get(attack.target())
         .unwrap_or(&fallback_categories);
 
-    let result = attacker_view.resolve_melee_attack(
-        attacker_side,
-        attack_style,
+    let (contact, result) = super::contact::resolve_melee_contact(
+        &attacker_view,
         &defender_view,
         &defender_categories.0,
+        attacker_side,
+        attack_style,
         defender_response,
-        attack.reported_precision().get(),
+        attack.reported_precision(),
         flanking,
-        attack.body_part(),
+        contact_sample,
     );
     let attacker_weapon_slot = match attacker_side {
         BodySide::Left => EquipSlot::HoldingLeft,
@@ -212,7 +211,7 @@ pub(super) fn resolve_melee_attack(
     cmd.trigger(ApplyMeleeAttackResult {
         attacker: attack.attacker(),
         target: attack.target(),
-        body_part: attack.body_part(),
+        body_part: contact.body_part,
         result,
         attacker_weapon_slot,
         defender_parry_slot,
@@ -227,7 +226,7 @@ pub(super) fn resolve_melee_attack(
                 attack_key,
                 attacker = ?entity,
                 target = ?attack.target(),
-                body_part = ?attack.body_part(),
+                body_part = ?contact.body_part,
                 outcome = "failed",
                 balance_damage,
                 "melee_attack_resolved"
@@ -243,7 +242,7 @@ pub(super) fn resolve_melee_attack(
                 attack_key,
                 attacker = ?entity,
                 target = ?attack.target(),
-                body_part = ?attack.body_part(),
+                body_part = ?contact.body_part,
                 outcome = "connected",
                 total_damage = cut_damage + blunt_damage,
                 cut_damage,
@@ -259,7 +258,7 @@ pub(super) fn resolve_melee_attack(
         message: SuccessfulAttackResponse {
             attacker: attack.attacker(),
             hit: vec![attack.target()],
-            body_part: attack.body_part(),
+            body_part: contact.body_part,
             result,
             flanking,
             defender_response,

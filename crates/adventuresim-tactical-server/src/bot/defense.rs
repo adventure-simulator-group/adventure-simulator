@@ -84,7 +84,6 @@ pub(super) fn on_attack_started(
         strike_family,
         hand,
         target,
-        body_part: _,
     } = **event;
     if target.is_some() {
         // Targeted player starts enter the shared server start intent and are

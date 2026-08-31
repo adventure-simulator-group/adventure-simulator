@@ -282,7 +282,6 @@ pub struct MeleeActionRequest {
     pub hand: AttackHand,
     #[entities]
     pub target: Option<Entity>,
-    pub body_part: Option<BodyPart>,
 }
 
 /// Both ranged phases share one mapped ordered stream. A completion may omit
@@ -305,7 +304,7 @@ pub enum RangedActionRequest {
 #[cfg(test)]
 mod combat_action_mapping_tests {
     use super::{MeleeActionRequest, RangedActionRequest};
-    use adventuresim_tactical_core::prelude::{AttackHand, BodyPart, StrikeFamily};
+    use adventuresim_tactical_core::prelude::{AttackHand, StrikeFamily};
     use bevy::ecs::entity::MapEntities;
     use bevy::prelude::Entity;
 
@@ -317,7 +316,6 @@ mod combat_action_mapping_tests {
             strike_family: StrikeFamily::Swing,
             hand: AttackHand::Main,
             target: Some(target),
-            body_part: Some(BodyPart::Chest),
         };
         let mut ranged = RangedActionRequest::Start {
             target: Some(target),
@@ -330,7 +328,6 @@ mod combat_action_mapping_tests {
             melee,
             MeleeActionRequest {
                 target: Some(found),
-                body_part: Some(BodyPart::Chest),
                 ..
             } if found == mapped
         ));

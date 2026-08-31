@@ -935,11 +935,6 @@ item = "match_fact"
 ceiling = 131
 
 [[functions]]
-path = "crates/adventuresim-core/src/combat.rs"
-item = "resolve_melee_attack_by_parts"
-ceiling = 131
-
-[[functions]]
 path = "crates/adventuresim-core/src/developer_quest.rs"
 item = "compile"
 ceiling = 320

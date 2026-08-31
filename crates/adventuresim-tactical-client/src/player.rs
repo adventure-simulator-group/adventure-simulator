@@ -957,7 +957,6 @@ fn try_start_attack(
             strike_family,
             hand,
             target: target.map(|target| target.body),
-            body_part: target.map(|target| target.body_part),
         });
     }
 }
@@ -1057,7 +1056,6 @@ fn flush_buffered_melee_attacks(
             strike_family: buffered.family,
             hand: buffered.hand,
             target: target.map(|target| target.body),
-            body_part: target.map(|target| target.body_part),
         });
     }
 }
