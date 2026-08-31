@@ -237,7 +237,6 @@ pub(super) fn drive_offensive_combat_ai(
                 cmd.trigger(MeleeAttackStartedIntent {
                     attacker: entity,
                     target: Some(target),
-                    body_part: Some(config.target_body_part),
                     windup: CombatDuration::from_secs_f32(config.windup_seconds),
                     reported_precision: ReportedPrecision::new(config.hit_precision)
                         .expect("AI precision is finite"),

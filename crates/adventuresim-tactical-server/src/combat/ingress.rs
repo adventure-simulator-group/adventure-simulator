@@ -141,12 +141,12 @@ pub(crate) fn on_melee_attack_started(
         })
         .unwrap_or((spec, event.windup));
     let start = animation_tick(&time);
-    let weapon_reach = viewer
-        .get_for_attack(event.attacker, event.hand)
-        .map_or(0.0, |view| view.weapon_reach());
+    let initial_contact = super::contact::initial_melee_contact(&viewer, &event, strike_family);
+    let selected_body_part = initial_contact.body_part;
+    let weapon_reach = initial_contact.weapon_reach;
     let lunge_delay = event
         .target
-        .zip(event.body_part)
+        .zip(selected_body_part)
         .and_then(|(target, body_part)| {
             planned_melee_lunge_for_entities(
                 EntityMeleeLungeRequest {
@@ -171,16 +171,14 @@ pub(crate) fn on_melee_attack_started(
     };
     let (animation_start_tick, contact_tick, recovery_tick) =
         delayed_melee_timing_ticks(sequence_start, event.windup, lunge_delay, recovery);
-    let contact_windup = CombatDuration::from_secs_f32(
-        contact_tick.saturating_sub(start) as f32 / locomotion_sample_hz(),
-    );
+    let contact_windup = super::contact::windup_duration(contact_tick, start);
     if skeleton
         .begin_attack_timed(spec, animation_start_tick, contact_tick, recovery_tick)
         .is_err()
     {
         return;
     }
-    info!(attack_key = start, attacker = ?event.attacker, target = ?event.target, body_part = ?event.body_part, strike_family = ?event.strike_family, hand = ?event.hand, "melee_attack_started");
+    info!(attack_key = start, attacker = ?event.attacker, target = ?event.target, body_part = ?selected_body_part, strike_family = ?event.strike_family, hand = ?event.hand, "melee_attack_started");
     begin_attack_facing(
         &mut commands,
         event.attacker,
@@ -188,7 +186,7 @@ pub(crate) fn on_melee_attack_started(
         contact_tick,
         &transforms,
     );
-    if let (Some(target), Some(body_part)) = (event.target, event.body_part) {
+    if let (Some(target), Some(body_part)) = (event.target, selected_body_part) {
         begin_melee_lunge(
             &mut commands,
             EntityMeleeLungeRequest {
@@ -207,13 +205,13 @@ pub(crate) fn on_melee_attack_started(
         commands
             .entity(event.attacker)
             .remove::<MeleeLungeMovement>();
-        info!(attack_key = start, attacker = ?event.attacker, target = ?event.target, body_part = ?event.body_part, outcome = "untargeted_no_movement", "melee_lunge_planned");
+        info!(attack_key = start, attacker = ?event.attacker, target = ?event.target, body_part = ?selected_body_part, outcome = "untargeted_no_movement", "melee_lunge_planned");
     }
     let now = CombatInstant::from_elapsed(&time);
     authority.observe(
         start,
         event.target,
-        event.body_part,
+        selected_body_part,
         now,
         contact_windup,
         CombatDuration::from_secs_f32(config.realtime_authority.melee.completion_allowance_seconds),
@@ -221,7 +219,8 @@ pub(crate) fn on_melee_attack_started(
     commands.entity(event.attacker).insert(PendingMeleeContact {
         attack_key: start,
         target: event.target,
-        body_part: event.body_part,
+        body_part: selected_body_part,
+        contact_sample: initial_contact.sample,
         resolve_at: now + contact_windup,
         reported_precision: event.reported_precision,
         strike_family: event.strike_family,
@@ -252,6 +251,7 @@ pub(crate) fn resolve_pending_melee_contacts(
             attacker,
             target,
             body_part,
+            contact_sample: contact.contact_sample,
             reported_precision: contact.reported_precision,
             strike_family: contact.strike_family,
             hand: contact.hand,
@@ -740,6 +740,7 @@ mod roll_tests {
                     attack_key: 42,
                     target: Some(target),
                     body_part: Some(BodyPart::Chest),
+                    contact_sample: 0.5,
                     resolve_at,
                     reported_precision: ReportedPrecision::new(1.0).unwrap(),
                     strike_family: StrikeFamily::Thrust,
@@ -1358,14 +1359,9 @@ pub(super) fn on_melee_action_request(
         .unwrap_or_default();
     let reported_precision = ReportedPrecision::new(config.targeting.reported_hit_precision)
         .expect("configured melee precision is finite");
-    let (target, body_part) = match (event.target, event.body_part) {
-        (Some(target), Some(body_part)) => (Some(target), Some(body_part)),
-        _ => (None, None),
-    };
     cmd.trigger(MeleeAttackStartedIntent {
         attacker,
-        target,
-        body_part,
+        target: event.target,
         windup: authored_windup,
         reported_precision,
         strike_family,

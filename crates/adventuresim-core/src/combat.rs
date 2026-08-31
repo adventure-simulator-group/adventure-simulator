@@ -2,6 +2,13 @@ use std::{f32, ops::Mul};
 
 use serde::{Deserialize, Serialize};
 
+mod targeting;
+
+pub use targeting::{
+    MeleeContactLocation, melee_attack_accuracy_by_parts, melee_attack_value_by_parts,
+    melee_contact_location, whole_body_armor_coverage,
+};
+
 use crate::{
     body::{BodyPart, BodySide, LimbWeights, PlayerBody},
     morale::{blood_loss_incapacitation, pain_incapacitation},
@@ -192,7 +199,7 @@ pub fn resolve_melee_attack_by_parts(
     hit_precision: f32,
     precision_damage_multiplier_cap: f32,
     flanking: f32,
-    defender_body_part: BodyPart,
+    contact: MeleeContactLocation,
     defender_response: DefenderResponse,
     defender_skills: &impl PlayerSkills,
     defender_attr: &impl PlayerAttributes,
@@ -200,64 +207,36 @@ pub fn resolve_melee_attack_by_parts(
     defender_essentials: &impl PlayerEssentials,
     defender_equip: &impl PlayerEquipment,
 ) -> AttackResult {
-    // (1) Calculate accuracy of the attacker
-    let weights = LimbWeights::arm(attacker_side, attacker_body.primary_side());
-    let accuracy = attacker_equip
-        .weapon_skill_distribution()
-        .weighted_check(|skill| {
-            attacker_skills.skill_check_by_parts(
-                skill,
-                attacker_attr,
-                attacker_body,
-                attacker_essentials,
-                attacker_equip,
-                weights,
-            )
-        })
-        * attacker_equip.weapon_melee_precision(attack_style)
-        * hit_precision.clamp(0.0, 1.0);
-
-    // (2)-(5) Calculate defense of the defender depending on the response
-    let defense = match defender_response {
-        DefenderResponse::None => 0.0,
-        DefenderResponse::Parry { .. } => {
-            let block_skill = defender_skills.skill_check_by_parts(
-                Skill::Block,
-                defender_attr,
-                defender_body,
-                defender_essentials,
-                defender_equip,
-                LimbWeights::all_equal(),
-            );
-            let shield_bonus = defender_equip.shield_block_bonus();
-            5.0 * (1.0 - (-(shield_bonus + block_skill) / 2.0).exp())
-        }
-        DefenderResponse::Dodge { .. } => {
-            let dodge_skill = defender_skills.skill_check_by_parts(
-                Skill::Dodge,
-                defender_attr,
-                defender_body,
-                defender_essentials,
-                defender_equip,
-                LimbWeights {
-                    left_arm: 1.0,
-                    right_arm: 1.0,
-                    left_leg: 0.4,
-                    right_leg: 0.4,
-                }
-                .normalize(),
-            );
-            let armor_dodge = defender_equip.armor_penalty(BodyPart::FULL_BODY);
-            let encumbrance =
-                defender_equip.encumbrance_penalty_by_parts(defender_attr, defender_body);
-
-            dodge_skill * armor_dodge * encumbrance
-        }
-    } * defender_response.factor()
-        * (1.0 - flanking).clamp(0.0, 1.0);
-
-    // (6) Total attack value of the combat exchange
-    let attack = accuracy - defense;
+    let accuracy = melee_attack_accuracy_by_parts(
+        attacker_skills,
+        attacker_attr,
+        attacker_body,
+        attacker_essentials,
+        attacker_equip,
+        attacker_side,
+        attack_style,
+        hit_precision,
+    );
+    let attack = melee_attack_value_by_parts(
+        attacker_skills,
+        attacker_attr,
+        attacker_body,
+        attacker_essentials,
+        attacker_equip,
+        attacker_side,
+        attack_style,
+        hit_precision,
+        flanking,
+        defender_response,
+        defender_skills,
+        defender_attr,
+        defender_body,
+        defender_essentials,
+        defender_equip,
+    );
+    let armor_contact = contact.armor_contact
+        && !(attacker_equip.weapon_is_precise()
+            && attack > 1.0 + whole_body_armor_coverage(defender_equip));
 
     match attack {
         // (7) Avoided attack, bounded overextension/rebound to attacker.
@@ -277,34 +256,22 @@ pub fn resolve_melee_attack_by_parts(
             },
             physical_contact: matches!(defender_response, DefenderResponse::Parry { .. }),
         },
-        // (9) Critical attack for precise weapons
-        1.0.. if attacker_equip.weapon_is_precise() => {
-            let critical_attack =
-                (attack - 1.0 - defender_equip.armor_coverage(defender_body_part)).max(0.0);
-
-            if critical_attack > 0.0 {
-                calculate_damage(
-                    1.0,
-                    attacker_attr,
-                    attacker_body,
-                    attacker_equip,
-                    defender_body_part,
-                    defender_body,
-                    defender_equip,
-                    false,
-                ) * precision_damage_multiplier(critical_attack, precision_damage_multiplier_cap)
-            } else {
-                calculate_damage(
-                    1.0,
-                    attacker_attr,
-                    attacker_body,
-                    attacker_equip,
-                    defender_body_part,
-                    defender_body,
-                    defender_equip,
-                    true,
-                )
-            }
+        // (9) A precise attack that beat whole-body coverage reaches the
+        // server-authored gap instead of letting input choose an exposed limb.
+        1.0.. if !armor_contact && attacker_equip.weapon_is_precise() => {
+            calculate_damage(
+                1.0,
+                attacker_attr,
+                attacker_body,
+                attacker_equip,
+                contact.body_part,
+                defender_body,
+                defender_equip,
+                false,
+            ) * precision_damage_multiplier(
+                attack - 1.0 - whole_body_armor_coverage(defender_equip),
+                precision_damage_multiplier_cap,
+            )
         }
         // (8) Simple connected attack
         _ => calculate_damage(
@@ -312,10 +279,10 @@ pub fn resolve_melee_attack_by_parts(
             attacker_attr,
             attacker_body,
             attacker_equip,
-            defender_body_part,
+            contact.body_part,
             defender_body,
             defender_equip,
-            true,
+            armor_contact,
         ),
     }
 }
@@ -843,7 +810,10 @@ mod tests {
                 1.0,
                 2.0,
                 0.0,
-                matchup.target,
+                MeleeContactLocation {
+                    body_part: matchup.target,
+                    armor_contact: false,
+                },
                 DefenderResponse::None,
                 &StubSkills,
                 &StubAttributes,
@@ -936,7 +906,10 @@ mod tests {
                 1.0,
                 2.0,
                 0.0,
-                BodyPart::Chest,
+                MeleeContactLocation {
+                    body_part: BodyPart::Chest,
+                    armor_contact: false,
+                },
                 matchup.response,
                 &john.skills,
                 &john.attributes,
@@ -1041,6 +1014,68 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn whole_body_coverage_selects_protected_destinations_without_input_aiming() {
+        let mut defender = CombatEquipment::default();
+        defender.armor[crate::autoresolve::body_part_index(BodyPart::Chest)] = CombatArmor {
+            resistance: 120.0,
+            padding: 50.0,
+            flexibility: 0.08,
+            range_of_motion: 0.65,
+            coverage: 1.0,
+        };
+        let attacker = CombatEquipment {
+            weapon: Some(CombatWeapon {
+                precise: false,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        assert!((whole_body_armor_coverage(&defender) - 0.22).abs() < 0.0001);
+        for sample in [0.0, 0.25, 0.5, 0.75, 0.999] {
+            assert_eq!(
+                melee_contact_location(10.0, &attacker, &defender, sample),
+                MeleeContactLocation {
+                    body_part: BodyPart::Chest,
+                    armor_contact: true,
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn dodge_can_move_a_precise_destination_back_onto_armor() {
+        let mut defender = CombatEquipment::default();
+        defender.armor[crate::autoresolve::body_part_index(BodyPart::Chest)] = CombatArmor {
+            resistance: 120.0,
+            padding: 50.0,
+            flexibility: 0.08,
+            range_of_motion: 0.65,
+            coverage: 1.0,
+        };
+        let attacker = CombatEquipment {
+            weapon: Some(CombatWeapon {
+                precise: true,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let intended = melee_contact_location(1.5, &attacker, &defender, 0.5);
+        assert!(!intended.armor_contact);
+        assert_ne!(intended.body_part, BodyPart::Chest);
+
+        let after_dodge = melee_contact_location(0.8, &attacker, &defender, 0.5);
+        assert_eq!(
+            after_dodge,
+            MeleeContactLocation {
+                body_part: BodyPart::Chest,
+                armor_contact: true,
+            }
+        );
     }
 
     #[test]
