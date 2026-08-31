@@ -25,6 +25,7 @@ pub(super) struct WorldGrabTargets<'w, 's> {
         With<TacticalSceneItem>,
     >,
     doors: Query<'w, 's, (Entity, &'static GlobalTransform, &'static SceneDoor)>,
+    windows: Query<'w, 's, (Entity, &'static GlobalTransform, &'static SceneWindow)>,
     spatial: SpatialQuery<'w, 's>,
 }
 
@@ -58,7 +59,25 @@ impl WorldGrabTargets<'_, '_> {
                     .then(|| transform.translation())
                     .filter(|position| self.visible(origin, *position))
                     .map(|position| (GrabSelection::Door(entity), position, entity.to_bits()))
-                })),
+                }))
+                .chain(
+                    self.windows
+                        .iter()
+                        .filter_map(|(entity, transform, window)| {
+                            can_grab_window_from_inside(
+                                actor.translation(),
+                                window.opening_centre_metres,
+                                window.tangent,
+                                window.outward,
+                                window.size_metres.x * 0.5,
+                            )
+                            .then(|| transform.translation())
+                            .filter(|position| self.visible(origin, *position))
+                            .map(|position| {
+                                (GrabSelection::Window(entity), position, entity.to_bits())
+                            })
+                        }),
+                ),
         )
     }
 
@@ -88,7 +107,9 @@ pub(super) fn world_grab_selection(
     if hand_occupied
         || !matches!(
             selection,
-            None | Some(GrabSelection::SceneItem(_) | GrabSelection::Door(_))
+            None | Some(
+                GrabSelection::SceneItem(_) | GrabSelection::Door(_) | GrabSelection::Window(_)
+            )
         )
     {
         return selection;
@@ -111,6 +132,10 @@ pub(super) fn grab_target_outline_selected(
 ) -> bool {
     matches!(
         selection,
-        Some(GrabSelection::SceneItem(selected) | GrabSelection::Door(selected)) if selected == target
+        Some(
+            GrabSelection::SceneItem(selected)
+                | GrabSelection::Door(selected)
+                | GrabSelection::Window(selected)
+        ) if selected == target
     )
 }

@@ -118,6 +118,7 @@ dependencies = [
  "bevy_panorbit_camera",
  "clap",
  "earcut",
+ "fabelgeist-determinism",
  "geo",
  "serde",
  "serde_json",

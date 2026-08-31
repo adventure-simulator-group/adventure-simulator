@@ -52,7 +52,7 @@ struct CompiledBuildingBatch {
 #[derive(Clone)]
 struct CompiledBuildingLevels {
     program: BuildingProgram,
-    dynamic_doors: bool,
+    dynamic_openings: bool,
     floor_offset_metres: f32,
     lod0: Vec<CompiledBuildingBatch>,
     lod1: Vec<CompiledBuildingBatch>,
@@ -71,6 +71,7 @@ pub(crate) struct TacticalBuildingMaterials {
     slate: Handle<StandardMaterial>,
     timber_roof: Handle<StandardMaterial>,
     timber: Handle<StandardMaterial>,
+    iron: Handle<StandardMaterial>,
     floor: Handle<StandardMaterial>,
     glass: Handle<StandardMaterial>,
     fachwerk_baked: Handle<StandardMaterial>,
@@ -92,6 +93,7 @@ impl TacticalBuildingMaterials {
             BuildingLodMaterial::Roof(_) => self.timber_roof.clone(),
             BuildingLodMaterial::FachwerkBaked => self.fachwerk_baked.clone(),
             BuildingLodMaterial::Timber => self.timber.clone(),
+            BuildingLodMaterial::Iron => self.iron.clone(),
             BuildingLodMaterial::Floor => self.floor.clone(),
             BuildingLodMaterial::Glass => self.glass.clone(),
             BuildingLodMaterial::FacadeDetails => self.details.clone(),
@@ -124,6 +126,12 @@ pub(in crate::presentation) fn setup_tactical_building_materials(
         slate: materials.add(opaque_material(slate)),
         timber_roof: materials.add(opaque_material(timber_roof)),
         timber: materials.add(opaque_material(timber)),
+        iron: materials.add(StandardMaterial {
+            base_color: Color::srgb(0.055, 0.06, 0.065),
+            perceptual_roughness: 0.42,
+            metallic: 0.78,
+            ..default()
+        }),
         floor: materials.add(opaque_material(floor)),
         fachwerk_baked: materials.add(opaque_material(fachwerk_baked)),
         glass: materials.add(StandardMaterial {
@@ -228,14 +236,12 @@ pub(in crate::presentation) fn on_scene_vista_buildings(
 fn cached_building_levels(
     cache: &mut TacticalBuildingMeshCache,
     program: &BuildingProgram,
-    dynamic_doors: bool,
+    dynamic_openings: bool,
     meshes: &mut Assets<Mesh>,
 ) -> Result<CompiledBuildingLevels> {
-    if let Some(compiled) = cache
-        .0
-        .iter()
-        .find(|compiled| compiled.program == *program && compiled.dynamic_doors == dynamic_doors)
-    {
+    if let Some(compiled) = cache.0.iter().find(|compiled| {
+        compiled.program == *program && compiled.dynamic_openings == dynamic_openings
+    }) {
         return Ok(compiled.clone());
     }
 
@@ -243,7 +249,7 @@ fn cached_building_levels(
     let collision = compile_building_collision(&plan);
     let local_origin = collision.bounds.centre();
     let floor_offset_metres = local_origin.y - collision.bounds.min.y;
-    let detail = if dynamic_doors {
+    let detail = if dynamic_openings {
         compile_static_building_detail(&plan)
     } else {
         compile_building_detail(&plan)
@@ -262,7 +268,7 @@ fn cached_building_levels(
     };
     let compiled = CompiledBuildingLevels {
         program: program.clone(),
-        dynamic_doors,
+        dynamic_openings,
         floor_offset_metres,
         lod0: compile_batches(&detail.meshes, meshes),
         lod1: compile_batches(&facade.meshes, meshes),

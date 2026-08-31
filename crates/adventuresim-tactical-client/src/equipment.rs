@@ -156,6 +156,7 @@ enum GrabSelection {
     Hand(EquipmentHand),
     SceneItem(Entity),
     Door(Entity),
+    Window(Entity),
 }
 
 #[derive(Resource, Default)]
@@ -424,6 +425,7 @@ fn update_grab_input(
         },
         Some(GrabSelection::SceneItem(item)) => EquipmentAction::Pickup { item },
         Some(GrabSelection::Door(door)) => EquipmentAction::OpenDoor { door },
+        Some(GrabSelection::Window(window)) => EquipmentAction::ToggleWindow { window },
         None if held.is_some() => EquipmentAction::Drop,
         None => {
             session.active = None;
@@ -2283,6 +2285,10 @@ mod tests {
             selected,
             Some(GrabSelection::Door(selected))
         ));
+        assert!(grab_target_outline_selected(
+            selected,
+            Some(GrabSelection::Window(selected))
+        ));
         assert!(!grab_target_outline_selected(selected, None));
     }
 
@@ -2343,6 +2349,19 @@ mod tests {
         );
         assert_eq!(
             world_grab_selection(None, true, Some(GrabSelection::Door(door))),
+            None
+        );
+    }
+
+    #[test]
+    fn empty_hand_tracks_a_pointed_window_but_an_occupied_hand_does_not() {
+        let window = Entity::from_bits(25);
+        assert_eq!(
+            world_grab_selection(None, false, Some(GrabSelection::Window(window))),
+            Some(GrabSelection::Window(window))
+        );
+        assert_eq!(
+            world_grab_selection(None, true, Some(GrabSelection::Window(window))),
             None
         );
     }

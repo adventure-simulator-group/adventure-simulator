@@ -21,6 +21,7 @@ include!("audit/timber.rs");
 include!("audit/church.rs");
 include!("audit/roofs.rs");
 include!("audit/wall_openings.rs");
+include!("audit/window_closures.rs");
 include!("audit/resolved_geometry_helpers.rs");
 include!("audit/resolved_geometry.rs");
 include!("audit/crowns.rs");

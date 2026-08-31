@@ -6,5 +6,6 @@ use bevy::ecs::system::SystemParam;
 #[derive(SystemParam)]
 pub(super) struct EquipmentEnvironment<'w, 's> {
     pub(super) spatial: SpatialQuery<'w, 's>,
-    pub(super) doors: crate::doors::DoorGrabber<'w, 's>,
+    pub(super) doors: crate::openings::DoorGrabber<'w, 's>,
+    pub(super) windows: crate::openings::WindowGrabber<'w, 's>,
 }

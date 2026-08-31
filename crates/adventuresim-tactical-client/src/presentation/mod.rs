@@ -25,6 +25,7 @@ mod terrain_blood;
 mod vista;
 mod volumetric;
 mod weather;
+mod windows;
 
 use atmosphere::*;
 use buildings::*;
@@ -44,6 +45,7 @@ use terrain::*;
 use vista::*;
 use volumetric::*;
 use weather::*;
+use windows::WindowPresentationPlugin;
 
 pub use config::{
     AntiAliasingConfig, PresentModeConfig, ShadowFiltering, SmaaQuality, TacticalGraphicsConfig,
@@ -174,7 +176,7 @@ struct TacticalWeatherAndDoorPlugin;
 impl Plugin for TacticalWeatherAndDoorPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(MaterialPlugin::<TacticalWeatherMaterial>::default())
-            .add_plugins(DoorPresentationPlugin);
+            .add_plugins((DoorPresentationPlugin, WindowPresentationPlugin));
     }
 }
 

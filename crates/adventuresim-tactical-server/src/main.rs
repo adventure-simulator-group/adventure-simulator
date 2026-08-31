@@ -2,9 +2,9 @@
 
 mod bot;
 mod combat;
-mod doors;
 mod equipment;
 mod mission;
+mod openings;
 mod player_projection;
 mod stdb;
 mod terrain_collision;
@@ -268,7 +268,7 @@ fn main() {
     .add_plugins((
         combat::CombatPlugin,
         equipment::TacticalEquipmentPlugin,
-        (bot::BotPlugin, doors::DoorServerPlugin),
+        (bot::BotPlugin, openings::BuildingOpeningsPlugin),
     ))
     .insert_resource(MissionState::new(
         (!args.no_timeout)
@@ -869,7 +869,7 @@ fn on_scene_building_added(
     let (building, transform) = buildings.get(event.entity)?;
     let plan = generate_building(&building.program)?;
     let collision = compile_building_collision(&plan);
-    doors::spawn_building_doors(
+    openings::spawn_building_openings(
         &mut commands,
         event.entity,
         building,

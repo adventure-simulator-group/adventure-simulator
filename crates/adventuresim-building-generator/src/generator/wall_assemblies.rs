@@ -865,12 +865,9 @@ fn resolve_storey_wall_assemblies(
                             },
                         });
                     }
-                    let closure = closure_policy_for(program.archetype, use_kind);
+                    let closure = opening_closure(program, storey.level, opening_id, use_kind);
                     let mut closure_solids = Vec::new();
-                    for (index, layer) in closure.layers.iter().copied().enumerate() {
-                        if layer == crate::ClosureKind::OpenMilitary {
-                            continue;
-                        }
+                    for (index, layer) in closure_solid_layers(&closure) {
                         let plan = origin
                             - outward
                                 * (thickness * (0.12 + index as f32 * 0.08)

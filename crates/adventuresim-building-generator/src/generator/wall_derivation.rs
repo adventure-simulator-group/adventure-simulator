@@ -460,57 +460,6 @@ fn opening_profile_for(
     }
 }
 
-fn closure_policy_for(
-    archetype: BuildingArchetype,
-    use_kind: crate::OpeningUse,
-) -> crate::ClosurePolicy {
-    use crate::{ClosureKind, ClosureState};
-    match use_kind {
-        crate::OpeningUse::ArrowLoop | crate::OpeningUse::GunLoop => crate::ClosurePolicy {
-            layers: vec![ClosureKind::OpenMilitary],
-            state: ClosureState::Open,
-            thickness_metres: 0.0,
-            swing_clearance_metres: 0.0,
-        },
-        crate::OpeningUse::Door | crate::OpeningUse::Gate => crate::ClosurePolicy {
-            layers: vec![ClosureKind::DoorLeaf],
-            state: ClosureState::Operable,
-            thickness_metres: 0.07,
-            swing_clearance_metres: 0.90,
-        },
-        crate::OpeningUse::Window if archetype == BuildingArchetype::Cathedral => {
-            crate::ClosurePolicy {
-                layers: vec![ClosureKind::LeadedGlazing],
-                state: ClosureState::Closed,
-                thickness_metres: 0.025,
-                swing_clearance_metres: 0.0,
-            }
-        }
-        crate::OpeningUse::Window => crate::ClosurePolicy {
-            layers: vec![
-                ClosureKind::TimberShutter,
-                if matches!(
-                    archetype,
-                    BuildingArchetype::FachwerkCottage | BuildingArchetype::HallHouse
-                ) {
-                    ClosureKind::OiledClothLattice
-                } else {
-                    ClosureKind::LeadedGlazing
-                },
-            ],
-            state: ClosureState::Operable,
-            thickness_metres: 0.045,
-            swing_clearance_metres: 0.55,
-        },
-        crate::OpeningUse::BellOpening => crate::ClosurePolicy {
-            layers: vec![ClosureKind::TimberLouvre],
-            state: ClosureState::Open,
-            thickness_metres: 0.08,
-            swing_clearance_metres: 0.0,
-        },
-    }
-}
-
 fn wall_solid(
     geometry: &mut ResolvedGeometry,
     owner: GeometryOwnerId,

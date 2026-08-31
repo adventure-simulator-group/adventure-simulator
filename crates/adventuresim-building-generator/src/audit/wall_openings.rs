@@ -877,10 +877,7 @@ fn audit_wall_opening_assemblies(plan: &BuildingPlan, issues: &mut Vec<AuditIssu
                 opening.closure.layers != [ClosureKind::OpenMilitary]
                     || !opening.closure_solids.is_empty()
             }
-            OpeningUse::Window if plan.archetype == BuildingArchetype::Cathedral => {
-                opening.closure.layers != [ClosureKind::LeadedGlazing]
-            }
-            OpeningUse::Window => !opening.closure.layers.contains(&ClosureKind::TimberShutter),
+            OpeningUse::Window => !window_closure_is_legal(opening, plan.archetype),
             OpeningUse::Door | OpeningUse::Gate => {
                 !opening.closure.layers.contains(&ClosureKind::DoorLeaf)
             }

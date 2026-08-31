@@ -10,6 +10,7 @@ pub const DOOR_GRAB_DEPTH_METRES: f32 = 1.6;
 pub const DOOR_GRAB_LATERAL_MARGIN_METRES: f32 = 0.6;
 /// Collision layer reserved for interactive tactical doors.
 pub const TACTICAL_DOOR_LAYER: LayerMask = LayerMask(1 << 6);
+pub const TACTICAL_WINDOW_LAYER: LayerMask = LayerMask(1 << 7);
 const DOOR_INTERIOR_SIDE_EPSILON_METRES: f32 = 0.05;
 
 pub fn can_grab_door_from_inside(
@@ -24,6 +25,22 @@ pub fn can_grab_door_from_inside(
     let lateral_distance = offset.dot(tangent).abs();
     (-DOOR_GRAB_DEPTH_METRES..=-DOOR_INTERIOR_SIDE_EPSILON_METRES).contains(&signed_depth)
         && lateral_distance <= half_width_metres + DOOR_GRAB_LATERAL_MARGIN_METRES
+}
+
+pub fn can_grab_window_from_inside(
+    character_position: Vec3,
+    opening_centre: Vec3,
+    tangent: Vec3,
+    outward: Vec3,
+    half_width_metres: f32,
+) -> bool {
+    can_grab_door_from_inside(
+        character_position,
+        opening_centre,
+        tangent,
+        outward,
+        half_width_metres,
+    )
 }
 
 /// Door colliders ignored by one authoritative character while exiting.

@@ -49,6 +49,7 @@ pub enum BuildingLodMaterial {
     /// Timber grid and braces baked into a plaster texture for shell LODs.
     FachwerkBaked,
     Timber,
+    Iron,
     Floor,
     Glass,
     FacadeDetails,

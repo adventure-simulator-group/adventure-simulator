@@ -235,6 +235,7 @@ pub enum ClosureKind {
     OpenMilitary,
     TimberShutter,
     LeadedGlazing,
+    IronBars,
     OiledClothLattice,
     DoorLeaf,
     TimberLouvre,

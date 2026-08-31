@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use bevy::math::{Vec2, Vec3};
 use serde::{Deserialize, Serialize};
 
-use crate::{BuildingPlan, ResolvedItemId, ResolvedSolid};
+use crate::{BuildingPlan, ResolvedItemId, ResolvedSolid, compile_window_bars};
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CollisionBounds {
@@ -97,11 +97,23 @@ pub fn compile_building_collision(plan: &BuildingPlan) -> BuildingCollision {
         selected.extend(frame.circulation.stair_solids.iter().copied());
         selected.extend(frame.circulation.landing_solids.iter().copied());
     }
-    let cuboids = selected
+    let mut cuboids = selected
         .into_iter()
         .filter_map(|id| solids.get(&id).copied())
         .map(CollisionCuboid::from_solid)
         .collect::<Vec<_>>();
+    cuboids.extend(
+        compile_window_bars(plan)
+            .into_iter()
+            .map(|bar| CollisionCuboid {
+                source: bar.source,
+                centre: bar.centre,
+                size: bar.size_metres,
+                yaw_radians: bar.yaw_radians,
+                crossfall_radians: 0.0,
+                longfall_radians: 0.0,
+            }),
+    );
     let bounds = collision_bounds(plan, &cuboids);
     BuildingCollision { bounds, cuboids }
 }
@@ -186,5 +198,28 @@ mod tests {
                 .iter()
                 .all(|floor| { floor.floor_solids.iter().all(|id| sources.contains(id)) })
         );
+    }
+
+    #[test]
+    fn barred_windows_add_permanent_collision_bars() {
+        let (plan, bars) = (0..64)
+            .find_map(|seed| {
+                let plan = generate(&BuildingProgram::fixture(
+                    BuildingArchetype::FachwerkMerchantHouse,
+                    seed,
+                ))
+                .ok()?;
+                let bars = crate::compile_window_bars(&plan);
+                (!bars.is_empty()).then_some((plan, bars))
+            })
+            .expect("seed range contains at least one barred merchant-house window");
+        let collision = compile_building_collision(&plan);
+        let sources = collision
+            .cuboids
+            .iter()
+            .map(|cuboid| cuboid.source)
+            .collect::<BTreeSet<_>>();
+
+        assert!(bars.iter().all(|bar| sources.contains(&bar.source)));
     }
 }

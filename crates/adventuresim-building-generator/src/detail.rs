@@ -10,8 +10,8 @@ use bevy::math::{Quat, Vec2, Vec3};
 
 use crate::{
     BuildingLodMaterial, BuildingPlan, LodMesh, ResolvedSolid, ResolvedSolidShape, RoofMaterial,
-    SolidRole, WallMaterialClass, WallStyle, compile_operable_doors, tessellate_roof_enclosure,
-    tessellate_roof_face,
+    SolidRole, WallMaterialClass, WallStyle, compile_operable_doors, compile_operable_windows,
+    compile_window_bars, tessellate_roof_enclosure, tessellate_roof_face,
 };
 
 const TEXTURE_REPEAT_METRES: f32 = 2.0;
@@ -44,11 +44,16 @@ pub fn compile_building_detail(plan: &BuildingPlan) -> BuildingDetail {
 
 /// Compiles high detail while reserving operable exterior leaves for dynamic entities.
 pub fn compile_static_building_detail(plan: &BuildingPlan) -> BuildingDetail {
-    let dynamic_door_solids = compile_operable_doors(plan)
+    let dynamic_closure_solids = compile_operable_doors(plan)
         .into_iter()
         .map(|door| door.source)
+        .chain(
+            compile_operable_windows(plan)
+                .into_iter()
+                .map(|window| window.source),
+        )
         .collect::<BTreeSet<_>>();
-    compile_detail(plan, &dynamic_door_solids)
+    compile_detail(plan, &dynamic_closure_solids)
 }
 
 fn compile_detail(
@@ -86,6 +91,14 @@ fn compile_detail(
             } => append_timber_panel(detail.mesh_mut(material), vertices, outward, depth_metres),
             _ => append_oriented_cuboid(detail.mesh_mut(material), solid),
         }
+    }
+    for bar in compile_window_bars(plan) {
+        append_cuboid(
+            detail.mesh_mut(BuildingLodMaterial::Iron),
+            bar.centre,
+            bar.size_metres,
+            Quat::from_rotation_y(bar.yaw_radians),
+        );
     }
     append_roofs(&mut detail, plan);
     detail
@@ -413,6 +426,9 @@ mod tests {
     #[test]
     fn static_playable_detail_reserves_operable_leaves_for_dynamic_entities() {
         let plan = generate(&BuildingProgram::fixture(BuildingArchetype::TownHouse, 42)).unwrap();
+        let operable_doors = compile_operable_doors(&plan);
+        let operable_windows = compile_operable_windows(&plan);
+        assert!(!operable_windows.is_empty());
         let self_contained = compile_building_detail(&plan);
         let static_detail = compile_static_building_detail(&plan);
         let triangle_count = |detail: &BuildingDetail| {
@@ -423,7 +439,10 @@ mod tests {
                 .sum::<usize>()
         };
 
-        assert!(triangle_count(&static_detail) < triangle_count(&self_contained));
+        assert_eq!(
+            triangle_count(&self_contained) - triangle_count(&static_detail),
+            (operable_doors.len() + operable_windows.len()) * 12
+        );
     }
 
     #[test]

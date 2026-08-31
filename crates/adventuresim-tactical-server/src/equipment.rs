@@ -228,6 +228,12 @@ fn process_equipment_actions(
             authoritative_hand_item.is_none()
                 && environment.doors.try_open_from_inside(controlled, door)
         }
+        EquipmentAction::ToggleWindow { window } => {
+            authoritative_hand_item.is_none()
+                && environment
+                    .windows
+                    .try_toggle_from_inside(controlled, window)
+        }
     };
     record_action_outcome(accepted, controlled, request, &mut sequences, &mut state);
 }

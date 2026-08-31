@@ -135,6 +135,10 @@ pub enum EquipmentAction {
         #[entities]
         door: Entity,
     },
+    ToggleWindow {
+        #[entities]
+        window: Entity,
+    },
 }
 
 /// Durable edge identity for jumping over the unreliable continuous-input
@@ -298,6 +302,27 @@ mod equipment_action_mapping_tests {
         assert!(matches!(
             request.action,
             EquipmentAction::OpenDoor { door: found } if found == mapped_door
+        ));
+    }
+
+    #[test]
+    fn request_maps_window_target_nested_inside_equipment_action() {
+        let window = Entity::from_bits(6);
+        let mapped_window = Entity::from_bits(16);
+        let mut request = EquipmentActionRequest {
+            actor: Entity::from_bits(1),
+            sequence: 1,
+            expected_revision: 0,
+            hand: EquipmentHand::Left,
+            expected_hand_item: None,
+            action: EquipmentAction::ToggleWindow { window },
+        };
+
+        request.map_entities(&mut (window, mapped_window));
+
+        assert!(matches!(
+            request.action,
+            EquipmentAction::ToggleWindow { window: found } if found == mapped_window
         ));
     }
 }

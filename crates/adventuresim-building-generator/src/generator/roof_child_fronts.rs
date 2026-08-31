@@ -360,7 +360,7 @@ fn resolve_roof_child_front_openings(
                 role,
             ));
         }
-        let closure = closure_policy_for(program.archetype, crate::OpeningUse::Window);
+        let closure = fixed_window_closure_policy();
         let mut closure_solids = Vec::new();
         for (layer_index, layer) in closure.layers.iter().copied().enumerate() {
             let role = if layer == crate::ClosureKind::LeadedGlazing {

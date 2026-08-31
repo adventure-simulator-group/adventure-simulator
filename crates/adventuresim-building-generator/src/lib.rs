@@ -13,6 +13,7 @@ mod generator;
 mod lod;
 mod model;
 mod roof_tessellation;
+mod windows;
 
 pub use audit::{AuditIssue, MeshAuditReport, audit_plan, audit_triangle_mesh};
 pub use collision::{
@@ -27,3 +28,4 @@ pub use lod::{
 };
 pub use model::*;
 pub use roof_tessellation::{RoofSurfaceTriangle, tessellate_roof_enclosure, tessellate_roof_face};
+pub use windows::{WindowBarSpec, WindowSpec, compile_operable_windows, compile_window_bars};

@@ -37,6 +37,7 @@ include!("generator/timber.rs");
 include!("generator/roof_editing.rs");
 include!("generator/layout.rs");
 include!("generator/wall_derivation.rs");
+include!("generator/window_closures.rs");
 include!("generator/wall_assemblies.rs");
 include!("generator/church_tower.rs");
 include!("generator/church_windows.rs");
