@@ -369,6 +369,10 @@ tactical-reseed profile="tactical-dev" base_port="23200" mission_id_prefix="miss
 tactical-play mode="animation" base_port="24920" graphics_config="assets/config/tactical-graphics.yaml" presentation_trace="auto" window_capture="auto" capture_source="window" render_backend="auto" scene_input="dense-woodland" enemy_fixture="" input_script="" client_profile="dev" frame_timing_seconds="" frame_timing_warmup_seconds="5": preflight verify-db-client
     @{{ python_bin }} scripts/dev_stack.py tactical-play {{ quote(mode) }} {{ quote(base_port) }} --graphics-config {{ quote(graphics_config) }} --presentation-trace {{ quote(presentation_trace) }} --window-capture {{ quote(window_capture) }} --capture-source {{ quote(capture_source) }} --render-backend {{ quote(render_backend) }} --scene-input {{ quote(scene_input) }} --client-profile {{ quote(client_profile) }} --frame-timing-warmup-seconds {{ quote(frame_timing_warmup_seconds) }} {{ if enemy_fixture != "" { "--enemy-fixture " + quote(enemy_fixture) } else { "" } }} {{ if input_script != "" { "--input-script " + quote(input_script) } else { "" } }} {{ if frame_timing_seconds != "" { "--frame-timing-seconds " + quote(frame_timing_seconds) } else { "" } }}
 
+# Launch an unbounded animation session against a named generated scene fixture.
+tactical-play-fixture fixture: preflight verify-db-client
+    @{{ python_bin }} scripts/dev_stack.py tactical-play animation 24920 --graphics-config "assets/config/tactical-graphics.yaml" --presentation-trace auto --window-capture auto --capture-source window --render-backend auto --scene-input {{ quote(fixture) }} --enemy-fixture passive-bandit --client-profile dev --frame-timing-warmup-seconds 5
+
 # Benchmark steady raised-guard locomotion in all four cardinal directions.
 # It records transforms only: OBS and PresentMon are deliberately disabled.
 animation-direction-benchmark base_port="24920" graphics_config="assets/config/tactical-graphics.yaml" render_backend="auto" scene_input="dense-woodland":

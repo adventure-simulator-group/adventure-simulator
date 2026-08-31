@@ -36,7 +36,7 @@ use super::{
 
 mod grass;
 #[cfg(all(feature = "instanced-grass", not(target_family = "wasm")))]
-mod instanced_grass;
+pub(crate) mod instanced_grass;
 #[cfg(all(feature = "instanced-grass", not(target_family = "wasm")))]
 mod instanced_understory;
 mod litter;

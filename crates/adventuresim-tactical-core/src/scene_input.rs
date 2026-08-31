@@ -27,8 +27,14 @@ use crate::scene_ground::build_scene_ground;
 #[cfg(test)]
 use crate::scene_ground::tree_leaf_litter_probability;
 
-pub const TACTICAL_SCENE_SCHEMA_VERSION: u16 = 4;
-pub const TACTICAL_SCENE_GENERATION_VERSION: u16 = 18;
+pub(crate) mod buildings;
+
+pub use buildings::{
+    DistantBuildingPlacement, GeneratedBuilding, SceneBuilding, TacticalBuildingPlacement,
+};
+
+pub const TACTICAL_SCENE_SCHEMA_VERSION: u16 = 5;
+pub const TACTICAL_SCENE_GENERATION_VERSION: u16 = 19;
 pub const MAX_SCENE_INPUT_BYTES: u64 = 32 * 1024 * 1024;
 pub const TREE_TRUNK_RADIUS_METRES: f32 = 0.35;
 pub const TREE_TRUNK_HEIGHT_METRES: f32 = 5.0;
@@ -136,6 +142,8 @@ pub struct TacticalSceneInput {
     pub absolute_elevation_metres: i16,
     pub playable: TerrainSampleGrid,
     pub fault_scarp: Option<FaultScarpRecipe>,
+    pub buildings: Vec<TacticalBuildingPlacement>,
+    pub distant_buildings: Vec<DistantBuildingPlacement>,
     pub vista: VistaSample,
     pub weather: WeatherSnapshot,
 }
@@ -270,6 +278,7 @@ pub struct GeneratedTacticalScene {
     pub ground: SceneGround,
     pub obstacles: Vec<GeneratedObstacle>,
     pub terrain_patch: Option<SceneTerrainPatch>,
+    pub buildings: Vec<GeneratedBuilding>,
     pub repairs: SceneRepairReport,
 }
 
@@ -280,6 +289,8 @@ pub struct SceneRepairReport {
     pub adjusted_height_samples: u32,
     pub repaired_water_samples: u32,
     pub removed_corridor_obstacles: u32,
+    pub levelled_building_samples: u32,
+    pub removed_building_obstacles: u32,
 }
 
 impl SceneRepairReport {
@@ -287,6 +298,8 @@ impl SceneRepairReport {
         self.adjusted_height_samples != 0
             || self.repaired_water_samples != 0
             || self.removed_corridor_obstacles != 0
+            || self.levelled_building_samples != 0
+            || self.removed_building_obstacles != 0
     }
 }
 
@@ -336,6 +349,8 @@ impl TacticalSceneInput {
         }
         validate_grid(&self.playable, MAX_PLAYABLE_SIDE, "playable")?;
         crate::scene_fault::validate(self.fault_scarp, &self.playable)?;
+        buildings::validate_building_placements(&self.buildings)?;
+        buildings::validate_distant_building_placements(&self.distant_buildings)?;
         if self.vista.lods.len() > MAX_VISTA_LEVELS {
             return invalid("vista has too many LOD levels");
         }
@@ -407,6 +422,20 @@ impl TacticalSceneInput {
         );
         repairs.upsampled_height_samples = upsampled_height_samples;
         repairs.microrelief_adjusted_samples = microrelief_adjusted_samples;
+        let mut buildings = buildings::prepare_buildings(&self.buildings)?;
+        let terrain_half_extent = bevy::math::Vec2::new(
+            (grid_width - 1) as f32 * grid_spacing,
+            (grid_depth - 1) as f32 * grid_spacing,
+        ) * 0.5;
+        buildings::validate_building_pads(&buildings, terrain_half_extent)?;
+        let (building_pads, levelled_building_samples) = buildings::level_building_pads(
+            grid_width,
+            grid_depth,
+            grid_spacing,
+            &mut heights,
+            &mut buildings,
+        );
+        repairs.levelled_building_samples = levelled_building_samples;
         let coarse_terrain =
             SceneTerrain::from_heightmap(grid_width, grid_depth, grid_spacing, heights)
                 .ok_or_else(|| {
@@ -452,6 +481,17 @@ impl TacticalSceneInput {
             }
         });
         repairs.removed_corridor_obstacles = (before - obstacles.len()) as u32;
+        let before_building_exclusion = obstacles.len();
+        let terrain_extent = bevy::math::Vec2::new(coarse_terrain.width(), coarse_terrain.depth());
+        obstacles.retain(|obstacle| {
+            !buildings::obstacle_intersects_building(
+                *obstacle,
+                self.playable.spacing_metres,
+                terrain_extent,
+                &building_pads,
+            )
+        });
+        repairs.removed_building_obstacles = (before_building_exclusion - obstacles.len()) as u32;
         let ground = build_scene_ground(
             grid_width,
             grid_depth,
@@ -460,6 +500,7 @@ impl TacticalSceneInput {
             &coarse_terrain,
             &obstacles,
             self.playable.spacing_metres,
+            &building_pads,
         )?;
         let terrain = refine_authoritative_terrain(
             self.seed,
@@ -468,6 +509,7 @@ impl TacticalSceneInput {
             &obstacles,
             self.playable.spacing_metres,
             self.weather.ground_moisture_bps,
+            &building_pads,
         )?;
         let terrain_patch = crate::scene_fault::generate(self.fault_scarp, &terrain)?;
         Ok(GeneratedTacticalScene {
@@ -476,6 +518,7 @@ impl TacticalSceneInput {
             ground,
             obstacles,
             terrain_patch,
+            buildings,
             repairs,
         })
     }
@@ -535,6 +578,7 @@ fn refine_authoritative_terrain(
     obstacles: &[GeneratedObstacle],
     obstacle_spacing: f32,
     moisture_bps: u16,
+    building_pads: &[buildings::BuildingPad],
 ) -> Result<SceneTerrain, SceneInputError> {
     let half_extent = bevy::math::Vec2::new(terrain.width(), terrain.depth()) * 0.5;
     let mut trees = Vec::new();
@@ -559,21 +603,36 @@ fn refine_authoritative_terrain(
     let detail_seed = seed ^ 0x7465_7272_6169_6e64;
     let mut terrain = terrain
         .refined(AUTHORITATIVE_DETAIL_SPACING_METRES, |point, base_height| {
-            base_height
-                + authoritative_surface_relief(
-                    detail_seed,
-                    point,
-                    terrain,
-                    ground,
-                    moisture_bps,
-                    &trees,
-                    &rocks,
-                )
+            if let Some(pad) = building_pads
+                .iter()
+                .find(|pad| pad.contains_level_ground(point))
+            {
+                pad.elevation_metres
+            } else if building_pads.iter().any(|pad| pad.contains_apron(point)) {
+                base_height
+            } else {
+                base_height
+                    + authoritative_surface_relief(
+                        detail_seed,
+                        point,
+                        terrain,
+                        ground,
+                        moisture_bps,
+                        &trees,
+                        &rocks,
+                    )
+            }
         })
         .ok_or_else(|| {
             SceneInputError::Validation("authoritative detail terrain is invalid".into())
         })?;
     terrain.constrain_max_grade(MAX_PLAYABLE_GRADE);
+    terrain.rewrite_heights(|point, height| {
+        building_pads
+            .iter()
+            .find(|pad| pad.contains_level_ground(point))
+            .map_or(height, |pad| pad.elevation_metres)
+    });
     Ok(terrain)
 }
 
@@ -1155,6 +1214,8 @@ fn repair_playable_terrain(
             .count() as u32,
         repaired_water_samples,
         removed_corridor_obstacles: 0,
+        levelled_building_samples: 0,
+        removed_building_obstacles: 0,
     }
 }
 
@@ -1270,6 +1331,7 @@ fn invalid<T>(message: impl Into<String>) -> Result<T, SceneInputError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use adventuresim_building_generator::{BuildingArchetype, BuildingProgram};
     use adventuresim_core::weather::weather_at;
     use std::time::SystemTime;
 
@@ -1300,6 +1362,8 @@ mod tests {
                 environment,
             },
             fault_scarp: None,
+            buildings: Vec::new(),
+            distant_buildings: Vec::new(),
             vista: VistaSample::default(),
             weather: weather_at(42, 123_456, 53_500_000, 10_000_000, 80),
         }
@@ -1320,6 +1384,78 @@ mod tests {
             first.repairs.microrelief_adjusted_samples,
             second.repairs.microrelief_adjusted_samples
         );
+    }
+
+    #[test]
+    fn generated_building_gets_static_collision_and_a_level_clear_pad() {
+        let mut input = fixture();
+        let width = 41usize;
+        let depth = 41usize;
+        input.playable = TerrainSampleGrid {
+            width: width as u16,
+            depth: depth as u16,
+            spacing_metres: 1.0,
+            heights_metres: (0..width * depth)
+                .map(|index| (index % width) as f32 * 0.04)
+                .collect(),
+            environment: vec![
+                EnvironmentalSample {
+                    canopy_bps: 10_000,
+                    ..Default::default()
+                };
+                width * depth
+            ],
+        };
+        input.buildings.push(TacticalBuildingPlacement {
+            id: 7,
+            program: BuildingProgram::fixture(BuildingArchetype::FachwerkCottage, 42),
+            centre_metres: bevy::math::Vec2::ZERO,
+            quarter_turns: 1,
+        });
+
+        let generated = input.generate().unwrap();
+        let building = &generated.buildings[0];
+        assert!(!building.collision.cuboids.is_empty());
+        assert!(generated.repairs.levelled_building_samples > 0);
+        let centre_height = generated.terrain.height_at(bevy::math::Vec2::ZERO).unwrap();
+        assert!((centre_height - building.pad_elevation_metres).abs() < 0.0001);
+        assert_eq!(
+            generated.ground.ground_at(bevy::math::Vec2::ZERO),
+            Some(GroundSurface {
+                substrate: GroundSubstrate::Stone,
+                cover: GroundCover::Bare,
+                cover_density_bps: 0,
+                cover_height_cm: 0,
+            })
+        );
+        let exclusion =
+            building.collision.bounds.plan_half_extents() + bevy::math::Vec2::splat(5.5);
+        assert!(generated.obstacles.iter().all(|obstacle| {
+            let (x, z) = match *obstacle {
+                GeneratedObstacle::Tree { x, z } | GeneratedObstacle::Rock { x, z, .. } => (x, z),
+            };
+            let point =
+                bevy::math::Vec2::new(f32::from(x), f32::from(z)) - bevy::math::Vec2::splat(20.0);
+            let building_local = bevy::math::Vec2::new(point.y, -point.x).abs();
+            !building_local.cmple(exclusion).all()
+        }));
+    }
+
+    #[test]
+    fn distant_buildings_affect_scene_identity_without_entering_tactical_generation() {
+        let mut input = fixture();
+        let empty_digest = input.digest().unwrap();
+        input.distant_buildings.push(DistantBuildingPlacement {
+            id: 1,
+            archetype: BuildingArchetype::TownHouse,
+            seed: 42,
+            centre_metres: bevy::math::Vec2::new(120.0, -90.0),
+            base_elevation_metres: 0.0,
+            quarter_turns: 2,
+        });
+
+        assert_ne!(input.digest().unwrap(), empty_digest);
+        assert!(input.generate().unwrap().buildings.is_empty());
     }
 
     #[test]

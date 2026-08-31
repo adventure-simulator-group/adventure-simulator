@@ -573,7 +573,7 @@ mod tests {
                 assert!(
                     plan.roof_dormers
                         .iter()
-                        .any(|dormer| dormer.kind == DormerKind::TransverseGable)
+                        .all(|dormer| dormer.kind != DormerKind::TransverseGable)
                 );
             }
         }

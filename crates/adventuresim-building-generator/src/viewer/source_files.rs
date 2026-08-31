@@ -25,6 +25,7 @@ const BUILDING_GENERATOR_SOURCE: &[&str] = &[
     include_str!("../audit/timber.rs"),
     include_str!("../audit/vertical_circulation.rs"),
     include_str!("../audit/wall_openings.rs"),
+    include_str!("../collision.rs"),
     include_str!("../bin/building-lod-viewer.rs"),
     include_str!("../generator.rs"),
     include_str!("../generator/artillery_castle.rs"),

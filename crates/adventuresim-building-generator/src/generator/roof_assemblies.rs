@@ -224,12 +224,8 @@ fn resolve_roof_assemblies(
         };
         let fallback_depth = dormer.depth_metres * 0.84;
         let minimum_usable_depth = fallback_depth.min(0.75);
-        // The rear edge of a dormer is not a second free gable. Extend the
-        // child inward until its eave plane meets the actual parent weather
-        // plane at both cheeks. The small overhang then seats on that seam.
-        let enclosure_depth = assemblies
-            .first()
-            .and_then(|parent| {
+        let seam_depth_at_height = |required_height: f32| {
+            assemblies.first().and_then(|parent| {
                 (0..=800)
                     .map(|step| minimum_usable_depth + roof_eave + step as f32 * 0.01)
                     .find(|depth| {
@@ -238,12 +234,28 @@ fn resolve_roof_assemblies(
                                 + inward * *depth
                                 + tangent * side * (half_width + roof_eave);
                             roof_surface_height_at(parent, point)
-                                .is_some_and(|height| height >= top - 0.015)
+                                .is_some_and(|height| height >= required_height - 0.015)
                         })
                     })
+                    .map(|rear_edge_depth| {
+                        (rear_edge_depth - roof_eave).max(minimum_usable_depth)
+                    })
             })
-            .map(|rear_edge_depth| (rear_edge_depth - roof_eave).max(minimum_usable_depth))
+        };
+        // The rear edge of a dormer is not a second free gable. Extend the
+        // child inward until its eave plane meets the actual parent weather
+        // plane at both cheeks. The small overhang then seats on that seam.
+        let enclosure_depth = seam_depth_at_height(top)
             .unwrap_or(fallback_depth);
+        // A cross-gable does not have a rectangular rear edge: its low eaves
+        // meet the parent first, while its ridge continues inward to the
+        // higher intersection point. Ordinary dormers retain a square head.
+        let ridge_seam_depth = if dormer.kind == DormerKind::TransverseGable {
+            let ridge_height = top + 48.0_f32.to_radians().tan() * half_width;
+            seam_depth_at_height(ridge_height).unwrap_or(enclosure_depth)
+        } else {
+            enclosure_depth
+        };
         let size = if ridge_axis == RidgeAxis::Z {
             Vec2::new(dormer.width_metres * scale, enclosure_depth)
         } else {
@@ -277,6 +289,45 @@ fn resolve_roof_assemblies(
             walls,
             geometry,
         );
+        if ridge_seam_depth > enclosure_depth + 0.01 {
+            let extension = inward * (ridge_seam_depth - enclosure_depth);
+            let mut moved_ridge_points = Vec::new();
+            for face in &mut child.faces {
+                let ridge_height = face
+                    .polygon
+                    .iter()
+                    .map(|point| point.y)
+                    .fold(f32::NEG_INFINITY, f32::max);
+                let Some(rear_ridge_index) = face
+                    .polygon
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, point)| (point.y - ridge_height).abs() <= 0.01)
+                    .max_by(|(_, left), (_, right)| {
+                        Vec2::new(left.x, left.z)
+                            .dot(inward)
+                            .total_cmp(&Vec2::new(right.x, right.z).dot(inward))
+                    })
+                    .map(|(index, _)| index)
+                else {
+                    continue;
+                };
+                let old = face.polygon[rear_ridge_index];
+                let new = old + Vec3::new(extension.x, 0.0, extension.y);
+                face.polygon[rear_ridge_index] = new;
+                moved_ridge_points.push((old, new));
+            }
+            for edge in &mut child.edges {
+                for (old, new) in &moved_ridge_points {
+                    if edge.start.distance_squared(*old) <= 0.000_004 {
+                        edge.start = *new;
+                    }
+                    if edge.end.distance_squared(*old) <= 0.000_004 {
+                        edge.end = *new;
+                    }
+                }
+            }
+        }
         if recipe.kind == RoofKind::Gable {
             // `resolve_one_roof` normally closes both gable ends. A dormer
             // owns only the visible front gable; its rear terminates in the
@@ -298,8 +349,8 @@ fn resolve_roof_assemblies(
                     (Vec2::new(edge.start.x, edge.start.z) - dormer.centre).dot(-inward);
                 let end_depth = (Vec2::new(edge.end.x, edge.end.z) - dormer.centre).dot(-inward);
                 if edge.kind == RoofEdgeKind::GableVerge
-                    && (start_depth - rear_edge_depth).abs() <= 0.02
-                    && (end_depth - rear_edge_depth).abs() <= 0.02
+                    && start_depth <= rear_edge_depth + 0.02
+                    && end_depth <= rear_edge_depth + 0.02
                 {
                     edge.kind = RoofEdgeKind::OpeningCut;
                     let weather_id =

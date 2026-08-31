@@ -268,7 +268,7 @@ fn derive_roof_dormers(program: &BuildingProgram) -> Vec<RoofDormer> {
             dormer(
                 Vec2::new(0.0, depth * 0.52),
                 Direction::West,
-                DormerKind::TransverseGable,
+                DormerKind::Gabled,
                 GableProfile::Plain,
             ),
         ],

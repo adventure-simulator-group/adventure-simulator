@@ -1,6 +1,6 @@
 {
-  "schema_version": 4,
-  "generation_version": 18,
+  "schema_version": 5,
+  "generation_version": 19,
   "seed": 47106,
   "scene_key": "roadside",
   "source": {
@@ -832,6 +832,8 @@
     ]
   },
   "fault_scarp": null,
+  "buildings": [],
+  "distant_buildings": [],
   "vista": {
     "lods": [
       {

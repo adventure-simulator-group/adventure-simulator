@@ -30,7 +30,7 @@ impl fmt::Display for RoomKind {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RoomRequirement {
     pub kind: RoomKind,
     pub preferred_cells: u16,
@@ -59,7 +59,7 @@ impl RoomRequirement {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct StoreyProgram {
     pub rooms: Vec<RoomRequirement>,
 }

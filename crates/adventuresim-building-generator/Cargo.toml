@@ -6,6 +6,16 @@ edition.workspace = true
 repository.workspace = true
 license.workspace = true
 
+[features]
+default = []
+viewer = [
+    "bevy/default",
+    "bevy/png",
+    "dep:bevy_egui",
+    "dep:bevy_mod_outline",
+    "dep:bevy_panorbit_camera",
+]
+
 [dependencies]
 bevy.workspace = true
 clap.workspace = true
@@ -16,10 +26,9 @@ earcut.workspace = true
 geo.workspace = true
 
 [target."cfg(not(target_family = \"wasm\"))".dependencies]
-bevy = { workspace = true, default-features = true, features = ["png"] }
-bevy_egui.workspace = true
-bevy_mod_outline.workspace = true
-bevy_panorbit_camera.workspace = true
+bevy_egui = { workspace = true, optional = true }
+bevy_mod_outline = { workspace = true, optional = true }
+bevy_panorbit_camera = { workspace = true, optional = true }
 
 [lints]
 workspace = true
@@ -28,8 +37,10 @@ workspace = true
 name = "building-viewer"
 path = "src/main.rs"
 doc = false
+required-features = ["viewer"]
 
 [[bin]]
 name = "building-lod-viewer"
 path = "src/bin/building-lod-viewer.rs"
 doc = false
+required-features = ["viewer"]

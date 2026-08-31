@@ -10,6 +10,9 @@ mod terrain_collision;
 
 use std::{net::SocketAddr, num::NonZeroU32, path::PathBuf};
 
+use adventuresim_building_generator::{
+    BuildingCollision, compile_building_collision, generate as generate_building,
+};
 use adventuresim_stdb_client::*;
 use adventuresim_tactical_core::{physics::AdventureSimulatorPhysicsPlugin, prelude::*};
 use adventuresim_tactical_netcode::{
@@ -233,6 +236,7 @@ fn main() {
                 * loaded_scene_input.playable.spacing_metres
                 * 0.5,
         ),
+        distant_buildings: loaded_scene_input.distant_buildings.clone(),
         lods: loaded_scene_input.vista.lods.clone(),
     });
     let mut app = App::new();
@@ -294,7 +298,8 @@ fn main() {
     .add_systems(OnEnter(ServerState::Running), on_server_started)
     .add_observer(on_player_input)
     .add_observer(on_player_added)
-    .add_observer(on_scene_terrain_added);
+    .add_observer(on_scene_terrain_added)
+    .add_observer(on_scene_building_added);
 
     // Standalone (`--world-dump`) runs never touch SpacetimeDB: a loaded
     // dump already carries every bit of gameplay state a live stdb
@@ -421,6 +426,7 @@ fn on_debug_dump_world_request(_request: On<FromClient<DebugDumpWorldRequest>>, 
         .allow_component::<Transform>()
         .allow_component::<SceneId>()
         .allow_component::<SceneTerrain>()
+        .allow_component::<SceneBuilding>()
         .allow_component::<crate::bot::MissionEnemy>()
         .allow_component::<crate::bot::OffensiveCombatAi>()
         .allow_component::<crate::bot::CombatantBehaviorPackages>()
@@ -854,6 +860,44 @@ fn on_scene_terrain_added(
     Ok(())
 }
 
+fn on_scene_building_added(
+    event: On<Add, SceneBuilding>,
+    mut commands: Commands,
+    buildings: Query<&SceneBuilding>,
+) -> Result {
+    let building = buildings.get(event.entity)?;
+    let plan = generate_building(&building.program)?;
+    let collision = compile_building_collision(&plan);
+    commands.entity(event.entity).insert((
+        Replicated,
+        RigidBody::Static,
+        CollisionLayers::new(TACTICAL_TERRAIN_LAYER, LayerMask::ALL),
+        tactical_building_collider(&collision),
+    ));
+    Ok(())
+}
+
+fn tactical_building_collider(collision: &BuildingCollision) -> Collider {
+    let local_origin = collision.bounds.centre();
+    Collider::compound(
+        collision
+            .cuboids
+            .iter()
+            .map(|cuboid| {
+                let translation = cuboid.centre - local_origin;
+                let rotation = Quat::from_rotation_y(cuboid.yaw_radians)
+                    * Quat::from_rotation_x(cuboid.crossfall_radians)
+                    * Quat::from_rotation_z(cuboid.longfall_radians);
+                (
+                    translation,
+                    rotation,
+                    Collider::cuboid(cuboid.size.x, cuboid.size.y, cuboid.size.z),
+                )
+            })
+            .collect(),
+    )
+}
+
 fn on_server_started(
     args: Res<Args>,
     scene_input: Res<LoadedSceneInput>,
@@ -890,6 +934,8 @@ fn on_server_started(
             adjusted_height_samples = generated.repairs.adjusted_height_samples,
             repaired_water_samples = generated.repairs.repaired_water_samples,
             removed_corridor_obstacles = generated.repairs.removed_corridor_obstacles,
+            levelled_building_samples = generated.repairs.levelled_building_samples,
+            removed_building_obstacles = generated.repairs.removed_building_obstacles,
             "Loaded deterministic tactical scene input"
         );
         let scene_id = input.scene_key.clone();
@@ -898,6 +944,7 @@ fn on_server_started(
         let ground = generated.ground;
         let environment = input.environment_snapshot(generated.digest);
         let obstacles = generated.obstacles;
+        let buildings = generated.buildings;
         let obstacle_spacing = input.playable.spacing_metres;
         for obstacle in obstacles {
             let (grid_x, grid_z, kind, collider, height_offset, label) = match obstacle {
@@ -935,6 +982,26 @@ fn on_server_started(
                 CollisionLayers::new(TACTICAL_TERRAIN_LAYER, LayerMask::ALL),
                 collider,
                 Transform::from_xyz(x, y, z).with_rotation(Quat::from_rotation_y(yaw)),
+            ));
+        }
+        for building in buildings {
+            let collision_centre = building.collision.bounds.centre();
+            let local_floor_offset = collision_centre.y - building.collision.bounds.min.y;
+            commands.spawn((
+                Name::new(format!("Tactical building {}", building.placement.id)),
+                SceneBuilding {
+                    id: building.placement.id,
+                    program: building.placement.program,
+                    quarter_turns: building.placement.quarter_turns,
+                },
+                Transform::from_xyz(
+                    building.placement.centre_metres.x,
+                    building.pad_elevation_metres + local_floor_offset,
+                    building.placement.centre_metres.y,
+                )
+                .with_rotation(Quat::from_rotation_y(
+                    f32::from(building.placement.quarter_turns) * core::f32::consts::FRAC_PI_2,
+                )),
             ));
         }
         terrain_collision::spawn_scene(

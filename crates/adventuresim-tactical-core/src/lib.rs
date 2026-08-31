@@ -87,12 +87,13 @@ pub mod prelude {
         TerrainGenerator,
     };
     pub use crate::scene_input::{
-        EnvironmentalSample, GeneratedObstacle, GeneratedTacticalScene, ROCK_RADIUS_METRES,
-        RockArchetype, RockLithology, RockRecipe, SceneEnvironment, SceneEnvironmentFixture,
-        SceneInputError, SceneObstacle, SceneRepairReport, SceneSource,
-        TACTICAL_SCENE_GENERATION_VERSION, TACTICAL_SCENE_SCHEMA_VERSION,
-        TREE_CANOPY_GROUND_RADIUS_METRES, TREE_TRUNK_HEIGHT_METRES, TREE_TRUNK_RADIUS_METRES,
-        TacticalSceneInput, TacticalSurface, TerrainSampleGrid, VistaLod, VistaSample,
+        DistantBuildingPlacement, EnvironmentalSample, GeneratedBuilding, GeneratedObstacle,
+        GeneratedTacticalScene, ROCK_RADIUS_METRES, RockArchetype, RockLithology, RockRecipe,
+        SceneBuilding, SceneEnvironment, SceneEnvironmentFixture, SceneInputError, SceneObstacle,
+        SceneRepairReport, SceneSource, TACTICAL_SCENE_GENERATION_VERSION,
+        TACTICAL_SCENE_SCHEMA_VERSION, TREE_CANOPY_GROUND_RADIUS_METRES, TREE_TRUNK_HEIGHT_METRES,
+        TREE_TRUNK_RADIUS_METRES, TacticalBuildingPlacement, TacticalSceneInput, TacticalSurface,
+        TerrainSampleGrid, VistaLod, VistaSample,
     };
     pub use crate::terrain_transition::TerrainTransitionCollar;
     pub use crate::volumetric_terrain::{

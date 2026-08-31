@@ -10,10 +10,11 @@
 )]
 
 mod atmosphere;
+mod buildings;
 mod clouds;
 mod config;
 mod environment;
-mod ground_scatter;
+pub(crate) mod ground_scatter;
 mod obstacles;
 mod procedural;
 mod procedural_assets;
@@ -25,6 +26,7 @@ mod volumetric;
 mod weather;
 
 use atmosphere::*;
+use buildings::*;
 use clouds::*;
 use environment::*;
 use ground_scatter::*;
@@ -56,6 +58,7 @@ fn mesh_triangle_count(mesh: &Mesh) -> usize {
 
 // This facade is compiled independently by several binaries, so each binary
 // uses only the subset of the stable presentation interface that it needs.
+pub(crate) use buildings::PresentedBuildingMesh;
 pub(crate) use clouds::{
     TacticalCloudAnimationStatus, TacticalCloudBenchmarkIsolation, TacticalCloudCaptureOverride,
     TacticalCloudCaptureProfile, TacticalCloudLayer, TacticalCloudOffscreenCamera,
@@ -212,6 +215,7 @@ impl Plugin for TacticalPresentationPlugin {
             Startup,
             (
                 setup_procedural_environment_assets,
+                setup_tactical_building_materials,
                 setup_tactical_presentation,
                 setup_tactical_sky,
                 setup_tactical_clouds,
@@ -280,6 +284,8 @@ impl Plugin for TacticalPresentationPlugin {
         .add_observer(terrain::on_environment_added)
         .add_observer(terrain::on_ground_added)
         .add_observer(on_scene_obstacle_added)
+        .add_observer(on_scene_building_added)
+        .add_observer(on_scene_vista_buildings)
         .add_observer(on_scene_vista_bundle);
     }
 

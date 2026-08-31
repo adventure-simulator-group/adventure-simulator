@@ -54,6 +54,7 @@ adventuresim-dialogue = { version = "0.1.0", path = "crates/adventuresim-dialogu
 adventuresim-strategic-sim = { version = "0.1.0" }
 adventuresim-world-schema = { version = "0.1.0", path = "crates/adventuresim-world-schema" }
 adventuresim-weapon-model = { version = "0.1.0", path = "crates/adventuresim-weapon-model" }
+adventuresim-building-generator = { version = "0.1.0", path = "crates/adventuresim-building-generator" }
 
 fabelgeist-math = { version = "0.1.0", path = "crates/fabelgeist-math" }
 fabelgeist-animation = { version = "0.1.0", path = "crates/fabelgeist-animation" }

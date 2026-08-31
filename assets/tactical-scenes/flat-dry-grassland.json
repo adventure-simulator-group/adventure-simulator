@@ -1,6 +1,6 @@
 {
-  "schema_version": 4,
-  "generation_version": 18,
+  "schema_version": 5,
+  "generation_version": 19,
   "seed": 47101,
   "scene_key": "grassland",
   "source": {
@@ -832,6 +832,75 @@
     ]
   },
   "fault_scarp": null,
+  "buildings": [
+    {
+      "id": 1,
+      "program": {
+        "archetype": "fachwerk-cottage",
+        "seed": 42,
+        "footprint": {
+          "rectangle": {
+            "width": 7,
+            "depth": 8
+          }
+        },
+        "storey_height_metres": 2.8,
+        "storeys": [
+          {
+            "rooms": [
+              {
+                "kind": "common_room",
+                "preferred_cells": 18,
+                "needs_exterior": true,
+                "preferred_neighbours": [
+                  "kitchen"
+                ]
+              },
+              {
+                "kind": "kitchen",
+                "preferred_cells": 10,
+                "needs_exterior": true,
+                "preferred_neighbours": [
+                  "pantry"
+                ]
+              },
+              {
+                "kind": "pantry",
+                "preferred_cells": 5,
+                "needs_exterior": false,
+                "preferred_neighbours": []
+              },
+              {
+                "kind": "bedchamber",
+                "preferred_cells": 12,
+                "needs_exterior": true,
+                "preferred_neighbours": []
+              },
+              {
+                "kind": "entrance_hall",
+                "preferred_cells": 7,
+                "needs_exterior": true,
+                "preferred_neighbours": []
+              }
+            ]
+          }
+        ],
+        "vertical_connections": [],
+        "wall_style": "timber_frame",
+        "timber_frame_style": "northern_close_studded",
+        "upper_storey_projection_metres": 0.0,
+        "roof_pitch_degrees": 53.0,
+        "roof_demonstrator": null,
+        "church_program": null
+      },
+      "centre_metres": [
+        12.0,
+        4.0
+      ],
+      "quarter_turns": 1
+    }
+  ],
+  "distant_buildings": [],
   "vista": {
     "lods": [
       {

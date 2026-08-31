@@ -1,4 +1,4 @@
-use adventuresim_tactical_core::prelude::{SceneSource, WeatherSnapshot};
+use adventuresim_tactical_core::prelude::{SceneRepairReport, SceneSource, WeatherSnapshot};
 use serde::Serialize;
 
 #[cfg(test)]
@@ -45,6 +45,22 @@ pub(super) struct RepairSummary {
     pub(super) adjusted_height_samples: u32,
     pub(super) repaired_water_samples: u32,
     pub(super) removed_corridor_obstacles: u32,
+    pub(super) levelled_building_samples: u32,
+    pub(super) removed_building_obstacles: u32,
+}
+
+impl From<SceneRepairReport> for RepairSummary {
+    fn from(repairs: SceneRepairReport) -> Self {
+        Self {
+            upsampled_height_samples: repairs.upsampled_height_samples,
+            microrelief_adjusted_samples: repairs.microrelief_adjusted_samples,
+            adjusted_height_samples: repairs.adjusted_height_samples,
+            repaired_water_samples: repairs.repaired_water_samples,
+            removed_corridor_obstacles: repairs.removed_corridor_obstacles,
+            levelled_building_samples: repairs.levelled_building_samples,
+            removed_building_obstacles: repairs.removed_building_obstacles,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Serialize)]

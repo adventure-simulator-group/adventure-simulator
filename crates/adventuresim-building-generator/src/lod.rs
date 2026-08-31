@@ -7,15 +7,21 @@
 use bevy::math::{Vec2, Vec3};
 use serde::{Deserialize, Serialize};
 
-use crate::{BuildingPlan, RoofMaterial, WallAssemblyId, WallMaterialClass};
+use crate::{
+    BuildingPlan, RoofMaterial, WallAssemblyId, WallMaterialClass, tessellate_roof_enclosure,
+    tessellate_roof_face,
+};
 
 #[path = "lod/crowns.rs"]
 mod crowns;
 #[path = "lod/details.rs"]
 mod details;
+#[path = "lod/walls.rs"]
+mod walls;
 
 use crowns::append_crowns;
 use details::{append_opening_details, append_timber_details};
+use walls::append_wall_envelopes;
 
 const JOIN_TOLERANCE_METRES: f32 = 0.02;
 const FACADE_DETAIL_OFFSET_METRES: f32 = 0.012;
@@ -32,13 +38,19 @@ pub enum BuildingLodLevel {
     Shell,
 }
 
-/// One material batch. A renderer may bind each variant to a texture-array
-/// layer or atlas region while retaining one mesh per material class.
+/// One material batch shared by exact-detail and LOD render representations.
+/// A renderer may bind each variant to a texture-array layer or atlas region
+/// while retaining one mesh per material class.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "kind", content = "value")]
 pub enum BuildingLodMaterial {
     Wall(WallMaterialClass),
     Roof(RoofMaterial),
+    /// Timber grid and braces baked into a plaster texture for shell LODs.
+    FachwerkBaked,
+    Timber,
+    Floor,
+    Glass,
     FacadeDetails,
     CrownMasonry,
     CrownMask,
@@ -59,7 +71,7 @@ pub struct LodMesh {
 }
 
 impl LodMesh {
-    fn new(material: BuildingLodMaterial) -> Self {
+    pub(crate) fn new(material: BuildingLodMaterial) -> Self {
         Self {
             material,
             vertices: Vec::new(),
@@ -67,8 +79,9 @@ impl LodMesh {
         }
     }
 
-    fn push_quad(&mut self, positions: [Vec3; 4], normal: Vec3, uvs: [Vec2; 4]) {
+    pub(crate) fn push_quad(&mut self, positions: [Vec3; 4], normal: Vec3, uvs: [Vec2; 4]) {
         let base = self.vertices.len() as u32;
+        let geometric_normal = (positions[1] - positions[0]).cross(positions[2] - positions[0]);
         self.vertices.extend(
             positions
                 .into_iter()
@@ -79,25 +92,33 @@ impl LodMesh {
                     uv,
                 }),
         );
-        self.indices
-            .extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+        let indices = if geometric_normal.dot(normal) < 0.0 {
+            [base, base + 2, base + 1, base, base + 3, base + 2]
+        } else {
+            [base, base + 1, base + 2, base, base + 2, base + 3]
+        };
+        self.indices.extend_from_slice(&indices);
     }
 
-    fn push_polygon(&mut self, polygon: &[Vec3], normal: Vec3) {
-        if polygon.len() < 3 {
-            return;
-        }
+    pub(crate) fn push_triangle(&mut self, positions: [Vec3; 3], normal: Vec3, uvs: [Vec2; 3]) {
         let base = self.vertices.len() as u32;
-        self.vertices
-            .extend(polygon.iter().copied().map(|position| LodVertex {
-                position,
-                normal,
-                uv: Vec2::new(position.x, position.z) / TEXTURE_REPEAT_METRES,
-            }));
-        for index in 1..polygon.len() - 1 {
-            self.indices
-                .extend_from_slice(&[base, base + index as u32, base + index as u32 + 1]);
-        }
+        let geometric_normal = (positions[1] - positions[0]).cross(positions[2] - positions[0]);
+        self.vertices.extend(
+            positions
+                .into_iter()
+                .zip(uvs)
+                .map(|(position, uv)| LodVertex {
+                    position,
+                    normal,
+                    uv,
+                }),
+        );
+        let indices = if geometric_normal.dot(normal) < 0.0 {
+            [base, base + 2, base + 1]
+        } else {
+            [base, base + 1, base + 2]
+        };
+        self.indices.extend_from_slice(&indices);
     }
 }
 
@@ -221,12 +242,12 @@ pub fn compile_building_lod(plan: &BuildingPlan, level: BuildingLodLevel) -> Bui
         facade_runs,
         meshes: Vec::new(),
     };
-    for run in lod.facade_runs.clone() {
-        append_facade_prism(lod.mesh_mut(BuildingLodMaterial::Wall(run.material)), &run);
-    }
+    append_wall_envelopes(&mut lod);
     append_roofs(&mut lod, plan);
-    append_opening_details(&mut lod, plan);
-    append_timber_details(&mut lod, plan);
+    if level == BuildingLodLevel::Facade {
+        append_opening_details(&mut lod, plan);
+        append_timber_details(&mut lod, plan);
+    }
     append_crowns(&mut lod, plan);
     lod.meshes
         .retain(|mesh| !mesh.vertices.is_empty() && !mesh.indices.is_empty());
@@ -238,8 +259,8 @@ fn extract_facade_runs(plan: &BuildingPlan) -> Vec<FacadeRun> {
         .wall_assemblies
         .iter()
         .filter(|wall| {
-            wall.frame.outside_room.is_none()
-                && wall.replaced_by_owner.is_none()
+            wall.replaced_by_owner.is_none()
+                && wall.frame.outside_room.is_none()
                 && !matches!(
                     wall.material,
                     WallMaterialClass::InternalTimber | WallMaterialClass::InternalMasonry
@@ -406,29 +427,42 @@ fn append_round_wall(mesh: &mut LodMesh, run: &FacadeRun) {
 fn append_roofs(lod: &mut BuildingLod, plan: &BuildingPlan) {
     for assembly in &plan.roof_assemblies {
         for face in &assembly.faces {
-            lod.mesh_mut(BuildingLodMaterial::Roof(face.material))
-                .push_polygon(&face.polygon, face.plane.normal.normalize_or_zero());
+            let mesh = lod.mesh_mut(roof_lod_material(lod.level, face.material));
+            for triangle in tessellate_roof_face(face) {
+                mesh.push_triangle(
+                    triangle.positions,
+                    triangle.normal,
+                    triangle
+                        .positions
+                        .map(|point| Vec2::new(point.x, point.z) / TEXTURE_REPEAT_METRES),
+                );
+            }
         }
         for face in &assembly.enclosure_faces {
-            let normal = polygon_normal(&face.polygon);
-            lod.mesh_mut(BuildingLodMaterial::Roof(face.material))
-                .push_polygon(&face.polygon, normal);
+            let mesh = lod.mesh_mut(roof_lod_material(lod.level, face.material));
+            for triangle in tessellate_roof_enclosure(face) {
+                mesh.push_triangle(
+                    triangle.positions,
+                    triangle.normal,
+                    triangle
+                        .positions
+                        .map(|point| Vec2::new(point.x, point.z) / TEXTURE_REPEAT_METRES),
+                );
+            }
         }
+    }
+}
+
+fn roof_lod_material(level: BuildingLodLevel, material: RoofMaterial) -> BuildingLodMaterial {
+    if level == BuildingLodLevel::Shell && material == RoofMaterial::TimberInfill {
+        BuildingLodMaterial::FachwerkBaked
+    } else {
+        BuildingLodMaterial::Roof(material)
     }
 }
 
 fn plan_vertex(point: Vec2, y: f32) -> Vec3 {
     Vec3::new(point.x, y, point.y)
-}
-
-fn polygon_normal(polygon: &[Vec3]) -> Vec3 {
-    polygon
-        .windows(3)
-        .find_map(|points| {
-            let normal = (points[1] - points[0]).cross(points[2] - points[0]);
-            (normal.length_squared() > f32::EPSILON).then(|| normal.normalize())
-        })
-        .unwrap_or(Vec3::Y)
 }
 
 fn ordered_interval(left: f32, right: f32) -> (f32, f32) {
@@ -453,6 +487,25 @@ mod tests {
     use super::*;
     use crate::{BuildingArchetype, BuildingProgram, CrownPath, generate};
 
+    fn assert_triangle_winding_matches_normals(lod: &BuildingLod) {
+        for mesh in &lod.meshes {
+            for triangle in mesh.indices.as_chunks::<3>().0 {
+                let vertices = [
+                    mesh.vertices[triangle[0] as usize],
+                    mesh.vertices[triangle[1] as usize],
+                    mesh.vertices[triangle[2] as usize],
+                ];
+                let geometric_normal = (vertices[1].position - vertices[0].position)
+                    .cross(vertices[2].position - vertices[0].position);
+                assert!(
+                    geometric_normal.dot(vertices[0].normal) > 0.0,
+                    "{:?} triangle winding opposes its normal: {triangle:?}",
+                    mesh.material
+                );
+            }
+        }
+    }
+
     #[test]
     fn fachwerk_lod_joins_wall_cells_and_emits_uv_mapped_details() {
         let plan = generate(&BuildingProgram::fixture(
@@ -466,8 +519,19 @@ mod tests {
             .filter(|wall| wall.frame.outside_room.is_none() && wall.radial_frame.is_none())
             .count();
         let lod = compile_building_lod(&plan, BuildingLodLevel::Facade);
+        let exterior_ids = plan
+            .wall_assemblies
+            .iter()
+            .filter(|wall| wall.frame.outside_room.is_none())
+            .map(|wall| wall.id)
+            .collect::<std::collections::HashSet<_>>();
+        let exterior_run_count = lod
+            .facade_runs
+            .iter()
+            .filter(|run| run.source_walls.iter().any(|id| exterior_ids.contains(id)))
+            .count();
 
-        assert!(lod.facade_runs.len() < exterior_wall_count);
+        assert!(exterior_run_count < exterior_wall_count);
         assert!(lod.facade_runs.iter().any(|run| run.source_walls.len() > 1));
         assert!(
             lod.meshes
@@ -481,6 +545,134 @@ mod tests {
                 .indices
                 .iter()
                 .all(|index| *index < mesh.vertices.len() as u32)
+        }));
+        assert_triangle_winding_matches_normals(&lod);
+    }
+
+    #[test]
+    fn facade_and_shell_lods_omit_interior_walls() {
+        let plan = generate(&BuildingProgram::fixture(
+            BuildingArchetype::FachwerkMerchantHouse,
+            42,
+        ))
+        .unwrap();
+        let interior_ids = plan
+            .wall_assemblies
+            .iter()
+            .filter(|wall| wall.frame.outside_room.is_some())
+            .map(|wall| wall.id)
+            .collect::<std::collections::HashSet<_>>();
+        assert!(!interior_ids.is_empty());
+
+        for level in [BuildingLodLevel::Facade, BuildingLodLevel::Shell] {
+            let lod = compile_building_lod(&plan, level);
+            assert!(
+                lod.facade_runs
+                    .iter()
+                    .all(|run| { run.source_walls.iter().all(|id| !interior_ids.contains(id)) })
+            );
+        }
+    }
+
+    #[test]
+    fn fachwerk_shell_omits_facade_details_and_reduces_triangle_count() {
+        let plan = generate(&BuildingProgram::fixture(
+            BuildingArchetype::FachwerkMerchantHouse,
+            42,
+        ))
+        .unwrap();
+        let facade = compile_building_lod(&plan, BuildingLodLevel::Facade);
+        let shell = compile_building_lod(&plan, BuildingLodLevel::Shell);
+        let triangle_count = |lod: &BuildingLod| {
+            lod.meshes
+                .iter()
+                .map(|mesh| mesh.indices.len() / 3)
+                .sum::<usize>()
+        };
+
+        assert!(
+            facade
+                .meshes
+                .iter()
+                .any(|mesh| mesh.material == BuildingLodMaterial::FacadeDetails)
+        );
+        assert!(
+            shell
+                .meshes
+                .iter()
+                .all(|mesh| mesh.material != BuildingLodMaterial::FacadeDetails)
+        );
+        assert!(
+            shell
+                .meshes
+                .iter()
+                .any(|mesh| mesh.material == BuildingLodMaterial::FachwerkBaked)
+        );
+        assert!(triangle_count(&shell) < triangle_count(&facade));
+        assert_triangle_winding_matches_normals(&shell);
+    }
+
+    #[test]
+    fn fachwerk_detail_quads_lie_on_the_outer_member_faces() {
+        let plan = generate(&BuildingProgram::fixture(
+            BuildingArchetype::FachwerkMerchantHouse,
+            42,
+        ))
+        .unwrap();
+        let frame = plan.timber_frame.as_ref().unwrap();
+        let mut lod = BuildingLod {
+            level: BuildingLodLevel::Facade,
+            facade_runs: Vec::new(),
+            meshes: Vec::new(),
+        };
+        append_timber_details(&mut lod, &plan);
+        let mesh = lod
+            .meshes
+            .iter()
+            .find(|mesh| mesh.material == BuildingLodMaterial::FacadeDetails)
+            .unwrap();
+        for quad in mesh.vertices.as_chunks::<4>().0 {
+            let outward = quad[0].normal;
+            assert!(
+                plan.wall_assemblies.iter().any(|wall| {
+                    let wall_outward = Vec3::new(wall.frame.outward.x, 0.0, wall.frame.outward.y);
+                    let expected_plane = wall.frame.origin.dot(wall.frame.outward)
+                        + wall.thickness_metres * 0.5
+                        + FACADE_DETAIL_OFFSET_METRES;
+                    wall_outward.dot(outward) > 0.999
+                        && quad.iter().all(|vertex| {
+                            (vertex.position.dot(outward) - expected_plane).abs() < 0.0001
+                        })
+                }),
+                "fachwerk quad does not lie on an authoritative exterior wall plane"
+            );
+        }
+
+        let (brace, wall) = frame
+            .bays
+            .iter()
+            .find_map(|bay| {
+                let wall = plan
+                    .wall_assemblies
+                    .iter()
+                    .find(|wall| Some(wall.id) == bay.wall)?;
+                let brace = bay.member_ids.iter().find_map(|id| {
+                    frame.members.iter().find(|member| {
+                        member.id == *id && member.role == crate::TimberMemberRole::StoreyBrace
+                    })
+                })?;
+                Some((brace, wall))
+            })
+            .expect("merchant fixture should contain a facade brace");
+        let outward = Vec3::new(wall.frame.outward.x, 0.0, wall.frame.outward.y);
+        let expected_plane = wall.frame.origin.dot(wall.frame.outward)
+            + wall.thickness_metres * 0.5
+            + FACADE_DETAIL_OFFSET_METRES;
+        let midpoint = (brace.start + brace.end) * 0.5;
+        let expected_midpoint = midpoint + outward * (expected_plane - midpoint.dot(outward));
+        assert!(mesh.vertices.as_chunks::<4>().0.iter().any(|quad| {
+            let centroid = quad.iter().map(|vertex| vertex.position).sum::<Vec3>() * 0.25;
+            centroid.distance(expected_midpoint) < 0.0001
         }));
     }
 

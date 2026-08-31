@@ -2446,11 +2446,6 @@ ceiling = 185
 
 [[functions]]
 path = "crates/adventuresim-tactical-client/src/tactical_scene_viewer.rs"
-item = "capture_terrain_wireframe"
-ceiling = 183
-
-[[functions]]
-path = "crates/adventuresim-tactical-client/src/tactical_scene_viewer.rs"
 item = "capture_views"
 ceiling = 630
 

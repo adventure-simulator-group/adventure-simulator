@@ -2001,55 +2001,6 @@ mod tests {
             .x += 2.0;
         assert!(has(&overlong_treatment, "invalid_roof_edge_treatment"));
 
-        let cross_fixture = || {
-            crate::generate(&crate::BuildingProgram::fixture(
-                crate::BuildingArchetype::FachwerkMerchantHouse,
-                47,
-            ))
-            .unwrap()
-        };
-        let mut blank_dormer = cross_fixture();
-        let cross = blank_dormer.roof_assemblies[0]
-            .children
-            .iter()
-            .find(|child| child.kind == crate::RoofChildKind::CrossGable && child.child.0 >= 1_000)
-            .unwrap()
-            .clone();
-        let front = blank_dormer
-            .wall_assemblies
-            .iter()
-            .find(|wall| wall.source == crate::WallSourceId::RoofChildFront { roof: cross.child })
-            .unwrap()
-            .clone();
-        blank_dormer
-            .opening_assemblies
-            .retain(|opening| opening.host_wall != front.id);
-        assert!(has(&blank_dormer, "invalid_roof_child_front"));
-
-        let mut floating_cross = cross_fixture();
-        let cross = floating_cross.roof_assemblies[0]
-            .children
-            .iter_mut()
-            .find(|child| child.kind == crate::RoofChildKind::CrossGable && child.child.0 >= 1_000)
-            .unwrap();
-        cross.facade_wall = None;
-        assert!(has(&floating_cross, "invalid_roof_child_front"));
-
-        let mut unsplit_cross = cross_fixture();
-        let middle = unsplit_cross.roof_assemblies[0]
-            .children
-            .iter()
-            .find(|child| child.kind == crate::RoofChildKind::CrossGable && child.child.0 >= 1_000)
-            .unwrap()
-            .split_eave_edges[1];
-        unsplit_cross.roof_assemblies[0]
-            .edges
-            .iter_mut()
-            .find(|edge| edge.id == middle)
-            .unwrap()
-            .kind = RoofEdgeKind::Eave;
-        assert!(has(&unsplit_cross, "invalid_roof_child_front"));
-
         let abutment_fixture = || {
             crate::generate(&crate::BuildingProgram::fixture(
                 crate::BuildingArchetype::Cathedral,

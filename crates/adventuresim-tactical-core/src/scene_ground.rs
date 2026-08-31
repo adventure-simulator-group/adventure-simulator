@@ -2,10 +2,11 @@ use adventuresim_world_schema::BASIS_POINTS_PER_WHOLE;
 use fabelgeist_determinism::splitmix64;
 
 use crate::{
-    scene::{GroundCover, GroundSubstrate, SceneGround, SceneTerrain},
+    scene::{GroundCover, GroundSubstrate, GroundSurface, SceneGround, SceneTerrain},
     scene_input::{
         EnvironmentalSample, GeneratedObstacle, SceneInputError, TREE_CANOPY_GROUND_RADIUS_METRES,
         TREE_DENSE_LEAF_LITTER_RADIUS_METRES, TREE_LEAF_LITTER_DOMAIN, base_ground_surface,
+        buildings::BuildingPad,
     },
 };
 
@@ -17,6 +18,7 @@ pub(crate) fn build_scene_ground(
     terrain: &SceneTerrain,
     obstacles: &[GeneratedObstacle],
     obstacle_spacing: f32,
+    building_pads: &[BuildingPad],
 ) -> Result<SceneGround, SceneInputError> {
     let mut samples = environment
         .iter()
@@ -64,6 +66,25 @@ pub(crate) fn build_scene_ground(
                     sample.cover_density_bps = 9_200;
                     sample.cover_height_cm = 6;
                 }
+            }
+        }
+    }
+    for sample_z in 0..depth {
+        for sample_x in 0..width {
+            let position = bevy::math::Vec2::new(
+                sample_x as f32 * spacing - half_width,
+                sample_z as f32 * spacing - half_depth,
+            );
+            if building_pads
+                .iter()
+                .any(|pad| pad.contains_level_ground(position))
+            {
+                samples[sample_z * width + sample_x] = GroundSurface {
+                    substrate: GroundSubstrate::Stone,
+                    cover: GroundCover::Bare,
+                    cover_density_bps: 0,
+                    cover_height_cm: 0,
+                };
             }
         }
     }

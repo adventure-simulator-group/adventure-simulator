@@ -92,6 +92,10 @@ struct Args {
     #[arg(long, conflicts_with_all = ["leaf_benchmark_frames", "tree_lighting_benchmark_frames", "scene_performance_benchmark_frames"])]
     terrain_wireframe: bool,
 
+    /// Count resident and submitted terrain, building, and grass triangles without timing frames.
+    #[arg(long, conflicts_with_all = ["leaf_benchmark_frames", "tree_lighting_benchmark_frames", "scene_performance_benchmark_frames", "terrain_wireframe"])]
+    triangle_census: bool,
+
     /// Azimuth around the review tree for locked leaf-LOD comparison views.
     #[arg(long, default_value_t = 45.0)]
     tree_review_azimuth_degrees: f32,
@@ -127,6 +131,7 @@ fn main() {
         args.scene_performance_benchmark_frames,
         args.scene_performance_render_diagnostics,
         args.terrain_wireframe,
+        args.triangle_census,
         args.tree_review_azimuth_degrees,
         match args.profile {
             CaptureProfile::Semantic => "semantic",

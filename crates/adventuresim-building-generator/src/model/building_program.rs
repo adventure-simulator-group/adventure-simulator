@@ -6,7 +6,7 @@ use super::*;
 /// built. The public [`crate::generate`] boundary is the validator: every
 /// successful result has passed the complete structural audit, while an
 /// unbuildable recipe returns [`crate::GenerationError`].
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct BuildingProgram {
     pub archetype: BuildingArchetype,
     pub seed: u64,

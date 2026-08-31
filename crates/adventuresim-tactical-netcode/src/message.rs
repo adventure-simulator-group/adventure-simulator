@@ -39,6 +39,8 @@ pub struct SceneVistaBundle {
     /// Half-width and half-depth of the authoritative playable heightfield.
     /// Presentation-only vista rings clip exactly to this rectangle.
     pub playable_half_extent_metres: Vec2,
+    /// Presentation-only shell instances surrounding the tactical area.
+    pub distant_buildings: Vec<DistantBuildingPlacement>,
     pub lods: Vec<VistaLod>,
 }
 
