@@ -66,6 +66,18 @@ seeks the center of its authored striking head: its wielder advances when the
 enemy is beyond that measure and retreats when the enemy gets inside it. The AI
 adds a short initiative delay and cadence variation before entering the same
 server-owned windup and recovery used by other attacks.
+
+For a parametric weapon, that measure is not a second, hand-entered description
+of the model. The recipe that builds the mesh also determines the individual
+weapon's mass, length, grip-to-tip distance, striking-head span, balance, and
+rotational inertia. Combat preserves the catalog weapon's ordinary allowance
+for stance and technique, then moves its effective reach by the difference
+between the custom recipe and the catalog's canonical recipe. Lengthening a
+shaft therefore extends useful measure by the same amount, while shortening it
+contracts the measure. Tactical combat and autoresolve consume the same derived
+properties, and authority rejects an invalid or mismatched recipe rather than
+quietly substituting the catalog geometry.
+
 Its provisional deterministic attack aims at the chest with full input
 precision. Targeted AI windups notify only their intended defender; because
 the existing client windup message does not yet identify a target, that legacy
