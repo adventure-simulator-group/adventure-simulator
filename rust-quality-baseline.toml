@@ -900,16 +900,6 @@ item = "authored_threat_combatant"
 ceiling = 155
 
 [[functions]]
-path = "crates/adventuresim-core/src/autoresolve.rs"
-item = "autoresolve_combat_power"
-ceiling = 113
-
-[[functions]]
-path = "crates/adventuresim-core/src/autoresolve.rs"
-item = "resolve_battle"
-ceiling = 103
-
-[[functions]]
 path = "crates/adventuresim-core/src/bestiary.rs"
 item = "compile_profile"
 ceiling = 210

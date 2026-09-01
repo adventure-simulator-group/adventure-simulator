@@ -1,4 +1,7 @@
-use adventuresim_core::{body::BodyPart, combat::CombatResolutionParameters};
+use adventuresim_core::{
+    body::BodyPart,
+    combat::{AutoresolveParameters, CombatResolutionParameters},
+};
 use bevy::prelude::Resource;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -15,13 +18,14 @@ pub use runtime::{
     runtime_animation_config, runtime_combat_presentation_config, runtime_melee_authority_config,
 };
 
-pub const TACTICAL_COMBAT_CONFIG_SCHEMA_VERSION: u16 = 4;
+pub const TACTICAL_COMBAT_CONFIG_SCHEMA_VERSION: u16 = 5;
 
 #[derive(Clone, Debug, PartialEq, Resource, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TacticalCombatConfig {
     pub schema_version: u16,
     pub resolution: CombatResolutionParameters,
+    pub autoresolve: AutoresolveParameters,
     pub realtime_authority: RealtimeAuthorityConfig,
     pub movement: TacticalMovementConfig,
     pub ai: TacticalAiConfig,
@@ -518,6 +522,7 @@ impl TacticalCombatConfig {
         validate_schema_version(self.schema_version)?;
         let finite_nonnegative = |value: f32| value.is_finite() && value >= 0.0;
         self.resolution.validate()?;
+        self.autoresolve.validate()?;
         let authority = &self.realtime_authority;
         let authority_values = [
             authority.defense.reflex_window_seconds,
@@ -1035,6 +1040,7 @@ impl Default for TacticalCombatConfig {
         Self {
             schema_version: TACTICAL_COMBAT_CONFIG_SCHEMA_VERSION,
             resolution: adventuresim_core::combat::EMBEDDED_COMBAT_RESOLUTION_PARAMETERS,
+            autoresolve: adventuresim_core::combat::EMBEDDED_AUTORESOLVE_PARAMETERS,
             realtime_authority: RealtimeAuthorityConfig {
                 defense: DefenseAuthorityConfig {
                     reflex_window_seconds: 0.5,
@@ -1426,6 +1432,18 @@ mod tests {
 
         let mut config = TacticalCombatConfig::default();
         config.resolution.stagger_resistance_joules_per_kg = f32::INFINITY;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn invalid_autoresolve_parameters_are_rejected() {
+        let mut config = TacticalCombatConfig::default();
+        config.autoresolve.minimum_hit_precision = 1.1;
+        assert!(config.validate().is_err());
+
+        let mut config = TacticalCombatConfig::default();
+        config.autoresolve.minimum_hit_precision = 0.9;
+        config.autoresolve.maximum_hit_precision = 0.8;
         assert!(config.validate().is_err());
     }
 
