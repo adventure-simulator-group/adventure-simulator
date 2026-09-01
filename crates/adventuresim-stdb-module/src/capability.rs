@@ -562,6 +562,22 @@ fn runtime_body_part(part: EquipmentBodyPart) -> BodyPart {
 }
 
 fn combat_weapon(item: &Item) -> CombatWeapon {
+    let definition = adventuresim_core::item_catalog::definition(&item.id).unwrap_or_else(|| {
+        panic!(
+            "equipped weapon {} is absent from the authored catalog",
+            item.id
+        )
+    });
+    let equipment = definition.equipment.as_ref().unwrap_or_else(|| {
+        panic!(
+            "equipped weapon {} has no authored equipment geometry",
+            item.id
+        )
+    });
+    let grip_to_tip_m = equipment.physical.grip_to_tip_m;
+    let [striking_width_m, total_length_m, striking_depth_m] = equipment.physical.dimensions_m;
+    let striking_head_length_m = striking_width_m.max(striking_depth_m);
+
     CombatWeapon {
         skills: item.weapon_skills,
         melee: item.melee,
@@ -577,6 +593,17 @@ fn combat_weapon(item: &Item) -> CombatWeapon {
         moment_of_inertia_kg_m2: item.moment_of_inertia_kg_m2,
         penetration: item.penetration,
         melee_reach: if item.melee { item.reach } else { 0.0 },
+        grip_to_tip_m,
+        total_length_m,
+        striking_head_length_m,
+        distal_headed: adventuresim_core::combat::has_distal_striking_surface(
+            grip_to_tip_m,
+            striking_head_length_m,
+            equipment.material,
+            equipment.striking_material,
+        ),
+        body_material: equipment.material,
+        striking_material: equipment.striking_material,
         ranged_range: if item.ranged { item.reach } else { 0.0 },
         attack_interval_seconds: weapon_attack_interval(item),
         precise: item.precise,
@@ -724,8 +751,6 @@ pub(crate) fn load_combatant(
         .ok_or("Character condition not found")?;
     let equipment = StrategicEquipment::load(ctx, character_id);
     let combat_equipment = equipment.combat_equipment();
-    let initial_ammunition = combat_equipment.ammunition;
-
     let (starting_incapacitation, starting_blood_fraction) = derive_combat_starting_condition(
         strategic_incapacitation,
         strategic_pain,
@@ -734,7 +759,7 @@ pub(crate) fn load_combatant(
         condition.maximum_blood_ml,
     );
 
-    Ok(Combatant {
+    Ok(Combatant::from_strategic_state(CombatantStrategicState {
         id: character_id,
         attributes: attributes.into(),
         body: CombatBody {
@@ -783,13 +808,36 @@ pub(crate) fn load_combatant(
         },
         starting_incapacitation,
         starting_blood_fraction,
-        initial_ammunition,
-        ..Combatant::new(character_id)
-    })
+    }))
 }
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    #[test]
+    fn combat_weapon_preserves_authored_contact_geometry_and_materials() {
+        let item = Item {
+            id: "halberd".to_owned(),
+            melee: true,
+            ..Item::default()
+        };
+
+        let weapon = combat_weapon(&item);
+        let definition = adventuresim_core::item_catalog::definition(&item.id).unwrap();
+        let equipment = definition.equipment.as_ref().unwrap();
+
+        assert_eq!(weapon.grip_to_tip_m, equipment.physical.grip_to_tip_m);
+        assert_eq!(weapon.total_length_m, equipment.physical.dimensions_m[1]);
+        assert_eq!(
+            weapon.striking_head_length_m,
+            equipment.physical.dimensions_m[0].max(equipment.physical.dimensions_m[2])
+        );
+        assert!(weapon.distal_headed);
+        assert_eq!(weapon.body_material, equipment.material);
+        assert_eq!(weapon.striking_material, equipment.striking_material);
+    }
+
     #[test]
     fn water_burden_comes_only_from_physical_containers() {
         let source = crate::production_source(include_str!("capability.rs"));

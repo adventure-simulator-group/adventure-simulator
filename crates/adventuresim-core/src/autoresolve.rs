@@ -222,6 +222,23 @@ pub struct Combatant {
     pub ranged_attack_progress: f32,
 }
 
+/// Durable combat facts projected into a fresh autoresolve participant.
+///
+/// Duel timing, movement, wounds, and other transient state are deliberately
+/// initialized by [`Combatant::from_strategic_state`] rather than exposed to
+/// strategic persistence adapters.
+#[derive(Clone, Debug)]
+pub struct CombatantStrategicState {
+    pub id: u64,
+    pub attributes: PlayerAttributeValues,
+    pub body: CombatBody,
+    pub essentials: CombatEssentials,
+    pub equipment: CombatEquipment,
+    pub skills: CombatSkills,
+    pub starting_incapacitation: f32,
+    pub starting_blood_fraction: f32,
+}
+
 impl Combatant {
     pub fn new(id: u64) -> Self {
         Self {
@@ -260,6 +277,20 @@ impl Combatant {
             initial_ammunition: 0,
             ranged_attack_progress: 0.0,
         }
+    }
+
+    pub fn from_strategic_state(state: CombatantStrategicState) -> Self {
+        let initial_ammunition = state.equipment.ammunition;
+        let mut combatant = Self::new(state.id);
+        combatant.attributes = state.attributes;
+        combatant.body = state.body;
+        combatant.essentials = state.essentials;
+        combatant.equipment = state.equipment;
+        combatant.skills = state.skills;
+        combatant.starting_incapacitation = state.starting_incapacitation;
+        combatant.starting_blood_fraction = state.starting_blood_fraction;
+        combatant.initial_ammunition = initial_ammunition;
+        combatant
     }
 
     fn view_with_equipment<'a>(
@@ -2248,6 +2279,36 @@ mod tests {
 
     fn autoresolve_parameters() -> crate::combat::AutoresolveParameters {
         crate::combat::EMBEDDED_AUTORESOLVE_PARAMETERS
+    }
+
+    #[test]
+    fn strategic_state_constructs_a_fresh_combatant_without_exposing_duel_state() {
+        let equipment = CombatEquipment {
+            ammunition: 7,
+            ..CombatEquipment::default()
+        };
+        let combatant = Combatant::from_strategic_state(CombatantStrategicState {
+            id: 42,
+            attributes: PlayerAttributeValues {
+                endurance: 3.5,
+                ..PlayerAttributeValues::default()
+            },
+            body: CombatBody::default(),
+            essentials: CombatEssentials::default(),
+            equipment,
+            skills: CombatSkills::default(),
+            starting_incapacitation: 0.2,
+            starting_blood_fraction: 0.85,
+        });
+
+        assert_eq!(combatant.id, 42);
+        assert_eq!(combatant.attributes.endurance, 3.5);
+        assert_eq!(combatant.starting_incapacitation, 0.2);
+        assert_eq!(combatant.starting_blood_fraction, 0.85);
+        assert_eq!(combatant.initial_ammunition, 7);
+        assert_eq!(combatant.melee_engagement_target, None);
+        assert_eq!(combatant.melee_attack_started_at_seconds, None);
+        assert!(combatant.wounds.is_empty());
     }
 
     fn fighter(id: u64, skill: f32, ranged: bool) -> Combatant {
