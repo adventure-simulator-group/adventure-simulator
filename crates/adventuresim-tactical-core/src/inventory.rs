@@ -167,6 +167,7 @@ pub enum TacticalEquipmentAnchor {
 pub struct TacticalEquipmentPhysical {
     pub dimensions_m: Vec3,
     pub grip_to_tip_m: f32,
+    pub striking_head_length_m: f32,
     pub anchor_offset_m: Vec3,
 }
 
@@ -200,6 +201,8 @@ impl TacticalEquipmentPhysical {
             && self.dimensions_m.cmpgt(Vec3::ZERO).all()
             && self.grip_to_tip_m.is_finite()
             && self.grip_to_tip_m >= 0.0
+            && self.striking_head_length_m.is_finite()
+            && (0.0..=self.dimensions_m.y).contains(&self.striking_head_length_m)
             && self.anchor_offset_m.is_finite()
     }
 }
@@ -510,9 +513,7 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
     fn weapon_striking_head_length(&self) -> f32 {
         self.equipped_weapon()
             .and_then(|item| item.physical)
-            .map_or(0.0, |physical| {
-                physical.dimensions_m.x.max(physical.dimensions_m.z)
-            })
+            .map_or(0.0, |physical| physical.striking_head_length_m)
     }
 
     fn weapon_body_material(&self) -> Option<EquipmentMaterial> {

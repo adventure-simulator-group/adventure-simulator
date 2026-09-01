@@ -12,8 +12,10 @@ use crate::{
 use std::collections::{BTreeMap, BTreeSet};
 
 mod armor;
+mod parametric_weapon;
 
 pub use armor::*;
+pub use parametric_weapon::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct InputAddressMapping {
@@ -799,6 +801,53 @@ mod tests {
         assert!(
             high_inertia.preparation_secs + high_inertia.recovery_secs
                 > low_inertia.preparation_secs + low_inertia.recovery_secs
+        );
+    }
+
+    #[test]
+    fn instance_geometry_preserves_attack_allowance_and_tracks_recipe_length() {
+        let short =
+            ParametricWeaponCombatGeometry::new(2.0, 2.0, 1.8, 0.25, 2.5, 0.46, 2.0, 1.8).unwrap();
+        let long =
+            ParametricWeaponCombatGeometry::new(2.2, 2.3, 2.1, 0.25, 3.4, 0.44, 2.0, 1.8).unwrap();
+
+        assert!((short.melee_reach_m() - 2.0).abs() < 1.0e-6);
+        assert!((long.melee_reach_m() - 2.3).abs() < 1.0e-6);
+        assert!((long.melee_reach_m() - short.melee_reach_m() - 0.3).abs() < 1.0e-6);
+        assert!(long.moment_of_inertia_kg_m2 > short.moment_of_inertia_kg_m2);
+
+        let preferred = |geometry: ParametricWeaponCombatGeometry| {
+            crate::combat::preferred_melee_striking_measure(
+                geometry.melee_reach_m(),
+                geometry.grip_to_tip_m,
+                geometry.striking_head_length_m,
+                true,
+                0.7,
+            )
+        };
+        assert!(preferred(long) > preferred(short));
+
+        let contact = |geometry: ParametricWeaponCombatGeometry| {
+            crate::combat::resolve_melee_contact_at_time(crate::combat::MeleeContactAtTimeFacts {
+                scheduled_measure_metres: 2.1,
+                actual_measure_metres: 2.1,
+                effective_reach_metres: geometry.melee_reach_m(),
+                grip_to_tip_metres: geometry.grip_to_tip_m,
+                total_length_metres: geometry.total_length_m,
+                striking_head_length_metres: geometry.striking_head_length_m,
+                distal_headed: true,
+                attack_style: MeleeAttackStyle::Swing,
+                body_material: Some(crate::item_catalog_schema::EquipmentMaterial::Hardwood),
+                striking_material: Some(crate::item_catalog_schema::EquipmentMaterial::RoughSteel),
+            })
+        };
+        assert_eq!(
+            contact(short).classification,
+            crate::combat::MeleeContactClassification::InvalidatedMiss
+        );
+        assert_eq!(
+            contact(long).classification,
+            crate::combat::MeleeContactClassification::IntendedSurface
         );
     }
 

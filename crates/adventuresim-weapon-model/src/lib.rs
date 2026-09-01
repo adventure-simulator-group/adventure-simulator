@@ -3,6 +3,7 @@
 mod catalog;
 mod codec;
 mod derive;
+mod derived_properties;
 mod design;
 mod editor;
 mod hash;
@@ -16,6 +17,7 @@ pub use catalog::{
 };
 pub use codec::{CodecError, decode, decode_holder, encode, encode_holder};
 pub use derive::{derive_holder_properties, derive_material_masses, derive_properties};
+pub use derived_properties::{DerivedMaterialMass, DerivedProperties};
 pub use design::*;
 pub use editor::{NumericEditorField, numeric_editor_fields};
 pub use hash::{DesignHash, design_hash, holder_design_hash};

@@ -271,6 +271,7 @@ dependencies = [
  "adventuresim-stdb-client",
  "adventuresim-tactical-core",
  "adventuresim-tactical-netcode",
+ "adventuresim-weapon-model",
  "adventuresim-world-schema",
  "bevy",
  "clap",

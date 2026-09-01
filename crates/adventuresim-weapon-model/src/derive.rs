@@ -61,6 +61,7 @@ pub fn derive_holder_properties(
         mass_kg,
         length_m,
         grip_to_tip_m: 0.0,
+        striking_head_length_m: 0.0,
         center_of_mass_from_grip_m: 0.0,
         moment_of_inertia_kg_m2: 0.0,
         balance: 1.0,
@@ -265,6 +266,8 @@ pub fn derive_properties(design: &WeaponDesign) -> Result<DerivedProperties, Vec
     let mut minimum = f32::INFINITY;
     let mut maximum = f32::NEG_INFINITY;
     let mut grip = 0.0;
+    let mut head_minimum = f32::INFINITY;
+    let mut head_maximum = f32::NEG_INFINITY;
     let mut mass = 0.0;
     let mut first_moment = 0.0;
     let mut components = Vec::with_capacity(design.components.len());
@@ -275,6 +278,10 @@ pub fn derive_properties(design: &WeaponDesign) -> Result<DerivedProperties, Vec
         maximum = maximum.max(top);
         if component.role == ComponentRole::Grip {
             grip = (origin + top) * 0.5;
+        }
+        if component.role == ComponentRole::Head {
+            head_minimum = head_minimum.min(origin);
+            head_maximum = head_maximum.max(top);
         }
         let component_mass = volume(&component.shape) * component.material.density_kg_m3();
         let center = (origin + top) * 0.5;
@@ -298,6 +305,11 @@ pub fn derive_properties(design: &WeaponDesign) -> Result<DerivedProperties, Vec
         mass_kg: mass,
         length_m: maximum - minimum,
         grip_to_tip_m: grip_to_tip,
+        striking_head_length_m: if head_minimum.is_finite() {
+            head_maximum - head_minimum
+        } else {
+            0.0
+        },
         center_of_mass_from_grip_m: center_of_mass - grip,
         moment_of_inertia_kg_m2: moment_of_inertia,
         balance: (moment_of_inertia / mass).sqrt() / grip_to_tip,
@@ -348,5 +360,43 @@ mod tests {
                 .sum::<f32>();
             assert!((total - by_material).abs() < 0.000_01, "{catalog_id}");
         }
+    }
+
+    #[test]
+    fn per_instance_polearm_length_changes_mesh_and_combat_geometry_together() {
+        let short = crate::default_design("halberd").unwrap();
+        let mut long = short.clone();
+        let shaft = long
+            .components
+            .iter_mut()
+            .find(|component| component.id == "shaft")
+            .expect("halberd shaft");
+        let ComponentShape::Cylinder(shaft) = &mut shaft.shape else {
+            panic!("halberd shaft must be cylindrical");
+        };
+        shaft.length.0 += 300;
+
+        let short_properties = derive_properties(&short).unwrap();
+        let long_properties = derive_properties(&long).unwrap();
+        let short_mesh = crate::generate(&short).unwrap();
+        let long_mesh = crate::generate(&long).unwrap();
+
+        assert!(
+            long_properties.length_m > short_properties.length_m + 0.20,
+            "short={short_properties:?} long={long_properties:?}"
+        );
+        assert!(
+            long_properties.grip_to_tip_m > short_properties.grip_to_tip_m + 0.10,
+            "short={short_properties:?} long={long_properties:?}"
+        );
+        assert!(long_properties.mass_kg > short_properties.mass_kg);
+        assert!(long_properties.moment_of_inertia_kg_m2 > short_properties.moment_of_inertia_kg_m2);
+        assert!(
+            (long_properties.striking_head_length_m - short_properties.striking_head_length_m)
+                .abs()
+                < 1.0e-6
+        );
+        assert!((long_mesh.derived.length_m - long_properties.length_m).abs() < f32::EPSILON);
+        assert!(long_mesh.bounds.max[1] > short_mesh.bounds.max[1] + 0.20);
     }
 }

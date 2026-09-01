@@ -16,7 +16,9 @@ use crate::{
 };
 
 mod armor;
+mod equipment_projection;
 use armor::*;
+use equipment_projection::combat_weapon;
 
 #[derive(Clone, Debug, PartialEq)]
 #[table(accessor = character_capability)]
@@ -262,6 +264,7 @@ pub(crate) struct StrategicEquipment {
     weapon_side: Option<BodySide>,
     melee_weapon: Option<Item>,
     melee_weapon_inventory_id: Option<u64>,
+    melee_weapon_geometry: Option<adventuresim_core::equipment::ParametricWeaponCombatGeometry>,
     melee_weapon_side: Option<BodySide>,
     ranged_weapon: Option<Item>,
     ranged_weapon_inventory_id: Option<u64>,
@@ -335,6 +338,18 @@ impl StrategicEquipment {
                     .is_some_and(|item| item.kind == PersistedItemKind::Weapon && item.melee)
             })
             .and_then(|index| hand_inventory_ids[index]);
+        let melee_weapon_geometry = melee_weapon
+            .as_ref()
+            .zip(melee_weapon_inventory_id)
+            .and_then(|(item, inventory_id)| {
+                crate::weapon_instance::combat_geometry(ctx, inventory_id, &item.id, item.reach)
+            });
+        if let Some(item) = &melee_weapon
+            && adventuresim_weapon_model::default_design(&item.id).is_some()
+            && melee_weapon_geometry.is_none()
+        {
+            panic!("parametric weapon {} has no valid physical recipe", item.id);
+        }
         let ranged_weapon = hands
             .iter()
             .flatten()
@@ -431,7 +446,20 @@ impl StrategicEquipment {
                     let effective_quantity =
                         crate::inventory_amount::personal_fraction(ctx, inventory.id)
                             .map_or(inventory.quantity as f32, |fraction| fraction.as_unit_f32());
-                    item.weight * effective_quantity
+                    let unit_mass = if adventuresim_weapon_model::default_design(&item.id).is_some()
+                    {
+                        crate::weapon_instance::combat_geometry(
+                            ctx,
+                            inventory.id,
+                            &item.id,
+                            item.reach,
+                        )
+                        .expect("parametric inventory weapon has valid physical recipe")
+                        .mass_kg
+                    } else {
+                        item.weight
+                    };
+                    unit_mass * effective_quantity
                 })
             })
             .sum();
@@ -446,6 +474,7 @@ impl StrategicEquipment {
             weapon_side,
             melee_weapon,
             melee_weapon_inventory_id,
+            melee_weapon_geometry,
             melee_weapon_side,
             ranged_weapon,
             ranged_weapon_inventory_id,
@@ -515,9 +544,18 @@ impl StrategicEquipment {
             };
         }
         CombatEquipment {
-            weapon: self.weapon.as_ref().map(combat_weapon),
-            melee_weapon: self.melee_weapon.as_ref().map(combat_weapon),
-            ranged_weapon: self.ranged_weapon.as_ref().map(combat_weapon),
+            weapon: self
+                .weapon
+                .as_ref()
+                .map(|item| combat_weapon(item, self.melee_weapon_geometry.filter(|_| item.melee))),
+            melee_weapon: self
+                .melee_weapon
+                .as_ref()
+                .map(|item| combat_weapon(item, self.melee_weapon_geometry)),
+            ranged_weapon: self
+                .ranged_weapon
+                .as_ref()
+                .map(|item| combat_weapon(item, None)),
             melee_weapon_id: self.melee_weapon_inventory_id,
             ranged_weapon_id: self.ranged_weapon_inventory_id,
             ranged_projectile_kind: self.ranged_weapon.as_ref().map(|weapon| {
@@ -558,70 +596,6 @@ fn runtime_body_part(part: EquipmentBodyPart) -> BodyPart {
         E::Chest => BodyPart::Chest,
         E::Stomach => BodyPart::Stomach,
         E::Head => BodyPart::Head,
-    }
-}
-
-fn combat_weapon(item: &Item) -> CombatWeapon {
-    let definition = adventuresim_core::item_catalog::definition(&item.id).unwrap_or_else(|| {
-        panic!(
-            "equipped weapon {} is absent from the authored catalog",
-            item.id
-        )
-    });
-    let equipment = definition.equipment.as_ref().unwrap_or_else(|| {
-        panic!(
-            "equipped weapon {} has no authored equipment geometry",
-            item.id
-        )
-    });
-    let grip_to_tip_m = equipment.physical.grip_to_tip_m;
-    let [striking_width_m, total_length_m, striking_depth_m] = equipment.physical.dimensions_m;
-    let striking_head_length_m = striking_width_m.max(striking_depth_m);
-
-    CombatWeapon {
-        skills: item.weapon_skills,
-        melee: item.melee,
-        ranged: item.ranged,
-        blunt: item.blunt,
-        slash: item.slash,
-        pierce: item.pierce,
-        accuracy: item.accuracy,
-        swing_precision: item.swing_precision,
-        stab_precision: item.stab_precision,
-        preferred_melee_style: item.preferred_melee_style,
-        weight: item.weight,
-        moment_of_inertia_kg_m2: item.moment_of_inertia_kg_m2,
-        penetration: item.penetration,
-        melee_reach: if item.melee { item.reach } else { 0.0 },
-        grip_to_tip_m,
-        total_length_m,
-        striking_head_length_m,
-        distal_headed: adventuresim_core::combat::has_distal_striking_surface(
-            grip_to_tip_m,
-            striking_head_length_m,
-            equipment.material,
-            equipment.striking_material,
-        ),
-        body_material: equipment.material,
-        striking_material: equipment.striking_material,
-        ranged_range: if item.ranged { item.reach } else { 0.0 },
-        attack_interval_seconds: weapon_attack_interval(item),
-        precise: item.precise,
-        balance: item.balance,
-        ranged_force_joules: 40.0 * item.weight.max(0.5),
-    }
-}
-
-fn weapon_attack_interval(item: &Item) -> f32 {
-    if item.melee {
-        let timing = adventuresim_core::equipment::melee_attack_timing(
-            item.preferred_melee_style,
-            item.moment_of_inertia_kg_m2,
-            false,
-        );
-        timing.preparation_secs + timing.recovery_secs
-    } else {
-        (0.4 + item.weight.max(0.1) * 0.15 + 0.45).clamp(0.35, 3.0)
     }
 }
 
@@ -823,7 +797,7 @@ mod tests {
             ..Item::default()
         };
 
-        let weapon = combat_weapon(&item);
+        let weapon = combat_weapon(&item, None);
         let definition = adventuresim_core::item_catalog::definition(&item.id).unwrap();
         let equipment = definition.equipment.as_ref().unwrap();
 
@@ -836,6 +810,33 @@ mod tests {
         assert!(weapon.distal_headed);
         assert_eq!(weapon.body_material, equipment.material);
         assert_eq!(weapon.striking_material, equipment.striking_material);
+    }
+
+    #[test]
+    fn autoresolve_weapon_uses_per_instance_reach_mass_and_inertia() {
+        let item = Item {
+            id: "halberd".to_owned(),
+            melee: true,
+            reach: 2.0,
+            moment_of_inertia_kg_m2: 4.0,
+            ..Item::default()
+        };
+        let short = adventuresim_core::equipment::ParametricWeaponCombatGeometry::new(
+            2.1, 1.9, 1.7, 0.25, 3.2, 0.52, 2.0, 1.9,
+        )
+        .unwrap();
+        let long = adventuresim_core::equipment::ParametricWeaponCombatGeometry::new(
+            2.5, 2.3, 2.1, 0.25, 5.1, 0.49, 2.0, 1.9,
+        )
+        .unwrap();
+        let short = combat_weapon(&item, Some(short));
+        let long = combat_weapon(&item, Some(long));
+
+        assert!(long.melee_reach > short.melee_reach);
+        assert!(long.weight > short.weight);
+        assert!(long.moment_of_inertia_kg_m2 > short.moment_of_inertia_kg_m2);
+        assert!(long.attack_interval_seconds > short.attack_interval_seconds);
+        assert_eq!(long.striking_head_length_m, short.striking_head_length_m);
     }
 
     #[test]
