@@ -3,9 +3,9 @@ use std::{f32, ops::Mul};
 use serde::{Deserialize, Serialize};
 
 mod config;
-mod targeting;
+pub(crate) mod targeting;
 
-pub use config::{CombatResolutionParameters, EMBEDDED_COMBAT_RESOLUTION_PARAMETERS};
+pub use config::*;
 pub use targeting::{
     MeleeContactLocation, melee_attack_accuracy_by_parts, melee_attack_value_by_parts,
     melee_contact_location, whole_body_armor_coverage,

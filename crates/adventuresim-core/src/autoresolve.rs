@@ -4,12 +4,14 @@ use crate::prelude::*;
 use adventuresim_world_schema::{BestiaryCategory, BestiaryHours};
 use fabelgeist_determinism::SplitMix64;
 
-const MAX_COMBAT_ROUNDS: usize = 256;
-const MAX_RANGED_ATTACKS_PER_PHASE: usize = 64;
-const FORMATION_SPACING_METERS: f32 = 2.0;
-const COMBAT_ROUND_SECONDS: f32 = 1.0;
-const REFERENCE_MELEE_ATTACK_SECONDS: f32 = 1.0;
-const MIN_MOVEMENT_SPEED_METERS_PER_SECOND: f32 = 0.25;
+mod power;
+
+pub use power::autoresolve_combat_power;
+#[cfg(test)]
+use power::finite_log_component;
+
+const AUTORESOLVE_MAX_COMBAT_ROUNDS: usize = 256;
+const AUTORESOLVE_MAX_RANGED_ATTACKS_PER_PHASE: usize = 64;
 #[derive(Clone, Debug)]
 pub struct CombatBody {
     pub health: [f32; 7],
@@ -433,8 +435,8 @@ impl Combatant {
         self.incapacitation() >= 1.0
     }
 
-    fn recover_balance(&mut self) {
-        self.imbalance = recover_combat_imbalance(self.imbalance, COMBAT_ROUND_SECONDS);
+    fn recover_balance(&mut self, elapsed_seconds: f32) {
+        self.imbalance = recover_combat_imbalance(self.imbalance, elapsed_seconds);
     }
 
     fn can_attack_ranged(&self) -> bool {
@@ -445,7 +447,7 @@ impl Combatant {
         self.equipment.melee_weapon.is_some()
     }
 
-    fn movement_speed_meters_per_second(&self) -> f32 {
+    fn movement_speed_meters_per_second(&self, minimum_speed: f32) -> f32 {
         let leg_agility = self.attributes.limb_attr_by_weight_by_parts(
             LimbAttribute::Agility,
             &self.body,
@@ -458,148 +460,8 @@ impl Combatant {
         let fatigue = self
             .essentials
             .fatigue_penalty_by_parts(&self.attributes, &self.body);
-        ((1.0 + leg_agility) * armor * encumbrance * fatigue)
-            .max(MIN_MOVEMENT_SPEED_METERS_PER_SECOND)
+        ((1.0 + leg_agility) * armor * encumbrance * fatigue).max(minimum_speed)
     }
-}
-
-/// Observer-safe aggregate strength derived from the same complete combatant
-/// snapshot consumed by autoresolve. This intentionally includes equipped
-/// weapon accuracy, trained weapon/dodge/block/balance/will checks, armor,
-/// current limb health, fatigue/encumbrance, and strategic incapacitation.
-/// It is a conservative decision aid, not an outcome oracle.
-fn finite_log_component(value: f32, weight: f64) -> f64 {
-    let bounded = if value.is_nan() || value <= 0.0 {
-        0.0
-    } else if value.is_infinite() {
-        f32::MAX
-    } else {
-        value
-    };
-    f64::from(bounded).ln_1p() * weight
-}
-
-pub fn autoresolve_combat_power(combatant: &Combatant) -> u64 {
-    const HEALTH_POWER_SCALE: f64 = 1_000_000.0;
-    let attack_check = |equipment: &CombatEquipment, weights: LimbWeights| {
-        equipment
-            .weapon_skill_distribution()
-            .weighted_check(|skill| {
-                combatant.skills.skill_check_by_parts(
-                    skill,
-                    &combatant.attributes,
-                    &combatant.body,
-                    &combatant.essentials,
-                    equipment,
-                    weights,
-                )
-            })
-            * equipment.weapon_accuracy().max(0.0)
-    };
-    let melee = combatant.equipment.for_melee();
-    let ranged = combatant.equipment.for_ranged();
-    let arm_strength = combatant.attributes.limb_attr_by_weight_by_parts(
-        LimbAttribute::Strength,
-        &combatant.body,
-        LimbWeights::both_arms(),
-    );
-    let weapon_output = |weapon: CombatWeapon, check: f32| {
-        let tempo = weapon.attack_interval_seconds.max(0.1).sqrt().recip();
-        let contact = if weapon.ranged {
-            weapon.ranged_force_joules.max(0.0).sqrt() / 5.0
-        } else {
-            let striking_mass = weapon.weight.max(0.0)
-                * (1.0 + weapon.balance.max(0.0) * weapon.melee_reach.max(0.0));
-            (arm_strength.max(0.0) * (1.0 + striking_mass)).sqrt()
-        };
-        let penetration = if weapon.slash || weapon.pierce {
-            1.0 + weapon.penetration.max(0.0).sqrt() * 0.25
-        } else {
-            1.0
-        };
-        let reach = if weapon.melee {
-            1.0 + weapon.melee_reach.max(0.0).sqrt() * 0.15
-        } else {
-            1.0
-        };
-        check * tempo * contact.max(0.25) * penetration * reach
-    };
-    let melee_check = combatant.equipment.melee_weapon.map_or(0.0, |weapon| {
-        weapon_output(weapon, attack_check(&melee, LimbWeights::both_arms()))
-    });
-    let ranged_check = combatant
-        .equipment
-        .ranged_weapon
-        .filter(|_| combatant.equipment.ammunition > 0)
-        .map_or(0.0, |weapon| {
-            weapon_output(weapon, attack_check(&ranged, LimbWeights::both_arms()))
-        });
-    let skill_check = |skill, weights| {
-        combatant.skills.skill_check_by_parts(
-            skill,
-            &combatant.attributes,
-            &combatant.body,
-            &combatant.essentials,
-            &combatant.equipment,
-            weights,
-        )
-    };
-    let dodge = skill_check(Skill::Dodge, LimbWeights::all_equal());
-    let block = skill_check(Skill::Block, LimbWeights::all_equal())
-        * (1.0 + combatant.equipment.shield_block_bonus.max(0.0));
-    let balance = skill_check(Skill::Balance, LimbWeights::both_legs());
-    let will = skill_check(Skill::Will, LimbWeights::all_equal());
-    // Autoresolve chooses a concrete body region for every contact. Preserve
-    // that regional model here rather than flattening the equipment first.
-    let armor = BodyPart::FULL_BODY
-        .iter()
-        .map(|part| {
-            let armor = combatant.equipment.armor[body_part_index(part)];
-            let covered = armor.coverage.clamp(0.0, 1.0);
-            let edge_resistance =
-                armor.resistance.max(0.0) * (1.0 - 0.5 * armor.flexibility.clamp(0.0, 1.0));
-            (edge_resistance + armor.padding.max(0.0)) * covered
-        })
-        .sum::<f32>()
-        / 7.0;
-    let health =
-        combatant.body.health.iter().copied().sum::<f32>() / combatant.body.health.len() as f32;
-    let ranged_opening = combatant.equipment.ranged_weapon.map_or(0.0, |weapon| {
-        if combatant.equipment.ammunition == 0 {
-            0.0
-        } else {
-            (weapon.ranged_range.max(0.0) / weapon.attack_interval_seconds.max(0.1))
-                .sqrt()
-                .min(5.0)
-        }
-    });
-    // Skill checks can span many orders of magnitude. Compress each positive
-    // component before combining them so one huge term cannot saturate the
-    // aggregate or erase monotonic equipment differences in f32 precision.
-    let raw = finite_log_component(melee_check.max(ranged_check), 2_000_000.0)
-        + finite_log_component(dodge, 900_000.0)
-        + finite_log_component(block, 900_000.0)
-        + finite_log_component(balance, 500_000.0)
-        + finite_log_component(will, 500_000.0)
-        + finite_log_component(combatant.attributes.endurance, 500_000.0)
-        // Armor is a complete defensive channel, not a small accessory to
-        // mobility-dependent skill checks. Its weight is comparable to the
-        // combined physical-performance channel so meaningful protection can
-        // outweigh (but does not erase) its range-of-motion penalties above.
-        + finite_log_component(armor, 4_000_000.0)
-        + if health.is_finite() {
-            f64::from(health.clamp(0.0, 1.0)) * HEALTH_POWER_SCALE
-        } else {
-            0.0
-        }
-        + finite_log_component(ranged_opening, 500_000.0);
-    let incapacitation = combatant.incapacitation();
-    let readiness = if incapacitation.is_finite() {
-        f64::from((1.0 - incapacitation).clamp(0.0, 1.0))
-    } else {
-        0.0
-    };
-    (raw * readiness).round().clamp(0.0, u64::MAX as f64) as u64
 }
 
 /// The quest policy's conservative 5:4 party-to-opposition margin. Overflow
@@ -987,6 +849,7 @@ pub fn resolve_battle(
     seed: u64,
     opening: BattleOpening,
 ) -> BattleOutcome {
+    let parameters = crate::combat::EMBEDDED_AUTORESOLVE_PARAMETERS;
     let mut random = SplitMix64::new(seed);
     let mut recorder = BattleRecorder::default();
     let mut victor = BattleVictor::Stalemate;
@@ -996,16 +859,32 @@ pub fn resolve_battle(
     // stealth again here: exactly one authoritative side receives the opener.
     match opening {
         BattleOpening::Normal => {}
-        BattleOpening::AlliesSurprise => {
-            take_side_turns(&mut allies, &mut enemies, 0, &mut random, &mut recorder)
-        }
-        BattleOpening::EnemiesSurprise => {
-            take_side_turns(&mut enemies, &mut allies, 0, &mut random, &mut recorder)
-        }
+        BattleOpening::AlliesSurprise => take_side_turns(
+            &mut allies,
+            &mut enemies,
+            0,
+            &mut random,
+            &mut recorder,
+            parameters,
+        ),
+        BattleOpening::EnemiesSurprise => take_side_turns(
+            &mut enemies,
+            &mut allies,
+            0,
+            &mut random,
+            &mut recorder,
+            parameters,
+        ),
     }
-    resolve_opening_volleys(&mut allies, &mut enemies, &mut random, &mut recorder);
+    resolve_opening_volleys(
+        &mut allies,
+        &mut enemies,
+        &mut random,
+        &mut recorder,
+        parameters,
+    );
 
-    for round in 0..MAX_COMBAT_ROUNDS {
+    for round in 0..AUTORESOLVE_MAX_COMBAT_ROUNDS {
         match (side_defeated(&allies), side_defeated(&enemies)) {
             (true, true) => break,
             (true, false) => {
@@ -1020,49 +899,14 @@ pub fn resolve_battle(
         }
         rounds = round + 1;
 
-        resolve_ranged_round(
+        resolve_battle_round(
             &mut allies,
             &mut enemies,
             round + 1,
             &mut random,
             &mut recorder,
+            parameters,
         );
-
-        if random.next_u64().is_multiple_of(2) {
-            take_side_turns(
-                &mut allies,
-                &mut enemies,
-                round + 1,
-                &mut random,
-                &mut recorder,
-            );
-            take_side_turns(
-                &mut enemies,
-                &mut allies,
-                round + 1,
-                &mut random,
-                &mut recorder,
-            );
-        } else {
-            take_side_turns(
-                &mut enemies,
-                &mut allies,
-                round + 1,
-                &mut random,
-                &mut recorder,
-            );
-            take_side_turns(
-                &mut allies,
-                &mut enemies,
-                round + 1,
-                &mut random,
-                &mut recorder,
-            );
-        }
-        allies
-            .iter_mut()
-            .chain(&mut enemies)
-            .for_each(Combatant::recover_balance);
     }
 
     if victor == BattleVictor::Stalemate {
@@ -1092,6 +936,28 @@ pub fn resolve_battle(
         summary: recorder.summary,
         log: recorder.log,
     }
+}
+
+fn resolve_battle_round(
+    allies: &mut [Combatant],
+    enemies: &mut [Combatant],
+    round: usize,
+    random: &mut SplitMix64,
+    recorder: &mut BattleRecorder,
+    parameters: crate::combat::AutoresolveParameters,
+) {
+    resolve_ranged_round(allies, enemies, round, random, recorder, parameters);
+    if random.next_u64().is_multiple_of(2) {
+        take_side_turns(allies, enemies, round, random, recorder, parameters);
+        take_side_turns(enemies, allies, round, random, recorder, parameters);
+    } else {
+        take_side_turns(enemies, allies, round, random, recorder, parameters);
+        take_side_turns(allies, enemies, round, random, recorder, parameters);
+    }
+    allies
+        .iter_mut()
+        .chain(enemies)
+        .for_each(|combatant| combatant.recover_balance(parameters.combat_round_seconds));
 }
 
 fn apply_pending_attacks(
@@ -1137,9 +1003,10 @@ fn resolve_opening_volleys(
     enemies: &mut [Combatant],
     random: &mut SplitMix64,
     recorder: &mut BattleRecorder,
+    parameters: crate::combat::AutoresolveParameters,
 ) {
-    let ally_plans = opening_volley_plans(allies, enemies);
-    let enemy_plans = opening_volley_plans(enemies, allies);
+    let ally_plans = opening_volley_plans(allies, enemies, parameters);
+    let enemy_plans = opening_volley_plans(enemies, allies, parameters);
     let ally_detour_targets: Vec<_> = active_melee_indices(enemies)
         .into_iter()
         .skip(active_melee_indices(allies).len())
@@ -1168,6 +1035,7 @@ fn resolve_opening_volleys(
                 step,
                 random,
                 recorder,
+                parameters,
             );
             take_opening_volley_step(
                 enemies,
@@ -1177,6 +1045,7 @@ fn resolve_opening_volleys(
                 step,
                 random,
                 recorder,
+                parameters,
             );
         } else {
             take_opening_volley_step(
@@ -1187,6 +1056,7 @@ fn resolve_opening_volleys(
                 step,
                 random,
                 recorder,
+                parameters,
             );
             take_opening_volley_step(
                 allies,
@@ -1196,6 +1066,7 @@ fn resolve_opening_volleys(
                 step,
                 random,
                 recorder,
+                parameters,
             );
         }
     }
@@ -1204,14 +1075,22 @@ fn resolve_opening_volleys(
 fn opening_volley_plans(
     ranged_side: &[Combatant],
     closing_side: &[Combatant],
+    parameters: crate::combat::AutoresolveParameters,
 ) -> Vec<OpeningVolleyPlan> {
     let screen_count = active_melee_indices(ranged_side).len();
     let closing_melee = active_melee_indices(closing_side);
     let closing_melee_count = closing_melee.len();
     let direct_closing_speed = closing_melee
         .iter()
-        .map(|index| closing_side[*index].movement_speed_meters_per_second())
-        .fold(MIN_MOVEMENT_SPEED_METERS_PER_SECOND, f32::max);
+        .map(|index| {
+            closing_side[*index].movement_speed_meters_per_second(
+                parameters.minimum_movement_speed_metres_per_second,
+            )
+        })
+        .fold(
+            parameters.minimum_movement_speed_metres_per_second,
+            f32::max,
+        );
     ranged_side
         .iter()
         .map(|attacker| {
@@ -1223,15 +1102,18 @@ fn opening_volley_plans(
             }
 
             let weapon = attacker.equipment.ranged_weapon.unwrap();
-            let interval = weapon.attack_interval_seconds.max(0.1);
+            let interval = weapon
+                .attack_interval_seconds
+                .max(parameters.minimum_attack_interval_seconds);
             let range = weapon.ranged_range.max(0.0);
             let direct_seconds = range / direct_closing_speed;
             let direct_attacks = (direct_seconds / interval)
                 .ceil()
-                .clamp(0.0, MAX_RANGED_ATTACKS_PER_PHASE as f32)
+                .clamp(0.0, AUTORESOLVE_MAX_RANGED_ATTACKS_PER_PHASE as f32)
                 as usize;
             let detour = if closing_melee_count > screen_count && screen_count > 0 {
-                let formation_radius = screen_count as f32 * FORMATION_SPACING_METERS * 0.5;
+                let formation_radius =
+                    screen_count as f32 * parameters.formation_spacing_metres * 0.5;
                 std::f32::consts::PI * formation_radius
             } else {
                 0.0
@@ -1239,20 +1121,28 @@ fn opening_volley_plans(
             let surplus_speed = closing_melee
                 .iter()
                 .skip(screen_count)
-                .map(|index| closing_side[*index].movement_speed_meters_per_second())
+                .map(|index| {
+                    closing_side[*index].movement_speed_meters_per_second(
+                        parameters.minimum_movement_speed_metres_per_second,
+                    )
+                })
                 .fold(direct_closing_speed, f32::max);
             let total_seconds = direct_seconds + detour / surplus_speed;
             OpeningVolleyPlan {
                 direct_attacks,
                 total_attacks: (total_seconds / interval)
                     .ceil()
-                    .clamp(0.0, MAX_RANGED_ATTACKS_PER_PHASE as f32)
+                    .clamp(0.0, AUTORESOLVE_MAX_RANGED_ATTACKS_PER_PHASE as f32)
                     as usize,
             }
         })
         .collect()
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "opening volleys carry two sides, their plan, deterministic state, and tuning"
+)]
 fn take_opening_volley_step(
     attackers: &mut [Combatant],
     plans: &[OpeningVolleyPlan],
@@ -1261,6 +1151,7 @@ fn take_opening_volley_step(
     step: usize,
     random: &mut SplitMix64,
     recorder: &mut BattleRecorder,
+    parameters: crate::combat::AutoresolveParameters,
 ) {
     for attacker_index in 0..attackers.len() {
         let plan = plans[attacker_index];
@@ -1288,12 +1179,13 @@ fn take_opening_volley_step(
             break;
         }
         let target_index = targets[random.index(targets.len())];
-        let part = random_body_part(random);
-        let result = optimal_ranged_exchange(
+        let part = crate::combat::targeting::body_part_from_contact_sample(random.unit_f32());
+        let result = autoresolve_optimal_ranged_exchange(
             &attackers[attacker_index],
             &defenders[target_index],
-            0.65 + random.unit_f32() * 0.35,
+            autoresolve_hit_precision(random, parameters),
             part,
+            parameters,
         );
         attackers[attacker_index].equipment.ammunition -= 1;
         let effect = apply_attack_result(
@@ -1325,9 +1217,10 @@ fn resolve_ranged_round(
     round: usize,
     random: &mut SplitMix64,
     recorder: &mut BattleRecorder,
+    parameters: crate::combat::AutoresolveParameters,
 ) {
-    let ally_attacks = plan_ranged_round(allies, enemies, round, random);
-    let enemy_attacks = plan_ranged_round(enemies, allies, round, random);
+    let ally_attacks = plan_ranged_round(allies, enemies, round, random, parameters);
+    let enemy_attacks = plan_ranged_round(enemies, allies, round, random, parameters);
     apply_pending_attacks(allies, enemies, &ally_attacks, recorder);
     apply_pending_attacks(enemies, allies, &enemy_attacks, recorder);
 }
@@ -1337,6 +1230,7 @@ fn plan_ranged_round(
     defenders: &[Combatant],
     round: usize,
     random: &mut SplitMix64,
+    parameters: crate::combat::AutoresolveParameters,
 ) -> Vec<PendingAttack> {
     let mut attacks = Vec::new();
     for (attacker_index, attacker) in attackers.iter_mut().enumerate() {
@@ -1348,8 +1242,8 @@ fn plan_ranged_round(
             .ranged_weapon
             .unwrap()
             .attack_interval_seconds
-            .max(0.1);
-        attacker.ranged_attack_progress += COMBAT_ROUND_SECONDS / interval;
+            .max(parameters.minimum_attack_interval_seconds);
+        attacker.ranged_attack_progress += parameters.combat_round_seconds / interval;
         let attack_count =
             (attacker.ranged_attack_progress.floor() as u32).min(attacker.equipment.ammunition);
         attacker.ranged_attack_progress -= attack_count as f32;
@@ -1360,12 +1254,13 @@ fn plan_ranged_round(
                 break;
             }
             let target_index = targets[random.index(targets.len())];
-            let part = random_body_part(random);
-            let result = optimal_ranged_exchange(
+            let part = crate::combat::targeting::body_part_from_contact_sample(random.unit_f32());
+            let result = autoresolve_optimal_ranged_exchange(
                 attacker,
                 &defenders[target_index],
-                0.65 + random.unit_f32() * 0.35,
+                autoresolve_hit_precision(random, parameters),
                 part,
+                parameters,
             );
             attacker.equipment.ammunition -= 1;
             attacks.push(PendingAttack {
@@ -1388,6 +1283,7 @@ fn take_side_turns(
     round: usize,
     random: &mut SplitMix64,
     recorder: &mut BattleRecorder,
+    parameters: crate::combat::AutoresolveParameters,
 ) {
     for attacker_index in 0..attackers.len() {
         if attackers[attacker_index].is_incapacitated() || side_defeated(defenders) {
@@ -1397,15 +1293,16 @@ fn take_side_turns(
         if mode != AttackMode::Melee || !attackers[attacker_index].can_attack_melee() {
             continue;
         }
-        let (target_index, flanking) = melee_assignment(attacker_index, attackers, defenders);
-        let part = random_body_part(random);
-        let hit_precision = 0.65 + random.unit_f32() * 0.35;
-        let result = optimal_melee_exchange(
+        let (target_index, flanking) =
+            melee_assignment(attacker_index, attackers, defenders, parameters);
+        let hit_precision = autoresolve_hit_precision(random, parameters);
+        let (result, part) = autoresolve_optimal_melee_exchange(
             &attackers[attacker_index],
             &defenders[target_index],
             hit_precision,
             flanking,
-            part,
+            random.unit_f32(),
+            parameters,
         );
         let effect = apply_attack_result(
             &mut attackers[attacker_index],
@@ -1433,6 +1330,7 @@ fn melee_assignment(
     attacker_index: usize,
     attackers: &[Combatant],
     defenders: &[Combatant],
+    parameters: crate::combat::AutoresolveParameters,
 ) -> (usize, f32) {
     let mut ordered_defenders = active_melee_indices(defenders);
     ordered_defenders.extend(active_ranged_indices(defenders));
@@ -1453,7 +1351,7 @@ fn melee_assignment(
         .saturating_sub(1);
     let target = ordered_defenders[melee_rank % ordered_defenders.len()];
     let flanking = if melee_rank >= ordered_defenders.len() {
-        0.5
+        parameters.outnumbered_flanking
     } else {
         0.0
     };
@@ -1540,22 +1438,33 @@ fn melee_exchange(
     defender: &Combatant,
     precision: f32,
     flanking: f32,
-    part: BodyPart,
+    contact_sample: f32,
     response: DefenderResponse,
-) -> AttackResult {
+) -> (AttackResult, BodyPart) {
     let attacker_equipment = attacker.equipment.for_melee();
     let attacker_view = attacker.view_with_equipment(&attacker_equipment);
-    attacker_view.resolve_melee_attack(
-        crate::combat::EMBEDDED_COMBAT_RESOLUTION_PARAMETERS,
-        attacker.equipment.holding_side,
+    let defender_view = defender.view_with_equipment(&defender.equipment);
+    let contact = attacker_view.melee_contact_location(
+        attacker.equipment.melee_holding_side,
         attacker_equipment.weapon_preferred_melee_style(),
-        &defender.view_with_equipment(&defender.equipment),
+        &defender_view,
+        response,
+        precision,
+        flanking,
+        contact_sample,
+    );
+    let result = attacker_view.resolve_melee_attack(
+        crate::combat::EMBEDDED_COMBAT_RESOLUTION_PARAMETERS,
+        attacker.equipment.melee_holding_side,
+        attacker_equipment.weapon_preferred_melee_style(),
+        &defender_view,
         &defender.bestiary_categories,
         response,
         precision,
         flanking,
-        crate::combat::MeleeContactLocation::for_equipment(part, &defender.equipment),
-    )
+        contact,
+    );
+    (result, contact.body_part)
 }
 fn ranged_exchange(
     attacker: &Combatant,
@@ -1578,14 +1487,15 @@ fn ranged_exchange(
     )
 }
 
-fn optimal_melee_exchange(
+fn autoresolve_optimal_melee_exchange(
     attacker: &Combatant,
     defender: &Combatant,
     precision: f32,
     flanking: f32,
-    part: BodyPart,
-) -> AttackResult {
-    let reflex = melee_input_reflex(attacker);
+    contact_sample: f32,
+    parameters: crate::combat::AutoresolveParameters,
+) -> (AttackResult, BodyPart) {
+    let reflex = autoresolve_melee_input_reflex(attacker, parameters);
     [
         DefenderResponse::None,
         DefenderResponse::Dodge {
@@ -1596,36 +1506,64 @@ fn optimal_melee_exchange(
         },
     ]
     .into_iter()
-    .map(|response| melee_exchange(attacker, defender, precision, flanking, part, response))
-    .min_by(|left, right| attack_harm(*left).total_cmp(&attack_harm(*right)))
+    .map(|response| {
+        melee_exchange(
+            attacker,
+            defender,
+            precision,
+            flanking,
+            contact_sample,
+            response,
+        )
+    })
+    .min_by(|left, right| attack_harm(left.0).total_cmp(&attack_harm(right.0)))
     .unwrap()
 }
 
-fn melee_input_reflex(attacker: &Combatant) -> f32 {
-    let interval = attacker
-        .equipment
-        .melee_weapon
-        .map_or(REFERENCE_MELEE_ATTACK_SECONDS, |weapon| {
-            weapon.attack_interval_seconds.max(0.1)
-        });
-    (interval / REFERENCE_MELEE_ATTACK_SECONDS).clamp(0.1, 1.0)
+fn autoresolve_melee_input_reflex(
+    attacker: &Combatant,
+    parameters: crate::combat::AutoresolveParameters,
+) -> f32 {
+    let interval = attacker.equipment.melee_weapon.map_or(
+        parameters.reference_melee_attack_seconds,
+        |weapon| {
+            weapon
+                .attack_interval_seconds
+                .max(parameters.minimum_attack_interval_seconds)
+        },
+    );
+    (interval / parameters.reference_melee_attack_seconds)
+        .clamp(parameters.minimum_melee_input_reflex, 1.0)
 }
 
-fn optimal_ranged_exchange(
+fn autoresolve_optimal_ranged_exchange(
     attacker: &Combatant,
     defender: &Combatant,
     precision: f32,
     part: BodyPart,
+    parameters: crate::combat::AutoresolveParameters,
 ) -> AttackResult {
     [
         DefenderResponse::None,
-        DefenderResponse::Dodge { input_reflex: 1.0 },
-        DefenderResponse::Parry { input_reflex: 1.0 },
+        DefenderResponse::Dodge {
+            input_reflex: parameters.ranged_defense_input_reflex,
+        },
+        DefenderResponse::Parry {
+            input_reflex: parameters.ranged_defense_input_reflex,
+        },
     ]
     .into_iter()
     .map(|response| ranged_exchange(attacker, defender, precision, 0.0, part, response))
     .min_by(|left, right| attack_harm(*left).total_cmp(&attack_harm(*right)))
     .unwrap()
+}
+
+fn autoresolve_hit_precision(
+    random: &mut SplitMix64,
+    parameters: crate::combat::AutoresolveParameters,
+) -> f32 {
+    parameters.minimum_hit_precision
+        + random.unit_f32() * (parameters.maximum_hit_precision - parameters.minimum_hit_precision)
 }
 
 fn attack_harm(result: AttackResult) -> f32 {
@@ -1658,18 +1596,6 @@ fn outcome(combatant: Combatant) -> CombatantOutcome {
     }
 }
 
-fn random_body_part(random: &mut SplitMix64) -> BodyPart {
-    match random.next_u64() % 100 {
-        0..=11 => BodyPart::LeftArm,
-        12..=23 => BodyPart::RightArm,
-        24..=35 => BodyPart::LeftLeg,
-        36..=47 => BodyPart::RightLeg,
-        48..=69 => BodyPart::Chest,
-        70..=89 => BodyPart::Stomach,
-        _ => BodyPart::Head,
-    }
-}
-
 pub const fn body_part_index(part: BodyPart) -> usize {
     match part {
         BodyPart::LeftArm => 0,
@@ -1686,6 +1612,10 @@ pub const fn body_part_index(part: BodyPart) -> usize {
 mod tests {
     use super::*;
     use crate::bestiary::{ThreatId, profile};
+
+    fn autoresolve_parameters() -> crate::combat::AutoresolveParameters {
+        crate::combat::EMBEDDED_AUTORESOLVE_PARAMETERS
+    }
 
     fn fighter(id: u64, skill: f32, ranged: bool) -> Combatant {
         let mut fighter = Combatant::new(id);
@@ -1876,15 +1806,9 @@ mod tests {
 
         let mut defender = fighter(2, 1.0, false);
         defender.equipment.armor.fill(protection);
-        let result = melee_exchange(
-            &attacker,
-            &defender,
-            1.0,
-            0.0,
-            BodyPart::Chest,
-            DefenderResponse::None,
-        );
-        health_damage_from_attack(result, BodyPart::Chest)
+        let (result, part) =
+            melee_exchange(&attacker, &defender, 1.0, 0.0, 0.5, DefenderResponse::None);
+        health_damage_from_attack(result, part)
     }
 
     #[test]
@@ -1977,12 +1901,12 @@ mod tests {
         let mut defender = fighter(2, 5.0, false);
         defender.equipment.shield_block_bonus = 5.0;
 
-        let parry = melee_exchange(
+        let (parry, _) = melee_exchange(
             &attacker,
             &defender,
             0.65,
             0.0,
-            BodyPart::Chest,
+            0.5,
             DefenderResponse::Parry { input_reflex: 1.0 },
         );
         assert!(matches!(
@@ -1994,12 +1918,12 @@ mod tests {
             } if contact_force > 0.0
         ));
 
-        let dodge = melee_exchange(
+        let (dodge, _) = melee_exchange(
             &attacker,
             &defender,
             0.65,
             0.0,
-            BodyPart::Chest,
+            0.5,
             DefenderResponse::Dodge { input_reflex: 1.0 },
         );
         if let AttackResult::ToAttacker {
@@ -2011,6 +1935,33 @@ mod tests {
             assert!(!physical_contact);
             assert_eq!(contact_force, 0.0);
         }
+    }
+
+    #[test]
+    fn melee_exchange_uses_global_armor_coverage() {
+        let attacker = fighter(1, 3.0, false);
+        let mut defender = fighter(2, 1.0, false);
+        defender.equipment.armor.fill(CombatArmor::default());
+        defender.equipment.armor[body_part_index(BodyPart::Chest)] = CombatArmor {
+            resistance: 10_000.0,
+            padding: 10_000.0,
+            range_of_motion: 1.0,
+            coverage: 1.0,
+            ..CombatArmor::default()
+        };
+
+        let (result, part) =
+            melee_exchange(&attacker, &defender, 1.0, 0.0, 0.5, DefenderResponse::None);
+
+        assert_eq!(part, BodyPart::Chest);
+        assert!(matches!(
+            result,
+            AttackResult::ToDefender {
+                armor_contact: true,
+                ..
+            }
+        ));
+        assert_eq!(health_damage_from_attack(result, part), 0.0);
     }
 
     #[test]
@@ -2092,26 +2043,14 @@ mod tests {
             coverage: 0.2,
         });
 
-        let critical = melee_exchange(
-            &attacker,
-            &defender,
-            1.0,
-            0.0,
-            BodyPart::Chest,
-            DefenderResponse::None,
-        );
+        let (critical, critical_part) =
+            melee_exchange(&attacker, &defender, 1.0, 0.0, 0.5, DefenderResponse::None);
         attacker.equipment.melee_weapon.as_mut().unwrap().precise = false;
-        let armored = melee_exchange(
-            &attacker,
-            &defender,
-            1.0,
-            0.0,
-            BodyPart::Chest,
-            DefenderResponse::None,
-        );
+        let (armored, armored_part) =
+            melee_exchange(&attacker, &defender, 1.0, 0.0, 0.5, DefenderResponse::None);
 
-        assert!(health_damage_from_attack(critical, BodyPart::Chest) > 0.0);
-        assert_eq!(health_damage_from_attack(armored, BodyPart::Chest), 0.0);
+        assert!(health_damage_from_attack(critical, critical_part) > 0.0);
+        assert_eq!(health_damage_from_attack(armored, armored_part), 0.0);
     }
 
     #[test]
@@ -2215,12 +2154,21 @@ mod tests {
         let attackers = vec![fighter(1, 3.0, false), fighter(2, 3.0, false)];
         let defenders = vec![fighter(3, 3.0, false), fighter(4, 3.0, true)];
 
-        assert_eq!(melee_assignment(0, &attackers, &defenders), (0, 0.0));
-        assert_eq!(melee_assignment(1, &attackers, &defenders), (1, 0.0));
+        assert_eq!(
+            melee_assignment(0, &attackers, &defenders, autoresolve_parameters()),
+            (0, 0.0)
+        );
+        assert_eq!(
+            melee_assignment(1, &attackers, &defenders, autoresolve_parameters()),
+            (1, 0.0)
+        );
 
         let mut surplus = attackers;
         surplus.push(fighter(5, 3.0, false));
-        assert_eq!(melee_assignment(2, &surplus, &defenders), (0, 0.5));
+        assert_eq!(
+            melee_assignment(2, &surplus, &defenders, autoresolve_parameters()),
+            (0, 0.5)
+        );
     }
 
     #[test]
@@ -2239,8 +2187,10 @@ mod tests {
         let mut surplus_closers = matched_closers.clone();
         surplus_closers.push(fighter(8, 3.0, false));
 
-        let direct_plan = opening_volley_plans(&ranged_side, &matched_closers)[0];
-        let detour_plan = opening_volley_plans(&ranged_side, &surplus_closers)[0];
+        let direct_plan =
+            opening_volley_plans(&ranged_side, &matched_closers, autoresolve_parameters())[0];
+        let detour_plan =
+            opening_volley_plans(&ranged_side, &surplus_closers, autoresolve_parameters())[0];
         assert!(direct_plan.direct_attacks > 0);
         assert_eq!(direct_plan.direct_attacks, direct_plan.total_attacks);
         assert_eq!(detour_plan.direct_attacks, direct_plan.direct_attacks);
@@ -2260,6 +2210,7 @@ mod tests {
             &mut enemies,
             &mut SplitMix64::new(7),
             &mut BattleRecorder::default(),
+            autoresolve_parameters(),
         );
 
         assert!(enemies[0].body.total_damage() > 0.0);
@@ -2273,7 +2224,7 @@ mod tests {
         let screen = fighter(2, 3.0, false);
         let mut attackers = vec![archer, screen];
         let mut defenders = vec![fighter(3, 1.0, false), fighter(4, 1.0, false)];
-        let plans = opening_volley_plans(&attackers, &defenders);
+        let plans = opening_volley_plans(&attackers, &defenders, autoresolve_parameters());
         let direct_attacks = plans[0].direct_attacks;
 
         take_opening_volley_step(
@@ -2284,6 +2235,7 @@ mod tests {
             direct_attacks,
             &mut SplitMix64::new(17),
             &mut BattleRecorder::default(),
+            autoresolve_parameters(),
         );
 
         assert_eq!(defenders[0].body.total_damage(), 0.0);
@@ -2312,7 +2264,13 @@ mod tests {
             .unwrap()
             .attack_interval_seconds = 0.5;
         let defenders = vec![fighter(2, 3.0, false)];
-        let attacks = plan_ranged_round(&mut [fast], &defenders, 1, &mut SplitMix64::new(3));
+        let attacks = plan_ranged_round(
+            &mut [fast],
+            &defenders,
+            1,
+            &mut SplitMix64::new(3),
+            autoresolve_parameters(),
+        );
         assert_eq!(attacks.len(), 2);
     }
 
@@ -2324,8 +2282,10 @@ mod tests {
         slow.attributes.right_leg_agility = 0.0;
         let fast = fighter(3, 5.0, false);
 
-        let slow_attacks = opening_volley_plans(&ranged, &[slow])[0].total_attacks;
-        let fast_attacks = opening_volley_plans(&ranged, &[fast])[0].total_attacks;
+        let slow_attacks =
+            opening_volley_plans(&ranged, &[slow], autoresolve_parameters())[0].total_attacks;
+        let fast_attacks =
+            opening_volley_plans(&ranged, &[fast], autoresolve_parameters())[0].total_attacks;
         assert!(slow_attacks > fast_attacks);
     }
 
@@ -2343,7 +2303,10 @@ mod tests {
             .as_mut()
             .unwrap()
             .attack_interval_seconds = 1.5;
-        assert!(melee_input_reflex(&fast) < melee_input_reflex(&slow));
+        assert!(
+            autoresolve_melee_input_reflex(&fast, autoresolve_parameters())
+                < autoresolve_melee_input_reflex(&slow, autoresolve_parameters())
+        );
     }
 
     #[test]

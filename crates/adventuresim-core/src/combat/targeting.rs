@@ -29,10 +29,6 @@ impl MeleeContactLocation {
             armor_contact,
         }
     }
-
-    pub(crate) fn for_equipment(body_part: BodyPart, equipment: &impl PlayerEquipment) -> Self {
-        Self::new(body_part, equipment.armor_coverage(body_part) > 0.0)
-    }
 }
 
 #[expect(
@@ -142,6 +138,11 @@ pub fn whole_body_armor_coverage(equipment: &impl PlayerEquipment) -> f32 {
         .map(|(part, weight)| weight * equipment.armor_coverage(*part).clamp(0.0, 1.0))
         .sum::<f32>()
         .clamp(0.0, 1.0)
+}
+
+#[must_use]
+pub fn body_part_from_contact_sample(sample: f32) -> BodyPart {
+    weighted_body_part(sample.clamp(0.0, 1.0 - f32::EPSILON), |_| 1.0)
 }
 
 #[must_use]

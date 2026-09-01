@@ -1,8 +1,20 @@
-schema_version: 4
+schema_version: 5
 
 resolution:
   armed_attack_energy_transfer: 0.4
   stagger_resistance_joules_per_kg: 4.0
+
+autoresolve:
+  combat_round_seconds: 1.0
+  formation_spacing_metres: 2.0
+  reference_melee_attack_seconds: 1.0
+  minimum_movement_speed_metres_per_second: 0.25
+  minimum_attack_interval_seconds: 0.1
+  minimum_melee_input_reflex: 0.1
+  minimum_hit_precision: 0.65
+  maximum_hit_precision: 1.0
+  outnumbered_flanking: 0.5
+  ranged_defense_input_reflex: 1.0
 
 realtime_authority:
   defense: { reflex_window_seconds: 0.5, roll_dodge_effectiveness: 0.35 }
