@@ -107,10 +107,6 @@ path = "crates/adventuresim-core/src/case.rs"
 ceiling = 575
 
 [[files]]
-path = "crates/adventuresim-core/src/combat.rs"
-ceiling = 559
-
-[[files]]
 path = "crates/adventuresim-core/src/courtship.rs"
 ceiling = 616
 
@@ -683,10 +679,6 @@ path = "crates/adventuresim-tactical-core/src/physics.rs"
 ceiling = 1020
 
 [[files]]
-path = "crates/adventuresim-tactical-core/src/player.rs"
-ceiling = 559
-
-[[files]]
 path = "crates/adventuresim-tactical-core/src/scene_input.rs"
 ceiling = 1114
 
@@ -1243,11 +1235,6 @@ item = "compile_organizations"
 ceiling = 118
 
 [[functions]]
-path = "crates/adventuresim-core/src/autoresolve.rs"
-item = "authored_threat_combatant"
-ceiling = 155
-
-[[functions]]
 path = "crates/adventuresim-core/src/bestiary.rs"
 item = "compile_profile"
 ceiling = 210
@@ -1451,11 +1438,6 @@ ceiling = 104
 path = "crates/adventuresim-stdb-module/src/capability.rs"
 item = "StrategicEquipment::load"
 ceiling = 243
-
-[[functions]]
-path = "crates/adventuresim-stdb-module/src/capability.rs"
-item = "load_combatant"
-ceiling = 101
 
 [[functions]]
 path = "crates/adventuresim-stdb-module/src/character.rs"
@@ -2811,11 +2793,6 @@ ceiling = 165
 path = "crates/adventuresim-tactical-server/src/bot/offense.rs"
 item = "drive_offensive_combat_ai"
 ceiling = 205
-
-[[functions]]
-path = "crates/adventuresim-tactical-server/src/combat/consequence.rs"
-item = "apply_melee_attack_result"
-ceiling = 115
 
 [[functions]]
 path = "crates/adventuresim-tactical-server/src/combat/ingress.rs"

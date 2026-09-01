@@ -2,6 +2,9 @@ mod defense;
 mod offense;
 
 use adventuresim_core::{
+    combat::{
+        has_distal_striking_surface, melee_attack_capability, preferred_melee_striking_measure,
+    },
     fixture_path::resolve_fixture_path,
     item_references::ARROW_ID,
     tactical_fixture::{TacticalEnemyBehavior, TacticalEnemyFixture},
@@ -12,6 +15,7 @@ use adventuresim_tactical_netcode::{
     message::{DefendRequest, MeleeActionRequest},
 };
 use bevy::prelude::*;
+use fabelgeist_determinism::SplitMix64;
 use std::{cmp::Ordering, path::PathBuf};
 
 use crate::{
@@ -20,7 +24,7 @@ use crate::{
         CombatDuration, CombatSet, DefendIntent, MeleeAttackStartedIntent, RangedAttackIntent,
         RangedAttackStartedIntent, ReportedPrecision, TacticalCombatSide,
     },
-    player_projection::begin_get_up_transition_configured,
+    player_projection::{AuthoritativeMovementIntent, begin_get_up_transition_configured},
 };
 
 pub(crate) fn resolve_scene_fixture(selector: &str) -> Result<PathBuf, String> {
@@ -48,6 +52,38 @@ use defense::{
     tick_bot_reactions,
 };
 pub use offense::OffensiveCombatAi;
+
+#[derive(Resource)]
+pub(crate) struct CombatRandom(SplitMix64);
+
+impl Default for CombatRandom {
+    fn default() -> Self {
+        Self::seeded(rand::random())
+    }
+}
+
+impl CombatRandom {
+    pub(crate) fn seeded(seed: u64) -> Self {
+        Self(SplitMix64::new(seed))
+    }
+
+    pub(crate) fn unit_f32(&mut self) -> f32 {
+        self.0.unit_f32()
+    }
+
+    pub(crate) fn unit_f64(&mut self) -> f64 {
+        f64::from(self.0.unit_f32())
+    }
+
+    pub(crate) fn range_f32(&mut self, minimum: f32, maximum: f32) -> f32 {
+        self.0.range_f32(minimum, maximum)
+    }
+
+    pub(crate) fn coin_flip(&mut self) -> bool {
+        self.0.next_u64().is_multiple_of(2)
+    }
+}
+use offense::on_attack_committed_to_defense;
 #[cfg(test)]
 use offense::ranged_weapon_needs_ammo_lookup;
 use offense::{compare_target, drive_offensive_combat_ai};
@@ -57,6 +93,27 @@ use offense::{compare_target, drive_offensive_combat_ai};
 #[derive(Component, Reflect)]
 #[reflect(Component)]
 pub struct MissionEnemy;
+
+#[derive(Component, Reflect, Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[reflect(Component)]
+pub(crate) struct CombatantYielded;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum BotContinuationDecision {
+    Withdraw,
+    Yield,
+}
+
+#[derive(Event, Clone, Copy, Debug)]
+pub(crate) struct BotContinuationDecisionEvent {
+    pub(crate) combatant: Entity,
+    pub(crate) decision: BotContinuationDecision,
+}
+
+#[cfg(feature = "iteration")]
+fn trace_continuation_decision(event: On<BotContinuationDecisionEvent>) {
+    trace!(combatant = ?event.combatant, decision = ?event.decision, "bot_continuation_decision");
+}
 
 /// Declarative capabilities that can be composed into a combatant. Higher
 /// level tactics such as flanking or ambushing can add packages later without
@@ -93,6 +150,11 @@ impl CombatantBehaviorPackages {
         let defense = &config.ai.ordinary.defense;
         Self(vec![
             CombatantBehaviorPackage::RecoverToUpright,
+            // Quicksteps and passive weapon interception both require the
+            // same raised guard state as player-controlled defense. Without
+            // this package, ordinary bots rolled reactions that could never
+            // pass authoritative validation.
+            CombatantBehaviorPackage::RaisedGuard,
             CombatantBehaviorPackage::OffensiveCombat,
             CombatantBehaviorPackage::ReactiveDefense {
                 chances: DefenseChances {
@@ -255,9 +317,11 @@ pub struct BotPlugin;
 impl Plugin for BotPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<TacticalCombatConfig>()
+            .init_resource::<CombatRandom>()
             .add_observer(on_attack_started)
             .add_observer(on_targeted_attack_started)
             .add_observer(on_targeted_ranged_attack_started)
+            .add_observer(on_attack_committed_to_defense)
             .add_systems(
                 Update,
                 (
@@ -271,6 +335,8 @@ impl Plugin for BotPlugin {
                     .chain()
                     .after(CombatSet::Condition),
             );
+        #[cfg(feature = "iteration")]
+        app.add_observer(trace_continuation_decision);
     }
 }
 
@@ -293,7 +359,9 @@ mod tests {
             5
         );
     }
-    use crate::combat::{MeleeAttackAuthority, MeleeAttackIntent, PendingDefenderResponse};
+    use crate::combat::{
+        MeleeAttackAuthority, MeleeAttackIntent, PendingDefenderResponse, TacticalWounds,
+    };
     use crate::player_projection::AuthoritativePostureIntent;
 
     #[derive(Resource, Default)]
@@ -317,26 +385,27 @@ mod tests {
 
     fn apply_deterministic_test_hit(
         event: On<MeleeAttackIntent>,
-        mut combatants: Query<(&mut Limbs, &mut TacticalCombatState)>,
+        mut combatants: Query<(&mut Limbs, &mut TacticalCombatState, &mut TacticalWounds)>,
     ) {
         let Ok([attacker, defender]) = combatants.get_many_mut([event.attacker, event.target])
         else {
             return;
         };
-        let (_, mut attacker_state) = attacker;
-        let (mut defender_limbs, mut defender_state) = defender;
+        let (_, mut attacker_state, _) = attacker;
+        let (mut defender_limbs, mut defender_state, mut defender_wounds) = defender;
         crate::combat::apply_transient_attack_result(
             &mut attacker_state,
             &mut defender_limbs,
             &mut defender_state,
+            &mut defender_wounds.0,
             AttackResult::ToDefender {
                 cut_damage: 160.0,
                 blunt_damage: 0.0,
                 balance_damage: 0.0,
                 contact_force: 160.0,
-                armor_contact: false,
+                armor_impact: None,
             },
-            BodyPart::Chest,
+            BodyPart::Head,
         );
     }
 
@@ -352,8 +421,10 @@ mod tests {
                 side,
                 CharacterLook::default(),
                 input::AccumulatedInput::default(),
+                AuthoritativeMovementIntent::default(),
                 OffensiveCombatAi::default(),
                 TacticalCombatState::default(),
+                TacticalWounds::default(),
                 SkeletonState::default(),
                 CharacterDimensions::default(),
                 Collider::cylinder(0.4, 1.9),
@@ -400,8 +471,10 @@ mod tests {
                 side,
                 CharacterLook::default(),
                 input::AccumulatedInput::default(),
+                AuthoritativeMovementIntent::default(),
                 OffensiveCombatAi::default(),
                 TacticalCombatState::default(),
+                TacticalWounds::default(),
                 SkeletonState::default(),
                 CharacterDimensions::default(),
                 Collider::cylinder(0.4, 1.9),
@@ -451,6 +524,7 @@ mod tests {
                 side,
                 CharacterLook::default(),
                 TacticalCombatState::default(),
+                SkeletonState::default(),
                 Collider::cylinder(0.4, 1.9),
             ))
             .id()
@@ -460,6 +534,7 @@ mod tests {
         let mut app = App::new();
         app.insert_resource(Time::<()>::default())
             .init_resource::<TacticalCombatConfig>()
+            .insert_resource(CombatRandom::seeded(1))
             .init_resource::<RecordedAttacks>()
             .init_resource::<RecordedRangedAttacks>()
             .add_observer(record_attack)
@@ -520,7 +595,7 @@ mod tests {
             standard.get::<DefenseChances>(),
             Some(&DefenseChances::default())
         );
-        assert!(!standard.contains::<RaisedGuardAi>());
+        assert!(standard.contains::<RaisedGuardAi>());
 
         let dodger = app.world().entity(dodger);
         assert!(dodger.contains::<RaisedGuardAi>());
@@ -554,7 +629,8 @@ mod tests {
     #[test]
     fn untargeted_windup_only_reacts_on_the_nearest_enemy() {
         let mut app = App::new();
-        app.init_resource::<TacticalCombatConfig>();
+        app.init_resource::<TacticalCombatConfig>()
+            .insert_resource(CombatRandom::seeded(1));
         app.add_observer(on_attack_started);
         let attacker = app
             .world_mut()
@@ -614,6 +690,7 @@ mod tests {
         let mut app = App::new();
         app.insert_resource(Time::<()>::default())
             .init_resource::<TacticalCombatConfig>()
+            .insert_resource(CombatRandom::seeded(1))
             .add_observer(on_attack_started)
             .add_observer(crate::combat::apply_defend_intent)
             .add_systems(Update, tick_bot_reactions);
@@ -743,11 +820,14 @@ mod tests {
             Vec3::new(0.0, 0.0, -2.0),
         );
 
-        for _ in 0..8 {
+        for _ in 0..30 {
             app.world_mut()
                 .resource_mut::<Time<()>>()
                 .advance_by(Duration::from_millis(100));
             app.update();
+            if !app.world().resource::<RecordedRangedAttacks>().0.is_empty() {
+                break;
+            }
         }
         assert_eq!(
             app.world().resource::<RecordedRangedAttacks>().0,
@@ -758,11 +838,23 @@ mod tests {
         // Production consumes this through `resolve_ranged_attack`; removing
         // it here isolates deterministic controller selection from physics.
         app.world_mut().despawn(ammo);
-        for _ in 0..20 {
+        // Put the target just outside the hybrid weapon's preferred measure,
+        // while remaining inside its absolute melee reach. In the
+        // production schedule movement would create this separation while the
+        // bot retreats; this controller-only test intentionally has no motor.
+        app.world_mut()
+            .entity_mut(target)
+            .get_mut::<Transform>()
+            .unwrap()
+            .translation = Vec3::new(0.0, 0.0, -5.0);
+        for _ in 0..30 {
             app.world_mut()
                 .resource_mut::<Time<()>>()
                 .advance_by(Duration::from_millis(100));
             app.update();
+            if !app.world().resource::<RecordedAttacks>().0.is_empty() {
+                break;
+            }
         }
 
         assert!(
@@ -804,10 +896,7 @@ mod tests {
                     let entity = app.world().entity(actor);
                     (
                         actor,
-                        entity
-                            .get::<input::AccumulatedInput>()
-                            .unwrap()
-                            .last_movement,
+                        entity.get::<AuthoritativeMovementIntent>().unwrap().0,
                         entity.get::<CharacterLook>().unwrap().yaw,
                     )
                 })
@@ -846,7 +935,7 @@ mod tests {
                     CharacterDimensions::default().arm_reach_metres,
                     KATZBALGER_REACH,
                     quickstep_distance,
-                ),
+                ) + TWO_CHARACTER_COLLIDER_RADII,
             "AI stopped outside reachable lunge range: {separation}"
         );
         assert!(
@@ -854,7 +943,7 @@ mod tests {
                 > melee_interaction_range(
                     CharacterDimensions::default().arm_reach_metres,
                     KATZBALGER_REACH,
-                ),
+                ) + TWO_CHARACTER_COLLIDER_RADII,
             "AI should commit its attack while the lunge still has a gap to close: {separation}"
         );
         assert!(
@@ -878,23 +967,123 @@ mod tests {
         assert_eq!(
             app.world()
                 .entity(party)
-                .get::<input::AccumulatedInput>()
+                .get::<AuthoritativeMovementIntent>()
                 .unwrap()
-                .last_movement,
+                .0,
             None
         );
         assert_eq!(
             app.world()
                 .entity(enemy)
-                .get::<input::AccumulatedInput>()
+                .get::<AuthoritativeMovementIntent>()
                 .unwrap()
-                .last_movement,
+                .0,
             None
         );
 
         let attacks = &app.world().resource::<RecordedAttacks>().0;
         assert!(attacks.contains(&(party, enemy)));
         assert!(attacks.contains(&(enemy, party)));
+    }
+
+    #[test]
+    fn bot_holds_guard_instead_of_starting_into_an_already_committed_attack() {
+        let mut app = test_app();
+        let actor = spawn_test_ai(
+            app.world_mut(),
+            TacticalCombatSide::Party,
+            Vec3::new(0.0, 0.0, 0.0),
+        );
+        let target = spawn_test_target(
+            app.world_mut(),
+            TacticalCombatSide::Enemy,
+            Vec3::new(0.0, 0.0, 1.5),
+        );
+        app.world_mut()
+            .entity_mut(target)
+            .get_mut::<SkeletonState>()
+            .unwrap()
+            .begin_attack(AttackSpec::default(), 0, 1_000)
+            .unwrap();
+        app.world_mut()
+            .entity_mut(target)
+            .get_mut::<SkeletonState>()
+            .unwrap()
+            .advance_action(999);
+        app.world_mut()
+            .entity_mut(actor)
+            .get_mut::<OffensiveCombatAi>()
+            .unwrap()
+            .guard_committed_threat_for_test(target);
+
+        for _ in 0..20 {
+            app.world_mut()
+                .resource_mut::<Time<()>>()
+                .advance_by(Duration::from_millis(100));
+            app.update();
+        }
+        assert!(app.world().resource::<RecordedAttacks>().0.is_empty());
+
+        *app.world_mut()
+            .entity_mut(target)
+            .get_mut::<SkeletonState>()
+            .unwrap() = SkeletonState::default();
+        for _ in 0..20 {
+            app.world_mut()
+                .resource_mut::<Time<()>>()
+                .advance_by(Duration::from_millis(100));
+            app.update();
+            if app
+                .world()
+                .resource::<RecordedAttacks>()
+                .0
+                .contains(&(actor, target))
+            {
+                break;
+            }
+        }
+        assert!(
+            app.world()
+                .resource::<RecordedAttacks>()
+                .0
+                .contains(&(actor, target))
+        );
+    }
+
+    #[test]
+    fn committed_defense_reenters_seeded_assessment_before_counterattack() {
+        let mut app = test_app();
+        app.add_observer(on_attack_committed_to_defense);
+        let actor = spawn_test_ai(
+            app.world_mut(),
+            TacticalCombatSide::Party,
+            Vec3::new(0.0, 0.0, 0.0),
+        );
+        let attacker = spawn_test_target(
+            app.world_mut(),
+            TacticalCombatSide::Enemy,
+            Vec3::new(0.0, 0.0, 1.5),
+        );
+
+        app.world_mut()
+            .trigger(crate::combat::MeleeAttackCommittedToDefense {
+                defender: actor,
+                incoming_attacker: attacker,
+                canceled_attack_key: 7,
+                response: DefenderResponse::Parry {
+                    input_reflex: 0.8,
+                    precision: 0.6,
+                },
+                engagement: 0.4,
+            });
+        app.world_mut().flush();
+
+        assert!(
+            app.world()
+                .get::<OffensiveCombatAi>(actor)
+                .unwrap()
+                .is_assessing()
+        );
     }
 
     #[test]
@@ -932,6 +1121,7 @@ mod tests {
         let mut app = App::new();
         app.insert_resource(Time::<()>::default())
             .init_resource::<TacticalCombatConfig>()
+            .insert_resource(CombatRandom::seeded(1))
             .init_resource::<RecordedAttacks>()
             .add_observer(record_attack)
             .add_observer(apply_deterministic_test_hit)
@@ -967,10 +1157,7 @@ mod tests {
                     let entity = app.world().entity(actor);
                     (
                         actor,
-                        entity
-                            .get::<input::AccumulatedInput>()
-                            .unwrap()
-                            .last_movement,
+                        entity.get::<AuthoritativeMovementIntent>().unwrap().0,
                         entity.get::<CharacterLook>().unwrap().yaw,
                     )
                 })
@@ -1010,9 +1197,9 @@ mod tests {
             assert_eq!(
                 app.world()
                     .entity(actor)
-                    .get::<input::AccumulatedInput>()
+                    .get::<AuthoritativeMovementIntent>()
                     .unwrap()
-                    .last_movement,
+                    .0,
                 None
             );
         }

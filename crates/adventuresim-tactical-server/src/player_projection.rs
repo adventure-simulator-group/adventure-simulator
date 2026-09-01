@@ -1,6 +1,9 @@
 use std::collections::BTreeMap;
 
-use adventuresim_core::{attribute::PlayerAttributeValues, tactical_fixture::TacticalEnemyFixture};
+use adventuresim_core::{
+    attribute::PlayerAttributeValues, combat::HUMANOID_COLLISION_RADIUS_METRES,
+    tactical_fixture::TacticalEnemyFixture,
+};
 use adventuresim_stdb_client::*;
 use adventuresim_tactical_core::animation::dive_launch_root_rotation;
 use adventuresim_tactical_core::{inventory::ItemProperties, prelude::*};
@@ -30,6 +33,11 @@ use crate::{
     stdb::{SpacetimeDb, SpacetimeDbReady},
 };
 use input::AccumulatedInput;
+mod projection_equipment;
+use projection_equipment::{
+    projected_armor, projected_holder_appearance, projected_parametric_weapon,
+    projected_weapon_appearance,
+};
 
 type PlayerInputStateQuery<'world, 'state> = Query<
     'world,
@@ -281,10 +289,6 @@ const GROUND_POSTURE_TRANSITION_TICKS: u64 = 51;
 const ROLL_POSTURE_TRANSITION_TICKS: u64 = GROUND_POSTURE_TRANSITION_TICKS.div_ceil(2);
 #[cfg(test)]
 const BACKWARD_DIVE_POSTURE_TRANSITION_TICKS: u64 = 32;
-
-/// Durable inventory provenance retained only on the authoritative server.
-#[derive(Component, Debug, Clone, Copy)]
-pub(crate) struct TacticalInventoryItemId(pub u64);
 
 /// Transient mission projection: durable Characters keep their strategic
 /// baseline while tactical combat receives mission difficulty/escalation.
@@ -739,7 +743,7 @@ fn spawn_connected_player(
             starting_thermal: player.strategic_thermal,
             ..default()
         },
-        EquipmentActionState::default(),
+        crate::combat::combat_projection_state(),
     ));
     cmd.entity(entity).insert((
         MeleeAttackAuthority::default(),
@@ -780,33 +784,16 @@ fn spawn_connected_player(
         };
         let item_entity = tactical_items[&item.inventory_item_id];
         let mut item_cmd = cmd.entity(item_entity);
-        let weapon_appearance = item.weapon_appearance.as_ref().and_then(|appearance| {
-            let design_hash: [u8; 32] = appearance.design_hash.as_slice().try_into().ok()?;
-            Some(WeaponAppearance {
-                generator_version: appearance.generator_version,
-                design_hash,
-                recipe: appearance.recipe.clone(),
-            })
-        });
-        let weapon_holder_appearance =
-            item.weapon_holder_appearance
-                .as_ref()
-                .and_then(|appearance| {
-                    let design_hash: [u8; 32] =
-                        appearance.design_hash.as_slice().try_into().ok()?;
-                    Some(WeaponHolderAppearance {
-                        generator_version: appearance.generator_version,
-                        design_hash,
-                        recipe: appearance.recipe.clone(),
-                    })
-                });
+        let instance_geometry = projected_parametric_weapon(item);
+        let weapon_appearance = projected_weapon_appearance(item);
+        let weapon_holder_appearance = projected_holder_appearance(item);
         item_cmd.insert((
             Replicated,
             TacticalInventoryItemId(item.inventory_item_id),
             ItemOf(entity),
             quantity,
             ItemProperties {
-                weight: item.item.weight,
+                weight: instance_geometry.map_or(item.item.weight, |value| value.mass_kg),
                 id: item.item.id.clone(),
             },
             Transform::default(),
@@ -814,10 +801,19 @@ fn spawn_connected_player(
         if let Some(definition) = adventuresim_core::item_catalog::definition(&item.item.id)
             && let Some(equipment) = &definition.equipment
         {
-            let physical = equipment.physical;
+            let mut physical = equipment.physical;
+            if let Some(instance) = instance_geometry {
+                physical.dimensions_m[1] = instance.total_length_m;
+                physical.grip_to_tip_m = instance.grip_to_tip_m;
+                physical.anchor_offset_m[1] = -(instance.total_length_m - instance.grip_to_tip_m);
+            }
             item_cmd.insert(TacticalEquipmentPhysical {
                 dimensions_m: Vec3::from_array(physical.dimensions_m),
                 grip_to_tip_m: physical.grip_to_tip_m,
+                striking_head_length_m: instance_geometry.map_or(
+                    physical.dimensions_m[0].max(physical.dimensions_m[2]),
+                    |value| value.striking_head_length_m,
+                ),
                 anchor_offset_m: Vec3::from_array(physical.anchor_offset_m),
             });
         }
@@ -894,9 +890,15 @@ fn spawn_connected_player(
                         adventuresim_stdb_client::MeleeAttackStyle::Stab
                     ),
                     penetration: item.item.penetration,
-                    reach: item.item.reach,
-                    grip_to_tip_m: equipment.physical.grip_to_tip_m,
-                    moment_of_inertia_kg_m2: item.item.moment_of_inertia_kg_m_2,
+                    reach: instance_geometry.map_or(item.item.reach, |value| value.melee_reach_m()),
+                    grip_to_tip_m: instance_geometry
+                        .map_or(equipment.physical.grip_to_tip_m, |value| {
+                            value.grip_to_tip_m
+                        }),
+                    moment_of_inertia_kg_m2: instance_geometry
+                        .map_or(item.item.moment_of_inertia_kg_m_2, |value| {
+                            value.moment_of_inertia_kg_m2
+                        }),
                     precise: item.item.precise,
                     melee: item.item.melee,
                     ranged: item.item.ranged,
@@ -912,29 +914,8 @@ fn spawn_connected_player(
                 });
             }
         }
-        if let Some(part) = item.protected_body_parts.first() {
-            let slot = match part {
-                EquipmentBodyPart::LeftArm => ArmorSlot::Arms(Some(ArmorSide::Left)),
-                EquipmentBodyPart::RightArm => ArmorSlot::Arms(Some(ArmorSide::Right)),
-                EquipmentBodyPart::LeftLeg => ArmorSlot::Legs(Some(ArmorSide::Left)),
-                EquipmentBodyPart::RightLeg => ArmorSlot::Legs(Some(ArmorSide::Right)),
-                EquipmentBodyPart::Head => ArmorSlot::Head,
-                EquipmentBodyPart::Chest => ArmorSlot::Chest,
-                EquipmentBodyPart::Stomach => ArmorSlot::Stomach,
-            };
-            item_cmd.insert(ArmorItem {
-                material: adventuresim_core::item_catalog::definition(&item.item.id)
-                    .and_then(|definition| definition.equipment.as_ref())
-                    .and_then(|equipment| equipment.material)
-                    .expect("validated armor has a material"),
-                range_of_motion: item.item.range_of_motion,
-                coverage: item.item.coverage,
-                slot,
-                resistance: item.item.resistance,
-                padding: item.item.padding,
-                flexibility: item.item.flexibility,
-                covered_parts: tactical_covered_parts(&item.protected_body_parts),
-            });
+        if let Some(armor) = projected_armor(item) {
+            item_cmd.insert(armor);
         }
 
         if item.occupancies.iter().any(|occupancy| {
@@ -2131,7 +2112,7 @@ fn advance_posture_transition_facing(
 }
 
 fn player_collider() -> Collider {
-    Collider::cylinder(0.4, 1.9)
+    Collider::cylinder(HUMANOID_COLLISION_RADIUS_METRES, 1.9)
 }
 
 fn player_spawn_offset(collider: &Collider) -> f32 {
@@ -2445,6 +2426,7 @@ mod standalone_join_tests {
 
 #[cfg(test)]
 mod tests {
+    use super::projection_equipment::parametric_combat_geometry;
     use super::{
         AuthoritativeInputTick, AuthoritativeMovementIntent, AuthoritativePostureIntent,
         BACKWARD_DIVE_POSTURE_TRANSITION_TICKS, CameraFacingIntent, DisconnectedPlayer, DiveLaunch,
@@ -2470,6 +2452,41 @@ mod tests {
         TacticalCombatSide, TacticalCombatState, advance_body_facing, controller_yaw,
         downed_camera_roll_target,
     };
+
+    #[test]
+    fn tactical_recipe_length_changes_reach_mass_and_handling() {
+        use adventuresim_weapon_model::{
+            ComponentShape, GENERATOR_VERSION, default_design, design_hash, encode,
+        };
+
+        let short = default_design("halberd").unwrap();
+        let mut long = short.clone();
+        let shaft = long
+            .components
+            .iter_mut()
+            .find(|component| component.id == "shaft")
+            .unwrap();
+        let ComponentShape::Cylinder(shaft) = &mut shaft.shape else {
+            panic!("halberd shaft");
+        };
+        shaft.length.0 += 300;
+        let appearance = |design| adventuresim_stdb_client::ConnectedWeaponAppearance {
+            generator_version: GENERATOR_VERSION,
+            design_hash: design_hash(design).0.to_vec(),
+            recipe: encode(design).unwrap(),
+            mass_kg: 0.0,
+            length_m: 0.0,
+            grip_to_tip_m: 0.0,
+        };
+        let short = parametric_combat_geometry("halberd", 2.0, &appearance(&short)).unwrap();
+        let long = parametric_combat_geometry("halberd", 2.0, &appearance(&long)).unwrap();
+
+        assert!((short.melee_reach_m() - 2.0).abs() < 1.0e-6);
+        assert!(long.melee_reach_m() > short.melee_reach_m() + 0.10);
+        assert!(long.mass_kg > short.mass_kg);
+        assert!(long.moment_of_inertia_kg_m2 > short.moment_of_inertia_kg_m2);
+        assert!((long.striking_head_length_m - short.striking_head_length_m).abs() < 1.0e-6);
+    }
     use adventuresim_tactical_netcode::aeronet::io::connection::{DisconnectReason, Disconnected};
     use adventuresim_tactical_netcode::bevy_replicon::prelude::Replicated;
     use adventuresim_tactical_netcode::prelude::{

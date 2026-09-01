@@ -57,9 +57,8 @@ pub mod prelude {
     };
     pub use crate::combat::{
         Attack, Dodge, MeleeLunge, conservative_forward_lunge_acceleration,
-        maximum_melee_lunge_range, melee_horizontal_closure, melee_interaction_range, melee_lunge,
-        melee_lunge_delay_seconds, melee_lunge_quickstep_threshold_metres,
-        melee_lunge_range_window_metres, reachable_melee_strike_point,
+        maximum_melee_lunge_range, melee_interaction_range, melee_lunge, melee_lunge_delay_seconds,
+        melee_lunge_quickstep_threshold_metres, melee_lunge_range_window_metres,
     };
     pub use crate::combat_config::*;
     pub use crate::doors::{
@@ -71,8 +70,9 @@ pub mod prelude {
         ArmorItem, ArmorSide, ArmorSlot, EquipSlot, EquipmentActionState, EquipmentTopology,
         EquipmentTopologyOccupancy, InventoryItems, ItemOf, ItemProperties, ShieldItem,
         TACTICAL_ITEM_LAYER, TACTICAL_TERRAIN_LAYER, TacticalEquipmentAnchor,
-        TacticalEquipmentPhysical, TacticalItemQuantity, TacticalSceneItem, WeaponAppearance,
-        WeaponHolderAppearance, WeaponItem, rebuild_inventory_holding_cache,
+        TacticalEquipmentPhysical, TacticalInventoryItemId, TacticalItemQuantity,
+        TacticalSceneItem, WeaponAppearance, WeaponHolderAppearance, WeaponItem,
+        rebuild_inventory_holding_cache,
     };
     pub use crate::physics::{
         AdventureSimulatorPhysicsSet, BREATH_PER_METRE_PER_SECOND, CharacterMotionSnapshot,

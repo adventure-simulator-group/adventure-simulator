@@ -12,6 +12,7 @@ use adventuresim_core::combat_style::MeleeAttackStyle;
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
+mod attack_commitment;
 mod evaluation;
 mod locomotion;
 mod packs;

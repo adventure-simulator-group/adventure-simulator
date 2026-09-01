@@ -13,7 +13,9 @@ use crate::physics::{
     TACTICAL_MAXIMUM_WALKABLE_SLOPE_DEGREES as MAXIMUM_WALKABLE_SLOPE,
 };
 
+mod ai_offense;
 mod runtime;
+pub use ai_offense::AiOffenseConfig;
 pub use runtime::{
     runtime_animation_config, runtime_combat_presentation_config, runtime_melee_authority_config,
 };
@@ -419,19 +421,6 @@ pub struct OrdinaryAiConfig {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct AiOffenseConfig {
-    pub hit_precision: f32,
-    pub target_body_part: BodyPart,
-    pub windup_seconds: f32,
-    pub cooldown_seconds: f32,
-    pub ranged_standoff_min_metres: f32,
-    pub ranged_standoff_max_metres: f32,
-    pub ranged_standoff_slop_metres: f32,
-    pub ranged_reach_fraction: f32,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct AiDefenseConfig {
     pub dodge_chance: f64,
     pub reaction_delay_min_seconds: f32,
@@ -662,8 +651,7 @@ impl TacticalCombatConfig {
             || ai.defense.reaction_delay_min_seconds < 0.0
             || ai.defense.reaction_delay_max_seconds < ai.defense.reaction_delay_min_seconds
             || !ai.defense.reaction_delay_max_seconds.is_finite()
-            || !ai.offense.ranged_standoff_min_metres.is_finite()
-            || ai.offense.ranged_standoff_max_metres < ai.offense.ranged_standoff_min_metres
+            || !ai.offense.has_valid_intervals()
         {
             return Err(TacticalCombatConfigError::Validation("invalid AI interval"));
         }
@@ -1119,16 +1107,7 @@ impl Default for TacticalCombatConfig {
             },
             ai: TacticalAiConfig {
                 ordinary: OrdinaryAiConfig {
-                    offense: AiOffenseConfig {
-                        hit_precision: 1.0,
-                        target_body_part: BodyPart::Chest,
-                        windup_seconds: 0.65,
-                        cooldown_seconds: 0.25,
-                        ranged_standoff_min_metres: 1.5,
-                        ranged_standoff_max_metres: 12.0,
-                        ranged_standoff_slop_metres: 0.5,
-                        ranged_reach_fraction: 0.5,
-                    },
+                    offense: AiOffenseConfig::default(),
                     defense: AiDefenseConfig {
                         dodge_chance: 0.2,
                         reaction_delay_min_seconds: 0.20,

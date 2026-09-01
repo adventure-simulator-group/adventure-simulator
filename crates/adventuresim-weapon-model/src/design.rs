@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::derived_properties::DerivedProperties;
+
 #[derive(
     Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize,
 )]
@@ -553,26 +555,6 @@ pub struct MeshPart {
     pub normals: Vec<[f32; 3]>,
     pub indices: Vec<u32>,
     pub bounds: Bounds,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct DerivedProperties {
-    pub mass_kg: f32,
-    pub length_m: f32,
-    pub grip_to_tip_m: f32,
-    /// Signed longitudinal center of mass relative to the controlling hand.
-    /// Positive values lie toward the weapon head.
-    pub center_of_mass_from_grip_m: f32,
-    /// Mean transverse rotational inertia about the controlling hand.
-    pub moment_of_inertia_kg_m2: f32,
-    /// Radius of gyration divided by grip-to-tip length. Lower is easier to redirect.
-    pub balance: f32,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct DerivedMaterialMass {
-    pub material: MaterialClass,
-    pub mass_kg: f32,
 }
 
 #[derive(Clone, Debug, PartialEq)]

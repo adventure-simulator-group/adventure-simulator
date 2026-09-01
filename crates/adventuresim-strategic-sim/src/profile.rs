@@ -495,6 +495,7 @@ mod tests {
         authored_threat_combatant, autoresolve_combat_power, combat_power_meets_safety_margin,
         resolve_battle,
     };
+    use adventuresim_core::combat::ArmorCoverageSpan;
     use adventuresim_core::equipment::WeaponSkillDistribution;
 
     fn attributes(endurance: f32, arm_strength: f32) -> PlayerAttributeValues {
@@ -633,11 +634,15 @@ mod tests {
             ..CombatWeapon::default()
         };
         let armor = |resistance, padding, coverage, flexibility, range_of_motion| CombatArmor {
+            inventory_item_id: None,
+            material: None,
             resistance,
             padding,
             coverage,
             flexibility,
             range_of_motion,
+            coverage_span: Some(ArmorCoverageSpan::centered(coverage)),
+            coverage_geometry: None,
         };
         combatant.equipment = CombatEquipment {
             weapon: Some(weapon),

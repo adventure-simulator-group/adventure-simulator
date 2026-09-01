@@ -9,8 +9,25 @@ autoresolve:
   formation_spacing_metres: 2.0
   reference_melee_attack_seconds: 1.0
   minimum_movement_speed_metres_per_second: 0.25
+  guarded_movement_speed_metres_per_second: 2.0
+  melee_lunge_speed_metres_per_second: 5.5
+  melee_lunge_maximum_travel_metres: 1.0
+  reference_ground_drive_force_newtons: 1000.0
+  reference_leg_strength: 3.0
+  gravity_metres_per_second_squared: 9.81
+  traction_coefficient: 0.9
   minimum_attack_interval_seconds: 0.1
   minimum_melee_input_reflex: 0.1
+  melee_windup_seconds: 0.65
+  melee_reaction_delay_min_seconds: 0.20
+  melee_reaction_delay_max_seconds: 0.27
+  melee_dodge_reaction_chance: 0.20
+  melee_reflex_window_seconds: 0.50
+  melee_initiative_delay_min_seconds: 0.04
+  melee_initiative_delay_max_seconds: 0.22
+  melee_cadence_jitter_seconds: 0.16
+  long_weapon_measure_threshold_metres: 1.20
+  melee_measure_reach_fraction: 0.70
   minimum_hit_precision: 0.65
   maximum_hit_precision: 1.0
   outnumbered_flanking: 0.5
@@ -81,6 +98,11 @@ ai:
       target_body_part: Chest
       windup_seconds: 0.65
       cooldown_seconds: 0.25
+      initiative_delay_min_seconds: 0.04
+      initiative_delay_max_seconds: 0.22
+      cadence_jitter_seconds: 0.16
+      long_weapon_measure_threshold_metres: 1.2
+      melee_measure_reach_fraction: 0.7
       ranged_standoff_min_metres: 1.5
       ranged_standoff_max_metres: 12.0
       ranged_standoff_slop_metres: 0.5

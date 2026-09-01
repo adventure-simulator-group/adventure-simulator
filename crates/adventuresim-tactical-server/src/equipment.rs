@@ -1116,6 +1116,7 @@ mod tests {
         let physical = TacticalEquipmentPhysical {
             dimensions_m: Vec3::splat(0.2),
             grip_to_tip_m: 0.4,
+            striking_head_length_m: 0.2,
             anchor_offset_m: Vec3::new(0.15, -0.05, 0.1),
         };
         assert_eq!(

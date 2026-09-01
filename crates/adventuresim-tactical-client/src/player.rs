@@ -268,7 +268,7 @@ impl CombatTargeting<'_, '_> {
             .hitboxes
             .iter()
             .filter_map(
-                |(hitbox, target_transform, hitbox_collider, collider_of, limb)| {
+                |(hitbox, target_transform, _hitbox_collider, collider_of, limb)| {
                     let target = collider_of.body;
                     let Ok((target_side, target_state, body_transform, body_collider)) =
                         self.combatants.get(target)
@@ -306,21 +306,17 @@ impl CombatTargeting<'_, '_> {
                             body_transform,
                             body_collider,
                         ));
-                        let travel_direction =
-                            (body_transform.translation - transform.translation).xz();
-                        reachable_melee_strike_point(
-                            hitbox_collider,
-                            target_transform.translation(),
-                            target_transform.rotation(),
-                            origin,
-                            travel_direction,
-                            reach.0,
-                            maximum_travel,
-                        )
-                        .map(|(point, closure)| {
-                            let lunge = melee_lunge(reach.0 + closure, reach.0, 0.0, reach.1);
+                        let surface_measure = (transform
+                            .translation
+                            .xz()
+                            .distance(body_transform.translation.xz())
+                            - adventuresim_core::combat::HUMANOID_MELEE_MINIMUM_CENTER_SEPARATION_METRES)
+                            .max(0.0);
+                        let closure = (surface_measure - reach.0).max(0.0);
+                        (closure <= maximum_travel + 1.0e-5).then(|| {
+                            let lunge = melee_lunge(surface_measure, reach.0, 0.0, maximum_travel);
                             (
-                                point,
+                                position,
                                 melee_lunge_delay_seconds(
                                     lunge,
                                     lunge_timing.0,

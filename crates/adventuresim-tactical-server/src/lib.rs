@@ -10,7 +10,7 @@
 //! every target, lib included - doesn't pay to compile this module tree a
 //! second time. Only `--features remote-types` does, and nothing in the
 //! real `adventuresim-tactical-server` binary depends on this target.
-#![cfg(feature = "remote-types")]
+#![cfg(any(feature = "remote-types", feature = "iteration"))]
 #![expect(
     dead_code,
     unused_imports,
@@ -20,6 +20,8 @@
 pub mod bot;
 pub mod combat;
 pub mod equipment;
+#[cfg(feature = "iteration")]
+pub mod iteration;
 pub mod mission;
 pub mod openings;
 pub mod player_projection;

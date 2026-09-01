@@ -10,6 +10,10 @@ use crate::{
     inventory::{InventoryView, InventoryViewer},
 };
 
+mod combat_state;
+
+pub use combat_state::*;
+
 /// BEI Component alias to mark players that are controlled by the present client.
 pub type ControlledPlayer = Actions<Player>;
 
@@ -51,7 +55,7 @@ impl Default for CharacterDimensions {
         Self {
             leg_length_metres: 0.840_348,
             body_height_metres: 1.9,
-            arm_reach_metres: 0.526_801,
+            arm_reach_metres: adventuresim_core::combat::HUMANOID_REFERENCE_ARM_REACH_METRES,
         }
     }
 }
@@ -139,111 +143,6 @@ impl PlayerEssentials for Stats {
 
     fn focus_level(&self) -> f32 {
         self.focus
-    }
-}
-
-/// Live, server-authoritative combat effects. This component is replicated for
-/// presentation but remains transient and is never written to SpacetimeDB.
-#[derive(Component, Serialize, Deserialize, Debug, Reflect, Clone, PartialEq)]
-#[reflect(Component)]
-pub struct TacticalCombatState {
-    pub starting_incapacitation: f32,
-    pub starting_blood_fraction: f32,
-    pub starting_fear: f32,
-    pub starting_fatigue: f32,
-    pub starting_hunger: f32,
-    pub starting_thirst: f32,
-    pub starting_thermal: f32,
-    pub blood_loss_fraction: f32,
-    pub exhaustion: f32,
-    pub imbalance: f32,
-    pub incapacitation: f32,
-}
-
-impl Default for TacticalCombatState {
-    fn default() -> Self {
-        Self {
-            starting_incapacitation: 0.0,
-            starting_blood_fraction: 1.0,
-            starting_fear: 0.0,
-            starting_fatigue: 0.0,
-            starting_hunger: 0.0,
-            starting_thirst: 0.0,
-            starting_thermal: 0.0,
-            blood_loss_fraction: 0.0,
-            exhaustion: 0.0,
-            imbalance: 0.0,
-            incapacitation: 0.0,
-        }
-    }
-}
-
-impl TacticalCombatState {
-    /// Returns the source values represented by the tactical incapacitation
-    /// wheel. Pain and blood loss are recomputed live in combat; the remaining
-    /// strategic sources retain their enrollment-time breakdown.
-    pub fn incapacitation_sources(
-        &self,
-        total_limb_damage: f32,
-        will_check: f32,
-    ) -> TacticalIncapacitationSources {
-        let remaining_blood =
-            (self.starting_blood_fraction - self.blood_loss_fraction).clamp(0.0, 1.0);
-        TacticalIncapacitationSources {
-            pain: pain_incapacitation(total_limb_damage, will_check),
-            blood_loss: blood_loss_incapacitation(remaining_blood, 1.0),
-            fear: self.starting_fear.max(0.0),
-            fatigue: self.starting_fatigue.max(0.0),
-            hunger: self.starting_hunger.max(0.0),
-            thirst: self.starting_thirst.max(0.0),
-            thermal: self.starting_thermal.max(0.0),
-            exhaustion: self.exhaustion.max(0.0),
-            imbalance: self.imbalance.max(0.0),
-        }
-    }
-
-    /// Derives readiness from the one replicated incapacitation value.
-    ///
-    /// Readiness is intentionally not stored separately: clients, authority
-    /// checks, AI, and mission resolution therefore cannot observe divergent
-    /// boolean/component copies of the same state.
-    pub fn incapacitation_status(&self) -> IncapacitationStatus {
-        match self.incapacitation {
-            total if total >= 1.0 => IncapacitationStatus::Incapacitated,
-            total if total > 0.5 => IncapacitationStatus::Staggered,
-            _ => IncapacitationStatus::Ready,
-        }
-    }
-
-    pub fn is_incapacitated(&self) -> bool {
-        self.incapacitation_status() == IncapacitationStatus::Incapacitated
-    }
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
-pub struct TacticalIncapacitationSources {
-    pub pain: f32,
-    pub blood_loss: f32,
-    pub fear: f32,
-    pub fatigue: f32,
-    pub hunger: f32,
-    pub thirst: f32,
-    pub thermal: f32,
-    pub exhaustion: f32,
-    pub imbalance: f32,
-}
-
-impl TacticalIncapacitationSources {
-    pub fn total(self) -> f32 {
-        self.pain
-            + self.blood_loss
-            + self.fear
-            + self.fatigue
-            + self.hunger
-            + self.thirst
-            + self.thermal
-            + self.exhaustion
-            + self.imbalance
     }
 }
 
@@ -713,12 +612,12 @@ mod tactical_combat_state_tests {
             starting_thirst: 0.07,
             starting_thermal: 0.05,
             blood_loss_fraction: 0.15,
-            exhaustion: 0.12,
+            oxygen_debt_joules: 120_000.0,
             imbalance: 0.2,
             ..default()
         };
 
-        let sources = state.incapacitation_sources(0.0, 4.0);
+        let sources = state.incapacitation_sources(0.0, 4.0, 3.0);
         assert_eq!(sources.pain, 0.0);
         assert!((sources.blood_loss - 1.0).abs() < 0.0001);
         assert_eq!(sources.fear, 0.1);
@@ -726,9 +625,9 @@ mod tactical_combat_state_tests {
         assert_eq!(sources.hunger, 0.08);
         assert_eq!(sources.thirst, 0.07);
         assert_eq!(sources.thermal, 0.05);
-        assert_eq!(sources.exhaustion, 0.12);
+        assert!(sources.oxygen_debt > 0.0);
         assert_eq!(sources.imbalance, 0.2);
-        assert!((sources.total() - 1.67).abs() < 0.0001);
+        assert!((sources.total() - 1.95).abs() < 0.0001);
         assert!(
             (sources.total()
                 - combat_incapacitation(
@@ -739,7 +638,7 @@ mod tactical_combat_state_tests {
                     4.0,
                     state.imbalance,
                 )
-                - state.exhaustion)
+                - sources.oxygen_debt)
                 .abs()
                 < 0.0001
         );

@@ -382,6 +382,43 @@ fn valid_instance(instance: &WeaponInstance, expected_catalog_id: &str) -> bool 
         .is_ok_and(|expected| expected == *instance)
 }
 
+pub(crate) fn combat_geometry(
+    ctx: &ReducerContext,
+    inventory_row_id: u64,
+    item_id: &str,
+    catalog_melee_reach_m: f32,
+) -> Option<adventuresim_core::equipment::ParametricWeaponCombatGeometry> {
+    let object = crate::inventory_container::object_for_row(
+        ctx,
+        CarriedInventoryScope::Personal,
+        inventory_row_id,
+    )
+    .ok()?
+    .filter(|object| object.item_id == item_id)?;
+    let instance = ctx
+        .db
+        .weapon_instance()
+        .physical_object_id()
+        .find(object.id)?;
+    if !valid_instance(&instance, item_id) {
+        return None;
+    }
+    let derived = derive_properties(&decode(&instance.recipe).ok()?).ok()?;
+    let default_grip_to_tip_m = derive_properties(&default_design(item_id)?)
+        .ok()?
+        .grip_to_tip_m;
+    adventuresim_core::equipment::ParametricWeaponCombatGeometry::new(
+        derived.mass_kg,
+        derived.length_m,
+        derived.grip_to_tip_m,
+        derived.striking_head_length_m,
+        derived.moment_of_inertia_kg_m2,
+        derived.balance,
+        catalog_melee_reach_m,
+        default_grip_to_tip_m,
+    )
+}
+
 pub(crate) fn connected_appearance(
     ctx: &ViewContext,
     inventory_row_id: u64,
@@ -522,6 +559,9 @@ mod tests {
         assert_ne!(first.physical_object_id, second.physical_object_id);
         assert_ne!(first.design_hash, second.design_hash);
         assert_ne!(first.recipe, second.recipe);
+        assert_ne!(first.mass_grams, second.mass_grams);
+        assert_ne!(first.length_mm, second.length_mm);
+        assert_ne!(first.grip_to_tip_mm, second.grip_to_tip_mm);
     }
 
     #[test]

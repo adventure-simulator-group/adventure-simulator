@@ -11,22 +11,31 @@ path = "src/lib.rs"
 name = "adventuresim-tactical-server"
 path = "src/main.rs"
 
+[[bin]]
+name = "melee-combat-iteration"
+path = "src/bin/melee-combat-iteration.rs"
+required-features = ["iteration"]
+
 [features]
 default = []
 debug = ["bevy/debug", "bevy/bevy_remote", "bevy/scene", "dep:ron"]
 # See src/lib.rs - only used by crates/adventuresim-tactical-brp-generator.
 remote-types = ["debug"]
+iteration = []
 
 [dependencies]
 rand.workspace = true
+fabelgeist-determinism.workspace = true
 serde-saphyr.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 
 # Bevy + shared Aeronet/Replicon netcode
 bevy = { workspace = true, features = ["multi_threaded"] }
 adventuresim-tactical-netcode = { workspace = true, features = ["server"] }
 adventuresim-tactical-core.workspace = true
 adventuresim-core.workspace = true
+adventuresim-weapon-model.workspace = true
 adventuresim-world-schema.workspace = true
 adventuresim-building-generator.workspace = true
 

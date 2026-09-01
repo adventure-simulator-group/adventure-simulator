@@ -2,15 +2,41 @@ use std::{f32, ops::Mul};
 
 use serde::{Deserialize, Serialize};
 
+mod armor;
+mod capability;
 mod config;
+mod contact_geometry;
 mod defense;
+mod fatigue;
+mod melee_resolution;
 pub(crate) mod targeting;
+mod wounds;
 
-pub use config::*;
-pub use targeting::{
-    MeleeContactLocation, melee_attack_accuracy_by_parts, melee_attack_value_by_parts,
-    melee_contact_location, whole_body_armor_coverage,
+pub use armor::{
+    ArmorCoverageSpan, ArmorImpact, ArmorImpactOutcome, AuthoredArmorCoverage,
+    authored_armor_coverage, authored_armor_coverage_span, layered_armor_contact_index,
 };
+pub use capability::{MeleeAttackCapability, melee_attack_capability};
+pub use config::*;
+pub use contact_geometry::{
+    HUMANOID_COLLISION_RADIUS_METRES, HUMANOID_MELEE_MINIMUM_CENTER_SEPARATION_METRES,
+    HUMANOID_REFERENCE_ARM_REACH_METRES, MeleeContactAtTime, MeleeContactAtTimeFacts,
+    MeleeContactClassification, MeleeContactInvalidationCause, has_distal_striking_surface,
+    preferred_melee_striking_measure, resolve_melee_contact_at_time,
+};
+pub use defense::{
+    CommittedThreatChoice, CommittedThreatDecision, CommittedThreatFacts, WeaponDefenseAlignment,
+    choose_committed_threat_response, reciprocal_intercept_response,
+    resolve_weapon_defense_alignment, shield_aligned_response,
+};
+pub use fatigue::*;
+pub use melee_resolution::resolve_melee_attack_by_parts;
+pub use targeting::{
+    AnatomicalSubregion, MeleeContactLocation, anatomical_subregion,
+    melee_attack_accuracy_by_parts, melee_attack_value_by_parts, melee_contact_location,
+    melee_measure_adjusted_precision, whole_body_armor_coverage,
+};
+pub use wounds::*;
 
 use crate::{
     body::{BodyPart, BodySide, LimbWeights, PlayerBody},
@@ -19,8 +45,6 @@ use crate::{
     skill::{PlayerSkills, Skill},
 };
 
-/// Blood-volume fraction lost per point of cutting limb damage.
-pub const CUT_BLOOD_LOSS_PER_HEALTH_DAMAGE: f32 = 0.5;
 /// Empty-hand accuracy multipliers shared by tactical inventory and pure
 /// matchup/autoresolve equipment.
 pub const UNARMED_SWING_PRECISION: f32 = 0.2;
@@ -96,7 +120,6 @@ fn precision_damage_multiplier(excess_accuracy: f32, lore_cap: f32) -> f32 {
     excess_accuracy.max(0.0).min(lore_cap.max(2.0))
 }
 
-/// Result of resolving a melee attack.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum AttackResult {
     ToAttacker {
@@ -112,8 +135,9 @@ pub enum AttackResult {
         balance_damage: f32,
         /// Physical force delivered at contact before armor absorption.
         contact_force: f32,
-        /// Whether this contact actually intersected the armor coverage roll.
-        armor_contact: bool,
+        /// Exact engaged authored surface and its physical energy accounting.
+        /// `None` means the selected anatomical destination was a coverage gap.
+        armor_impact: Option<ArmorImpact>,
     },
 }
 
@@ -136,13 +160,18 @@ impl Mul<f32> for AttackResult {
                 blunt_damage,
                 balance_damage,
                 contact_force,
-                armor_contact,
+                armor_impact,
             } => Self::ToDefender {
                 cut_damage: cut_damage * rhs,
                 blunt_damage: blunt_damage * rhs,
                 balance_damage: balance_damage * rhs,
                 contact_force: contact_force * rhs,
-                armor_contact,
+                armor_impact: armor_impact.map(|impact| ArmorImpact {
+                    resisted_energy_joules: impact.resisted_energy_joules * rhs,
+                    transmitted_energy_joules: impact.transmitted_energy_joules * rhs,
+                    penetrated_energy_joules: impact.penetrated_energy_joules * rhs,
+                    ..impact
+                }),
             },
         }
     }
@@ -152,7 +181,9 @@ impl Mul<f32> for AttackResult {
 pub enum DefenderResponse {
     #[default]
     None,
-    Block,
+    Block {
+        effectiveness: f32,
+    },
     Parry {
         input_reflex: f32,
         precision: f32,
@@ -178,120 +209,6 @@ pub fn flanking_from_dir(attacker_dir: (f32, f32), defender_dir: (f32, f32)) -> 
 ///
 /// Returns the outcome including damage values. Damage is not yet
 /// applied to any body part — the caller is responsible for that.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "combat resolution receives independent attacker and defender facets"
-)]
-pub fn resolve_melee_attack_by_parts(
-    attacker_skills: &impl PlayerSkills,
-    attacker_attr: &impl PlayerAttributes,
-    attacker_body: &impl PlayerBody,
-    attacker_essentials: &impl PlayerEssentials,
-    attacker_equip: &impl PlayerEquipment,
-    parameters: CombatResolutionParameters,
-    attacker_side: BodySide,
-    attack_style: crate::combat_style::MeleeAttackStyle,
-    hit_precision: f32,
-    precision_damage_multiplier_cap: f32,
-    flanking: f32,
-    contact: MeleeContactLocation,
-    defender_response: DefenderResponse,
-    defender_skills: &impl PlayerSkills,
-    defender_attr: &impl PlayerAttributes,
-    defender_body: &impl PlayerBody,
-    defender_essentials: &impl PlayerEssentials,
-    defender_equip: &impl PlayerEquipment,
-) -> AttackResult {
-    let accuracy = melee_attack_accuracy_by_parts(
-        attacker_skills,
-        attacker_attr,
-        attacker_body,
-        attacker_essentials,
-        attacker_equip,
-        attacker_side,
-        attack_style,
-        hit_precision,
-    );
-    let attack = melee_attack_value_by_parts(
-        attacker_skills,
-        attacker_attr,
-        attacker_body,
-        attacker_essentials,
-        attacker_equip,
-        attacker_side,
-        attack_style,
-        hit_precision,
-        flanking,
-        defender_response,
-        defender_skills,
-        defender_attr,
-        defender_body,
-        defender_essentials,
-        defender_equip,
-    );
-    let armor_contact = attack_reaches_armor(attack, contact, attacker_equip, defender_equip);
-    match attack {
-        // (7) Avoided attack, bounded overextension/rebound to attacker.
-        ..0.0 => AttackResult::ToAttacker {
-            balance_damage: avoided_attack_balance_damage(
-                accuracy,
-                attacker_attr,
-                attacker_body,
-                attacker_equip,
-                parameters,
-                defender_response,
-            ),
-            contact_force: if defender_response.is_weapon_contact() {
-                attack_force(attacker_attr, attacker_body, attacker_equip, parameters)
-                    * accuracy.clamp(0.0, 1.0)
-            } else {
-                0.0
-            },
-            physical_contact: defender_response.is_weapon_contact(),
-        },
-        // Precise attacks that beat whole-body coverage reach the server-authored gap.
-        1.0.. if !armor_contact && attacker_equip.weapon_is_precise() => {
-            calculate_damage(
-                1.0,
-                attacker_attr,
-                attacker_body,
-                attacker_equip,
-                contact.body_part,
-                defender_body,
-                defender_equip,
-                false,
-                parameters,
-            ) * precision_damage_multiplier(
-                attack - 1.0 - whole_body_armor_coverage(defender_equip),
-                precision_damage_multiplier_cap,
-            )
-        }
-        // (8) Simple connected attack
-        _ => calculate_damage(
-            attack,
-            attacker_attr,
-            attacker_body,
-            attacker_equip,
-            contact.body_part,
-            defender_body,
-            defender_equip,
-            armor_contact,
-            parameters,
-        ),
-    }
-}
-
-fn attack_reaches_armor(
-    attack: f32,
-    contact: MeleeContactLocation,
-    attacker_equip: &impl PlayerEquipment,
-    defender_equip: &impl PlayerEquipment,
-) -> bool {
-    contact.armor_contact
-        && !(attacker_equip.weapon_is_precise()
-            && attack > 1.0 + whole_body_armor_coverage(defender_equip))
-}
-
 fn avoided_attack_balance_damage(
     accuracy: f32,
     attacker_attr: &impl PlayerAttributes,
@@ -388,8 +305,9 @@ pub fn resolve_ranged_attack_by_parts(
                 defender_body_part,
                 defender_body,
                 defender_equip,
-                false,
+                None,
                 parameters,
+                MeleeContactAtTime::intended(0.0),
             ) * precision_damage_multiplier(critical, precision_damage_multiplier_cap);
         }
     }
@@ -400,8 +318,9 @@ pub fn resolve_ranged_attack_by_parts(
         defender_body_part,
         defender_body,
         defender_equip,
-        true,
+        defender_equip.armor_surface(defender_body_part, 0.5),
         parameters,
+        MeleeContactAtTime::intended(0.0),
     )
 }
 
@@ -415,7 +334,7 @@ fn defense_by_parts(
 ) -> f32 {
     let base = match response {
         DefenderResponse::None => 0.0,
-        DefenderResponse::Block | DefenderResponse::Parry { .. } => {
+        DefenderResponse::Block { .. } | DefenderResponse::Parry { .. } => {
             let block = skills.skill_check_by_parts(
                 Skill::Block,
                 attr,
@@ -426,24 +345,14 @@ fn defense_by_parts(
             );
             5.0 * (1.0 - (-(equip.shield_block_bonus() + block) / 2.0).exp())
         }
-        DefenderResponse::Dodge { .. } => {
-            let dodge = skills.skill_check_by_parts(
-                Skill::Dodge,
-                attr,
-                body,
-                essentials,
-                equip,
-                LimbWeights {
-                    left_arm: 0.1,
-                    right_arm: 0.1,
-                    left_leg: 0.4,
-                    right_leg: 0.4,
-                },
-            );
-            dodge
-                * equip.armor_penalty(BodyPart::FULL_BODY)
-                * equip.encumbrance_penalty_by_parts(attr, body)
-        }
+        DefenderResponse::Dodge { .. } => skills.skill_check_by_parts(
+            Skill::Dodge,
+            attr,
+            body,
+            essentials,
+            equip,
+            LimbWeights::both_legs(),
+        ),
     };
     base * response.factor()
 }
@@ -481,18 +390,28 @@ fn calculate_damage(
     defender_body_part: BodyPart,
     defender_body: &impl PlayerBody,
     defender_equip: &impl PlayerEquipment,
-    armor_applies: bool,
+    armor_surface: Option<crate::equipment::ArmorSurface>,
     parameters: CombatResolutionParameters,
+    contact_at_time: MeleeContactAtTime,
 ) -> AttackResult {
+    if contact_at_time.classification == MeleeContactClassification::InvalidatedMiss {
+        return AttackResult::ToAttacker {
+            balance_damage: 0.0,
+            contact_force: 0.0,
+            physical_contact: false,
+        };
+    }
     calculate_damage_from_force(
         attack,
-        attack_force(attacker_attr, attacker_body, attacker_equip, parameters),
+        attack_force(attacker_attr, attacker_body, attacker_equip, parameters)
+            * contact_at_time.energy_fraction,
         attacker_equip,
         defender_body_part,
         defender_body,
         defender_equip,
-        armor_applies,
+        armor_surface,
         parameters,
+        contact_at_time,
     )
 }
 
@@ -501,30 +420,23 @@ fn calculate_damage_from_force(
     attack: f32,
     full_force: f32,
     attacker_equip: &impl PlayerEquipment,
-    defender_body_part: BodyPart,
+    _defender_body_part: BodyPart,
     defender_body: &impl PlayerBody,
     defender_equip: &impl PlayerEquipment,
-    armor_applies: bool,
+    armor_surface: Option<crate::equipment::ArmorSurface>,
     parameters: CombatResolutionParameters,
+    contact_at_time: MeleeContactAtTime,
 ) -> AttackResult {
     let attack = attack.clamp(0.0, 1.0);
 
     let unarmed = attacker_equip.weapon_is_unarmed();
-    let has_edge = attacker_equip.weapon_does_slash() || attacker_equip.weapon_does_pierce();
-    let has_blunt = unarmed || attacker_equip.weapon_does_blunt();
-    let defender_resistance = if armor_applies && has_edge {
-        let resistance = defender_equip.armor_resistance(defender_body_part);
-        let flexibility = defender_equip.armor_flexibility(defender_body_part);
-        let penetration = attacker_equip.weapon_penetration();
-        (resistance - flexibility * resistance * penetration).max(0.0)
-    } else {
-        0.0
-    };
-    let defender_padding = if armor_applies {
-        defender_equip.armor_padding(defender_body_part)
-    } else {
-        0.0
-    };
+    let shortened_contact = matches!(
+        contact_at_time.classification,
+        MeleeContactClassification::Haft | MeleeContactClassification::Pommel
+    );
+    let has_edge = !shortened_contact
+        && (attacker_equip.weapon_does_slash() || attacker_equip.weapon_does_pierce());
+    let has_blunt = shortened_contact || unarmed || attacker_equip.weapon_does_blunt();
     let stagger_resistance_per_kg = if unarmed {
         UNARMED_STAGGER_RESISTANCE_JOULES_PER_KG
     } else {
@@ -534,39 +446,37 @@ fn calculate_damage_from_force(
         * (defender_equip.inventory_weight() + defender_body.body_weight());
 
     let attack_force = full_force.max(0.0) * attack;
-    let penetrated_force = (attack_force - defender_resistance).max(0.0);
-    let absorbed_force = (attack_force - penetrated_force).max(0.0);
-
-    // Resistance opposes an edge or point. Pure blunt contact transmits its
-    // force directly to padding instead of pretending it must penetrate the
-    // material's cut resistance. A mixed head divides penetrated force between
-    // its edge and impact modes so the same energy is not counted twice.
-    let penetration = attacker_equip.weapon_penetration().max(0.0);
-    let (cut_force, transmitted_blunt_force) = match (has_edge, has_blunt) {
-        (true, true) => (penetrated_force * 0.5, penetrated_force * 0.5),
-        (true, false) => (penetrated_force, 0.0),
-        (false, true) => (0.0, penetrated_force),
-        (false, false) => (0.0, 0.0),
-    };
-    let cut_damage = if penetration > 0.0 && has_edge {
-        cut_force / penetration
-    } else {
-        0.0
-    };
-    let blunt_force = (absorbed_force * 0.5 + transmitted_blunt_force)
+    if attack_force <= f32::EPSILON {
+        return AttackResult::ToAttacker {
+            balance_damage: 0.0,
+            contact_force: 0.0,
+            physical_contact: false,
+        };
+    }
+    let energy = armor::resolve_contact_energy(
+        armor_surface,
+        attack,
+        attack_force,
+        has_edge,
+        has_blunt,
+        attacker_equip.weapon_penetration().max(0.0),
+    );
+    let cut_damage = energy.cut_energy_joules;
+    let blunt_damage = energy.blunt_energy_joules
         * if unarmed {
             UNARMED_BLUNT_INJURY_SCALE
         } else {
             1.0
         };
-    let blunt_damage = (blunt_force - defender_padding).max(0.0);
     // A pure blunt impact still transfers momentum when there is no edge for
     // resistance to absorb. Edge and mixed contacts retain the absorbed-force
     // impulse used by the existing model.
     let stagger_impulse = if has_blunt && !has_edge {
         attack_force * 0.5
     } else {
-        absorbed_force * 0.5
+        energy.armor_impact.map_or(attack_force * 0.5, |impact| {
+            impact.resisted_energy_joules * 0.5
+        })
     };
     let balance_damage = stagger_impulse / defender_stagger_resistance;
     AttackResult::ToDefender {
@@ -574,7 +484,7 @@ fn calculate_damage_from_force(
         blunt_damage,
         balance_damage,
         contact_force: attack_force,
-        armor_contact: armor_applies,
+        armor_impact: energy.armor_impact,
     }
 }
 
@@ -620,25 +530,6 @@ pub fn apportion_attack_health_damage(result: AttackResult, applied: f32) -> (f3
     }
     let applied_cut = applied * cut_weight / total_weight;
     (applied_cut, applied - applied_cut)
-}
-
-/// Estimates immediate blood-volume loss from already-applied limb damage.
-/// Cuts bleed substantially; blunt trauma contributes only modest internal
-/// bleeding, with the head and abdomen carrying the greatest risk.
-#[must_use]
-pub fn blood_loss_from_applied_health_damage(
-    part: BodyPart,
-    applied_cut: f32,
-    applied_blunt: f32,
-) -> f32 {
-    let blunt_coefficient = match part {
-        BodyPart::Head => 0.015,
-        BodyPart::Stomach => 0.01,
-        BodyPart::Chest => 0.0075,
-        BodyPart::LeftArm | BodyPart::RightArm | BodyPart::LeftLeg | BodyPart::RightLeg => 0.005,
-    };
-    applied_cut.max(0.0) * CUT_BLOOD_LOSS_PER_HEALTH_DAMAGE
-        + applied_blunt.max(0.0) * blunt_coefficient
 }
 
 #[cfg(test)]
@@ -746,6 +637,7 @@ mod tests {
             flexibility: 0.5,
             range_of_motion: 1.0,
             coverage: 1.0,
+            ..Default::default()
         });
 
         let result = calculate_damage_from_force(
@@ -755,8 +647,9 @@ mod tests {
             BodyPart::Chest,
             &StubBody,
             &defender,
-            true,
+            defender.armor_surface(BodyPart::Chest, 0.0),
             EMBEDDED_COMBAT_RESOLUTION_PARAMETERS,
+            MeleeContactAtTime::intended(0.0),
         );
         let AttackResult::ToDefender {
             cut_damage,
@@ -805,6 +698,7 @@ mod tests {
             flexibility: 27.0 / 115.0,
             range_of_motion: 0.78,
             coverage: 0.7475,
+            ..Default::default()
         };
 
         let force = attack_force(
@@ -821,8 +715,9 @@ mod tests {
             BodyPart::Head,
             &john_body,
             &munition_armor,
-            true,
+            munition_armor.armor_surface(BodyPart::Head, 0.5),
             EMBEDDED_COMBAT_RESOLUTION_PARAMETERS,
+            MeleeContactAtTime::intended(0.0),
         );
         let AttackResult::ToDefender {
             cut_damage,
@@ -920,8 +815,11 @@ mod tests {
                 0.0,
                 MeleeContactLocation {
                     body_part: matchup.target,
-                    armor_contact: false,
+                    anatomical_subregion: anatomical_subregion(matchup.target, 0.5),
+                    surface_coordinate: 0.5,
+                    armor_surface: None,
                 },
+                MeleeContactAtTime::intended(0.0),
                 DefenderResponse::None,
                 &StubSkills,
                 &StubAttributes,
@@ -939,7 +837,13 @@ mod tests {
             };
             let health_damage = health_damage_from_attack(result, matchup.target);
             let (cut, blunt) = apportion_attack_health_damage(result, health_damage);
-            let blood_loss = blood_loss_from_applied_health_damage(matchup.target, cut, blunt);
+            let blunt_energy = match result {
+                AttackResult::ToDefender { blunt_damage, .. } => blunt_damage,
+                AttackResult::ToAttacker { .. } => 0.0,
+            };
+            let wounds =
+                wounds_from_applied_health_damage(matchup.target, cut, blunt, blunt_energy);
+            let blood_loss = advance_combat_bleeding(0.0, &wounds, 60.0);
             let total_incapacitation = combat_incapacitation(
                 0.0,
                 1.0,
@@ -1020,8 +924,11 @@ mod tests {
                 0.0,
                 MeleeContactLocation {
                     body_part: BodyPart::Chest,
-                    armor_contact: false,
+                    anatomical_subregion: AnatomicalSubregion::ChestAxilla,
+                    surface_coordinate: 0.9,
+                    armor_surface: None,
                 },
+                MeleeContactAtTime::intended(0.0),
                 matchup.response,
                 &john.skills,
                 &john.attributes,
@@ -1070,8 +977,9 @@ mod tests {
             BodyPart::Chest,
             &StubBody,
             &defender,
-            true,
+            defender.armor_surface(BodyPart::Chest, 0.0),
             EMBEDDED_COMBAT_RESOLUTION_PARAMETERS,
+            MeleeContactAtTime::intended(0.0),
         );
         let stronger = calculate_damage_from_force(
             1.0,
@@ -1080,8 +988,9 @@ mod tests {
             BodyPart::Chest,
             &StubBody,
             &defender,
-            true,
+            defender.armor_surface(BodyPart::Chest, 0.0),
             EMBEDDED_COMBAT_RESOLUTION_PARAMETERS,
+            MeleeContactAtTime::intended(0.0),
         );
 
         assert!(matches!(
@@ -1101,7 +1010,7 @@ mod tests {
     }
 
     #[test]
-    fn mixed_contact_partitions_penetrated_force_without_double_counting() {
+    fn hammer_gap_contact_partitions_seventy_six_joules_without_duplication() {
         let attacker = CombatEquipment {
             weapon: Some(CombatWeapon {
                 blunt: true,
@@ -1113,26 +1022,100 @@ mod tests {
         };
         let result = calculate_damage_from_force(
             1.0,
-            100.0,
+            76.5,
             &attacker,
             BodyPart::Chest,
             &StubBody,
             &CombatEquipment::default(),
-            true,
+            None,
             EMBEDDED_COMBAT_RESOLUTION_PARAMETERS,
+            MeleeContactAtTime::intended(0.0),
         );
         assert!(matches!(
             result,
             AttackResult::ToDefender {
-                cut_damage: 50.0,
-                blunt_damage: 50.0,
+                cut_damage: 38.25,
+                blunt_damage: 38.25,
                 ..
             }
         ));
     }
 
     #[test]
-    fn whole_body_coverage_selects_protected_destinations_without_input_aiming() {
+    fn shortened_halberd_contact_conserves_energy_and_cannot_cut() {
+        let halberd = CombatEquipment {
+            weapon: Some(CombatWeapon {
+                blunt: true,
+                slash: true,
+                pierce: true,
+                penetration: 2.0,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let contact = resolve_melee_contact_at_time(MeleeContactAtTimeFacts {
+            scheduled_measure_metres: 2.0,
+            actual_measure_metres: 1.25,
+            ideal_measure_metres: 1.92,
+            effective_reach_metres: 2.0,
+            grip_to_tip_metres: 1.9,
+            total_length_metres: 2.1,
+            striking_head_length_metres: 0.16,
+            distal_headed: true,
+            attack_style: crate::combat_style::MeleeAttackStyle::Swing,
+            body_material: Some(crate::item_catalog_schema::EquipmentMaterial::Hardwood),
+            striking_material: Some(crate::item_catalog_schema::EquipmentMaterial::RoughSteel),
+        });
+        let result = calculate_damage_from_force(
+            1.0,
+            101.4 * contact.energy_fraction,
+            &halberd,
+            BodyPart::Chest,
+            &StubBody,
+            &CombatEquipment::default(),
+            None,
+            EMBEDDED_COMBAT_RESOLUTION_PARAMETERS,
+            contact,
+        );
+        let AttackResult::ToDefender {
+            cut_damage,
+            blunt_damage,
+            contact_force,
+            ..
+        } = result
+        else {
+            panic!("shortened contact must transfer shaft energy");
+        };
+        assert_eq!(cut_damage, 0.0);
+        assert!((blunt_damage - contact_force).abs() < 0.001);
+        assert!((contact_force - 101.4 * contact.energy_fraction).abs() < 0.001);
+    }
+
+    #[test]
+    fn zero_energy_is_no_effective_contact() {
+        let result = calculate_damage_from_force(
+            1.0,
+            0.0,
+            &StubEquipment,
+            BodyPart::Chest,
+            &StubBody,
+            &StubEquipment,
+            None,
+            EMBEDDED_COMBAT_RESOLUTION_PARAMETERS,
+            MeleeContactAtTime::intended(0.0),
+        );
+        assert!(matches!(
+            result,
+            AttackResult::ToAttacker {
+                contact_force: 0.0,
+                physical_contact: false,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn anatomical_destination_then_coverage_distinguishes_surface_from_gap() {
         let mut defender = CombatEquipment::default();
         defender.armor[crate::autoresolve::body_part_index(BodyPart::Chest)] = CombatArmor {
             resistance: 120.0,
@@ -1140,56 +1123,39 @@ mod tests {
             flexibility: 0.08,
             range_of_motion: 0.65,
             coverage: 1.0,
-        };
-        let attacker = CombatEquipment {
-            weapon: Some(CombatWeapon {
-                precise: false,
-                ..Default::default()
-            }),
             ..Default::default()
         };
 
         assert!((whole_body_armor_coverage(&defender) - 0.22).abs() < 0.0001);
-        for sample in [0.0, 0.25, 0.5, 0.75, 0.999] {
-            assert_eq!(
-                melee_contact_location(10.0, &attacker, &defender, sample),
-                MeleeContactLocation {
-                    body_part: BodyPart::Chest,
-                    armor_contact: true,
-                }
-            );
-        }
+        let contact = melee_contact_location(&defender, 0.5, 0.0);
+        assert_eq!(contact.body_part, BodyPart::Chest);
+        assert!(contact.armor_surface.is_some());
     }
 
     #[test]
-    fn dodge_can_move_a_precise_destination_back_onto_armor() {
+    fn partial_body_part_coverage_has_forced_surface_and_gap_samples() {
         let mut defender = CombatEquipment::default();
         defender.armor[crate::autoresolve::body_part_index(BodyPart::Chest)] = CombatArmor {
             resistance: 120.0,
             padding: 50.0,
             flexibility: 0.08,
             range_of_motion: 0.65,
-            coverage: 1.0,
+            coverage: 0.7,
+            inventory_item_id: Some(42),
+            material: Some(crate::item_catalog_schema::EquipmentMaterial::RoughSteel),
+            coverage_span: None,
+            coverage_geometry: None,
         };
-        let attacker = CombatEquipment {
-            weapon: Some(CombatWeapon {
-                precise: true,
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-
-        let intended = melee_contact_location(1.5, &attacker, &defender, 0.5);
-        assert!(!intended.armor_contact);
-        assert_ne!(intended.body_part, BodyPart::Chest);
-
-        let after_dodge = melee_contact_location(0.8, &attacker, &defender, 0.5);
-        assert_eq!(
-            after_dodge,
-            MeleeContactLocation {
-                body_part: BodyPart::Chest,
-                armor_contact: true,
-            }
+        let surface = melee_contact_location(&defender, 0.524, 0.0);
+        let gap = melee_contact_location(&defender, 0.689, 0.0);
+        assert_eq!(surface.body_part, BodyPart::Chest);
+        assert_eq!(surface.armor_surface.unwrap().inventory_item_id, Some(42));
+        assert_eq!(gap.body_part, BodyPart::Chest);
+        assert!(gap.armor_surface.is_none());
+        let precisely_placed = melee_contact_location(&defender, 0.524, 1.0);
+        assert!(
+            precisely_placed.armor_surface.is_none(),
+            "precision biases the coverage sample toward a real gap before contact"
         );
     }
 
@@ -1210,5 +1176,11 @@ mod tests {
             derive_combat_starting_condition(0.2, 0.3, 0.4, 1.0, 0.0),
             (0.0, 1.0)
         );
+    }
+
+    #[test]
+    fn severe_trauma_can_incapacitate_before_blood_loss() {
+        let immediate = combat_incapacitation(0.0, 1.0, 0.0, 5.0, 0.0, 0.0);
+        assert!(immediate >= 1.0);
     }
 }

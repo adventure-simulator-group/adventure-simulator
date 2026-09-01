@@ -20,6 +20,32 @@ fn resolve_requested_dodge(
     })
 }
 
+fn resolve_requested_melee_dodge(
+    pending: Option<&PendingDefenderResponse>,
+    incoming_started_at: CombatInstant,
+    config: &DefenseAuthorityConfig,
+) -> Option<DefenderResponse> {
+    let pending = pending?;
+    if pending.set_at < incoming_started_at {
+        return None;
+    }
+    let delay = pending
+        .set_at
+        .elapsed_since(incoming_started_at)
+        .as_secs_f32();
+    let window = config.reflex_window_seconds.max(f32::EPSILON);
+    if delay > window {
+        return None;
+    }
+    let input_reflex = (1.0 - delay / window).clamp(0.0, 1.0);
+    Some(match pending.choice {
+        DefendRequest::Dodge { .. } => DefenderResponse::Dodge { input_reflex },
+        DefendRequest::Roll => DefenderResponse::Dodge {
+            input_reflex: roll_dodge_reflex(input_reflex, config.roll_dodge_effectiveness),
+        },
+    })
+}
+
 pub(super) fn resolve_passive_block(
     pending: Option<&PendingDefenderResponse>,
     time: &Time<()>,
@@ -43,7 +69,7 @@ fn passive_block_response(
     has_blocking_item: bool,
 ) -> DefenderResponse {
     if guard == WeaponGuardState::Raised && action == SkeletonAction::None && has_blocking_item {
-        DefenderResponse::Block
+        DefenderResponse::Block { effectiveness: 1.0 }
     } else {
         DefenderResponse::None
     }
@@ -58,32 +84,60 @@ pub(super) fn resolve_melee_defender_response(
     time: &Time<()>,
     defender_view: &TacticalPlayerView,
     defender_skeleton: &SkeletonState,
-    defender_attack: Option<&MeleeAttackAuthority>,
+    defender_attack: Option<&mut MeleeAttackAuthority>,
+    defender_incapacitation: f32,
+    defender_fatigue_performance: f32,
     attacker: Entity,
     incoming_started_at: CombatInstant,
     config: &DefenseAuthorityConfig,
 ) -> DefenderResponse {
-    if let Some(response) = resolve_requested_dodge(pending, time, config) {
+    if let Some(response) = resolve_requested_melee_dodge(pending, incoming_started_at, config) {
         return response;
     }
     let can_intercept =
         !defender_view.weapon_is_unarmed() || defender_view.shield_block_bonus() > 0.0;
     if can_intercept
         && defender_skeleton.action_kind() == SkeletonAction::Attack
-        && let Some((input_reflex, precision)) = defender_attack.and_then(|authority| {
-            authority.reciprocal_parry(
-                attacker,
-                incoming_started_at,
-                CombatDuration::from_secs_f32(config.reflex_window_seconds),
-            )
-        })
+        && let Some(authority) = defender_attack
+        && let Some(opportunity) = authority.reciprocal_attack_opportunity(
+            attacker,
+            incoming_started_at,
+            CombatInstant::from_elapsed(time),
+            CombatDuration::from_secs_f32(config.reflex_window_seconds),
+        )
     {
-        return DefenderResponse::Parry {
-            input_reflex,
-            precision: precision.get(),
-        };
+        if defender_view.shield_block_bonus() <= 0.0 {
+            let handling = effective_weapon_handling_skill(defender_view);
+            let instinct = defender_view.raw_single_body_part_attr(SimpleAttribute::Instinct);
+            let committed = choose_committed_threat_response(CommittedThreatFacts {
+                own_contact_after_incoming_seconds: opportunity.own_contact_after_incoming_seconds,
+                own_windup_seconds: opportunity.own_windup_seconds,
+                expected_intercept_engagement: (opportunity.input_reflex
+                    * ((handling + instinct) / 10.0).clamp(0.0, 1.0)
+                    * defender_fatigue_performance)
+                    .clamp(0.0, 1.0),
+                incapacitation: defender_incapacitation,
+                weapon_moment_of_inertia_kg_m2: defender_view.weapon_moment_of_inertia(),
+                weapon_recovery_seconds: defender_view.weapon_recovery_secs(),
+                consecutive_intercepts: opportunity.consecutive_intercepts,
+                decision_sample: opportunity.decision_sample,
+            });
+            if committed.choice == CommittedThreatChoice::FinishTrade {
+                authority.preserve_attack_for_trade();
+                return DefenderResponse::None;
+            }
+        }
+        return reciprocal_intercept_response(
+            opportunity.input_reflex,
+            opportunity.precision.get(),
+            defender_view.shield_block_bonus(),
+        );
     }
-    resolve_passive_block(pending, time, defender_view, defender_skeleton, config)
+    passive_block_response(
+        defender_skeleton.weapon_guard(),
+        defender_skeleton.action_kind(),
+        !defender_view.weapon_is_unarmed() || defender_view.shield_block_bonus() > 0.0,
+    )
 }
 
 pub(super) fn roll_dodge_reflex(input_reflex: f32, effectiveness: f32) -> f32 {
@@ -93,12 +147,48 @@ pub(super) fn roll_dodge_reflex(input_reflex: f32, effectiveness: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
+
+    fn dodge_reflex(response: Option<DefenderResponse>) -> Option<f32> {
+        match response {
+            Some(DefenderResponse::Dodge { input_reflex }) => Some(input_reflex),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn melee_dodge_reflex_decreases_with_reaction_delay_and_rejects_pre_attack_input() {
+        let config = TacticalCombatConfig::default().realtime_authority.defense;
+        let start = CombatInstant::from_duration(Duration::from_secs(1));
+        let pending = |milliseconds| PendingDefenderResponse {
+            choice: DefendRequest::Roll,
+            set_at: CombatInstant::from_duration(Duration::from_millis(milliseconds)),
+        };
+        let early = dodge_reflex(resolve_requested_melee_dodge(
+            Some(&pending(1_050)),
+            start,
+            &config,
+        ))
+        .unwrap();
+        let late = dodge_reflex(resolve_requested_melee_dodge(
+            Some(&pending(1_300)),
+            start,
+            &config,
+        ))
+        .unwrap();
+        assert!(early > late);
+        assert!(resolve_requested_melee_dodge(Some(&pending(900)), start, &config).is_none());
+        let after_window = 1_000 + (config.reflex_window_seconds * 1_000.0) as u64 + 1;
+        assert!(
+            resolve_requested_melee_dodge(Some(&pending(after_window)), start, &config).is_none()
+        );
+    }
 
     #[test]
     fn raised_item_blocks_only_during_neutral_action_state() {
         assert_eq!(
             passive_block_response(WeaponGuardState::Raised, SkeletonAction::None, true),
-            DefenderResponse::Block
+            DefenderResponse::Block { effectiveness: 1.0 }
         );
         for (guard, action, has_blocking_item) in [
             (WeaponGuardState::Lowered, SkeletonAction::None, true),
@@ -111,5 +201,17 @@ mod tests {
                 DefenderResponse::None
             );
         }
+    }
+
+    #[test]
+    fn offhand_shield_is_preferred_over_committed_sword_for_reciprocal_intercept() {
+        assert!(matches!(
+            reciprocal_intercept_response(0.8, 0.9, 1.5),
+            DefenderResponse::Block { effectiveness } if effectiveness > 0.65
+        ));
+        assert!(matches!(
+            reciprocal_intercept_response(0.8, 0.9, 0.0),
+            DefenderResponse::Parry { .. }
+        ));
     }
 }

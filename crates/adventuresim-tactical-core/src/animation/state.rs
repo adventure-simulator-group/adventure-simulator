@@ -10,8 +10,7 @@ pub enum Posture {
     Ragdolled,
 }
 
-/// Mutually exclusive physical body modes. Ground contact and posture cannot
-/// disagree because grounded posture is carried only by `Grounded`.
+/// Mutually exclusive body modes carrying grounded posture only in `Grounded`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Reflect)]
 pub enum BodyState {
     Grounded(GroundedPosture),
@@ -1507,7 +1506,7 @@ pub struct SkeletonState {
     guarded_sprint_locomotion: bool,
     stance: StanceState,
     attack_preparation: AttackPreparation,
-    action: ActionState,
+    pub(super) action: ActionState,
     posture_transition: Option<PostureTransitionState>,
     downed_facing: Option<DownedFacingState>,
     downed_turning: bool,
@@ -2420,8 +2419,7 @@ impl SkeletonState {
         Ok(())
     }
 
-    /// Advances an action whose semantic contact is phase 0.5. Preparation
-    /// and recovery may have different real-time durations.
+    /// Advances independently timed preparation, contact, and recovery.
     pub fn advance_action(&mut self, current_tick: u64) {
         let queued = match self.action {
             ActionState(ActionKind::Attack {

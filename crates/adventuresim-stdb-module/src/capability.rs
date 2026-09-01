@@ -15,6 +15,11 @@ use crate::{
     character_strategic_condition, inventory_item,
 };
 
+mod armor;
+mod equipment_projection;
+use armor::*;
+use equipment_projection::combat_weapon;
+
 #[derive(Clone, Debug, PartialEq)]
 #[table(accessor = character_capability)]
 pub struct CharacterCapability {
@@ -259,6 +264,7 @@ pub(crate) struct StrategicEquipment {
     weapon_side: Option<BodySide>,
     melee_weapon: Option<Item>,
     melee_weapon_inventory_id: Option<u64>,
+    melee_weapon_geometry: Option<adventuresim_core::equipment::ParametricWeaponCombatGeometry>,
     melee_weapon_side: Option<BodySide>,
     ranged_weapon: Option<Item>,
     ranged_weapon_inventory_id: Option<u64>,
@@ -266,29 +272,18 @@ pub(crate) struct StrategicEquipment {
     ammunition: u32,
     shield: Option<Item>,
     shield_inventory_id: Option<u64>,
+    shield_side: Option<BodySide>,
     armor: [adventuresim_core::equipment::LayeredArmor; 7],
+    armor_inventory_item_ids: [Option<u64>; 7],
+    armor_materials: [Option<adventuresim_core::item_catalog::EquipmentMaterial>; 7],
+    armor_coverage_spans: [Option<adventuresim_core::combat::ArmorCoverageSpan>; 7],
     survival_clothing: adventuresim_core::survival::ClothingExposure,
     inventory_weight: f32,
 }
 
 impl StrategicEquipment {
     pub(crate) fn load(ctx: &ReducerContext, character_id: u64) -> Self {
-        let definition = |inventory_id: Option<u64>| {
-            let id = inventory_id?;
-            let inventory = ctx.db.inventory_item().id().find(id)?;
-            let mut item = ctx.db.item().id().find(&inventory.item_id)?;
-            if let Some(condition) = ctx.db.item_condition().inventory_item_id().find(id) {
-                let damage = condition.bins();
-                item.accuracy = effective_weapon_stat(item.accuracy, damage, item.edge_sensitivity);
-                item.penetration =
-                    effective_weapon_stat(item.penetration, damage, item.edge_sensitivity * 0.6);
-                item.block = effective_weapon_stat(item.block, damage, item.handling_sensitivity);
-                item.range_of_motion =
-                    effective_handling(item.range_of_motion, damage, item.handling_sensitivity);
-                item.resistance = effective_weapon_stat(item.resistance, damage, 0.1);
-            }
-            Some(item)
-        };
+        let definition = |inventory_id| effective_item_definition(ctx, inventory_id);
         let normalized_hand = |location| {
             ctx.db
                 .equipment_occupancy()
@@ -317,18 +312,13 @@ impl StrategicEquipment {
                 BodySide::Right
             }
         });
-        let shield = hands
-            .iter()
-            .flatten()
-            .find(|item| item.kind == PersistedItemKind::Shield)
-            .cloned();
-        let shield_inventory_id = hands
-            .iter()
-            .position(|item| {
-                item.as_ref()
-                    .is_some_and(|item| item.kind == PersistedItemKind::Shield)
-            })
-            .and_then(|index| hand_inventory_ids[index]);
+        let shield_index = hands.iter().position(|item| {
+            item.as_ref()
+                .is_some_and(|item| item.kind == PersistedItemKind::Shield)
+        });
+        let shield = shield_index.and_then(|index| hands[index].clone());
+        let shield_inventory_id = shield_index.and_then(|index| hand_inventory_ids[index]);
+        let shield_side = shield_index.map(hand_side);
         let melee_weapon = hands
             .iter()
             .flatten()
@@ -348,6 +338,18 @@ impl StrategicEquipment {
                     .is_some_and(|item| item.kind == PersistedItemKind::Weapon && item.melee)
             })
             .and_then(|index| hand_inventory_ids[index]);
+        let melee_weapon_geometry = melee_weapon
+            .as_ref()
+            .zip(melee_weapon_inventory_id)
+            .and_then(|(item, inventory_id)| {
+                crate::weapon_instance::combat_geometry(ctx, inventory_id, &item.id, item.reach)
+            });
+        if let Some(item) = &melee_weapon
+            && adventuresim_weapon_model::default_design(&item.id).is_some()
+            && melee_weapon_geometry.is_none()
+        {
+            panic!("parametric weapon {} has no valid physical recipe", item.id);
+        }
         let ranged_weapon = hands
             .iter()
             .flatten()
@@ -383,59 +385,23 @@ impl StrategicEquipment {
             .map(|inventory| inventory.quantity)
             .sum();
         let mut armor = [adventuresim_core::equipment::LayeredArmor::default(); 7];
+        let mut armor_inventory_item_ids = [None; 7];
+        let mut armor_materials = [None; 7];
+        let mut armor_coverage_spans = [None; 7];
         let mut survival_layers = Vec::new();
         let mut weatherproofing_total = 0_u32;
         let mut peripheral_protection_bps = [0_u16; 4];
         for part in BodyPart::FULL_BODY.iter() {
-            let pieces: Vec<_> = ctx
-                .db
-                .character_equipped_item()
-                .character_id()
-                .filter(character_id)
-                .filter_map(|equipped| {
-                    let inventory = ctx
-                        .db
-                        .inventory_item()
-                        .id()
-                        .find(equipped.inventory_item_id)?;
-                    let item = definition(Some(inventory.id))?;
-                    let placement = item
-                        .equipment_placements
-                        .iter()
-                        .find(|placement| placement.id == equipped.placement_id)?;
-                    if !placement
-                        .protection
-                        .iter()
-                        .any(|target| runtime_body_part(*target) == part)
-                    {
-                        return None;
-                    }
-                    let (channel, order) = ctx
-                        .db
-                        .equipment_occupancy()
-                        .inventory_item_id()
-                        .filter(inventory.id)
-                        .max_by_key(|row| (row.channel.order(), row.order))
-                        .map_or((EquipmentChannel::Containment, 0), |row| {
-                            (row.channel, row.order)
-                        });
-                    Some(adventuresim_core::equipment::WearableProtection {
-                        inventory_item_id: inventory.id,
-                        body_part: part,
-                        channel,
-                        order,
-                        coverage: item.coverage,
-                        resistance: item.resistance,
-                        padding: item.padding,
-                        flexibility: item.flexibility,
-                        range_of_motion: item.range_of_motion,
-                    })
-                })
-                .collect();
+            let pieces = wearable_protection_for_part(ctx, character_id, part);
             survival_layers.extend(pieces.iter().map(|piece| (piece.padding, piece.coverage)));
             if let Some(piece) =
                 adventuresim_core::equipment::outermost_wearable(part, pieces.iter().copied())
             {
+                let part_index = body_part_index(part);
+                armor_inventory_item_ids[part_index] = Some(piece.inventory_item_id);
+                armor_materials[part_index] = armor_material(ctx, piece.inventory_item_id);
+                armor_coverage_spans[part_index] =
+                    armor_coverage_span(ctx, piece.inventory_item_id, part, piece.coverage);
                 let protection = adventuresim_core::survival::weatherproofing_from_outer_layer(
                     piece.resistance,
                     piece.coverage,
@@ -480,7 +446,20 @@ impl StrategicEquipment {
                     let effective_quantity =
                         crate::inventory_amount::personal_fraction(ctx, inventory.id)
                             .map_or(inventory.quantity as f32, |fraction| fraction.as_unit_f32());
-                    item.weight * effective_quantity
+                    let unit_mass = if adventuresim_weapon_model::default_design(&item.id).is_some()
+                    {
+                        crate::weapon_instance::combat_geometry(
+                            ctx,
+                            inventory.id,
+                            &item.id,
+                            item.reach,
+                        )
+                        .expect("parametric inventory weapon has valid physical recipe")
+                        .mass_kg
+                    } else {
+                        item.weight
+                    };
+                    unit_mass * effective_quantity
                 })
             })
             .sum();
@@ -495,6 +474,7 @@ impl StrategicEquipment {
             weapon_side,
             melee_weapon,
             melee_weapon_inventory_id,
+            melee_weapon_geometry,
             melee_weapon_side,
             ranged_weapon,
             ranged_weapon_inventory_id,
@@ -502,7 +482,11 @@ impl StrategicEquipment {
             ammunition,
             shield,
             shield_inventory_id,
+            shield_side,
             armor,
+            armor_inventory_item_ids,
+            armor_materials,
+            armor_coverage_spans,
             survival_clothing: adventuresim_core::survival::ClothingExposure {
                 insulation_bps: adventuresim_core::survival::insulation_from_layers(
                     survival_layers,
@@ -548,17 +532,30 @@ impl StrategicEquipment {
         for part in BodyPart::FULL_BODY.iter() {
             let item = self.armor_for(part);
             armor[body_part_index(part)] = CombatArmor {
+                inventory_item_id: self.armor_inventory_item_ids[body_part_index(part)],
+                material: self.armor_materials[body_part_index(part)],
                 resistance: item.resistance,
                 padding: item.padding,
                 flexibility: item.flexibility,
                 range_of_motion: item.range_of_motion,
                 coverage: item.coverage,
+                coverage_span: self.armor_coverage_spans[body_part_index(part)],
+                coverage_geometry: None,
             };
         }
         CombatEquipment {
-            weapon: self.weapon.as_ref().map(combat_weapon),
-            melee_weapon: self.melee_weapon.as_ref().map(combat_weapon),
-            ranged_weapon: self.ranged_weapon.as_ref().map(combat_weapon),
+            weapon: self
+                .weapon
+                .as_ref()
+                .map(|item| combat_weapon(item, self.melee_weapon_geometry.filter(|_| item.melee))),
+            melee_weapon: self
+                .melee_weapon
+                .as_ref()
+                .map(|item| combat_weapon(item, self.melee_weapon_geometry)),
+            ranged_weapon: self
+                .ranged_weapon
+                .as_ref()
+                .map(|item| combat_weapon(item, None)),
             melee_weapon_id: self.melee_weapon_inventory_id,
             ranged_weapon_id: self.ranged_weapon_inventory_id,
             ranged_projectile_kind: self.ranged_weapon.as_ref().map(|weapon| {
@@ -574,6 +571,7 @@ impl StrategicEquipment {
             melee_holding_side: self.melee_weapon_side.unwrap_or(BodySide::Right),
             ranged_holding_side: self.ranged_weapon_side.unwrap_or(BodySide::Right),
             shield_block_bonus: self.shield.as_ref().map_or(0.0, |item| item.block),
+            shield_side: self.shield_side,
             armor,
             inventory_weight: self.inventory_weight,
         }
@@ -598,42 +596,6 @@ fn runtime_body_part(part: EquipmentBodyPart) -> BodyPart {
         E::Chest => BodyPart::Chest,
         E::Stomach => BodyPart::Stomach,
         E::Head => BodyPart::Head,
-    }
-}
-
-fn combat_weapon(item: &Item) -> CombatWeapon {
-    CombatWeapon {
-        skills: item.weapon_skills,
-        melee: item.melee,
-        ranged: item.ranged,
-        blunt: item.blunt,
-        slash: item.slash,
-        pierce: item.pierce,
-        accuracy: item.accuracy,
-        swing_precision: item.swing_precision,
-        stab_precision: item.stab_precision,
-        preferred_melee_style: item.preferred_melee_style,
-        weight: item.weight,
-        penetration: item.penetration,
-        melee_reach: if item.melee { item.reach } else { 0.0 },
-        ranged_range: if item.ranged { item.reach } else { 0.0 },
-        attack_interval_seconds: weapon_attack_interval(item),
-        precise: item.precise,
-        balance: item.balance,
-        ranged_force_joules: 40.0 * item.weight.max(0.5),
-    }
-}
-
-fn weapon_attack_interval(item: &Item) -> f32 {
-    if item.melee {
-        let timing = adventuresim_core::equipment::melee_attack_timing(
-            item.preferred_melee_style,
-            item.moment_of_inertia_kg_m2,
-            false,
-        );
-        timing.preparation_secs + timing.recovery_secs
-    } else {
-        (0.4 + item.weight.max(0.1) * 0.15 + 0.45).clamp(0.35, 3.0)
     }
 }
 
@@ -763,8 +725,6 @@ pub(crate) fn load_combatant(
         .ok_or("Character condition not found")?;
     let equipment = StrategicEquipment::load(ctx, character_id);
     let combat_equipment = equipment.combat_equipment();
-    let initial_ammunition = combat_equipment.ammunition;
-
     let (starting_incapacitation, starting_blood_fraction) = derive_combat_starting_condition(
         strategic_incapacitation,
         strategic_pain,
@@ -773,7 +733,7 @@ pub(crate) fn load_combatant(
         condition.maximum_blood_ml,
     );
 
-    Ok(Combatant {
+    Ok(Combatant::from_strategic_state(CombatantStrategicState {
         id: character_id,
         attributes: attributes.into(),
         body: CombatBody {
@@ -822,13 +782,63 @@ pub(crate) fn load_combatant(
         },
         starting_incapacitation,
         starting_blood_fraction,
-        initial_ammunition,
-        ..Combatant::new(character_id)
-    })
+    }))
 }
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    #[test]
+    fn combat_weapon_preserves_authored_contact_geometry_and_materials() {
+        let item = Item {
+            id: "halberd".to_owned(),
+            melee: true,
+            ..Item::default()
+        };
+
+        let weapon = combat_weapon(&item, None);
+        let definition = adventuresim_core::item_catalog::definition(&item.id).unwrap();
+        let equipment = definition.equipment.as_ref().unwrap();
+
+        assert_eq!(weapon.grip_to_tip_m, equipment.physical.grip_to_tip_m);
+        assert_eq!(weapon.total_length_m, equipment.physical.dimensions_m[1]);
+        assert_eq!(
+            weapon.striking_head_length_m,
+            equipment.physical.dimensions_m[0].max(equipment.physical.dimensions_m[2])
+        );
+        assert!(weapon.distal_headed);
+        assert_eq!(weapon.body_material, equipment.material);
+        assert_eq!(weapon.striking_material, equipment.striking_material);
+    }
+
+    #[test]
+    fn autoresolve_weapon_uses_per_instance_reach_mass_and_inertia() {
+        let item = Item {
+            id: "halberd".to_owned(),
+            melee: true,
+            reach: 2.0,
+            moment_of_inertia_kg_m2: 4.0,
+            ..Item::default()
+        };
+        let short = adventuresim_core::equipment::ParametricWeaponCombatGeometry::new(
+            2.1, 1.9, 1.7, 0.25, 3.2, 0.52, 2.0, 1.9,
+        )
+        .unwrap();
+        let long = adventuresim_core::equipment::ParametricWeaponCombatGeometry::new(
+            2.5, 2.3, 2.1, 0.25, 5.1, 0.49, 2.0, 1.9,
+        )
+        .unwrap();
+        let short = combat_weapon(&item, Some(short));
+        let long = combat_weapon(&item, Some(long));
+
+        assert!(long.melee_reach > short.melee_reach);
+        assert!(long.weight > short.weight);
+        assert!(long.moment_of_inertia_kg_m2 > short.moment_of_inertia_kg_m2);
+        assert!(long.attack_interval_seconds > short.attack_interval_seconds);
+        assert_eq!(long.striking_head_length_m, short.striking_head_length_m);
+    }
+
     #[test]
     fn water_burden_comes_only_from_physical_containers() {
         let source = crate::production_source(include_str!("capability.rs"));

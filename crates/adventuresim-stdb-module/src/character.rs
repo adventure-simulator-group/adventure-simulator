@@ -731,47 +731,6 @@ pub(crate) fn equipped_wearable_ids(ctx: &ReducerContext, character_id: u64) -> 
         .collect()
 }
 
-pub(crate) fn outermost_wearable_for_body_part(
-    ctx: &ReducerContext,
-    character_id: u64,
-    part: adventuresim_core::body::BodyPart,
-) -> Option<u64> {
-    ctx.db
-        .character_equipped_item()
-        .character_id()
-        .filter(character_id)
-        .filter_map(|equipped| {
-            let inventory = ctx
-                .db
-                .inventory_item()
-                .id()
-                .find(equipped.inventory_item_id)?;
-            let definition = ctx.db.item().id().find(&inventory.item_id)?;
-            let placement = definition
-                .equipment_placements
-                .iter()
-                .find(|placement| placement.id == equipped.placement_id)?;
-            if !placement
-                .protection
-                .iter()
-                .any(|target| runtime_body_part(*target) == part)
-            {
-                return None;
-            }
-            let outer = ctx
-                .db
-                .equipment_occupancy()
-                .inventory_item_id()
-                .filter(equipped.inventory_item_id)
-                .max_by_key(|row| (row.channel.order(), row.order, row.capacity_index));
-            let (channel_order, order) =
-                outer.map_or((0, 0), |row| (row.channel.order(), row.order));
-            Some((channel_order, order, equipped.inventory_item_id))
-        })
-        .max()
-        .map(|(_, _, inventory_item_id)| inventory_item_id)
-}
-
 pub(crate) fn unequip_wearable(ctx: &ReducerContext, inventory_item_id: u64) {
     let children: Vec<_> = ctx
         .db
@@ -798,22 +757,6 @@ pub(crate) fn unequip_wearable(ctx: &ReducerContext, inventory_item_id: u64) {
         .character_equipped_item()
         .inventory_item_id()
         .delete(inventory_item_id);
-}
-
-fn runtime_body_part(
-    part: adventuresim_core::item_catalog::EquipmentBodyPart,
-) -> adventuresim_core::body::BodyPart {
-    use adventuresim_core::body::BodyPart as B;
-    use adventuresim_core::item_catalog::EquipmentBodyPart as E;
-    match part {
-        E::LeftArm => B::LeftArm,
-        E::RightArm => B::RightArm,
-        E::LeftLeg => B::LeftLeg,
-        E::RightLeg => B::RightLeg,
-        E::Chest => B::Chest,
-        E::Stomach => B::Stomach,
-        E::Head => B::Head,
-    }
 }
 
 pub(crate) fn require_no_equipped_children(

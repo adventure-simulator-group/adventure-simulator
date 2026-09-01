@@ -305,13 +305,16 @@ dependencies = [
  "adventuresim-stdb-client",
  "adventuresim-tactical-core",
  "adventuresim-tactical-netcode",
+ "adventuresim-weapon-model",
  "adventuresim-world-schema",
  "bevy",
  "clap",
+ "fabelgeist-determinism",
  "rand 0.9.5",
  "ron",
  "serde",
  "serde-saphyr",
+ "serde_json",
  "spacetimedb-sdk",
 ]
 

@@ -2204,6 +2204,7 @@ mod tests {
         TacticalEquipmentPhysical {
             dimensions_m: Vec3::new(0.25, 1.4, 0.08),
             grip_to_tip_m: 1.15,
+            striking_head_length_m: 0.25,
             anchor_offset_m: Vec3::new(0.0, -0.45, 0.0),
         }
     }

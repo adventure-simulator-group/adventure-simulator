@@ -241,7 +241,7 @@ pub fn autoresolve_mission(
         &outcome,
     )?;
 
-    if outcome.victor != BattleVictor::Allies {
+    if outcome.resolution != BattleResolution::AlliesVictory {
         fail_bound_mission_attempt(ctx, &mission_id)?;
         return Ok(());
     }

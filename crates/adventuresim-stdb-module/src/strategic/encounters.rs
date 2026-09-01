@@ -1020,16 +1020,6 @@ fn commit_autoresolve_outcome(
         if let Some(id) = exchange.defender_contact_item_id {
             crate::repair::apply_impact(ctx, id, exchange.contact_stress);
         }
-        if exchange.armor_contact
-            && exchange.contact_stress > 0.0
-            && let Some(id) = crate::character::outermost_wearable_for_body_part(
-                ctx,
-                exchange.defender_id,
-                exchange.body_part,
-            )
-        {
-            crate::repair::apply_impact(ctx, id, exchange.contact_stress);
-        }
     }
     for member in &outcome.allies {
         consume_autoresolve_ammunition(ctx, member.id, member.ammunition_used);
@@ -1067,7 +1057,7 @@ fn commit_autoresolve_outcome(
         crate::condition::apply_blood_loss(ctx, member.id, member.blood_loss_fraction)?;
         crate::capability::refresh_character_capability(ctx, member.id)?;
     }
-    if outcome.victor != BattleVictor::Allies {
+    if outcome.resolution != BattleResolution::AlliesVictory {
         for member_id in member_ids {
             crate::condition::record_morale_event(
                 ctx,
@@ -1135,7 +1125,7 @@ fn resolve_random_encounter_battle(
         &encounter.archetype,
         &outcome,
     )?;
-    if outcome.victor == BattleVictor::Allies {
+    if outcome.resolution == BattleResolution::AlliesVictory {
         let authored_followup = ctx
             .db
             .narrative_combat_followup_authority()
@@ -1160,10 +1150,11 @@ fn resolve_random_encounter_battle(
             )?;
         }
     }
-    Ok(match outcome.victor {
-        BattleVictor::Allies => "victory",
-        BattleVictor::Enemies => "defeat",
-        BattleVictor::Stalemate => "stalemate",
+    Ok(match outcome.resolution {
+        BattleResolution::AlliesVictory => "victory",
+        BattleResolution::EnemiesVictory => "defeat",
+        BattleResolution::MutualIncapacitation => "mutual_incapacitation",
+        BattleResolution::Timeout => "timeout",
     }
     .into())
 }

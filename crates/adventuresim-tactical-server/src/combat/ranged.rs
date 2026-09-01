@@ -133,9 +133,7 @@ pub(super) fn resolve_ranged_attack(
     let Ok(defender_skeleton) = q_skeletons.get(target) else {
         return;
     };
-    let (a2, a1) = shot.attacker_yaw().sin_cos();
-    let (d2, d1) = target_yaw.sin_cos();
-    let flanking = flanking_from_dir((a1, a2), (d1, d2));
+    let flanking = ranged_flanking(shot.attacker_yaw(), target_yaw);
     let defender_response = resolve_passive_block(
         q_pending.get(target).ok(),
         &time,
@@ -178,24 +176,25 @@ pub(super) fn resolve_ranged_attack(
             body_part,
             &config,
         );
-    let impact_effects = authoritative_impact_effects(
-        &viewer.inventory,
-        shot.attacker(),
-        AttackHand::Main,
-        target,
-        body_part,
-        result,
-    );
+    let impact_effects =
+        authoritative_impact_effects(&viewer.inventory, shot.attacker(), AttackHand::Main, result);
     cmd.trigger(ApplyMeleeAttackResult {
         attacker: shot.attacker(),
         target,
         body_part,
+        anatomical_subregion: anatomical_subregion(body_part, 0.5),
+        surface_coordinate: 0.5,
         result,
+        defender_response,
+        defense_success_probability: None,
+        defense_alignment_sample: None,
+        defense_engagement: None,
         attacker_weapon_slot,
         defender_blocking_slot,
         attacker_weapon_contact: false,
         impact_recipient,
         impact_velocity_change,
+        contact_at_time: MeleeContactAtTime::intended(0.0),
     });
     cmd.server_trigger(ToClients {
         targets: SendTargets::All,
@@ -213,6 +212,12 @@ pub(super) fn resolve_ranged_attack(
             impact_effects,
         },
     });
+}
+
+fn ranged_flanking(attacker_yaw: f32, target_yaw: f32) -> f32 {
+    let (a2, a1) = attacker_yaw.sin_cos();
+    let (d2, d1) = target_yaw.sin_cos();
+    flanking_from_dir((a1, a2), (d1, d2))
 }
 
 fn consume_authorized_ammunition(
