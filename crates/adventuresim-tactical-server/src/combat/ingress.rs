@@ -5,7 +5,6 @@ mod work;
 use attack_start::*;
 use work::*;
 
-#[derive(Clone, Copy)]
 struct EntityMeleeLungeRequest {
     attacker: Entity,
     target: Entity,
@@ -199,26 +198,15 @@ pub(crate) fn on_melee_attack_started(
         super::contact::initial_melee_contact(&viewer, &event, strike_family, &mut random);
     let selected_body_part = initial_contact.body_part;
     let weapon_reach = initial_contact.weapon_reach;
-    let lunge_delay = event
-        .target
-        .zip(selected_body_part)
-        .and_then(|(target, body_part)| {
-            planned_melee_lunge_for_entities(
-                EntityMeleeLungeRequest {
-                    attacker: event.attacker,
-                    target,
-                    body_part,
-                    weapon_reach_metres: weapon_reach,
-                },
-                &transforms,
-                &dimensions,
-                &colliders,
-                &config,
-            )
-        })
-        .map_or(0.0, |movement| {
-            melee_lunge_movement_delay(movement, &config)
-        });
+    let lunge_delay = started_attack_lunge_delay(
+        &event,
+        selected_body_part,
+        weapon_reach,
+        &transforms,
+        &dimensions,
+        &colliders,
+        &config,
+    );
     let sequence_start = if spec.continuation {
         skeleton.attack_continuation_tick().unwrap_or(start)
     } else {
@@ -227,26 +215,15 @@ pub(crate) fn on_melee_attack_started(
     let (animation_start_tick, contact_tick, recovery_tick) =
         delayed_melee_timing_ticks(sequence_start, event.windup, lunge_delay, recovery);
     let contact_windup = super::contact::windup_duration(contact_tick, start);
-    let scheduled_measure_metres = event
-        .target
-        .zip(selected_body_part)
-        .and_then(|(target, body_part)| {
-            let attacker_transform = transforms.get(event.attacker).ok()?;
-            let attacker_dimensions = dimensions.get(event.attacker).ok()?;
-            let attacker_collider = colliders.get(event.attacker).ok()?;
-            let target_transform = transforms.get(target).ok()?;
-            configured_body_part_surface_distance(
-                melee_attack_origin(
-                    attacker_transform.translation,
-                    attacker_collider,
-                    *attacker_dimensions,
-                ),
-                target_transform,
-                body_part,
-                &config,
-            )
-        })
-        .unwrap_or(weapon_reach);
+    let scheduled_measure_metres = scheduled_attack_measure(
+        &event,
+        selected_body_part,
+        weapon_reach,
+        &transforms,
+        &dimensions,
+        &colliders,
+        &config,
+    );
     if skeleton
         .begin_attack_timed(spec, animation_start_tick, contact_tick, recovery_tick)
         .is_err()

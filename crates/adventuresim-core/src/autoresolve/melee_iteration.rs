@@ -256,6 +256,37 @@ fn authored_equipment(
 ) -> Result<CombatEquipment, String> {
     let definition = crate::item_catalog::definition(weapon_id)
         .ok_or_else(|| format!("unknown weapon {weapon_id}"))?;
+    let weapon = authored_melee_weapon(definition)?;
+    let mut equipment = CombatEquipment {
+        weapon: Some(weapon),
+        melee_weapon: Some(weapon),
+        melee_weapon_id: Some(stable_id(weapon_id)),
+        inventory_weight: definition.weight_kg,
+        ..CombatEquipment::default()
+    };
+    if let Some(shield_id) = shield_id {
+        let shield = crate::item_catalog::definition(shield_id)
+            .ok_or_else(|| format!("unknown shield {shield_id}"))?;
+        let ItemKind::Shield { block, .. } = shield.kind else {
+            return Err(format!("{shield_id} is not a shield"));
+        };
+        equipment.shield_block_bonus = block;
+        equipment.shield_side = Some(match equipment.melee_holding_side {
+            BodySide::Left => BodySide::Right,
+            BodySide::Right => BodySide::Left,
+            BodySide::Both => BodySide::Left,
+        });
+        equipment.defense_item_id = Some(stable_id(shield_id));
+        equipment.inventory_weight += shield.weight_kg;
+    }
+    apply_authored_armor(&mut equipment, armor_ids)?;
+    Ok(equipment)
+}
+
+fn authored_melee_weapon(
+    definition: &crate::item_catalog::ItemDefinition,
+) -> Result<CombatWeapon, String> {
+    let weapon_id = definition.id.as_str();
     let ItemKind::Weapon {
         preferred_attack,
         swing_precision,
@@ -296,7 +327,7 @@ fn authored_equipment(
     let total_length_m = dimensions_m[1];
     let striking_head_length_m = dimensions_m[0].max(dimensions_m[2]);
     let skill_distribution: crate::equipment::WeaponSkillDistribution = (*skills).into();
-    let weapon = CombatWeapon {
+    Ok(CombatWeapon {
         skills: skill_distribution,
         melee: true,
         ranged: false,
@@ -347,31 +378,7 @@ fn authored_equipment(
             grip_to_tip_m,
         ),
         ranged_force_joules: 0.0,
-    };
-    let mut equipment = CombatEquipment {
-        weapon: Some(weapon),
-        melee_weapon: Some(weapon),
-        melee_weapon_id: Some(stable_id(weapon_id)),
-        inventory_weight: definition.weight_kg,
-        ..CombatEquipment::default()
-    };
-    if let Some(shield_id) = shield_id {
-        let shield = crate::item_catalog::definition(shield_id)
-            .ok_or_else(|| format!("unknown shield {shield_id}"))?;
-        let ItemKind::Shield { block, .. } = shield.kind else {
-            return Err(format!("{shield_id} is not a shield"));
-        };
-        equipment.shield_block_bonus = block;
-        equipment.shield_side = Some(match equipment.melee_holding_side {
-            BodySide::Left => BodySide::Right,
-            BodySide::Right => BodySide::Left,
-            BodySide::Both => BodySide::Left,
-        });
-        equipment.defense_item_id = Some(stable_id(shield_id));
-        equipment.inventory_weight += shield.weight_kg;
-    }
-    apply_authored_armor(&mut equipment, armor_ids)?;
-    Ok(equipment)
+    })
 }
 
 fn apply_authored_armor(equipment: &mut CombatEquipment, armor_ids: &[&str]) -> Result<(), String> {
@@ -509,20 +516,24 @@ mod tests {
             &john.combatant,
             1.0,
             0.0,
-            0.4,
             dodge,
-            0.5,
-            0.42,
+            MeleeExchangeSamples {
+                contact: 0.4,
+                defense_alignment: 0.5,
+                dodge_displacement_time_seconds: 0.42,
+            },
         );
         let veteran_against_longsword = melee_exchange(
             &john.combatant,
             &veteran.combatant,
             1.0,
             0.0,
-            0.4,
             dodge,
-            0.5,
-            0.42,
+            MeleeExchangeSamples {
+                contact: 0.4,
+                defense_alignment: 0.5,
+                dodge_displacement_time_seconds: 0.42,
+            },
         );
         let john_clearance = john_against_halberd
             .dodge_geometry
@@ -601,7 +612,13 @@ mod tests {
                 )
                 .log
                 .iter()
-                .any(|entry| entry.attacker_id == shorter_id && entry.outcome.starts_with("hit"))
+                .any(|entry| {
+                    entry.attacker_id == shorter_id
+                        && matches!(
+                            entry.outcome,
+                            BattleAttackOutcome::HitHealth | BattleAttackOutcome::HitArmor
+                        )
+                })
             });
             assert!(landed, "{} shorter-reach side never landed", opponent.name);
         }

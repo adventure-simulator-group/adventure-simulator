@@ -1,5 +1,53 @@
 use super::*;
 
+pub(super) fn canonical_impact_surface(
+    attacker_position: Vec3,
+    target_transform: &Transform,
+    body_part: BodyPart,
+    config: &TacticalCombatConfig,
+) -> (Vec3, Vec3) {
+    let Some(hitbox) = config
+        .targeting
+        .body_part_hitboxes
+        .iter()
+        .find(|hitbox| hitbox.body_part == body_part)
+    else {
+        return (Vec3::ZERO, Vec3::Z);
+    };
+    let center = Vec3::from_array(hitbox.center_metres);
+    let half = Vec3::from_array(hitbox.half_extents_metres);
+    let attacker_local = target_transform
+        .compute_affine()
+        .inverse()
+        .transform_point3(attacker_position);
+    let direction = (attacker_local - center).normalize_or(Vec3::Z);
+    let scale = [
+        (half.x / direction.x.abs())
+            .is_finite()
+            .then_some(half.x / direction.x.abs()),
+        (half.y / direction.y.abs())
+            .is_finite()
+            .then_some(half.y / direction.y.abs()),
+        (half.z / direction.z.abs())
+            .is_finite()
+            .then_some(half.z / direction.z.abs()),
+    ]
+    .into_iter()
+    .flatten()
+    .fold(f32::INFINITY, f32::min);
+    let point = center + direction * scale;
+    let normalized = (point - center) / half;
+    let normal =
+        if normalized.x.abs() >= normalized.y.abs() && normalized.x.abs() >= normalized.z.abs() {
+            Vec3::X * normalized.x.signum()
+        } else if normalized.y.abs() >= normalized.z.abs() {
+            Vec3::Y * normalized.y.signum()
+        } else {
+            Vec3::Z * normalized.z.signum()
+        };
+    (point, normal)
+}
+
 pub(super) struct InitialMeleeContact {
     pub(super) sample: f32,
     pub(super) defense_alignment_sample: f32,

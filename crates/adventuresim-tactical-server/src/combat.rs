@@ -47,6 +47,7 @@ use consequence::{apply_melee_attack_result, record_party_ammunition_use};
 use consequence::{
     attacker_weapon_contact_matches, defender_equipment_contact_matches, record_party_injury,
 };
+use contact::canonical_impact_surface;
 use defense::{resolve_melee_defender_response, resolve_passive_block};
 pub(crate) use ingress::apply_defend_intent;
 pub(crate) use ingress::{MeleeLungeRequest, melee_body_part_lunge_delay};
@@ -62,54 +63,6 @@ pub(crate) use protocol::{
 };
 use ragdoll::update_authoritative_ragdoll_lifecycle;
 use ranged::resolve_ranged_attack;
-
-fn canonical_impact_surface(
-    attacker_position: Vec3,
-    target_transform: &Transform,
-    body_part: BodyPart,
-    config: &TacticalCombatConfig,
-) -> (Vec3, Vec3) {
-    let Some(hitbox) = config
-        .targeting
-        .body_part_hitboxes
-        .iter()
-        .find(|hitbox| hitbox.body_part == body_part)
-    else {
-        return (Vec3::ZERO, Vec3::Z);
-    };
-    let center = Vec3::from_array(hitbox.center_metres);
-    let half = Vec3::from_array(hitbox.half_extents_metres);
-    let attacker_local = target_transform
-        .compute_affine()
-        .inverse()
-        .transform_point3(attacker_position);
-    let direction = (attacker_local - center).normalize_or(Vec3::Z);
-    let scale = [
-        (half.x / direction.x.abs())
-            .is_finite()
-            .then_some(half.x / direction.x.abs()),
-        (half.y / direction.y.abs())
-            .is_finite()
-            .then_some(half.y / direction.y.abs()),
-        (half.z / direction.z.abs())
-            .is_finite()
-            .then_some(half.z / direction.z.abs()),
-    ]
-    .into_iter()
-    .flatten()
-    .fold(f32::INFINITY, f32::min);
-    let point = center + direction * scale;
-    let normalized = (point - center) / half;
-    let normal =
-        if normalized.x.abs() >= normalized.y.abs() && normalized.x.abs() >= normalized.z.abs() {
-            Vec3::X * normalized.x.signum()
-        } else if normalized.y.abs() >= normalized.z.abs() {
-            Vec3::Y * normalized.y.signum()
-        } else {
-            Vec3::Z * normalized.z.signum()
-        };
-    (point, normal)
-}
 
 fn authoritative_impact_effects(
     inventory: &InventoryViewer<'_, '_>,
@@ -340,8 +293,12 @@ fn trace_melee_attack_resolution(event: On<MeleeAttackResolved>) {
         target = ?event.target,
         body_part = ?event.body_part,
         anatomical_subregion = ?event.anatomical_subregion,
+        surface_coordinate = event.surface_coordinate,
         result = ?event.result,
         defender_response = ?event.defender_response,
+        defense_success_probability = ?event.defense_success_probability,
+        defense_alignment_sample = ?event.defense_alignment_sample,
+        defense_engagement = ?event.defense_engagement,
         closest_approach_metres = ?event.closest_approach_metres,
         redirected_from = ?event.redirected_from,
         defender_blocking_slot = ?event.defender_blocking_slot,
@@ -818,7 +775,7 @@ mod tests {
 
         assert!(
             !melee
-                .split("authorize_attack")
+                .split("let Some(attack) = authorize_completion")
                 .nth(1)
                 .unwrap()
                 .contains("event.")

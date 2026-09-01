@@ -1,5 +1,65 @@
 use super::*;
 
+pub(super) fn started_attack_lunge_delay(
+    event: &MeleeAttackStartedIntent,
+    selected_body_part: Option<BodyPart>,
+    weapon_reach: f32,
+    transforms: &Query<&Transform>,
+    dimensions: &Query<&CharacterDimensions>,
+    colliders: &Query<&Collider>,
+    config: &TacticalCombatConfig,
+) -> f32 {
+    event
+        .target
+        .zip(selected_body_part)
+        .and_then(|(target, body_part)| {
+            planned_melee_lunge_for_entities(
+                EntityMeleeLungeRequest {
+                    attacker: event.attacker,
+                    target,
+                    body_part,
+                    weapon_reach_metres: weapon_reach,
+                },
+                transforms,
+                dimensions,
+                colliders,
+                config,
+            )
+        })
+        .map_or(0.0, |movement| melee_lunge_movement_delay(movement, config))
+}
+
+pub(super) fn scheduled_attack_measure(
+    event: &MeleeAttackStartedIntent,
+    selected_body_part: Option<BodyPart>,
+    weapon_reach: f32,
+    transforms: &Query<&Transform>,
+    dimensions: &Query<&CharacterDimensions>,
+    colliders: &Query<&Collider>,
+    config: &TacticalCombatConfig,
+) -> f32 {
+    event
+        .target
+        .zip(selected_body_part)
+        .and_then(|(target, body_part)| {
+            let attacker_transform = transforms.get(event.attacker).ok()?;
+            let attacker_dimensions = dimensions.get(event.attacker).ok()?;
+            let attacker_collider = colliders.get(event.attacker).ok()?;
+            let target_transform = transforms.get(target).ok()?;
+            configured_body_part_surface_distance(
+                melee_attack_origin(
+                    attacker_transform.translation,
+                    attacker_collider,
+                    *attacker_dimensions,
+                ),
+                target_transform,
+                body_part,
+                config,
+            )
+        })
+        .unwrap_or(weapon_reach)
+}
+
 #[expect(
     clippy::too_many_arguments,
     reason = "the authority record retains the complete authored attack identity and timing"

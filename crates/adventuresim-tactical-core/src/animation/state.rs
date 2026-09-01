@@ -1,5 +1,4 @@
 use super::*;
-mod attack_commitment;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Reflect)]
 pub enum Posture {
@@ -1507,7 +1506,7 @@ pub struct SkeletonState {
     guarded_sprint_locomotion: bool,
     stance: StanceState,
     attack_preparation: AttackPreparation,
-    action: ActionState,
+    pub(super) action: ActionState,
     posture_transition: Option<PostureTransitionState>,
     downed_facing: Option<DownedFacingState>,
     downed_turning: bool,

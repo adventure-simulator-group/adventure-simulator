@@ -21,6 +21,7 @@ use crate::inventory_armor::fold_armor_layers;
 
 mod armor;
 mod quantity;
+mod query;
 
 pub use armor::*;
 pub use quantity::*;
@@ -316,7 +317,7 @@ pub struct InventoryView<'v, 'w, 's> {
 }
 
 impl InventoryView<'_, '_, '_> {
-    fn iter(&self) -> impl Iterator<Item = ItemQueryItem<'_, '_>> + use<'_> {
+    pub(super) fn iter(&self) -> impl Iterator<Item = ItemQueryItem<'_, '_>> + use<'_> {
         let items = self
             .q_inventory
             .get(self.entity)
@@ -331,15 +332,6 @@ impl InventoryView<'_, '_, '_> {
     pub fn has_item_id(&self, item_id: &str) -> bool {
         self.iter()
             .any(|item| item.properties.id == item_id && item.quantity.0.get() > 0)
-    }
-
-    pub fn item_at_slot(&self, slot: EquipSlot) -> Option<(&str, Option<u64>)> {
-        self.iter().find_map(|item| {
-            (item.slot == Some(&slot)).then_some((
-                item.properties.id.as_str(),
-                item.inventory_item_id.map(|id| id.0),
-            ))
-        })
     }
 
     fn striking_item(&self) -> Option<ItemQueryItem<'_, '_>> {
@@ -378,48 +370,6 @@ impl InventoryView<'_, '_, '_> {
                 .filter(|armor| armor.covered_parts[index] && armor.coverage > f32::EPSILON)
                 .map(|armor| armor.material)
         })
-    }
-
-    pub fn armor_layer_chain(&self, part: BodyPart, sample: f32) -> Vec<ArmorLayerContact> {
-        let index = body_part_index(part);
-        let mut layers = self
-            .iter()
-            .filter_map(|item| {
-                let armor = item
-                    .armor
-                    .filter(|armor| armor.covered_parts[index] && armor.coverage > 0.0)?;
-                Some((item, armor))
-            })
-            .collect::<Vec<_>>();
-        layers.sort_by_key(|(_, armor)| std::cmp::Reverse(armor.layer_order));
-        let selected = layers.iter().position(|(_, armor)| {
-            armor.coverage_spans[index]
-                .expect("covered armor part has authored surface geometry")
-                .contains(sample)
-        });
-        layers
-            .into_iter()
-            .enumerate()
-            .map(|(layer_index, (item, armor))| {
-                let geometry = armor.coverage_geometry[index]
-                    .expect("covered armor part retains authored geometry");
-                ArmorLayerContact {
-                    item_id: item.properties.id.clone(),
-                    inventory_item_id: item.inventory_item_id.map(|id| id.0),
-                    material: armor.material,
-                    geometry,
-                    intersected: geometry.span.contains(sample),
-                    selected: selected == Some(layer_index),
-                    surface: adventuresim_core::equipment::ArmorSurface {
-                        inventory_item_id: item.inventory_item_id.map(|id| id.0),
-                        material: Some(armor.material),
-                        resistance: armor.resistance,
-                        padding: armor.padding,
-                        flexibility: armor.flexibility,
-                    },
-                }
-            })
-            .collect()
     }
 
     fn equipped_shield(&self) -> Option<ItemQueryItem<'_, '_>> {
@@ -703,7 +653,7 @@ impl InventoryView<'_, '_, '_> {
     }
 }
 
-fn body_part_index(part: BodyPart) -> usize {
+pub(super) fn body_part_index(part: BodyPart) -> usize {
     match part {
         BodyPart::LeftArm => 0,
         BodyPart::RightArm => 1,

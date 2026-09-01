@@ -8,6 +8,9 @@ use super::{
     TacticalCombatSide,
 };
 
+mod ranged;
+pub(crate) use ranged::RangedAttackAuthority;
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct CombatInstant(Duration);
 
@@ -74,7 +77,7 @@ impl ReportedPrecision {
 pub(super) struct ValidatedMeleeAttack {
     attacker: Entity,
     target: Entity,
-    body_part: BodyPart,
+    pub(super) body_part: BodyPart,
     reported_precision: ReportedPrecision,
     attacker_position: Vec3,
     target_position: Vec3,
@@ -88,9 +91,6 @@ impl ValidatedMeleeAttack {
     }
     pub(super) fn target(&self) -> Entity {
         self.target
-    }
-    pub(super) fn body_part(&self) -> BodyPart {
-        self.body_part
     }
     pub(super) fn attacker_position(&self) -> Vec3 {
         self.attacker_position
@@ -392,58 +392,6 @@ impl MeleeAttackAuthority {
                 consecutive_intercepts: self.consecutive_intercepts,
             }
         })
-    }
-}
-
-#[derive(Debug, Clone)]
-struct ObservedRangedWindup {
-    ready_at: CombatInstant,
-    expires_at: CombatInstant,
-}
-
-#[derive(Component, Debug, Default, Clone)]
-pub(crate) struct RangedAttackAuthority {
-    windup: Option<ObservedRangedWindup>,
-    cooldown_until: CombatInstant,
-}
-
-impl RangedAttackAuthority {
-    pub(crate) fn observe(
-        &mut self,
-        now: CombatInstant,
-        windup: CombatDuration,
-        network_allowance: CombatDuration,
-    ) {
-        let ready_at = now + windup;
-        self.windup = Some(ObservedRangedWindup {
-            ready_at,
-            expires_at: ready_at + network_allowance,
-        });
-    }
-
-    pub(crate) fn permits(&self, now: CombatInstant) -> bool {
-        self.windup.as_ref().is_some_and(|windup| {
-            now >= windup.ready_at && now <= windup.expires_at && now >= self.cooldown_until
-        })
-    }
-
-    fn authorize(&mut self, now: CombatInstant, cooldown: CombatDuration) -> bool {
-        let valid = self.permits(now);
-        if valid {
-            self.windup = None;
-            self.cooldown_until = now + cooldown;
-        }
-        valid
-    }
-
-    pub(super) fn authorize_shot(
-        &mut self,
-        shot: ValidatedRangedShot,
-        now: CombatInstant,
-        cooldown: CombatDuration,
-    ) -> Option<AuthorizedRangedShot> {
-        self.authorize(now, cooldown)
-            .then_some(AuthorizedRangedShot(shot))
     }
 }
 

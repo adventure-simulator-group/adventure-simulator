@@ -23,10 +23,6 @@ path = "crates/adventuresim-core/src/case.rs"
 ceiling = 575
 
 [[files]]
-path = "crates/adventuresim-core/src/combat.rs"
-ceiling = 577
-
-[[files]]
 path = "crates/adventuresim-core/src/courtship.rs"
 ceiling = 616
 
@@ -891,11 +887,6 @@ item = "compile_organizations"
 ceiling = 118
 
 [[functions]]
-path = "crates/adventuresim-core/src/autoresolve.rs"
-item = "authored_threat_combatant"
-ceiling = 155
-
-[[functions]]
 path = "crates/adventuresim-core/src/bestiary.rs"
 item = "compile_profile"
 ceiling = 210
@@ -1099,11 +1090,6 @@ ceiling = 104
 path = "crates/adventuresim-stdb-module/src/capability.rs"
 item = "StrategicEquipment::load"
 ceiling = 243
-
-[[functions]]
-path = "crates/adventuresim-stdb-module/src/capability.rs"
-item = "load_combatant"
-ceiling = 101
 
 [[functions]]
 path = "crates/adventuresim-stdb-module/src/character.rs"

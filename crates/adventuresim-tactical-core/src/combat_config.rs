@@ -435,6 +435,42 @@ pub struct AiOffenseConfig {
     pub ranged_reach_fraction: f32,
 }
 
+impl AiOffenseConfig {
+    fn has_valid_intervals(&self) -> bool {
+        self.ranged_standoff_min_metres.is_finite()
+            && self.ranged_standoff_max_metres >= self.ranged_standoff_min_metres
+            && self.initiative_delay_min_seconds.is_finite()
+            && self.initiative_delay_min_seconds >= 0.0
+            && self.initiative_delay_max_seconds >= self.initiative_delay_min_seconds
+            && self.cadence_jitter_seconds.is_finite()
+            && self.cadence_jitter_seconds >= 0.0
+            && self.long_weapon_measure_threshold_metres.is_finite()
+            && self.long_weapon_measure_threshold_metres > 0.0
+            && self.melee_measure_reach_fraction.is_finite()
+            && (0.0..=1.0).contains(&self.melee_measure_reach_fraction)
+    }
+}
+
+impl Default for AiOffenseConfig {
+    fn default() -> Self {
+        Self {
+            hit_precision: 1.0,
+            target_body_part: BodyPart::Chest,
+            windup_seconds: 0.65,
+            cooldown_seconds: 0.25,
+            initiative_delay_min_seconds: 0.04,
+            initiative_delay_max_seconds: 0.22,
+            cadence_jitter_seconds: 0.16,
+            long_weapon_measure_threshold_metres: 1.2,
+            melee_measure_reach_fraction: 0.7,
+            ranged_standoff_min_metres: 1.5,
+            ranged_standoff_max_metres: 12.0,
+            ranged_standoff_slop_metres: 0.5,
+            ranged_reach_fraction: 0.5,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AiDefenseConfig {
@@ -667,17 +703,7 @@ impl TacticalCombatConfig {
             || ai.defense.reaction_delay_min_seconds < 0.0
             || ai.defense.reaction_delay_max_seconds < ai.defense.reaction_delay_min_seconds
             || !ai.defense.reaction_delay_max_seconds.is_finite()
-            || !ai.offense.ranged_standoff_min_metres.is_finite()
-            || ai.offense.ranged_standoff_max_metres < ai.offense.ranged_standoff_min_metres
-            || !ai.offense.initiative_delay_min_seconds.is_finite()
-            || ai.offense.initiative_delay_min_seconds < 0.0
-            || ai.offense.initiative_delay_max_seconds < ai.offense.initiative_delay_min_seconds
-            || !ai.offense.cadence_jitter_seconds.is_finite()
-            || ai.offense.cadence_jitter_seconds < 0.0
-            || !ai.offense.long_weapon_measure_threshold_metres.is_finite()
-            || ai.offense.long_weapon_measure_threshold_metres <= 0.0
-            || !ai.offense.melee_measure_reach_fraction.is_finite()
-            || !(0.0..=1.0).contains(&ai.offense.melee_measure_reach_fraction)
+            || !ai.offense.has_valid_intervals()
         {
             return Err(TacticalCombatConfigError::Validation("invalid AI interval"));
         }
@@ -1133,21 +1159,7 @@ impl Default for TacticalCombatConfig {
             },
             ai: TacticalAiConfig {
                 ordinary: OrdinaryAiConfig {
-                    offense: AiOffenseConfig {
-                        hit_precision: 1.0,
-                        target_body_part: BodyPart::Chest,
-                        windup_seconds: 0.65,
-                        cooldown_seconds: 0.25,
-                        initiative_delay_min_seconds: 0.04,
-                        initiative_delay_max_seconds: 0.22,
-                        cadence_jitter_seconds: 0.16,
-                        long_weapon_measure_threshold_metres: 1.2,
-                        melee_measure_reach_fraction: 0.7,
-                        ranged_standoff_min_metres: 1.5,
-                        ranged_standoff_max_metres: 12.0,
-                        ranged_standoff_slop_metres: 0.5,
-                        ranged_reach_fraction: 0.5,
-                    },
+                    offense: AiOffenseConfig::default(),
                     defense: AiDefenseConfig {
                         dodge_chance: 0.2,
                         reaction_delay_min_seconds: 0.20,

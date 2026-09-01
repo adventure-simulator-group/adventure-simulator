@@ -1,6 +1,226 @@
 use super::authority::AuthorizedMeleeAttack;
 use super::*;
 
+mod active_defense;
+use active_defense::{commit_defense_during_attack, resolve_active_defense};
+mod outcome;
+use outcome::emit_melee_outcome;
+
+fn contact_at_completion(
+    attacker: &TacticalPlayerView<'_, '_, '_>,
+    authority: &MeleeAttackAuthority,
+    surface_distance: f32,
+    reach: f32,
+    attack_style: MeleeAttackStyle,
+) -> MeleeContactAtTime {
+    let grip_to_tip_metres = attacker.weapon_grip_to_tip();
+    let striking_head_length_metres = attacker.weapon_striking_head_length();
+    let body_material = attacker.weapon_body_material();
+    let striking_material = attacker.weapon_striking_material();
+    resolve_melee_contact_at_time(MeleeContactAtTimeFacts {
+        scheduled_measure_metres: authority
+            .scheduled_measure_metres()
+            .unwrap_or(surface_distance),
+        actual_measure_metres: surface_distance,
+        effective_reach_metres: reach,
+        grip_to_tip_metres,
+        total_length_metres: attacker.weapon_total_length(),
+        striking_head_length_metres,
+        distal_headed: adventuresim_core::combat::has_distal_striking_surface(
+            grip_to_tip_metres,
+            striking_head_length_metres,
+            body_material,
+            striking_material,
+        ),
+        attack_style,
+        body_material,
+        striking_material,
+    })
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "validation facts join both live actor projections"
+)]
+fn completion_intent_facts(
+    event: &MeleeAttackIntent,
+    attacker: &TacticalPlayerView<'_, '_, '_>,
+    authority: &MeleeAttackAuthority,
+    attacker_look: &CharacterLook,
+    attacker_transform: &Transform,
+    defender_look: &CharacterLook,
+    defender_transform: &Transform,
+    attacker_dimensions: &CharacterDimensions,
+    weapon_reach: f32,
+    surface_distance: f32,
+    now: CombatInstant,
+    sides: &Query<&TacticalCombatSide>,
+    states: &Query<&mut TacticalCombatState>,
+    config: &TacticalCombatConfig,
+) -> MeleeIntentFacts {
+    MeleeIntentFacts {
+        attacker: event.attacker,
+        target: event.target,
+        attacker_side: sides.get(event.attacker).ok().copied(),
+        target_side: sides.get(event.target).ok().copied(),
+        attacker_incapacitated: states
+            .get(event.attacker)
+            .ok()
+            .map(TacticalCombatState::is_incapacitated),
+        target_incapacitated: states
+            .get(event.target)
+            .ok()
+            .map(TacticalCombatState::is_incapacitated),
+        attack_capability: adventuresim_core::combat::melee_attack_capability(attacker, attacker),
+        reported_precision: event.reported_precision,
+        arm_reach: attacker_dimensions.arm_reach_metres,
+        weapon_reach,
+        range_latency_tolerance: config
+            .realtime_authority
+            .melee
+            .range_latency_tolerance_metres,
+        separation: surface_distance,
+        authority_permits: authority.permits(event.target, event.body_part, now),
+        body_part: event.body_part,
+        attacker_position: attacker_transform.translation,
+        target_position: defender_transform.translation,
+        attacker_yaw: attacker_look.yaw,
+        target_yaw: defender_look.yaw,
+    }
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "authority validation consumes spatial and timing facts"
+)]
+fn authorize_completion(
+    facts: MeleeIntentFacts,
+    authority: &mut MeleeAttackAuthority,
+    spatial: &SpatialQuery,
+    scene_items: &Query<Entity, With<TacticalSceneItem>>,
+    now: CombatInstant,
+    config: &TacticalCombatConfig,
+    attack_key: u64,
+    surface_distance: f32,
+    reach: f32,
+) -> Option<AuthorizedMeleeAttack> {
+    let validated = match validate_melee_intent_cheap(facts) {
+        Ok(validated) => validated,
+        Err(reason) => {
+            info!(attack_key, attacker = ?facts.attacker, target = ?facts.target, body_part = ?facts.body_part, reason = ?reason, surface_distance_metres = surface_distance, reach_metres = reach, "melee_completion_rejected");
+            info!(attack_key, attacker = ?facts.attacker, target = ?facts.target, body_part = ?facts.body_part, outcome = "miss", reason = ?reason, "melee_attack_resolved");
+            return None;
+        }
+    };
+    let line_of_sight = authoritative_line_of_sight(
+        spatial,
+        scene_items,
+        validated.attacker(),
+        validated.target(),
+        validated.attacker_position(),
+        validated.target_position(),
+    );
+    if let Err(reason) = validate_melee_line_of_sight(line_of_sight) {
+        info!(attack_key, attacker = ?facts.attacker, target = ?facts.target, body_part = ?facts.body_part, reason = ?reason, surface_distance_metres = surface_distance, reach_metres = reach, "melee_completion_rejected");
+        info!(attack_key, attacker = ?facts.attacker, target = ?facts.target, body_part = ?facts.body_part, outcome = "miss", reason = ?reason, "melee_attack_resolved");
+        return None;
+    }
+    let cooldown =
+        CombatDuration::from_secs_f32(config.realtime_authority.melee.replay_cooldown_seconds);
+    authority.authorize_attack(validated, now, cooldown).or_else(|| {
+        info!(attack_key, attacker = ?facts.attacker, target = ?facts.target, body_part = ?facts.body_part, reason = "authorization_consumed", surface_distance_metres = surface_distance, reach_metres = reach, "melee_completion_rejected");
+        info!(attack_key, attacker = ?facts.attacker, target = ?facts.target, body_part = ?facts.body_part, outcome = "miss", reason = "authorization_consumed", "melee_attack_resolved");
+        None
+    })
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "alignment compares complete attacker and defender views"
+)]
+fn weapon_defense_alignment(
+    attacker: &TacticalPlayerView<'_, '_, '_>,
+    defender: &TacticalPlayerView<'_, '_, '_>,
+    attacker_side: BodySide,
+    attack_style: MeleeAttackStyle,
+    precision: ReportedPrecision,
+    flanking: f32,
+    response: DefenderResponse,
+    sample: f32,
+) -> Option<adventuresim_core::combat::WeaponDefenseAlignment> {
+    response.is_weapon_contact().then(|| {
+        let attack_value = adventuresim_core::combat::melee_attack_value_by_parts(
+            attacker,
+            attacker,
+            attacker,
+            attacker,
+            attacker,
+            attacker_side,
+            attack_style,
+            precision.get(),
+            flanking,
+            response,
+            defender,
+            defender,
+            defender,
+            defender,
+            defender,
+        );
+        resolve_weapon_defense_alignment(response, attack_value, sample)
+    })
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "contact resolution consumes the defended strike projection"
+)]
+fn contact_after_defense(
+    attack: &AuthorizedMeleeAttack,
+    attacker: &TacticalPlayerView<'_, '_, '_>,
+    defender: &TacticalPlayerView<'_, '_, '_>,
+    defender_categories: &[BestiaryCategory],
+    attacker_side: BodySide,
+    attack_style: MeleeAttackStyle,
+    response: DefenderResponse,
+    precision: ReportedPrecision,
+    flanking: f32,
+    contact_sample: f32,
+    dodge: Option<MeleeDodgeGeometry>,
+    contact_at_time: MeleeContactAtTime,
+    config: &TacticalCombatConfig,
+) -> (MeleeContactLocation, AttackResult) {
+    let redirected = dodge.and_then(|geometry| geometry.contacted_body_part);
+    if dodge.is_some_and(|geometry| geometry.contacted_body_part.is_none()) {
+        return (
+            MeleeContactLocation::new(
+                attack.body_part(),
+                anatomical_subregion(attack.body_part(), 1.0),
+                1.0,
+                None,
+            ),
+            AttackResult::ToAttacker {
+                balance_damage: 0.0,
+                contact_force: 0.0,
+                physical_contact: false,
+            },
+        );
+    }
+    super::contact::resolve_melee_contact(
+        attacker,
+        defender,
+        defender_categories,
+        config.resolution,
+        attacker_side,
+        attack_style,
+        response,
+        precision,
+        flanking,
+        contact_sample,
+        redirected,
+        contact_at_time,
+    )
+}
+
 #[expect(
     clippy::too_many_arguments,
     reason = "Bevy injects each observer resource and query as an independent system parameter"
@@ -80,95 +300,44 @@ pub(super) fn resolve_melee_attack(
         &config,
     )
     .unwrap_or(f32::INFINITY);
-    let grip_to_tip_metres = attacker_view.weapon_grip_to_tip();
-    let striking_head_length_metres = attacker_view.weapon_striking_head_length();
-    let body_material = attacker_view.weapon_body_material();
-    let striking_material = attacker_view.weapon_striking_material();
-    let contact_at_time = resolve_melee_contact_at_time(MeleeContactAtTimeFacts {
-        scheduled_measure_metres: authority
-            .scheduled_measure_metres()
-            .unwrap_or(surface_distance),
-        actual_measure_metres: surface_distance,
-        effective_reach_metres: reach,
-        grip_to_tip_metres,
-        total_length_metres: attacker_view.weapon_total_length(),
-        striking_head_length_metres,
-        distal_headed: adventuresim_core::combat::has_distal_striking_surface(
-            grip_to_tip_metres,
-            striking_head_length_metres,
-            body_material,
-            striking_material,
-        ),
+    let contact_at_time = contact_at_completion(
+        &attacker_view,
+        &authority,
+        surface_distance,
+        reach,
         attack_style,
-        body_material,
-        striking_material,
-    });
-    let facts = MeleeIntentFacts {
-        attacker: entity,
-        target: event.target,
-        attacker_side: q_sides.get(entity).ok().copied(),
-        target_side: q_sides.get(event.target).ok().copied(),
-        attacker_incapacitated: q_states
-            .get(entity)
-            .ok()
-            .map(TacticalCombatState::is_incapacitated),
-        target_incapacitated: q_states
-            .get(event.target)
-            .ok()
-            .map(TacticalCombatState::is_incapacitated),
-        attack_capability: adventuresim_core::combat::melee_attack_capability(
-            &attacker_view,
-            &attacker_view,
-        ),
-        reported_precision: event.reported_precision,
-        arm_reach: attacker_dimensions.arm_reach_metres,
+    );
+    let facts = completion_intent_facts(
+        &event,
+        &attacker_view,
+        &authority,
+        attacker_look,
+        attacker_transform,
+        defender_look,
+        defender_transform,
+        attacker_dimensions,
         weapon_reach,
-        range_latency_tolerance: config
-            .realtime_authority
-            .melee
-            .range_latency_tolerance_metres,
-        separation: surface_distance,
-        authority_permits: authority.permits(event.target, event.body_part, now),
-        body_part: event.body_part,
-        attacker_position: attacker_transform.translation,
-        target_position: defender_transform.translation,
-        attacker_yaw: attacker_look.yaw,
-        target_yaw: defender_look.yaw,
-    };
-    let validated = match validate_melee_intent_cheap(facts) {
-        Ok(validated) => validated,
-        Err(reason) => {
-            info!(attack_key, attacker = ?entity, target = ?event.target, body_part = ?event.body_part, reason = ?reason, surface_distance_metres = surface_distance, reach_metres = reach, "melee_completion_rejected");
-            info!(attack_key, attacker = ?entity, target = ?event.target, body_part = ?event.body_part, outcome = "miss", reason = ?reason, "melee_attack_resolved");
-            return;
-        }
-    };
+        surface_distance,
+        now,
+        &q_sides,
+        &q_states,
+        &config,
+    );
     let contact_sample = event.contact_sample;
     let defense_alignment_sample = event.defense_alignment_sample;
-    let line_of_sight = authoritative_line_of_sight(
+    let Some(attack) = authorize_completion(
+        facts,
+        &mut authority,
         &spatial,
         &q_scene_items,
-        validated.attacker(),
-        validated.target(),
-        validated.attacker_position(),
-        validated.target_position(),
-    );
-    if let Err(reason) = validate_melee_line_of_sight(line_of_sight) {
-        info!(attack_key, attacker = ?entity, target = ?event.target, body_part = ?event.body_part, reason = ?reason, surface_distance_metres = surface_distance, reach_metres = reach, "melee_completion_rejected");
-        info!(attack_key, attacker = ?entity, target = ?event.target, body_part = ?event.body_part, outcome = "miss", reason = ?reason, "melee_attack_resolved");
-        return;
-    }
-    // Mutate the pre-existing authority component synchronously. A later
-    // completion in this same message flush observes the consumed windup and
-    // active cooldown instead of reusing deferred Commands state.
-    let cooldown =
-        CombatDuration::from_secs_f32(config.realtime_authority.melee.replay_cooldown_seconds);
-    let Some(authorized) = authority.authorize_attack(validated, now, cooldown) else {
-        info!(attack_key, attacker = ?validated.attacker(), target = ?validated.target(), body_part = ?validated.body_part(), reason = "authorization_consumed", surface_distance_metres = surface_distance, reach_metres = reach, "melee_completion_rejected");
-        info!(attack_key, attacker = ?validated.attacker(), target = ?validated.target(), body_part = ?validated.body_part(), outcome = "miss", reason = "authorization_consumed", "melee_attack_resolved");
+        now,
+        &config,
+        attack_key,
+        surface_distance,
+        reach,
+    ) else {
         return;
     };
-    let attack = authorized;
     info!(attack_key, attacker = ?attack.attacker(), target = ?attack.target(), body_part = ?attack.body_part(), surface_distance_metres = surface_distance, reach_metres = reach, "melee_completion_accepted");
     let (a2, a1) = attack.attacker_yaw().sin_cos();
     let (d2, d1) = attack.target_yaw().sin_cos();
@@ -218,30 +387,16 @@ pub(super) fn resolve_melee_attack(
     let fatigued_precision =
         ReportedPrecision::new(attack.reported_precision().get() * attacker_performance)
             .expect("fatigue preserves finite bounded precision");
-    let defense_alignment = attempted_defender_response.is_weapon_contact().then(|| {
-        let attack_value = adventuresim_core::combat::melee_attack_value_by_parts(
-            &attacker_view,
-            &attacker_view,
-            &attacker_view,
-            &attacker_view,
-            &attacker_view,
-            attacker_side,
-            attack_style,
-            fatigued_precision.get(),
-            flanking,
-            attempted_defender_response,
-            &defender_view,
-            &defender_view,
-            &defender_view,
-            &defender_view,
-            &defender_view,
-        );
-        resolve_weapon_defense_alignment(
-            attempted_defender_response,
-            attack_value,
-            defense_alignment_sample,
-        )
-    });
+    let defense_alignment = weapon_defense_alignment(
+        &attacker_view,
+        &defender_view,
+        attacker_side,
+        attack_style,
+        fatigued_precision,
+        flanking,
+        attempted_defender_response,
+        defense_alignment_sample,
+    );
     let effective_defender_response = defense_alignment.map_or_else(
         || {
             if matches!(attempted_defender_response, DefenderResponse::Dodge { .. })
@@ -265,337 +420,43 @@ pub(super) fn resolve_melee_attack(
         &mut q_skeletons,
     );
     let redirected_body_part = dodge_geometry.and_then(|geometry| geometry.contacted_body_part);
-    let (contact, result) =
-        if dodge_geometry.is_some_and(|geometry| geometry.contacted_body_part.is_none()) {
-            (
-                MeleeContactLocation::new(
-                    attack.body_part(),
-                    anatomical_subregion(attack.body_part(), 1.0),
-                    1.0,
-                    None,
-                ),
-                AttackResult::ToAttacker {
-                    balance_damage: 0.0,
-                    contact_force: 0.0,
-                    physical_contact: false,
-                },
-            )
-        } else {
-            super::contact::resolve_melee_contact(
-                &attacker_view,
-                &defender_view,
-                &defender_categories.0,
-                config.resolution,
-                attacker_side,
-                attack_style,
-                effective_defender_response,
-                fatigued_precision,
-                flanking,
-                contact_sample,
-                redirected_body_part,
-                contact_at_time,
-            )
-        };
-    let result = result * attacker_performance * attack.power_multiplier();
-    let Some(attacker_weapon_slot) = weapon_slot_for_side(Some(attacker_side)) else {
-        info!(attack_key, attacker = ?attack.attacker(), target = ?attack.target(), body_part = ?attack.body_part(), outcome = "failed", reason = "ambiguous_striking_side", "melee_attack_resolved");
-        return;
-    };
-    let defender_blocking_slot = defender_blocking_slot(
-        attempted_defender_response,
-        defender_view.shield_holding_side(),
-        defender_view.weapon_holding_side(),
-    );
-    let (impact_recipient, impact_velocity_change, impact_point, impact_normal) =
-        authoritative_impact(
-            result,
-            attack.attacker(),
-            attacker_transform.translation,
-            attacker_view.body_weight() + attacker_view.inventory_weight(),
-            attack.target(),
-            defender_transform,
-            defender_view.body_weight() + defender_view.inventory_weight(),
-            contact.body_part,
-            &config,
-        );
-    let impact_effects = authoritative_impact_effects(&viewer.inventory, entity, hand, result);
-
-    cmd.trigger(ApplyMeleeAttackResult {
-        attacker: attack.attacker(),
-        target: attack.target(),
-        body_part: contact.body_part,
-        anatomical_subregion: contact.anatomical_subregion,
-        surface_coordinate: contact.surface_coordinate,
-        result,
-        defender_response: attempted_defender_response,
-        defense_success_probability: defense_alignment
-            .map(|alignment| alignment.success_probability),
-        defense_alignment_sample: defense_alignment.map(|alignment| alignment.alignment_sample),
-        defense_engagement: defense_alignment.map(|alignment| alignment.engagement),
-        attacker_weapon_slot,
-        defender_blocking_slot,
-        attacker_weapon_contact: attacker_has_weapon,
-        impact_recipient,
-        impact_velocity_change,
-        closest_approach_metres: dodge_geometry.map(|geometry| geometry.closest_approach_metres),
-        redirected_from: redirected_body_part
-            .filter(|body_part| *body_part != attack.body_part())
-            .map(|_| attack.body_part()),
-        contact_at_time,
-    });
-
-    log_melee_result(
-        attack_key,
-        entity,
-        attack.target(),
-        contact.body_part,
-        result,
-    );
-
-    cmd.server_trigger(ToClients {
-        targets: SendTargets::All,
-        message: SuccessfulAttackResponse {
-            attacker: attack.attacker(),
-            hit: vec![attack.target()],
-            body_part: contact.body_part,
-            result,
-            flanking,
-            defender_response: attempted_defender_response,
-            impact_recipient,
-            impact_velocity_change,
-            impact_point,
-            impact_normal,
-            impact_effects,
-        },
-    });
-}
-
-#[expect(
-    clippy::too_many_arguments,
-    reason = "active defense bridges live authority, animation, physiology, and geometry"
-)]
-fn resolve_active_defense(
-    attack: &AuthorizedMeleeAttack,
-    attacker_view: &TacticalPlayerView<'_, '_, '_>,
-    defender_view: &TacticalPlayerView<'_, '_, '_>,
-    attacker_transform: &Transform,
-    defender_transform: &Transform,
-    attacker_performance: f32,
-    attack_style: MeleeAttackStyle,
-    contact_sample: f32,
-    q_pending: &Query<&PendingDefenderResponse>,
-    q_authorities: &mut Query<&mut MeleeAttackAuthority>,
-    q_skeletons: &mut Query<&mut SkeletonState>,
-    q_states: &mut Query<&mut TacticalCombatState>,
-    time: &Time<()>,
-    config: &TacticalCombatConfig,
-) -> Option<(DefenderResponse, Option<MeleeDodgeGeometry>)> {
-    let defender_skeleton = q_skeletons.get(attack.target()).ok()?;
-    let pending = q_pending.get(attack.target()).ok();
-    let (defender_incapacitation, defender_fatigue_performance) =
-        q_states.get(attack.target()).map_or((0.0, 1.0), |state| {
-            (
-                state.incapacitation,
-                combat_fatigue_performance(
-                    state.oxygen_debt_joules,
-                    state.local_action_fatigue,
-                    defender_view.raw_single_body_part_attr(SimpleAttribute::Endurance),
-                ),
-            )
-        });
-    let response = {
-        let mut defender_authority = q_authorities.get_mut(attack.target()).ok();
-        resolve_melee_defender_response(
-            pending,
-            time,
-            defender_view,
-            defender_skeleton,
-            defender_authority.as_deref_mut(),
-            defender_incapacitation,
-            defender_fatigue_performance,
-            attack.attacker(),
-            attack.started_at(),
-            &config.realtime_authority.defense,
-        )
-    }
-    .scaled_for_performance(defender_fatigue_performance);
-    let attacker_side = attacker_view.weapon_holding_side()?;
-    let preview_contact = attacker_view.melee_contact_location(
+    let (contact, result) = contact_after_defense(
+        &attack,
+        &attacker_view,
+        &defender_view,
+        &defender_categories.0,
         attacker_side,
         attack_style,
-        defender_view,
-        attack.reported_precision().get() * attacker_performance,
+        effective_defender_response,
+        fatigued_precision,
+        flanking,
         contact_sample,
+        dodge_geometry,
+        contact_at_time,
+        &config,
     );
-    let response = shield_aligned_response(
-        response,
-        defender_view.shield_holding_side(),
-        preview_contact,
+    let result = result * attacker_performance * attack.power_multiplier();
+    emit_melee_outcome(
+        &mut cmd,
+        &attack,
+        attack_key,
+        entity,
+        hand,
+        attacker_side,
+        attempted_defender_response,
+        defense_alignment,
+        dodge_geometry,
+        redirected_body_part,
+        contact_at_time,
+        contact,
+        result,
+        flanking,
+        attacker_has_weapon,
+        &attacker_view,
+        &defender_view,
+        attacker_transform,
+        defender_transform,
+        &viewer,
+        &config,
     );
-    let dodge = matches!(response, DefenderResponse::Dodge { .. }).then(|| {
-        let intended_target = pending.map_or(defender_transform.translation, |value| value.origin);
-        let attack_origin = attacker_transform.translation.xz();
-        let intended_target = intended_target.xz();
-        let displaced_target = defender_transform.translation.xz();
-        let defender_leg_agility = defender_view.limb_attr_by_weight_by_parts(
-            LimbAttribute::Agility,
-            defender_view,
-            LimbWeights::both_legs(),
-        );
-        let attacker_arm_agility = attacker_view.limb_attr_by_weight_by_parts(
-            LimbAttribute::Agility,
-            attacker_view,
-            LimbWeights::both_arms(),
-        );
-        let displacement_time_seconds = pending.map_or(0.0, |value| {
-            CombatInstant::from_elapsed(time)
-                .elapsed_since(value.set_at)
-                .as_secs_f32()
-        });
-        resolve_melee_dodge_geometry(
-            (attack_origin.x, attack_origin.y),
-            (intended_target.x, intended_target.y),
-            (displaced_target.x, displaced_target.y),
-            attack.body_part(),
-            MeleeDodgeKinematics {
-                defender_leg_agility,
-                defender_fatigue_performance: q_states.get(attack.target()).map_or(1.0, |state| {
-                    combat_fatigue_performance(
-                        state.oxygen_debt_joules,
-                        state.local_action_fatigue,
-                        defender_view.raw_single_body_part_attr(SimpleAttribute::Endurance),
-                    )
-                }),
-                defender_body_mass_kg: defender_view.body_weight(),
-                defender_equipment_mass_kg: defender_view.inventory_weight(),
-                displacement_time_seconds,
-                attacker_tracking: (attacker_arm_agility / 5.0).clamp(0.0, 1.0)
-                    * attacker_performance
-                    / (1.0 + attacker_view.weapon_moment_of_inertia().max(0.0) * 2.0),
-                weapon_reach_metres: attacker_view.weapon_reach().max(0.4),
-                committed_arc_radians: match attack_style {
-                    MeleeAttackStyle::Swing => 0.8,
-                    MeleeAttackStyle::Stab => 0.25,
-                },
-            },
-        )
-    });
-    if matches!(
-        response,
-        DefenderResponse::Block { .. } | DefenderResponse::Parry { .. }
-    ) && let Ok(mut state) = q_states.get_mut(attack.target())
-    {
-        let state = &mut *state;
-        let workload = combat_action_workload(
-            CombatActionWork::WeaponDefense,
-            config.realtime_authority.defense.reflex_window_seconds,
-            defender_view.weapon_weight(),
-            defender_view.weapon_moment_of_inertia(),
-            defender_view.inventory_weight(),
-            defender_view.body_weight(),
-            defender_view.raw_single_body_part_attr(SimpleAttribute::Endurance),
-        );
-        apply_combat_workload(
-            &mut state.oxygen_debt_joules,
-            &mut state.local_action_fatigue,
-            workload,
-            defender_view.raw_single_body_part_attr(SimpleAttribute::Endurance),
-        );
-    }
-    Some((response, dodge))
-}
-
-#[expect(
-    clippy::too_many_arguments,
-    reason = "committed defense bridges attack authority, animation, and implement ownership"
-)]
-fn commit_defense_during_attack(
-    cmd: &mut Commands,
-    incoming: &AuthorizedMeleeAttack,
-    attempted: DefenderResponse,
-    effective: DefenderResponse,
-    engagement: f32,
-    defender_view: &TacticalPlayerView<'_, '_, '_>,
-    q_authorities: &mut Query<&mut MeleeAttackAuthority>,
-    q_skeletons: &mut Query<&mut SkeletonState>,
-) {
-    // A same-weapon parry necessarily redirects the committed attack even
-    // when the intercept misses. Its engagement controls only the incoming
-    // weapon interaction, not whether the defender spent their own attack.
-    if matches!(attempted, DefenderResponse::Parry { .. })
-        && let Ok(mut authority) = q_authorities.get_mut(incoming.target())
-        && let Some(canceled_attack_key) = authority.commit_attack_to_defense()
-    {
-        if let Ok(mut skeleton) = q_skeletons.get_mut(incoming.target()) {
-            skeleton.commit_attack_to_defense();
-        }
-        cmd.entity(incoming.target())
-            .remove::<PendingMeleeContact>()
-            .remove::<MeleeLungeMovement>();
-        cmd.trigger(MeleeAttackCommittedToDefense {
-            defender: incoming.target(),
-            incoming_attacker: incoming.attacker(),
-            canceled_attack_key,
-            response: attempted,
-            engagement,
-        });
-        return;
-    }
-
-    // An off-hand shield leaves the sword attack alive, but only the portion
-    // of shield motion that actually engages the incoming line can bind and
-    // reduce the outgoing strike. A grossly misaligned attempt therefore
-    // charges work without granting a free full-strength transformation.
-    if defender_view.shield_block_bonus() > 0.0
-        && let DefenderResponse::Block { effectiveness } = effective
-        && let Ok(mut authority) = q_authorities.get_mut(incoming.target())
-        && let Some((attack_key, retained_power)) =
-            authority.transform_attack_for_offhand_defense(effectiveness)
-    {
-        cmd.trigger(MeleeAttackTransformedByDefense {
-            defender: incoming.target(),
-            incoming_attacker: incoming.attacker(),
-            attack_key,
-            retained_power,
-            response: attempted,
-            engagement,
-        });
-    }
-}
-
-fn log_melee_result(
-    attack_key: u64,
-    attacker: Entity,
-    target: Entity,
-    body_part: BodyPart,
-    result: AttackResult,
-) {
-    match result {
-        AttackResult::ToAttacker { balance_damage, .. } => info!(
-            attack_key,
-            ?attacker,
-            ?target,
-            ?body_part,
-            outcome = "failed",
-            balance_damage,
-            "melee_attack_resolved"
-        ),
-        AttackResult::ToDefender {
-            cut_damage,
-            blunt_damage,
-            balance_damage,
-            ..
-        } => info!(
-            attack_key,
-            ?attacker,
-            ?target,
-            ?body_part,
-            outcome = "connected",
-            total_damage = cut_damage + blunt_damage,
-            cut_damage,
-            blunt_damage,
-            balance_damage,
-            "melee_attack_resolved"
-        ),
-    }
 }

@@ -3,6 +3,16 @@ use bevy::ecs::system::SystemParam;
 
 use super::*;
 
+mod facts;
+pub(super) use facts::compare_target;
+#[cfg(test)]
+pub(super) use facts::ranged_weapon_needs_ammo_lookup;
+use facts::{OffensiveFacts, offensive_facts};
+mod ranged;
+use ranged::{RangedPursuit, drive_ranged_pursuit};
+mod tactics;
+use tactics::*;
+
 type OffensiveAiQuery<'world, 'state> = Query<
     'world,
     'state,
@@ -17,6 +27,20 @@ type OffensiveAiQuery<'world, 'state> = Query<
         &'static SkeletonState,
         Option<&'static CombatantYielded>,
     ),
+>;
+
+type OffensiveCandidateQuery<'world, 'state> = Query<
+    'world,
+    'state,
+    (
+        Entity,
+        &'static Transform,
+        &'static TacticalCombatSide,
+        &'static TacticalCombatState,
+        &'static SkeletonState,
+        Option<&'static CombatantYielded>,
+    ),
+    With<Player>,
 >;
 
 #[derive(SystemParam)]
@@ -77,181 +101,6 @@ enum OffensiveCombatPhase {
     WithdrawingUnableToContinue(Timer),
 }
 
-pub(super) fn ranged_weapon_needs_ammo_lookup(weapon_is_ranged: bool, weapon_reach: f32) -> bool {
-    weapon_is_ranged && weapon_reach.is_finite() && weapon_reach > 0.0
-}
-
-pub(super) fn compare_target(
-    origin: &Transform,
-    a_transform: &Transform,
-    a: Entity,
-    b_transform: &Transform,
-    b: Entity,
-) -> Ordering {
-    let a_distance_squared = origin
-        .translation
-        .xz()
-        .distance_squared(a_transform.translation.xz());
-    let b_distance_squared = origin
-        .translation
-        .xz()
-        .distance_squared(b_transform.translation.xz());
-    a_distance_squared
-        .total_cmp(&b_distance_squared)
-        .then_with(|| a.to_bits().cmp(&b.to_bits()))
-}
-
-struct OffensiveFacts {
-    weapon_reach: f32,
-    preferred_melee_measure: f32,
-    weapon_is_melee: bool,
-    use_ranged: bool,
-    strike_family: StrikeFamily,
-    melee_attack_available: bool,
-    melee_recovery_seconds: f32,
-    dimensions: CharacterDimensions,
-    melee_lunge_delay: Option<f32>,
-    instinct: f32,
-}
-
-#[expect(
-    clippy::too_many_arguments,
-    reason = "facts span both actors and authored movement"
-)]
-fn offensive_facts(
-    entity: Entity,
-    target: Entity,
-    transform: &Transform,
-    target_transform: &Transform,
-    state: &TacticalCombatState,
-    viewer: &TacticalPlayerViewer<'_, '_>,
-    dimensions: &Query<&CharacterDimensions>,
-    colliders: &Query<&Collider>,
-    combat_config: &TacticalCombatConfig,
-    config: &AiOffenseConfig,
-) -> OffensiveFacts {
-    let (
-        weapon_reach,
-        preferred_melee_measure,
-        weapon_is_melee,
-        weapon_is_ranged,
-        strike_family,
-        melee_attack_available,
-        melee_recovery_seconds,
-    ) = viewer
-        .get(entity)
-        .map(|view| {
-            let reach = view.weapon_reach();
-            let grip = view.weapon_grip_to_tip();
-            let head = view.weapon_striking_head_length();
-            let distal = has_distal_striking_surface(
-                grip,
-                head,
-                view.weapon_body_material(),
-                view.weapon_striking_material(),
-            );
-            (
-                reach,
-                preferred_melee_striking_measure(
-                    reach,
-                    grip,
-                    head,
-                    distal,
-                    config.melee_measure_reach_fraction,
-                ),
-                view.weapon_is_melee(),
-                view.weapon_is_ranged(),
-                StrikeFamily::from_melee_style(view.weapon_preferred_melee_style()),
-                melee_attack_capability(&view, &view).is_available(),
-                fatigue_adjusted_recovery_seconds(
-                    attack_recovery_secs(&view, view.weapon_preferred_melee_style(), false)
-                        .max(config.cooldown_seconds),
-                    combat_fatigue_performance(
-                        state.oxygen_debt_joules,
-                        state.local_action_fatigue,
-                        view.raw_single_body_part_attr(SimpleAttribute::Endurance),
-                    ),
-                ),
-            )
-        })
-        .unwrap_or((
-            0.0,
-            0.0,
-            false,
-            false,
-            StrikeFamily::Thrust,
-            false,
-            config.cooldown_seconds,
-        ));
-    let has_ammo = ranged_weapon_needs_ammo_lookup(weapon_is_ranged, weapon_reach)
-        && viewer.inventory.get(entity).has_item_id(ARROW_ID);
-    let instinct = viewer.get(entity).map_or(5.0, |view| {
-        view.raw_single_body_part_attr(SimpleAttribute::Instinct)
-    });
-    let dimensions = dimensions.get(entity).copied().unwrap_or_default();
-    let quickstep_distance = quickstep_target_displacement_metres(
-        dimensions.leg_length_metres,
-        &combat_config.movement.motor,
-    );
-    let melee_lunge_delay = colliders
-        .get(entity)
-        .ok()
-        .zip(colliders.get(target).ok())
-        .and_then(|(attacker_collider, target_collider)| {
-            crate::combat::melee_body_part_lunge_delay(
-                crate::combat::MeleeLungeRequest {
-                    attacker_position: transform.translation,
-                    attacker_collider,
-                    attacker_dimensions: dimensions,
-                    target_transform,
-                    target_collider,
-                    target_body_part: config.target_body_part,
-                    weapon_reach_metres: weapon_reach,
-                    quickstep_distance_metres: quickstep_distance,
-                },
-                combat_config,
-            )
-        });
-    OffensiveFacts {
-        weapon_reach,
-        preferred_melee_measure,
-        weapon_is_melee,
-        use_ranged: weapon_is_ranged && weapon_reach > 0.0 && has_ammo,
-        strike_family,
-        melee_attack_available,
-        melee_recovery_seconds,
-        dimensions,
-        melee_lunge_delay,
-        instinct,
-    }
-}
-
-fn initiative_delay_seconds(
-    random: &mut CombatRandom,
-    instinct: f32,
-    config: &AiOffenseConfig,
-) -> f32 {
-    let sampled = random.range_f32(
-        config.initiative_delay_min_seconds,
-        config.initiative_delay_max_seconds,
-    );
-    sampled * (3.0 / instinct.max(0.5)).clamp(0.6, 2.0)
-}
-
-fn committed_threat_recognition_probability(attack_phase: f32, instinct: f32) -> f32 {
-    let visible_windup = (attack_phase.clamp(0.0, 0.5) * 2.0).sqrt();
-    (visible_windup * instinct.max(0.0) / 5.0).clamp(0.0, 1.0)
-}
-
-fn below_preferred_long_weapon_measure(
-    reach_metres: f32,
-    preferred_measure_metres: f32,
-    distance_metres: f32,
-    long_weapon_threshold_metres: f32,
-) -> bool {
-    reach_metres >= long_weapon_threshold_metres && distance_metres < preferred_measure_metres
-}
-
 #[expect(
     clippy::too_many_arguments,
     reason = "phase execution needs actor, target, authored config, and mutable bot controls"
@@ -270,31 +119,18 @@ fn drive_pursuit_phase(
     random: &mut CombatRandom,
 ) {
     if facts.use_ranged {
-        let standoff = (facts.weapon_reach * config.ranged_reach_fraction)
-            .clamp(
-                config.ranged_standoff_min_metres,
-                config.ranged_standoff_max_metres,
-            )
-            .min(facts.weapon_reach);
-        if distance > facts.weapon_reach || distance > standoff + config.ranged_standoff_slop_metres
-        {
-            input.0 = Some(Vec2::Y);
-        } else if distance + config.ranged_standoff_slop_metres < standoff {
-            input.0 = Some(-Vec2::Y);
-        } else {
-            input.0 = None;
-            let windup = CombatDuration::from_secs_f32(config.windup_seconds);
-            cmd.trigger(RangedAttackStartedIntent {
-                attacker: entity,
-                target: Some(target),
-                animation_windup: windup,
-                minimum_windup: windup,
-            });
-            controller.phase = OffensiveCombatPhase::RangedWindup(Timer::from_seconds(
-                config.windup_seconds,
-                TimerMode::Once,
-            ));
-        }
+        drive_ranged_pursuit(
+            cmd,
+            RangedPursuit {
+                entity,
+                target,
+                distance,
+            },
+            input,
+            controller,
+            facts,
+            config,
+        );
     } else if facts.weapon_is_melee
         && facts.melee_lunge_delay.is_some()
         && target_skeleton.action_kind() == SkeletonAction::Attack
@@ -364,6 +200,44 @@ fn drive_pursuit_phase(
     }
 }
 
+fn maintain_committed_threat_guard(
+    input: &mut AuthoritativeMovementIntent,
+    controller: &mut OffensiveCombatAi,
+    target_skeleton: &SkeletonState,
+    random: &mut CombatRandom,
+    facts: &OffensiveFacts,
+    config: &AiOffenseConfig,
+) {
+    input.0 = None;
+    if target_skeleton.action_kind() != SkeletonAction::Attack
+        || target_skeleton.action_phase() >= 0.5
+    {
+        controller.phase = OffensiveCombatPhase::Assessing(Timer::from_seconds(
+            initiative_delay_seconds(random, facts.instinct, config),
+            TimerMode::Once,
+        ));
+    }
+}
+
+fn continue_withdrawal(
+    cmd: &mut Commands,
+    time: &Time<()>,
+    entity: Entity,
+    input: &mut AuthoritativeMovementIntent,
+    timer: &mut Timer,
+) {
+    input.0 = Some(-Vec2::Y);
+    timer.tick(time.delta());
+    if timer.is_finished() {
+        input.0 = None;
+        cmd.entity(entity).insert(CombatantYielded);
+        cmd.trigger(BotContinuationDecisionEvent {
+            combatant: entity,
+            decision: BotContinuationDecision::Yield,
+        });
+    }
+}
+
 #[expect(
     clippy::too_many_arguments,
     reason = "phase execution needs actor, target, authored config, and mutable bot controls"
@@ -401,15 +275,14 @@ fn drive_offensive_phase(
     match &mut controller.phase {
         OffensiveCombatPhase::Pursuing => unreachable!("pursuit was handled above"),
         OffensiveCombatPhase::GuardingCommittedThreat => {
-            input.0 = None;
-            if target_skeleton.action_kind() != SkeletonAction::Attack
-                || target_skeleton.action_phase() >= 0.5
-            {
-                controller.phase = OffensiveCombatPhase::Assessing(Timer::from_seconds(
-                    initiative_delay_seconds(random, facts.instinct, config),
-                    TimerMode::Once,
-                ));
-            }
+            maintain_committed_threat_guard(
+                input,
+                controller,
+                target_skeleton,
+                random,
+                facts,
+                config,
+            );
         }
         OffensiveCombatPhase::Assessing(timer) => {
             input.0 = None;
@@ -457,16 +330,7 @@ fn drive_offensive_phase(
             }
         }
         OffensiveCombatPhase::WithdrawingUnableToContinue(timer) => {
-            input.0 = Some(-Vec2::Y);
-            timer.tick(time.delta());
-            if timer.is_finished() {
-                input.0 = None;
-                cmd.entity(entity).insert(CombatantYielded);
-                cmd.trigger(BotContinuationDecisionEvent {
-                    combatant: entity,
-                    decision: BotContinuationDecision::Yield,
-                });
-            }
+            continue_withdrawal(cmd, time, entity, input, timer);
         }
     }
 }
@@ -475,17 +339,7 @@ pub(super) fn drive_offensive_combat_ai(
     mut cmd: Commands,
     time: Res<Time<()>>,
     viewer: TacticalPlayerViewer,
-    candidates: Query<
-        (
-            Entity,
-            &Transform,
-            &TacticalCombatSide,
-            &TacticalCombatState,
-            &SkeletonState,
-            Option<&CombatantYielded>,
-        ),
-        With<Player>,
-    >,
+    candidates: OffensiveCandidateQuery<'_, '_>,
     context: OffensiveAiContext<'_, '_>,
     mut random: ResMut<CombatRandom>,
 ) {

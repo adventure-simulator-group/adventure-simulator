@@ -29,7 +29,7 @@ pub(super) fn melee_exchange_at_contact(
     let attacker_equipment = attacker.equipment.for_melee();
     let attacker_view = attacker.view_with_equipment(&attacker_equipment);
     let defender_view = defender.view_with_equipment(&defender.equipment);
-    let mut contact = attacker_view.melee_contact_location(
+    let contact = attacker_view.melee_contact_location(
         attacker.equipment.melee_holding_side,
         attacker_equipment.weapon_preferred_melee_style(),
         &defender_view,
@@ -37,57 +37,18 @@ pub(super) fn melee_exchange_at_contact(
         contact_sample,
     );
     if let DefenderResponse::Dodge { .. } = response {
-        let geometry = dodge_contact_geometry(
+        return dodge_exchange(
             attacker,
             defender,
-            &attacker_equipment,
-            performance,
-            dodge_displacement_time_seconds,
-            contact.body_part,
-            actual_measure_metres,
-        );
-        let Some(body_part) = geometry.contacted_body_part else {
-            return MeleeExchangeOutcome {
-                result: AttackResult::ToAttacker {
-                    balance_damage: 0.0,
-                    contact_force: 0.0,
-                    physical_contact: false,
-                },
-                contact,
-                defense_alignment: None,
-                redirected_from: None,
-                effective_response: response,
-                dodge_geometry: Some(geometry),
-            };
-        };
-        let intended = contact.body_part;
-        let surface_coordinate = contact_sample.clamp(0.0, 1.0 - f32::EPSILON);
-        contact = MeleeContactLocation::new(
-            body_part,
-            anatomical_subregion(body_part, surface_coordinate),
-            surface_coordinate,
-            defender_view.armor_surface(body_part, surface_coordinate),
-        );
-        let result = attacker_view.resolve_melee_attack(
-            crate::combat::EMBEDDED_COMBAT_RESOLUTION_PARAMETERS,
-            attacker.equipment.melee_holding_side,
-            attacker_equipment.weapon_preferred_melee_style(),
-            &defender_view,
-            &defender.bestiary_categories,
-            DefenderResponse::None,
-            precision * performance,
+            precision,
             flanking,
-            contact,
+            contact_sample,
+            dodge_displacement_time_seconds,
+            actual_measure_metres,
             contact_at_time,
-        );
-        return MeleeExchangeOutcome {
-            result: result * performance,
             contact,
-            defense_alignment: None,
-            redirected_from: (body_part != intended).then_some(intended),
-            effective_response: DefenderResponse::None,
-            dodge_geometry: Some(geometry),
-        };
+            response,
+        );
     }
     let defense_alignment = response.is_weapon_contact().then(|| {
         let attack_value = melee_attack_value_by_parts(
@@ -132,16 +93,96 @@ pub(super) fn melee_exchange_at_contact(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "dodge exchange retains independently sampled contact facts"
+)]
+fn dodge_exchange(
+    attacker: &Combatant,
+    defender: &Combatant,
+    precision: f32,
+    flanking: f32,
+    contact_sample: f32,
+    displacement_time: f32,
+    measure: f32,
+    contact_at_time: MeleeContactAtTime,
+    mut contact: MeleeContactLocation,
+    response: DefenderResponse,
+) -> MeleeExchangeOutcome {
+    let performance = attacker.fatigue_performance();
+    let equipment = attacker.equipment.for_melee();
+    let geometry = dodge_contact_geometry(
+        attacker,
+        defender,
+        &equipment,
+        performance,
+        displacement_time,
+        contact.body_part,
+        measure,
+    );
+    let Some(body_part) = geometry.contacted_body_part else {
+        return MeleeExchangeOutcome {
+            result: AttackResult::ToAttacker {
+                balance_damage: 0.0,
+                contact_force: 0.0,
+                physical_contact: false,
+            },
+            contact,
+            defense_alignment: None,
+            redirected_from: None,
+            effective_response: response,
+            dodge_geometry: Some(geometry),
+        };
+    };
+    let intended = contact.body_part;
+    let coordinate = contact_sample.clamp(0.0, 1.0 - f32::EPSILON);
+    let defender_view = defender.view_with_equipment(&defender.equipment);
+    contact = MeleeContactLocation::new(
+        body_part,
+        anatomical_subregion(body_part, coordinate),
+        coordinate,
+        defender_view.armor_surface(body_part, coordinate),
+    );
+    let result = attacker
+        .view_with_equipment(&equipment)
+        .resolve_melee_attack(
+            crate::combat::EMBEDDED_COMBAT_RESOLUTION_PARAMETERS,
+            attacker.equipment.melee_holding_side,
+            equipment.weapon_preferred_melee_style(),
+            &defender_view,
+            &defender.bestiary_categories,
+            DefenderResponse::None,
+            precision * performance,
+            flanking,
+            contact,
+            contact_at_time,
+        );
+    MeleeExchangeOutcome {
+        result: result * performance,
+        contact,
+        defense_alignment: None,
+        redirected_from: (body_part != intended).then_some(intended),
+        effective_response: DefenderResponse::None,
+        dodge_geometry: Some(geometry),
+    }
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy)]
+pub(super) struct MeleeExchangeSamples {
+    pub contact: f32,
+    pub defense_alignment: f32,
+    pub dodge_displacement_time_seconds: f32,
+}
+
 #[cfg(test)]
 pub(super) fn melee_exchange(
     attacker: &Combatant,
     defender: &Combatant,
     precision: f32,
     flanking: f32,
-    contact_sample: f32,
     response: DefenderResponse,
-    defense_alignment_sample: f32,
-    dodge_displacement_time_seconds: f32,
+    samples: MeleeExchangeSamples,
 ) -> MeleeExchangeOutcome {
     let measure = attacker.equipment.weapon_reach().max(0.4);
     melee_exchange_at_contact(
@@ -149,10 +190,10 @@ pub(super) fn melee_exchange(
         defender,
         precision,
         flanking,
-        contact_sample,
+        samples.contact,
         response,
-        defense_alignment_sample,
-        dodge_displacement_time_seconds,
+        samples.defense_alignment,
+        samples.dodge_displacement_time_seconds,
         measure,
         MeleeContactAtTime::intended(measure),
     )

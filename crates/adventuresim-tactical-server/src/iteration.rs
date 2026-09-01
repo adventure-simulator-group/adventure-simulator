@@ -6,6 +6,10 @@ use adventuresim_core::{
     autoresolve::{Combatant, MeleeIterationBuild, body_part_index},
     combat::HUMANOID_COLLISION_RADIUS_METRES,
 };
+#[cfg(test)]
+use adventuresim_core::{
+    combat::MeleeContactClassification, item_catalog_schema::EquipmentMaterial,
+};
 use adventuresim_tactical_core::{physics::AdventureSimulatorPhysicsPlugin, prelude::*};
 use adventuresim_tactical_netcode::replication::AdventureSimulatorReplicationPlugin;
 use bevy::{prelude::*, time::TimeUpdateStrategy};
@@ -474,8 +478,9 @@ mod tests {
                 .flat_map(|outcome| &outcome.events)
                 .any(|event| {
                     event.attacker == veteran.name
-                        && event.contact_classification == "intended_surface"
-                        && event.contact_material.as_deref() == Some("roughsteel")
+                        && event.contact_classification
+                            == MeleeContactClassification::IntendedSurface
+                        && event.contact_material == Some(EquipmentMaterial::RoughSteel)
                         && event.contact_energy_fraction <= 1.0
                 })
         );

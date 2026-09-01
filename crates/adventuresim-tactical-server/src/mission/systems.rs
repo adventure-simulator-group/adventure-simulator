@@ -23,6 +23,29 @@ const TERMINAL_PRESENTATION_DELAY: Duration = Duration::from_secs(3);
 const TERMINAL_ACK_TIMEOUT: Duration = Duration::from_secs(10);
 const PARTY_RECONNECT_GRACE: Duration = Duration::from_secs(10);
 
+type MissionEnemyQuery<'world, 'state> = Query<
+    'world,
+    'state,
+    (
+        &'static TacticalCombatState,
+        Option<&'static crate::bot::CombatantYielded>,
+    ),
+    (With<MissionEnemy>, With<Player>),
+>;
+
+type MissionCombatantQuery<'world, 'state> = Query<
+    'world,
+    'state,
+    (
+        Entity,
+        &'static TacticalCombatSide,
+        &'static TacticalCombatState,
+        &'static CharacterId,
+        Option<&'static crate::bot::CombatantYielded>,
+    ),
+    With<Player>,
+>;
+
 fn commit_terminal_resolution(
     resolution: TacticalMissionResolution,
     now: Duration,
@@ -152,20 +175,8 @@ pub(crate) fn check_terminal_combat_outcome(
     conn: Option<Res<SpacetimeDb>>,
     consequences: Res<TacticalConsequenceAccumulator>,
     mut state: ResMut<MissionState>,
-    enemies: Query<
-        (&TacticalCombatState, Option<&crate::bot::CombatantYielded>),
-        (With<MissionEnemy>, With<Player>),
-    >,
-    combatants: Query<
-        (
-            Entity,
-            &TacticalCombatSide,
-            &TacticalCombatState,
-            &CharacterId,
-            Option<&crate::bot::CombatantYielded>,
-        ),
-        With<Player>,
-    >,
+    enemies: MissionEnemyQuery<'_, '_>,
+    combatants: MissionCombatantQuery<'_, '_>,
     loading_players: Query<(), With<LoadingPlayer>>,
 ) -> Result {
     if let Some(frozen) = state.terminal_retry_due(time.elapsed(), TERMINAL_ACK_TIMEOUT) {
