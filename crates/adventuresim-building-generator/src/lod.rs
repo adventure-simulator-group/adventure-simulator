@@ -695,7 +695,21 @@ mod tests {
                 .any(|crown| matches!(crown.path, CrownPath::Round { .. }))
         );
 
+        let facade = compile_building_lod(&plan, BuildingLodLevel::Facade);
+        assert!(
+            facade.meshes.iter().any(|mesh| {
+                mesh.material == BuildingLodMaterial::CrownMasonry && !mesh.vertices.is_empty()
+            }),
+            "the facade representation must retain geometric straight crowns"
+        );
+
         let lod = compile_building_lod(&plan, BuildingLodLevel::Shell);
+        assert!(
+            lod.meshes
+                .iter()
+                .all(|mesh| mesh.material != BuildingLodMaterial::CrownMasonry),
+            "the shell representation substitutes crown geometry with the mask"
+        );
         let mask = lod
             .meshes
             .iter()

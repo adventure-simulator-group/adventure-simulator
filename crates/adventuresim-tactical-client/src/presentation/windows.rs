@@ -31,7 +31,7 @@ fn on_scene_window_added(
     commands.entity(event.entity).insert((
         PresentedWindowCasement,
         Mesh3d(meshes.add(Cuboid::from_size(window.size_metres))),
-        MeshMaterial3d(materials.get(BuildingLodMaterial::Glass)),
+        MeshMaterial3d(materials.get_for_building(window.building_id, BuildingLodMaterial::Glass)),
         Visibility::default(),
         building_lod_visibility(BuildingRenderLevel::Lod0),
         GrabTargetOutline(event.entity),

@@ -15,8 +15,8 @@ use fabelgeist_determinism::splitmix64;
 use std::collections::BTreeMap;
 
 #[cfg(test)]
-use crate::presentation::generate_procedural_environment_assets;
-use crate::presentation::{ProceduralEnvironmentAssets, bps, leaf_material, unit_hash};
+use crate::presentation::generate_procedural_textures;
+use crate::presentation::{ProceduralTextureAssets, bps, leaf_material, unit_hash};
 
 use super::{
     GroundLitterCaptureAnchors, GroundLitterCapturePair, GroundScatterLayer,
@@ -365,7 +365,7 @@ pub(super) const DRY_LEAF_MESH_VARIANTS: u64 = 4;
 pub(super) const TWIG_MESH_VARIANTS: u64 = 3;
 pub(super) const WOODLAND_PLANT_MESH_VARIANTS: u64 = 3;
 pub(super) fn forest_floor_leaf_material(
-    assets: &ProceduralEnvironmentAssets,
+    assets: &ProceduralTextureAssets,
 ) -> TacticalTreeLeafCardMaterial {
     let mut material = leaf_material(&assets.dry_oak_leaf, 0.28, 0.72, 0.0, 0.035);
     // Fallen leaves reuse the oak surface maps/PBR response but do not inherit
@@ -1164,7 +1164,7 @@ mod tests {
         app.add_plugins(TaskPoolPlugin::default());
         app.add_plugins(AssetPlugin::default());
         app.init_asset::<Image>();
-        let assets = generate_procedural_environment_assets(
+        let assets = generate_procedural_textures(
             &mut app
                 .world_mut()
                 .resource_mut::<bevy::prelude::Assets<Image>>(),

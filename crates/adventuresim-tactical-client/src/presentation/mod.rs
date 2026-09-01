@@ -18,15 +18,18 @@ mod environment;
 pub(crate) mod ground_scatter;
 mod obstacles;
 mod procedural;
-mod procedural_assets;
+mod procedural_texture_setup;
 mod sky;
 mod terrain;
-mod terrain_blood;
 mod vista;
 mod volumetric;
 mod weather;
 mod windows;
 
+use adventuresim_procedural_textures::LeafTextureSet;
+pub(crate) use adventuresim_procedural_textures::ProceduralTextureAssets;
+#[cfg(test)]
+use adventuresim_procedural_textures::generate_procedural_textures;
 use atmosphere::*;
 use buildings::*;
 use clouds::*;
@@ -37,9 +40,7 @@ use obstacles::on_scene_obstacle_added;
 use obstacles::rock::TacticalRockMaterial;
 use obstacles::tree::*;
 use procedural::*;
-#[cfg(test)]
-use procedural_assets::generate_procedural_environment_assets;
-use procedural_assets::{LeafTextureSet, setup_procedural_environment_assets};
+use procedural_texture_setup::setup_procedural_texture_assets;
 use sky::*;
 use terrain::*;
 use vista::*;
@@ -72,7 +73,8 @@ pub(crate) use environment::{
 };
 pub(crate) use ground_scatter::{
     GrassInteractor, GroundLitterCaptureAnchors, GroundLitterCapturePair, GroundLitterDiagnostics,
-    GroundScatterLayer, LooseStonePebblePatch,
+    GroundScatterLayer, LooseStonePebblePatch, UnderstoryReviewSpecimen,
+    WoodyUnderstoryPresentationCache, spawn_understory_review_specimens,
 };
 pub(crate) use obstacles::oak_review_terminal_specimen;
 pub(crate) use obstacles::rock::ProceduralRockVisual;
@@ -86,7 +88,6 @@ pub(crate) use obstacles::tree::{
     TreeLodCluster, TreeLodRenderOverride, TreeTrunkLod, oak_aggregate_bark_material,
     oak_bark_material, oak_leaf_material,
 };
-pub(crate) use procedural_assets::ProceduralEnvironmentAssets;
 pub(crate) use sky::AtmosphereIblAmbientHandoff;
 pub(crate) use sky::{TacticalMoon, TacticalMoonlight, TacticalStars, TacticalSunlight};
 pub(crate) use terrain::{
@@ -231,7 +232,7 @@ impl Plugin for TacticalPresentationPlugin {
         .add_systems(
             Startup,
             (
-                setup_procedural_environment_assets,
+                setup_procedural_texture_assets,
                 setup_tactical_building_materials,
                 setup_tactical_presentation,
                 setup_tactical_sky,

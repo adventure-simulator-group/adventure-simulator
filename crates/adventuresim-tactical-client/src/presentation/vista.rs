@@ -1,6 +1,21 @@
 use super::*;
 use fabelgeist_determinism::splitmix64;
 
+mod streets;
+
+#[derive(Clone, Copy)]
+struct UrbanGround<'a> {
+    streets: &'a [CityStreetPatch],
+    yards: &'a [CityYardPatch],
+}
+
+impl UrbanGround<'_> {
+    fn suppresses_grass(self, point: Vec2) -> bool {
+        self.streets.iter().any(|street| street.contains(point))
+            || self.yards.iter().any(|yard| yard.contains(point))
+    }
+}
+
 /// Marker for a distant tree billboard spawned as part of a vista ring.
 #[derive(Component)]
 pub(crate) struct VistaTreePresentation;
@@ -168,6 +183,16 @@ pub(super) fn on_scene_vista_bundle(
     if let (Some(lod), Some((playable_terrain, playable_ground, environment))) =
         (visible_lods.first().copied(), playable_scene)
     {
+        streets::spawn(
+            &mut commands,
+            &bundle.streets,
+            &bundle.yards,
+            &active_surface,
+            &bundle.scene_digest,
+            playable_terrain,
+            &mut meshes,
+            &mut standard_materials,
+        );
         spawn_near_vista_scatter(
             &mut commands,
             lod,
@@ -181,6 +206,10 @@ pub(super) fn on_scene_vista_bundle(
             &mut standard_materials,
             &mut images,
             &settings.config.grass,
+            UrbanGround {
+                streets: &bundle.streets,
+                yards: &bundle.yards,
+            },
         );
     }
     info!(
@@ -208,6 +237,7 @@ fn spawn_near_vista_scatter(
     standard_materials: &mut Assets<StandardMaterial>,
     images: &mut Assets<Image>,
     grass: &crate::presentation::config::GrassConfig,
+    urban_ground: UrbanGround<'_>,
 ) {
     let scene_seed = stable_text_seed(&environment.scene_digest);
     let (grass_color, grass_dryness) = grass_pigment(environment);
@@ -220,6 +250,7 @@ fn spawn_near_vista_scatter(
         playable_ground,
         scene_seed,
         150.0,
+        urban_ground,
     );
     let coverage_mask = images.add(coverage_mask);
 
@@ -264,6 +295,7 @@ fn spawn_near_vista_scatter(
                 grass_profile,
                 &material,
                 configured_grass_lod_visibility(grass_lod, grass),
+                urban_ground,
             );
         }
 
@@ -302,6 +334,7 @@ fn spawn_near_vista_scatter(
             grass_profile,
             &vista_material,
             configured_grass_lod_visibility(GrassMeshLod::Vista, grass),
+            urban_ground,
         );
     }
 
@@ -326,6 +359,7 @@ fn vista_grass_cover_mask_image(
     playable_ground: &SceneGround,
     seed: u64,
     outer_collar: f32,
+    urban_ground: UrbanGround<'_>,
 ) -> (Image, Vec4) {
     let (playable_width, playable_depth, playable_mask) =
         grass_cover_mask_pixels(playable_ground, seed);
@@ -354,6 +388,7 @@ fn vista_grass_cover_mask_image(
                 playable_width,
                 playable_depth,
                 point,
+                urban_ground,
             );
             pixels.push((coverage.clamp(0.0, 1.0) * 255.0).round() as u8);
         }
@@ -381,7 +416,11 @@ fn stitched_vista_grass_coverage(
     playable_width: u32,
     playable_depth: u32,
     point: Vec2,
+    urban_ground: UrbanGround<'_>,
 ) -> f32 {
+    if urban_ground.suppresses_grass(point) {
+        return 0.0;
+    }
     let boundary = point.clamp(-playable_half_extent, playable_half_extent);
     let playable_coverage = sample_playable_grass_mask(
         playable_mask,
@@ -436,14 +475,20 @@ fn vista_grass_patch_topology(
     playable_ground: &SceneGround,
     centre: Vec2,
     half_extent: f32,
+    urban_ground: UrbanGround<'_>,
 ) -> Option<GrassTopology> {
     let mut total = 0.0;
     let mut samples = 0;
     for z in [-1.0, -0.5, 0.0, 0.5, 1.0] {
         for x in [-1.0, -0.5, 0.0, 0.5, 1.0] {
             let point = centre + Vec2::new(x, z) * half_extent;
-            total +=
-                stitched_vista_topology_coverage(lod, playable_half_extent, playable_ground, point);
+            total += stitched_vista_topology_coverage(
+                lod,
+                playable_half_extent,
+                playable_ground,
+                point,
+                urban_ground,
+            );
             samples += 1;
         }
     }
@@ -455,7 +500,11 @@ fn stitched_vista_topology_coverage(
     playable_half_extent: Vec2,
     playable_ground: &SceneGround,
     point: Vec2,
+    urban_ground: UrbanGround<'_>,
 ) -> f32 {
+    if urban_ground.suppresses_grass(point) {
+        return 0.0;
+    }
     let boundary = point.clamp(-playable_half_extent, playable_half_extent);
     let playable_coverage = playable_ground
         .ground_at(boundary)
@@ -495,6 +544,7 @@ fn spawn_vista_grass_lattice(
     profile: GrassCommunityProfile,
     material: &Handle<TacticalFoliageMaterial>,
     visibility: VisibilityRange,
+    urban_ground: UrbanGround<'_>,
 ) {
     let outer = playable_half_extent + Vec2::splat(outer_collar);
     let minimum = (-outer / spacing).floor().as_ivec2();
@@ -521,6 +571,7 @@ fn spawn_vista_grass_lattice(
                 playable_ground,
                 point,
                 spacing * 0.58,
+                urban_ground,
             ) else {
                 continue;
             };
@@ -1995,6 +2046,10 @@ mod tests {
                 width,
                 depth,
                 Vec2::new(x, 0.0),
+                UrbanGround {
+                    streets: &[],
+                    yards: &[],
+                },
             )
         };
         let boundary = coverage(10.0);
@@ -2005,6 +2060,29 @@ mod tests {
         assert!((boundary - just_outside).abs() < 0.02);
         assert!(just_outside > midpoint && midpoint > vista);
         assert!((vista - vista_sward_coverage(deep_woods)).abs() < 0.01);
+
+        let street = [CityStreetPatch::Corridor {
+            start_metres: Vec2::new(12.0, 0.0),
+            end_metres: Vec2::new(28.0, 0.0),
+            half_width_metres: 2.0,
+            surface: CityStreetSurface::CompactedEarth,
+        }];
+        assert_eq!(
+            stitched_vista_grass_coverage(
+                &lod,
+                Vec2::splat(10.0),
+                &ground,
+                &mask,
+                width,
+                depth,
+                Vec2::new(22.0, 0.0),
+                UrbanGround {
+                    streets: &street,
+                    yards: &[],
+                },
+            ),
+            0.0
+        );
     }
 
     #[test]

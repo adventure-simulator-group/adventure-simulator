@@ -27,6 +27,7 @@ adventuresim-tactical-netcode = { workspace = true, features = ["client"] }
 adventuresim-weapon-model.workspace = true
 adventuresim-world-schema.workspace = true
 adventuresim-building-generator.workspace = true
+adventuresim-procedural-textures.workspace = true
 fabelgeist-determinism.workspace = true
 clap.workspace = true
 serde.workspace = true

@@ -9,6 +9,7 @@ license.workspace = true
 [features]
 default = []
 viewer = [
+    "dep:adventuresim-procedural-textures",
     "bevy/default",
     "bevy/png",
     "dep:bevy_egui",
@@ -17,6 +18,7 @@ viewer = [
 ]
 
 [dependencies]
+adventuresim-procedural-textures = { workspace = true, optional = true }
 bevy.workspace = true
 clap.workspace = true
 serde.workspace = true

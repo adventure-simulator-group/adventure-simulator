@@ -11,7 +11,7 @@ pub(super) fn spawn_tactical_buildings(commands: &mut Commands, buildings: Vec<G
             SceneBuilding {
                 id: building.placement.id,
                 program: building.placement.program,
-                quarter_turns: building.placement.quarter_turns,
+                orientation: building.placement.orientation,
             },
             RigidBody::Static,
             CollisionLayers::new(TACTICAL_TERRAIN_LAYER, LayerMask::ALL),
@@ -22,7 +22,7 @@ pub(super) fn spawn_tactical_buildings(commands: &mut Commands, buildings: Vec<G
                 building.placement.centre_metres.y,
             )
             .with_rotation(Quat::from_rotation_y(
-                f32::from(building.placement.quarter_turns) * core::f32::consts::FRAC_PI_2,
+                building.placement.orientation.yaw_radians(),
             )),
         ));
     }

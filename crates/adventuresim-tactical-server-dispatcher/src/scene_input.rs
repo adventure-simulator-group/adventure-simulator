@@ -148,7 +148,11 @@ pub fn build_imported_scene(
             .collect::<Result<Vec<_>, String>>()?,
     };
     let mut building_layout = settlement
-        .map(place_settlement_buildings)
+        .map(|settlement| {
+            let playable_half_extent_metres =
+                f32::from(PLAYABLE_SIDE - 1) * PLAYABLE_SPACING_METRES * 0.5;
+            place_settlement_buildings(settlement, playable_half_extent_metres)
+        })
         .transpose()
         .map_err(|error| error.to_string())?
         .unwrap_or_default();
@@ -170,6 +174,8 @@ pub fn build_imported_scene(
         absolute_elevation_metres: center.elevation_m,
         playable,
         fault_scarp: nearest_fault_scarp(pack.terrain_features(), coordinates, seed),
+        streets: building_layout.streets,
+        yards: building_layout.yards,
         buildings: building_layout.playable,
         distant_buildings: building_layout.distant,
         vista,

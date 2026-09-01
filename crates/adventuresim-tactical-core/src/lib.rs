@@ -5,6 +5,7 @@
 //! which can be extended by networking and visuals in other crates.
 
 pub mod animation;
+pub mod city_layout;
 pub mod combat;
 pub mod combat_config;
 pub mod doors;
@@ -48,6 +49,11 @@ pub mod prelude {
         project_skeleton_locomotion_with_intent, raised_guard_locomotion_profile,
         run_locomotion_profile, set_weapon_guard, supine_get_up_counter_yaw_delta,
         walk_locomotion_profile,
+    };
+    pub use crate::city_layout::{
+        CityBuildingLot, CityHouseClass, CityStreetPatch, CityStreetSurface, CityYardPatch,
+        CityYardSurface, GeneratedCityLayout, MAX_CITY_LOTS, MAX_CITY_STREET_PATCHES,
+        MAX_CITY_YARD_PATCHES, generate_city,
     };
     pub use crate::combat::{
         Attack, Dodge, MeleeLunge, conservative_forward_lunge_acceleration,
@@ -93,11 +99,11 @@ pub mod prelude {
         TerrainGenerator,
     };
     pub use crate::scene_input::{
-        DistantBuildingPlacement, EnvironmentalSample, GeneratedBuilding, GeneratedObstacle,
-        GeneratedTacticalScene, ROCK_RADIUS_METRES, RockArchetype, RockLithology, RockRecipe,
-        SceneBuilding, SceneDoor, SceneEnvironment, SceneEnvironmentFixture, SceneInputError,
-        SceneObstacle, SceneRepairReport, SceneSource, SceneWindow,
-        TACTICAL_SCENE_GENERATION_VERSION, TACTICAL_SCENE_SCHEMA_VERSION,
+        BuildingOrientation, DistantBuildingPlacement, EnvironmentalSample, GeneratedBuilding,
+        GeneratedObstacle, GeneratedTacticalScene, ROCK_RADIUS_METRES, RockArchetype,
+        RockLithology, RockRecipe, SceneBuilding, SceneDoor, SceneEnvironment,
+        SceneEnvironmentFixture, SceneInputError, SceneObstacle, SceneRepairReport, SceneSource,
+        SceneWindow, TACTICAL_SCENE_GENERATION_VERSION, TACTICAL_SCENE_SCHEMA_VERSION,
         TREE_CANOPY_GROUND_RADIUS_METRES, TREE_TRUNK_HEIGHT_METRES, TREE_TRUNK_RADIUS_METRES,
         TacticalBuildingPlacement, TacticalSceneInput, TacticalSurface, TerrainSampleGrid,
         VistaLod, VistaSample,

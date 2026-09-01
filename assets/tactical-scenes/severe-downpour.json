@@ -1,6 +1,6 @@
 {
-  "schema_version": 5,
-  "generation_version": 19,
+  "schema_version": 8,
+  "generation_version": 24,
   "seed": 47113,
   "scene_key": "severe-storm",
   "source": {
@@ -832,6 +832,8 @@
     ]
   },
   "fault_scarp": null,
+  "streets": [],
+  "yards": [],
   "buildings": [],
   "distant_buildings": [],
   "vista": {

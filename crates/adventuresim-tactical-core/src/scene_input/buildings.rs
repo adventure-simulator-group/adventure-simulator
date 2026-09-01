@@ -6,12 +6,61 @@ use bevy::{math::Vec2, prelude::Component};
 use serde::{Deserialize, Serialize};
 
 use super::{GeneratedObstacle, SceneInputError, invalid};
+use crate::city_layout::MAX_CITY_LOTS;
 
 const MAX_TACTICAL_BUILDINGS: usize = 64;
-const MAX_DISTANT_BUILDINGS: usize = 512;
 const LEVEL_MARGIN_METRES: f32 = 1.5;
 const TERRACE_APRON_METRES: f32 = 4.0;
-const PAD_CLEARANCE_METRES: f32 = LEVEL_MARGIN_METRES + TERRACE_APRON_METRES;
+const PARTY_WALL_PROJECTION_ALLOWANCE_METRES: f32 = 0.4;
+
+/// Rotation of one orthogonal building grid in the settlement plane.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct BuildingOrientation(f32);
+
+impl BuildingOrientation {
+    pub const IDENTITY: Self = Self(0.0);
+
+    pub fn from_radians(yaw_radians: f32) -> Option<Self> {
+        yaw_radians.is_finite().then(|| {
+            Self(
+                (yaw_radians + core::f32::consts::PI).rem_euclid(core::f32::consts::TAU)
+                    - core::f32::consts::PI,
+            )
+        })
+    }
+
+    pub fn from_frontage_tangent(tangent: Vec2) -> Option<Self> {
+        (tangent.is_finite() && tangent.length_squared() > f32::EPSILON).then(|| {
+            let tangent = tangent.normalize();
+            Self((-tangent.y).atan2(tangent.x))
+        })
+    }
+
+    pub fn yaw_radians(self) -> f32 {
+        self.0
+    }
+
+    pub fn is_valid(self) -> bool {
+        self.0.is_finite() && self.0 >= -core::f32::consts::PI && self.0 < core::f32::consts::PI
+    }
+
+    pub fn local_to_world(self, vector: Vec2) -> Vec2 {
+        let (sine, cosine) = self.0.sin_cos();
+        Vec2::new(
+            cosine * vector.x + sine * vector.y,
+            -sine * vector.x + cosine * vector.y,
+        )
+    }
+
+    pub fn world_to_local(self, vector: Vec2) -> Vec2 {
+        let (sine, cosine) = self.0.sin_cos();
+        Vec2::new(
+            cosine * vector.x - sine * vector.y,
+            sine * vector.x + cosine * vector.y,
+        )
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -19,7 +68,7 @@ pub struct TacticalBuildingPlacement {
     pub id: u64,
     pub program: BuildingProgram,
     pub centre_metres: Vec2,
-    pub quarter_turns: u8,
+    pub orientation: BuildingOrientation,
 }
 
 /// Compact presentation-only building outside the authoritative tactical area.
@@ -35,7 +84,7 @@ pub struct DistantBuildingPlacement {
     pub seed: u64,
     pub centre_metres: Vec2,
     pub base_elevation_metres: f32,
-    pub quarter_turns: u8,
+    pub orientation: BuildingOrientation,
 }
 
 impl DistantBuildingPlacement {
@@ -50,7 +99,7 @@ impl DistantBuildingPlacement {
 pub struct SceneBuilding {
     pub id: u64,
     pub program: BuildingProgram,
-    pub quarter_turns: u8,
+    pub orientation: BuildingOrientation,
 }
 
 /// Compact identity and dimensions for one server-authoritative operable leaf.
@@ -90,20 +139,14 @@ pub struct GeneratedBuilding {
 pub(crate) struct BuildingPad {
     pub centre: Vec2,
     pub half_extents: Vec2,
-    pub quarter_turns: u8,
+    pub orientation: BuildingOrientation,
     pub elevation_metres: f32,
 }
 
 impl BuildingPad {
     fn local_offset(self, point: Vec2) -> Vec2 {
         let offset = point - self.centre;
-        match self.quarter_turns % 4 {
-            0 => offset,
-            1 => Vec2::new(offset.y, -offset.x),
-            2 => -offset,
-            3 => Vec2::new(-offset.y, offset.x),
-            _ => unreachable!(),
-        }
+        self.orientation.world_to_local(offset)
     }
 
     pub(crate) fn contains_level_ground(self, point: Vec2) -> bool {
@@ -140,7 +183,7 @@ pub(super) fn validate_building_placements(
         if placement.id == 0 || !ids.insert(placement.id) {
             return invalid("building identity is zero or duplicated");
         }
-        if !placement.centre_metres.is_finite() || placement.quarter_turns >= 4 {
+        if !placement.centre_metres.is_finite() || !placement.orientation.is_valid() {
             return invalid("building placement is invalid");
         }
     }
@@ -150,7 +193,7 @@ pub(super) fn validate_building_placements(
 pub(super) fn validate_distant_building_placements(
     placements: &[DistantBuildingPlacement],
 ) -> Result<(), SceneInputError> {
-    if placements.len() > MAX_DISTANT_BUILDINGS {
+    if placements.len() > MAX_CITY_LOTS {
         return invalid("scene has too many distant buildings");
     }
     let mut ids = std::collections::BTreeSet::new();
@@ -160,7 +203,7 @@ pub(super) fn validate_distant_building_placements(
         }
         if !placement.centre_metres.is_finite()
             || !placement.base_elevation_metres.is_finite()
-            || placement.quarter_turns >= 4
+            || !placement.orientation.is_valid()
         {
             return invalid("distant building placement is invalid");
         }
@@ -194,44 +237,66 @@ pub(super) fn prepare_buildings(
 
 pub(super) fn validate_building_pads(
     buildings: &[GeneratedBuilding],
-    terrain_half_extent: Vec2,
 ) -> Result<(), SceneInputError> {
     let footprints = buildings
         .iter()
         .map(|building| {
-            let mut half_extents = building.collision.bounds.plan_half_extents();
-            if building.placement.quarter_turns % 2 == 1 {
-                half_extents = Vec2::new(half_extents.y, half_extents.x);
-            }
+            let half_extents = (building.collision.bounds.plan_half_extents()
+                - Vec2::splat(PARTY_WALL_PROJECTION_ALLOWANCE_METRES))
+            .max(Vec2::splat(0.1));
             (
                 building.placement.id,
                 building.placement.centre_metres,
-                half_extents + Vec2::splat(PAD_CLEARANCE_METRES),
+                half_extents,
+                building.placement.orientation,
             )
         })
         .collect::<Vec<_>>();
-    for (index, &(id, centre, apron_half_extents)) in footprints.iter().enumerate() {
-        if (centre.abs() + apron_half_extents)
-            .cmpgt(terrain_half_extent)
-            .any()
+    for (index, &(id, centre, half_extents, orientation)) in footprints.iter().enumerate() {
+        for &(other_id, other_centre, other_half_extents, other_orientation) in
+            &footprints[index + 1..]
         {
-            return invalid(format!(
-                "building {id} terrace apron leaves playable terrain"
-            ));
-        }
-        for &(other_id, other_centre, other_half_extents) in &footprints[index + 1..] {
-            if (centre - other_centre)
-                .abs()
-                .cmplt(apron_half_extents + other_half_extents)
-                .all()
-            {
+            if oriented_rectangles_overlap(
+                centre,
+                half_extents,
+                orientation,
+                other_centre,
+                other_half_extents,
+                other_orientation,
+            ) {
                 return invalid(format!(
-                    "building {id} terrace apron overlaps building {other_id}"
+                    "building {id} footprint overlaps building {other_id}"
                 ));
             }
         }
     }
     Ok(())
+}
+
+fn oriented_rectangles_overlap(
+    first_centre: Vec2,
+    first_half_extents: Vec2,
+    first_orientation: BuildingOrientation,
+    second_centre: Vec2,
+    second_half_extents: Vec2,
+    second_orientation: BuildingOrientation,
+) -> bool {
+    let first_axes = [
+        first_orientation.local_to_world(Vec2::X),
+        first_orientation.local_to_world(Vec2::Y),
+    ];
+    let second_axes = [
+        second_orientation.local_to_world(Vec2::X),
+        second_orientation.local_to_world(Vec2::Y),
+    ];
+    let centre_delta = second_centre - first_centre;
+    first_axes.into_iter().chain(second_axes).all(|axis| {
+        let first_radius = first_half_extents.x * axis.dot(first_axes[0]).abs()
+            + first_half_extents.y * axis.dot(first_axes[1]).abs();
+        let second_radius = second_half_extents.x * axis.dot(second_axes[0]).abs()
+            + second_half_extents.y * axis.dot(second_axes[1]).abs();
+        centre_delta.dot(axis).abs() < first_radius + second_radius
+    })
 }
 
 pub(super) fn level_building_pads(
@@ -251,7 +316,7 @@ pub(super) fn level_building_pads(
         let mut pad = BuildingPad {
             centre: building.placement.centre_metres,
             half_extents: building.collision.bounds.plan_half_extents(),
-            quarter_turns: building.placement.quarter_turns,
+            orientation: building.placement.orientation,
             elevation_metres: 0.0,
         };
         let mut covered = sample_indices(grid_width, grid_depth, spacing, half_extent)
@@ -312,4 +377,41 @@ pub(super) fn obstacle_intersects_building(
     };
     let point = Vec2::new(f32::from(x), f32::from(z)) * obstacle_spacing - terrain_extent * 0.5;
     pads.iter().any(|pad| pad.contains_apron(point))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn building_orientation_is_finite_canonical_and_rejects_a_zero_frontage() {
+        let wrapped = BuildingOrientation::from_radians(core::f32::consts::TAU + 0.25).unwrap();
+        assert!((wrapped.yaw_radians() - 0.25).abs() < 0.000_001);
+        assert!(BuildingOrientation::from_radians(f32::NAN).is_none());
+        assert!(BuildingOrientation::from_frontage_tangent(Vec2::ZERO).is_none());
+    }
+
+    #[test]
+    fn oriented_pad_overlap_uses_both_local_frames() {
+        let identity = BuildingOrientation::IDENTITY;
+        let diagonal = BuildingOrientation::from_radians(core::f32::consts::FRAC_PI_4).unwrap();
+        let half_extents = Vec2::new(4.0, 1.0);
+
+        assert!(oriented_rectangles_overlap(
+            Vec2::ZERO,
+            half_extents,
+            identity,
+            Vec2::new(2.0, 0.0),
+            half_extents,
+            diagonal,
+        ));
+        assert!(!oriented_rectangles_overlap(
+            Vec2::ZERO,
+            half_extents,
+            identity,
+            Vec2::new(0.0, 5.0),
+            half_extents,
+            diagonal,
+        ));
+    }
 }

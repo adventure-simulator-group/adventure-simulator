@@ -7,8 +7,9 @@ use bevy::{
     pbr::Material,
     prelude::{
         AlphaMode, Asset, Assets, Color, Commands, Component, Entity, GlobalTransform, Handle,
-        Image, Local, Mesh, Quat, Query, Reflect, Res, ResMut, Resource, StandardMaterial, Time,
-        Transform, Vec2, Vec3, Vec4, With, Without, default,
+        Image, Local, Mesh, Mesh3d, MeshMaterial3d, Name, Quat, Query, Reflect, Res, ResMut,
+        Resource, StandardMaterial, Time, Transform, Vec2, Vec3, Vec4, Visibility, With, Without,
+        default,
     },
     render::render_resource::{
         AsBindGroup, RenderPipelineDescriptor, SpecializedMeshPipelineError,
@@ -28,7 +29,7 @@ use super::obstacles::tree::{
     procedural_woody_plant_skeleton, procedural_woody_sparse_leaf_card_mesh,
 };
 use super::{
-    PresentedCelestialLighting, ProceduralEnvironmentAssets, TacticalGraphicsSettings, bps,
+    PresentedCelestialLighting, ProceduralTextureAssets, TacticalGraphicsSettings, bps,
     stable_text_seed, unit_hash,
 };
 
@@ -91,6 +92,15 @@ pub(crate) struct GroundLitterDiagnostics {
     pub(crate) physical_dry_leaf_count: usize,
 }
 
+/// Production geometry/material specimen used only by deterministic capture
+/// views. It avoids coupling review availability to whichever species the
+/// habitat sampler happened to place in a fixture.
+#[derive(Component, Clone, Copy, Debug, PartialEq)]
+pub(crate) struct UnderstoryReviewSpecimen {
+    pub(crate) common_name: &'static str,
+    pub(crate) focus: Vec3,
+}
+
 #[derive(Default)]
 pub(in crate::presentation) struct WoodyUnderstoryPresentation {
     branches: Option<Handle<Mesh>>,
@@ -109,7 +119,7 @@ pub(in crate::presentation) struct WoodyUnderstoryPresentation {
 }
 
 #[derive(Resource, Default)]
-pub(in crate::presentation) struct WoodyUnderstoryPresentationCache {
+pub(crate) struct WoodyUnderstoryPresentationCache {
     hazel: WoodyUnderstoryPresentation,
     blackthorn: WoodyUnderstoryPresentation,
     hawthorn: WoodyUnderstoryPresentation,
@@ -302,7 +312,7 @@ pub(super) fn spawn_ground_foliage(
     leaf_materials: &mut Assets<TacticalTreeLeafCardMaterial>,
     understory_cache: &mut WoodyUnderstoryPresentationCache,
     ground_foliage_cache: &mut GroundFoliagePresentationCache,
-    procedural_assets: &ProceduralEnvironmentAssets,
+    procedural_assets: &ProceduralTextureAssets,
     images: &mut Assets<Image>,
     scene_id: &SceneId,
     terrain: &SceneTerrain,
@@ -649,7 +659,7 @@ pub(super) fn present_ground_scatter(
     mut images: ResMut<Assets<Image>>,
     mut understory_cache: ResMut<WoodyUnderstoryPresentationCache>,
     mut ground_foliage_cache: ResMut<GroundFoliagePresentationCache>,
-    procedural_assets: Res<ProceduralEnvironmentAssets>,
+    procedural_assets: Res<ProceduralTextureAssets>,
     graphics: Res<TacticalGraphicsSettings>,
     #[cfg(all(feature = "instanced-grass", not(target_family = "wasm")))]
     mut shrub_bark_materials: ResMut<Assets<TacticalShrubBarkInstancedMaterial>>,
@@ -697,7 +707,7 @@ fn ensure_understory_presentations(
     materials: &mut Assets<StandardMaterial>,
     leaf_materials: &mut Assets<TacticalTreeLeafCardMaterial>,
     cache: &mut WoodyUnderstoryPresentationCache,
-    procedural_assets: &ProceduralEnvironmentAssets,
+    procedural_assets: &ProceduralTextureAssets,
 ) {
     if cache.hazel.branches.is_some() {
         return;
@@ -746,6 +756,79 @@ fn ensure_understory_presentations(
             ..default()
         }));
         cache.leaves = Some(leaf_materials.add(leaf_material));
+    }
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the capture specimen reuses the production mesh and material stores explicitly"
+)]
+pub(crate) fn spawn_understory_review_specimens(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    standard_materials: &mut Assets<StandardMaterial>,
+    leaf_materials: &mut Assets<TacticalTreeLeafCardMaterial>,
+    cache: &mut WoodyUnderstoryPresentationCache,
+    procedural_assets: &ProceduralTextureAssets,
+    origin: Vec3,
+) {
+    ensure_understory_presentations(
+        meshes,
+        standard_materials,
+        leaf_materials,
+        cache,
+        procedural_assets,
+    );
+    for (common_name, presentation) in [
+        ("common hazel", &cache.hazel),
+        ("blackthorn", &cache.blackthorn),
+        ("common hawthorn", &cache.hawthorn),
+    ] {
+        let marker = UnderstoryReviewSpecimen {
+            common_name,
+            focus: origin,
+        };
+        commands.spawn((
+            Name::new(format!("Capture {common_name} production shrub wood")),
+            marker,
+            Mesh3d(
+                presentation
+                    .branches
+                    .as_ref()
+                    .expect("understory review branch mesh exists")
+                    .clone(),
+            ),
+            MeshMaterial3d(
+                presentation
+                    .bark
+                    .as_ref()
+                    .expect("understory review bark material exists")
+                    .clone(),
+            ),
+            Visibility::Hidden,
+            Transform::from_translation(origin),
+        ));
+        commands.spawn((
+            Name::new(format!("Capture {common_name} production leaf cards")),
+            marker,
+            TreeLeafRepresentation::AlphaCard,
+            Mesh3d(
+                presentation
+                    .leaf_cards
+                    .as_ref()
+                    .expect("understory review leaf-card mesh exists")
+                    .clone(),
+            ),
+            MeshMaterial3d(
+                presentation
+                    .leaves
+                    .as_ref()
+                    .expect("understory review leaf material exists")
+                    .clone(),
+            ),
+            Visibility::Hidden,
+            Transform::from_translation(origin),
+        ));
     }
 }
 

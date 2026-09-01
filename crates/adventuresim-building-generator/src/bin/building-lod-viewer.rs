@@ -4,6 +4,8 @@ use adventuresim_building_generator::{
     WallMaterialClass, compile_building_lod, generate,
 };
 #[cfg(not(target_family = "wasm"))]
+use adventuresim_procedural_textures::{CRENELLATION_ALPHA_CUTOFF, generate_crenellation_mask};
+#[cfg(not(target_family = "wasm"))]
 use bevy::{
     asset::RenderAssetUsages,
     image::{ImageAddressMode, ImageSampler, ImageSamplerDescriptor},
@@ -16,6 +18,12 @@ use bevy::{
 use bevy_panorbit_camera::{PanOrbitCamera, PanOrbitCameraPlugin};
 #[cfg(not(target_family = "wasm"))]
 use clap::{Parser, ValueEnum};
+#[cfg(not(target_family = "wasm"))]
+use std::path::PathBuf;
+
+#[cfg(not(target_family = "wasm"))]
+#[path = "building-lod-viewer/capture.rs"]
+mod capture;
 
 #[cfg(not(target_family = "wasm"))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -44,38 +52,79 @@ struct Args {
     lod: LodChoice,
     #[arg(long, default_value_t = 42)]
     seed: u64,
+    /// Fresh directory for a deterministic moving Shell-LOD GPU capture.
+    #[arg(long)]
+    capture_output: Option<PathBuf>,
+    #[arg(long, default_value_t = 12)]
+    capture_settle_frames: u32,
 }
 
 #[cfg(not(target_family = "wasm"))]
 fn main() {
     let args = Args::parse();
+    if args.capture_output.is_some() && args.lod != LodChoice::Shell {
+        eprintln!("--capture-output requires --lod shell");
+        std::process::exit(2);
+    }
     let plan = generate(&BuildingProgram::fixture(args.fixture, args.seed))
         .expect("curated building fixture must generate");
     let lod = compile_building_lod(&plan, args.lod.into());
     let dimensions = plan.dimensions_metres();
+    let maximum_height = lod
+        .meshes
+        .iter()
+        .flat_map(|mesh| mesh.vertices.iter())
+        .map(|vertex| vertex.position.y)
+        .fold(1.0_f32, f32::max);
     let title = format!("Fabelgeist building LOD: {:?} {:?}", args.fixture, args.lod);
-    App::new()
-        .add_plugins((
-            DefaultPlugins.set(WindowPlugin {
-                primary_window: Some(Window {
-                    title,
-                    resolution: WindowResolution::new(1440, 900),
-                    present_mode: PresentMode::AutoNoVsync,
-                    ..default()
-                }),
+    let capture_output = args.capture_output.clone();
+    let capture_enabled = capture_output.is_some();
+    let mut app = App::new();
+    app.add_plugins((
+        DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                title,
+                resolution: WindowResolution::new(1440, 900),
+                present_mode: PresentMode::AutoNoVsync,
                 ..default()
             }),
-            PanOrbitCameraPlugin,
-        ))
-        .insert_resource(ClearColor(Color::srgb(0.72, 0.80, 0.86)))
-        .add_systems(Startup, move |world: &mut World| {
-            setup_lod_scene(world, &lod.meshes, dimensions)
-        })
-        .run();
+            ..default()
+        }),
+        PanOrbitCameraPlugin,
+    ))
+    .insert_resource(ClearColor(Color::srgb(0.72, 0.80, 0.86)))
+    .add_systems(Startup, move |world: &mut World| {
+        setup_lod_scene(world, &lod.meshes, dimensions, capture_enabled)
+    })
+    .add_systems(Update, capture::drive_shell_capture);
+    if let Some(output) = capture_output {
+        let config = capture::ShellCaptureConfig::new(
+            output,
+            args.capture_settle_frames,
+            args.fixture.slug().to_owned(),
+            args.seed,
+            dimensions,
+            maximum_height,
+        )
+        .unwrap_or_else(|error| {
+            eprintln!("failed to initialize Shell capture: {error}");
+            std::process::exit(2);
+        });
+        app.insert_resource(config);
+    }
+    let exit = app.run();
+    if exit != AppExit::Success {
+        std::process::exit(1);
+    }
 }
 
 #[cfg(not(target_family = "wasm"))]
-fn setup_lod_scene(world: &mut World, batches: &[LodMesh], dimensions: Vec2) {
+fn setup_lod_scene(
+    world: &mut World,
+    batches: &[LodMesh],
+    dimensions: Vec2,
+    capture_enabled: bool,
+) {
     let textures = create_lod_textures(world);
     let translation = Vec3::new(-dimensions.x * 0.5, 0.0, -dimensions.y * 0.5);
     let mut maximum_height = 1.0_f32;
@@ -88,6 +137,14 @@ fn setup_lod_scene(world: &mut World, batches: &[LodMesh], dimensions: Vec2) {
                 .fold(0.0, f32::max),
         );
         let mesh = world.resource_mut::<Assets<Mesh>>().add(bevy_mesh(batch));
+        if capture_enabled && batch.material == BuildingLodMaterial::CrownMask {
+            capture::spawn_crown_diagnostic(
+                world,
+                mesh.clone(),
+                textures.crown_mask.clone(),
+                Transform::from_translation(translation),
+            );
+        }
         let material = lod_material(world, batch.material, &textures);
         world.spawn((
             Name::new(format!("building LOD {:?}", batch.material)),
@@ -116,15 +173,19 @@ fn setup_lod_scene(world: &mut World, batches: &[LodMesh], dimensions: Vec2) {
     let focus = Vec3::new(0.0, maximum_height * 0.45, 0.0);
     let radius = dimensions.length().max(maximum_height) * 1.15;
     let camera_position = focus + Vec3::new(radius * 0.72, radius * 0.52, radius * 0.82);
-    world.spawn((
+    let mut camera = world.spawn((
         Camera3d::default(),
         Transform::from_translation(camera_position).looking_at(focus, Vec3::Y),
-        PanOrbitCamera {
+    ));
+    if capture_enabled {
+        camera.insert(capture::ShellCaptureCamera);
+    } else {
+        camera.insert(PanOrbitCamera {
             focus,
             radius: Some(camera_position.distance(focus)),
             ..default()
-        },
-    ));
+        });
+    }
     world.spawn((
         DirectionalLight {
             illuminance: 18_000.0,
@@ -197,7 +258,7 @@ fn create_lod_textures(world: &mut World) -> LodTextures {
         stone: images.add(checker_texture([121, 122, 111, 255], [88, 91, 84, 255])),
         roof: images.add(checker_texture([102, 39, 29, 255], [66, 27, 24, 255])),
         details: images.add(facade_atlas()),
-        crown_mask: images.add(crenellation_mask()),
+        crown_mask: generate_crenellation_mask(&mut images),
     }
 }
 
@@ -212,6 +273,9 @@ fn lod_material(
         BuildingLodMaterial::Wall(WallMaterialClass::CivilianMasonry) => &textures.brick,
         BuildingLodMaterial::Wall(_) | BuildingLodMaterial::CrownMasonry => &textures.stone,
         BuildingLodMaterial::Roof(_) => &textures.roof,
+        BuildingLodMaterial::FachwerkBaked => &textures.plaster,
+        BuildingLodMaterial::Timber | BuildingLodMaterial::Floor => &textures.roof,
+        BuildingLodMaterial::Iron | BuildingLodMaterial::Glass => &textures.details,
         BuildingLodMaterial::FacadeDetails => &textures.details,
         BuildingLodMaterial::CrownMask => &textures.crown_mask,
     };
@@ -219,9 +283,13 @@ fn lod_material(
         .resource_mut::<Assets<StandardMaterial>>()
         .add(StandardMaterial {
             base_color_texture: Some(texture.clone()),
-            perceptual_roughness: 0.9,
+            perceptual_roughness: if material == BuildingLodMaterial::CrownMask {
+                0.95
+            } else {
+                0.9
+            },
             alpha_mode: if material == BuildingLodMaterial::CrownMask {
-                AlphaMode::Mask(0.5)
+                AlphaMode::Mask(CRENELLATION_ALPHA_CUTOFF)
             } else {
                 AlphaMode::Opaque
             },
@@ -282,19 +350,6 @@ fn facade_atlas() -> Image {
 }
 
 #[cfg(not(target_family = "wasm"))]
-fn crenellation_mask() -> Image {
-    let size = 64_u32;
-    let mut pixels = Vec::with_capacity((size * size * 4) as usize);
-    for y in 0..size {
-        for x in 0..size {
-            let solid = y >= 28 || x < 38;
-            pixels.extend_from_slice(&[121, 122, 111, if solid { 255 } else { 0 }]);
-        }
-    }
-    repeat_image(size, size, pixels)
-}
-
-#[cfg(not(target_family = "wasm"))]
 fn repeat_image(width: u32, height: u32, pixels: Vec<u8>) -> Image {
     image_with_sampler(width, height, pixels, ImageAddressMode::Repeat)
 }
@@ -329,6 +384,41 @@ fn image_with_sampler(
         ..ImageSamplerDescriptor::linear()
     });
     image
+}
+
+#[cfg(all(test, not(target_family = "wasm")))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn capture_cli_requires_explicit_output_and_accepts_shell_profile() {
+        let args = Args::try_parse_from([
+            "building-lod-viewer",
+            "--fixture",
+            "courtyard-castle",
+            "--lod",
+            "shell",
+            "--capture-output",
+            "target/test-shell-capture",
+            "--capture-settle-frames",
+            "7",
+        ])
+        .unwrap();
+        assert_eq!(args.fixture, BuildingArchetype::CourtyardCastle);
+        assert_eq!(args.lod, LodChoice::Shell);
+        assert_eq!(args.capture_settle_frames, 7);
+        assert_eq!(
+            args.capture_output,
+            Some(PathBuf::from("target/test-shell-capture"))
+        );
+    }
+
+    #[test]
+    fn ordinary_interactive_viewer_does_not_enable_capture() {
+        let args = Args::try_parse_from(["building-lod-viewer"]).unwrap();
+        assert!(args.capture_output.is_none());
+        assert_eq!(args.lod, LodChoice::Facade);
+    }
 }
 
 #[cfg(target_family = "wasm")]

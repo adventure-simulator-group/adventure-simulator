@@ -42,6 +42,8 @@ enum CaptureProfile {
     AnimationPlay,
     /// Cold first approach, retreat, and warm second approach across tree LODs.
     TreeColdTraversal,
+    /// Consecutive fractional-pixel common-beech leaf-card slow zoom.
+    BeechLeafMotion,
 }
 
 #[cfg(not(target_family = "wasm"))]
@@ -138,6 +140,7 @@ fn main() {
             CaptureProfile::EnvironmentReview => "environment-review",
             CaptureProfile::AnimationPlay => "animation-play",
             CaptureProfile::TreeColdTraversal => "tree-cold-traversal",
+            CaptureProfile::BeechLeafMotion => "beech-leaf-motion",
         },
         args.views,
     );

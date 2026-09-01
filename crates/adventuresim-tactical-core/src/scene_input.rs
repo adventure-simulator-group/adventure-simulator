@@ -19,6 +19,7 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use crate::{
+    city_layout::{CityStreetPatch, CityYardPatch, MAX_CITY_STREET_PATCHES, MAX_CITY_YARD_PATCHES},
     scene::{GroundCover, GroundSubstrate, GroundSurface, SceneGround, SceneTerrain},
     volumetric_terrain::{FaultScarpRecipe, SceneTerrainPatch},
 };
@@ -30,12 +31,12 @@ use crate::scene_ground::tree_leaf_litter_probability;
 pub(crate) mod buildings;
 
 pub use buildings::{
-    DistantBuildingPlacement, GeneratedBuilding, SceneBuilding, SceneDoor, SceneWindow,
-    TacticalBuildingPlacement,
+    BuildingOrientation, DistantBuildingPlacement, GeneratedBuilding, SceneBuilding, SceneDoor,
+    SceneWindow, TacticalBuildingPlacement,
 };
 
-pub const TACTICAL_SCENE_SCHEMA_VERSION: u16 = 5;
-pub const TACTICAL_SCENE_GENERATION_VERSION: u16 = 19;
+pub const TACTICAL_SCENE_SCHEMA_VERSION: u16 = 8;
+pub const TACTICAL_SCENE_GENERATION_VERSION: u16 = 24;
 pub const MAX_SCENE_INPUT_BYTES: u64 = 32 * 1024 * 1024;
 pub const TREE_TRUNK_RADIUS_METRES: f32 = 0.35;
 pub const TREE_TRUNK_HEIGHT_METRES: f32 = 5.0;
@@ -143,6 +144,8 @@ pub struct TacticalSceneInput {
     pub absolute_elevation_metres: i16,
     pub playable: TerrainSampleGrid,
     pub fault_scarp: Option<FaultScarpRecipe>,
+    pub streets: Vec<CityStreetPatch>,
+    pub yards: Vec<CityYardPatch>,
     pub buildings: Vec<TacticalBuildingPlacement>,
     pub distant_buildings: Vec<DistantBuildingPlacement>,
     pub vista: VistaSample,
@@ -350,6 +353,16 @@ impl TacticalSceneInput {
         }
         validate_grid(&self.playable, MAX_PLAYABLE_SIDE, "playable")?;
         crate::scene_fault::validate(self.fault_scarp, &self.playable)?;
+        if self.streets.len() > MAX_CITY_STREET_PATCHES
+            || self.streets.iter().any(|street| !street.is_valid())
+        {
+            return invalid("scene street surfaces are invalid or exceed their bound");
+        }
+        if self.yards.len() > MAX_CITY_YARD_PATCHES
+            || self.yards.iter().any(|yard| !yard.is_valid())
+        {
+            return invalid("scene yard surfaces are invalid or exceed their bound");
+        }
         buildings::validate_building_placements(&self.buildings)?;
         buildings::validate_distant_building_placements(&self.distant_buildings)?;
         if self.vista.lods.len() > MAX_VISTA_LEVELS {
@@ -424,11 +437,7 @@ impl TacticalSceneInput {
         repairs.upsampled_height_samples = upsampled_height_samples;
         repairs.microrelief_adjusted_samples = microrelief_adjusted_samples;
         let mut buildings = buildings::prepare_buildings(&self.buildings)?;
-        let terrain_half_extent = bevy::math::Vec2::new(
-            (grid_width - 1) as f32 * grid_spacing,
-            (grid_depth - 1) as f32 * grid_spacing,
-        ) * 0.5;
-        buildings::validate_building_pads(&buildings, terrain_half_extent)?;
+        buildings::validate_building_pads(&buildings)?;
         let (building_pads, levelled_building_samples) = buildings::level_building_pads(
             grid_width,
             grid_depth,
@@ -502,6 +511,8 @@ impl TacticalSceneInput {
             &obstacles,
             self.playable.spacing_metres,
             &building_pads,
+            &self.streets,
+            &self.yards,
         )?;
         let terrain = refine_authoritative_terrain(
             self.seed,
@@ -1363,6 +1374,8 @@ mod tests {
                 environment,
             },
             fault_scarp: None,
+            streets: Vec::new(),
+            yards: Vec::new(),
             buildings: Vec::new(),
             distant_buildings: Vec::new(),
             vista: VistaSample::default(),
@@ -1411,7 +1424,7 @@ mod tests {
             id: 7,
             program: BuildingProgram::fixture(BuildingArchetype::FachwerkCottage, 42),
             centre_metres: bevy::math::Vec2::ZERO,
-            quarter_turns: 1,
+            orientation: BuildingOrientation::from_radians(core::f32::consts::FRAC_PI_2).unwrap(),
         });
 
         let generated = input.generate().unwrap();
@@ -1443,6 +1456,70 @@ mod tests {
     }
 
     #[test]
+    fn city_streets_replace_grass_with_their_authored_substrate() {
+        let mut input = fixture();
+        input.streets = vec![
+            CityStreetPatch::Corridor {
+                start_metres: bevy::math::Vec2::new(-2.0, 0.0),
+                end_metres: bevy::math::Vec2::new(2.0, 0.0),
+                half_width_metres: 1.0,
+                surface: crate::city_layout::CityStreetSurface::CompactedEarth,
+            },
+            CityStreetPatch::Corridor {
+                start_metres: bevy::math::Vec2::new(-1.0, -2.0),
+                end_metres: bevy::math::Vec2::new(-1.0, 2.0),
+                half_width_metres: 1.0,
+                surface: crate::city_layout::CityStreetSurface::Fieldstone,
+            },
+        ];
+
+        let generated = input.generate().unwrap();
+        assert_eq!(
+            generated.ground.ground_at(bevy::math::Vec2::new(1.0, 0.0)),
+            Some(GroundSurface {
+                substrate: GroundSubstrate::Soil,
+                cover: GroundCover::Bare,
+                cover_density_bps: 0,
+                cover_height_cm: 0,
+            })
+        );
+        assert_eq!(
+            generated.ground.ground_at(bevy::math::Vec2::new(-1.0, 0.0)),
+            Some(GroundSurface {
+                substrate: GroundSubstrate::Road,
+                cover: GroundCover::Bare,
+                cover_density_bps: 0,
+                cover_height_cm: 0,
+            })
+        );
+    }
+
+    #[test]
+    fn developed_city_yards_replace_meadow_cover_with_bare_soil() {
+        let mut input = fixture();
+        input.yards.push(CityYardPatch {
+            corners_metres: [
+                bevy::math::Vec2::new(-1.0, -1.0),
+                bevy::math::Vec2::new(1.0, -1.0),
+                bevy::math::Vec2::new(1.0, 1.0),
+                bevy::math::Vec2::new(-1.0, 1.0),
+            ],
+            surface: crate::city_layout::CityYardSurface::PackedEarth,
+        });
+
+        let generated = input.generate().unwrap();
+        assert_eq!(
+            generated.ground.ground_at(bevy::math::Vec2::ZERO),
+            Some(GroundSurface {
+                substrate: GroundSubstrate::Soil,
+                cover: GroundCover::Bare,
+                cover_density_bps: 0,
+                cover_height_cm: 0,
+            })
+        );
+    }
+
+    #[test]
     fn distant_buildings_affect_scene_identity_without_entering_tactical_generation() {
         let mut input = fixture();
         let empty_digest = input.digest().unwrap();
@@ -1452,7 +1529,7 @@ mod tests {
             seed: 42,
             centre_metres: bevy::math::Vec2::new(120.0, -90.0),
             base_elevation_metres: 0.0,
-            quarter_turns: 2,
+            orientation: BuildingOrientation::from_radians(core::f32::consts::PI).unwrap(),
         });
 
         assert_ne!(input.digest().unwrap(), empty_digest);

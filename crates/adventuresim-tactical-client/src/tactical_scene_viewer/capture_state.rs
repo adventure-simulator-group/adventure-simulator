@@ -70,6 +70,7 @@ pub(super) struct SceneCaptureState {
     pub(super) vista_minimum_metres: f32,
     pub(super) vista_peak_metres: f32,
     pub(super) vista_relief_metres: f32,
+    pub(super) city_half_extent_metres: f32,
     pub(super) peak_target: Vec3,
     pub(super) valley_target: Vec3,
     pub(super) obstacle_focus: Vec3,
@@ -95,6 +96,7 @@ pub(super) struct SceneCaptureState {
     pub(super) view: usize,
     pub(super) phase: CapturePhase,
     pub(super) lighting_luminance_samples: Vec<f32>,
+    pub(super) last_prime_readback_hash: Option<u64>,
     pub(super) captures: Vec<CaptureRecord>,
     pub(super) recursive_lods_observed: BTreeSet<(u8, u8)>,
     pub(super) recursive_aggregate_lods_observed: BTreeSet<u8>,
@@ -138,6 +140,16 @@ pub(super) fn mean_luminance(data: Option<&[u8]>) -> f32 {
         })
         .sum::<f64>();
     (total / pixels.len() as f64) as f32
+}
+
+pub(super) fn deterministic_readback_hash(data: Option<&[u8]>) -> Option<u64> {
+    let data = data?;
+    // FNV-1a is sufficient here: the gate compares two retained readbacks
+    // byte-for-byte through a deterministic compact witness; it is not a
+    // content-addressing or adversarial-integrity boundary.
+    Some(data.iter().fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| {
+        (hash ^ u64::from(*byte)).wrapping_mul(0x0000_0100_0000_01b3)
+    }))
 }
 
 pub(super) fn luminance_delta(samples: &[f32]) -> f32 {
@@ -260,6 +272,21 @@ mod tests {
     fn foliage_metric_rejects_zero_sized_images() {
         assert_eq!(foliage_detail_pixel_bps(Some(&[]), 0, 1), 0);
         assert_eq!(foliage_detail_pixel_bps(Some(&[]), 1, 0), 0);
+    }
+
+    #[test]
+    fn deterministic_readback_hash_detects_any_byte_change() {
+        let original = [1_u8, 2, 3, 4, 5];
+        let changed = [1_u8, 2, 3, 4, 6];
+        assert_eq!(
+            deterministic_readback_hash(Some(&original)),
+            deterministic_readback_hash(Some(&original))
+        );
+        assert_ne!(
+            deterministic_readback_hash(Some(&original)),
+            deterministic_readback_hash(Some(&changed))
+        );
+        assert_eq!(deterministic_readback_hash(None), None);
     }
 
     #[test]

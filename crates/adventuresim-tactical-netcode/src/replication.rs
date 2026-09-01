@@ -132,7 +132,7 @@ mod tests {
         SceneBuilding {
             id: 7,
             program: BuildingProgram::fixture(BuildingArchetype::FachwerkMerchantHouse, 47),
-            quarter_turns: 3,
+            orientation: BuildingOrientation::from_radians(0.73).unwrap(),
         }
     }
 

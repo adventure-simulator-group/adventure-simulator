@@ -2,6 +2,7 @@ use adventuresim_world_schema::BASIS_POINTS_PER_WHOLE;
 use fabelgeist_determinism::splitmix64;
 
 use crate::{
+    city_layout::{CityStreetPatch, CityStreetSurface, CityYardPatch},
     scene::{GroundCover, GroundSubstrate, GroundSurface, SceneGround, SceneTerrain},
     scene_input::{
         EnvironmentalSample, GeneratedObstacle, SceneInputError, TREE_CANOPY_GROUND_RADIUS_METRES,
@@ -19,6 +20,8 @@ pub(crate) fn build_scene_ground(
     obstacles: &[GeneratedObstacle],
     obstacle_spacing: f32,
     building_pads: &[BuildingPad],
+    streets: &[CityStreetPatch],
+    yards: &[CityYardPatch],
 ) -> Result<SceneGround, SceneInputError> {
     let mut samples = environment
         .iter()
@@ -75,22 +78,58 @@ pub(crate) fn build_scene_ground(
                 sample_x as f32 * spacing - half_width,
                 sample_z as f32 * spacing - half_depth,
             );
-            if building_pads
-                .iter()
-                .any(|pad| pad.contains_level_ground(position))
-            {
-                samples[sample_z * width + sample_x] = GroundSurface {
-                    substrate: GroundSubstrate::Stone,
-                    cover: GroundCover::Bare,
-                    cover_density_bps: 0,
-                    cover_height_cm: 0,
-                };
+            if let Some(surface) = urban_ground_surface(position, streets, building_pads, yards) {
+                samples[sample_z * width + sample_x] = surface;
             }
         }
     }
     SceneGround::from_samples(width, depth, spacing, samples).ok_or_else(|| {
         SceneInputError::Validation("generated ground-surface grid is invalid".into())
     })
+}
+
+fn urban_ground_surface(
+    position: bevy::math::Vec2,
+    streets: &[CityStreetPatch],
+    building_pads: &[BuildingPad],
+    yards: &[CityYardPatch],
+) -> Option<GroundSurface> {
+    if let Some(street) = streets
+        .iter()
+        .filter(|street| street.contains(position))
+        .max_by_key(|street| street.surface().priority())
+    {
+        return Some(GroundSurface {
+            substrate: match street.surface() {
+                CityStreetSurface::CompactedEarth => GroundSubstrate::Soil,
+                CityStreetSurface::Gravel => GroundSubstrate::Gravel,
+                CityStreetSurface::Fieldstone => GroundSubstrate::Road,
+            },
+            cover: GroundCover::Bare,
+            cover_density_bps: 0,
+            cover_height_cm: 0,
+        });
+    }
+    if building_pads
+        .iter()
+        .any(|pad| pad.contains_level_ground(position))
+    {
+        return Some(GroundSurface {
+            substrate: GroundSubstrate::Stone,
+            cover: GroundCover::Bare,
+            cover_density_bps: 0,
+            cover_height_cm: 0,
+        });
+    }
+    yards
+        .iter()
+        .any(|yard| yard.contains(position))
+        .then_some(GroundSurface {
+            substrate: GroundSubstrate::Soil,
+            cover: GroundCover::Bare,
+            cover_density_bps: 0,
+            cover_height_cm: 0,
+        })
 }
 
 pub(crate) fn tree_leaf_litter_probability(distance_metres: f32) -> f32 {

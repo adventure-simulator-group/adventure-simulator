@@ -12,7 +12,7 @@ pub(in crate::presentation) fn on_scene_obstacle_added(
     obstacles: Query<&SceneObstacle>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut rock_materials: ResMut<Assets<TacticalRockMaterial>>,
-    procedural_assets: Res<ProceduralEnvironmentAssets>,
+    procedural_assets: Res<ProceduralTextureAssets>,
 ) -> Result {
     let obstacle = obstacles.get(event.entity)?;
     match *obstacle {

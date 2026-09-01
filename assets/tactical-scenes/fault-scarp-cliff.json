@@ -1,6 +1,6 @@
 {
-  "schema_version": 5,
-  "generation_version": 19,
+  "schema_version": 8,
+  "generation_version": 24,
   "seed": 47114,
   "scene_key": "fault-scarp",
   "source": {
@@ -847,6 +847,8 @@
     "collar_cm": 400,
     "lod": "detail"
   },
+  "streets": [],
+  "yards": [],
   "buildings": [],
   "distant_buildings": [],
   "vista": {

@@ -36,6 +36,9 @@ pub(super) struct CaptureRecord {
     pub(super) lighting_luminance_samples: Vec<f32>,
     pub(super) lighting_luminance_delta: f32,
     pub(super) lighting_ready: bool,
+    pub(super) temporal_motion_frame: bool,
+    pub(super) settled_readback_hashes: Vec<String>,
+    pub(super) settled_readbacks_identical: Option<bool>,
 }
 
 #[derive(Clone, Copy, Serialize)]
@@ -148,6 +151,9 @@ pub(super) struct ValidationSummary {
     pub(super) camera_obstruction_resolved: bool,
     pub(super) vista_tree_near_field_bounded: bool,
     pub(super) tree_cold_traversal_canopy_continuous: bool,
+    pub(super) understory_motion_sequence_complete: bool,
+    pub(super) beech_leaf_motion_sequence_complete: bool,
+    pub(super) settled_readback_pairs_identical: bool,
     pub(super) production_lighting_parity: bool,
     pub(super) lighting_readiness: bool,
     pub(super) all_views_render_content: bool,
@@ -254,6 +260,40 @@ fn finalize_screenshot_validation(
             .iter()
             .find(|view| view.slug == capture.view)
             .is_some_and(|view| capture.foreground_pixel_bps >= view.minimum_foreground_bps)
+    });
+    let requested_motion = requested_views
+        .iter()
+        .filter(|view| view.starts_with("understory-blackthorn-motion-"))
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    validation.understory_motion_sequence_complete = requested_motion.is_empty()
+        || requested_motion
+            == [
+                "understory-blackthorn-motion-01",
+                "understory-blackthorn-motion-02",
+                "understory-blackthorn-motion-03",
+            ];
+    let expected_beech_motion = (1..=16)
+        .map(|frame| format!("beech-leaf-motion-{frame:02}"))
+        .collect::<Vec<_>>();
+    validation.beech_leaf_motion_sequence_complete = capture_profile != "beech-leaf-motion"
+        || fixture == "dense-woodland"
+            && requested_views == expected_beech_motion
+            && captures.len() == expected_beech_motion.len()
+            && captures.iter().all(|capture| {
+                capture.temporal_motion_frame
+                    && capture.focused_tree_species.as_deref() == Some("common beech")
+            });
+    validation.settled_readback_pairs_identical = requested_views.iter().all(|requested| {
+        let requires_pair = views
+            .iter()
+            .find(|view| view.slug == requested)
+            .is_some_and(|view| view.verify_settled_readbacks);
+        !requires_pair
+            || captures
+                .iter()
+                .find(|capture| capture.view == *requested)
+                .is_some_and(|capture| capture.settled_readbacks_identical == Some(true))
     });
     validation.camera_obstruction_resolved = requested_views.iter().all(|requested| {
         let Some(view) = views.iter().find(|view| view.slug == requested) else {
@@ -394,7 +434,6 @@ pub(super) struct ObservedPresentationFeatures {
     pub(super) settings: PresentationFeatureState,
     pub(super) camera_environment_map: bool,
     pub(super) camera_environment_map_size: Option<[u32; 2]>,
-    pub(super) camera_environment_map_allocated: bool,
     pub(super) camera_environment_map_intensity: Option<f32>,
     pub(super) camera_exposure_ev100: f32,
     pub(super) camera_tonemapping: CaptureTonemapping,
@@ -424,6 +463,9 @@ pub(super) fn validation_passes(validation: &ValidationSummary) -> bool {
         && validation.camera_obstruction_resolved
         && validation.vista_tree_near_field_bounded
         && validation.tree_cold_traversal_canopy_continuous
+        && validation.understory_motion_sequence_complete
+        && validation.beech_leaf_motion_sequence_complete
+        && validation.settled_readback_pairs_identical
         && validation.production_lighting_parity
         && validation.lighting_readiness
         && validation.all_views_render_content
@@ -466,7 +508,6 @@ mod tests {
             },
             camera_environment_map: true,
             camera_environment_map_size: Some([256, 256]),
-            camera_environment_map_allocated: true,
             camera_environment_map_intensity: Some(1_000.0),
             camera_exposure_ev100: 7.5,
             camera_tonemapping: CaptureTonemapping::AcesFitted,
@@ -478,7 +519,7 @@ mod tests {
 
         assert_eq!(
             serde_json::to_string(&features).unwrap(),
-            r#"{"settings":{"shadows":true,"atmosphere":true,"celestial":true,"environment_light":true,"environment_map_size":256,"max_vista_lods":3},"camera_environment_map":true,"camera_environment_map_size":[256,256],"camera_environment_map_allocated":true,"camera_environment_map_intensity":1000.0,"camera_exposure_ev100":7.5,"camera_tonemapping":"AcesFitted","ambient_color":[0.25,0.5,0.75,1.0],"ambient_brightness":125.0,"ambient_policy":"sky_handoff","expected_ambient_brightness":125.0}"#
+            r#"{"settings":{"shadows":true,"atmosphere":true,"celestial":true,"environment_light":true,"environment_map_size":256,"max_vista_lods":3},"camera_environment_map":true,"camera_environment_map_size":[256,256],"camera_environment_map_intensity":1000.0,"camera_exposure_ev100":7.5,"camera_tonemapping":"AcesFitted","ambient_color":[0.25,0.5,0.75,1.0],"ambient_brightness":125.0,"ambient_policy":"sky_handoff","expected_ambient_brightness":125.0}"#
         );
     }
 
@@ -490,6 +531,9 @@ mod tests {
             camera_obstruction_resolved: true,
             vista_tree_near_field_bounded: true,
             tree_cold_traversal_canopy_continuous: true,
+            understory_motion_sequence_complete: true,
+            beech_leaf_motion_sequence_complete: true,
+            settled_readback_pairs_identical: true,
             production_lighting_parity: true,
             lighting_readiness: true,
             all_views_render_content: false,
@@ -548,6 +592,9 @@ mod tests {
             lighting_luminance_samples: vec![10.0, 10.0],
             lighting_luminance_delta: 0.0,
             lighting_ready: true,
+            temporal_motion_frame: false,
+            settled_readback_hashes: Vec::new(),
+            settled_readbacks_identical: None,
         }
     }
 

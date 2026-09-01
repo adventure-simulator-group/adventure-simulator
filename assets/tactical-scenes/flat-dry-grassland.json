@@ -1,6 +1,6 @@
 {
-  "schema_version": 5,
-  "generation_version": 19,
+  "schema_version": 8,
+  "generation_version": 24,
   "seed": 47101,
   "scene_key": "grassland",
   "source": {
@@ -832,6 +832,8 @@
     ]
   },
   "fault_scarp": null,
+  "streets": [],
+  "yards": [],
   "buildings": [
     {
       "id": 1,
@@ -897,7 +899,7 @@
         12.0,
         4.0
       ],
-      "quarter_turns": 1
+      "orientation": 1.5707963
     }
   ],
   "distant_buildings": [],

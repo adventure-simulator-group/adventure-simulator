@@ -10,10 +10,9 @@ use fabelgeist_determinism::splitmix64;
 mod fault;
 
 const DEFAULT_TEST_MINUTE: u64 = 339_840 + 10 * 60;
-const MASSIVE_CITY_GRID_SIDE: u16 = 21;
-const MASSIVE_CITY_CELL_SIDE_METRES: f32 = 30.0;
-const MASSIVE_CITY_DISTANT_BUILDINGS: usize = 334;
-const MASSIVE_CITY_LEVEL_HALF_EXTENT_METRES: f32 = 350.0;
+const MASSIVE_CITY_RESIDENT_POPULATION: u32 = 40_000;
+const MASSIVE_CITY_PLAYABLE_HALF_EXTENT_METRES: f32 = 50.0;
+const MASSIVE_CITY_LEVEL_HALF_EXTENT_METRES: f32 = 650.0;
 const MASSIVE_CITY_LEVEL_BLEND_METRES: f32 = 100.0;
 
 #[derive(Clone, Copy)]
@@ -213,7 +212,7 @@ const fn fixture(
 }
 
 fn build_fixture(fixture: Fixture) -> TacticalSceneInput {
-    let (buildings, distant_buildings) = fixture_buildings(fixture.buildings);
+    let (streets, yards, buildings, distant_buildings) = fixture_buildings(fixture.buildings);
     let mut vista = vista(
         fixture.vista,
         fixture.environment,
@@ -233,6 +232,8 @@ fn build_fixture(fixture: Fixture) -> TacticalSceneInput {
         absolute_elevation_metres: 42,
         playable: grid(9, 9, 12.5, fixture.terrain, fixture.environment),
         fault_scarp: fixture.fault_scarp,
+        streets,
+        yards,
         buildings,
         distant_buildings,
         vista,
@@ -243,93 +244,67 @@ fn build_fixture(fixture: Fixture) -> TacticalSceneInput {
 fn fixture_buildings(
     buildings: BuildingFixture,
 ) -> (
+    Vec<CityStreetPatch>,
+    Vec<CityYardPatch>,
     Vec<TacticalBuildingPlacement>,
     Vec<DistantBuildingPlacement>,
 ) {
     match buildings {
-        BuildingFixture::Empty => (Vec::new(), Vec::new()),
+        BuildingFixture::Empty => (Vec::new(), Vec::new(), Vec::new(), Vec::new()),
         BuildingFixture::Cottage => (
+            Vec::new(),
+            Vec::new(),
             vec![building(
                 1,
                 BuildingArchetype::FachwerkCottage,
                 42,
                 Vec2::new(12.0, 4.0),
-                1,
+                BuildingOrientation::from_radians(core::f32::consts::FRAC_PI_2).unwrap(),
             )],
             Vec::new(),
         ),
-        BuildingFixture::MassiveCity => (playable_city_buildings(), distant_city_buildings()),
+        BuildingFixture::MassiveCity => massive_city_buildings(),
     }
 }
 
-fn playable_city_buildings() -> Vec<TacticalBuildingPlacement> {
-    [
-        (
-            BuildingArchetype::FachwerkMerchantHouse,
-            42,
-            -30.0,
-            -30.0,
-            0,
-        ),
-        (BuildingArchetype::TownHouse, 47, 0.0, -30.0, 1),
-        (BuildingArchetype::FachwerkCottage, 101, 30.0, -30.0, 2),
-        (BuildingArchetype::FachwerkCottage, 47, -30.0, 30.0, 3),
-        (BuildingArchetype::FachwerkMerchantHouse, 101, 0.0, 30.0, 2),
-        (BuildingArchetype::TownHouse, 42, 30.0, 30.0, 1),
-    ]
-    .into_iter()
-    .enumerate()
-    .map(|(index, (archetype, seed, x, z, quarter_turns))| {
-        building(
-            index as u64 + 1,
-            archetype,
-            seed,
-            Vec2::new(x, z),
-            quarter_turns,
-        )
-    })
-    .collect()
-}
-
-fn distant_city_buildings() -> Vec<DistantBuildingPlacement> {
-    let offset = i32::from(MASSIVE_CITY_GRID_SIDE) / 2;
-    let mut cells = (0..MASSIVE_CITY_GRID_SIDE * MASSIVE_CITY_GRID_SIDE)
-        .filter(|cell| {
-            let x = i32::from(*cell % MASSIVE_CITY_GRID_SIDE) - offset;
-            let z = i32::from(*cell / MASSIVE_CITY_GRID_SIDE) - offset;
-            x.abs() > 1 || z.abs() > 1
-        })
-        .collect::<Vec<_>>();
-    cells.sort_by_key(|cell| splitmix64(47_114 ^ u64::from(*cell)));
-    let palette = [
-        (BuildingArchetype::FachwerkMerchantHouse, 42),
-        (BuildingArchetype::TownHouse, 47),
-        (BuildingArchetype::FachwerkCottage, 101),
-        (BuildingArchetype::TownHouse, 42),
-        (BuildingArchetype::FachwerkCottage, 47),
-        (BuildingArchetype::FachwerkMerchantHouse, 101),
-    ];
-    cells
-        .into_iter()
-        .take(MASSIVE_CITY_DISTANT_BUILDINGS)
-        .map(|cell| {
-            let selection = splitmix64(47_114 ^ 0x6469_7374_616e_7401 ^ u64::from(cell));
-            let (archetype, seed) = palette[selection as usize % palette.len()];
-            let x = i32::from(cell % MASSIVE_CITY_GRID_SIDE) - offset;
-            let z = i32::from(cell / MASSIVE_CITY_GRID_SIDE) - offset;
-            DistantBuildingPlacement {
-                id: u64::from(cell) + 1,
+fn massive_city_buildings() -> (
+    Vec<CityStreetPatch>,
+    Vec<CityYardPatch>,
+    Vec<TacticalBuildingPlacement>,
+    Vec<DistantBuildingPlacement>,
+) {
+    let recipe_seeds = [42, 47, 101];
+    let mut playable = Vec::new();
+    let mut distant = Vec::new();
+    let city = generate_city(47_114, MASSIVE_CITY_RESIDENT_POPULATION);
+    for lot in city.lots {
+        let selection = splitmix64(47_114 ^ 0x6469_7374_616e_7401 ^ lot.id);
+        let archetype = match lot.house_class {
+            CityHouseClass::Cottage => BuildingArchetype::FachwerkCottage,
+            CityHouseClass::CraftTownHouse => BuildingArchetype::TownHouse,
+            CityHouseClass::HallHouse => BuildingArchetype::HallHouse,
+            CityHouseClass::MerchantHouse => BuildingArchetype::FachwerkMerchantHouse,
+        };
+        let seed = recipe_seeds[selection as usize % recipe_seeds.len()];
+        if lot.centre_metres.abs().max_element() <= MASSIVE_CITY_PLAYABLE_HALF_EXTENT_METRES {
+            playable.push(TacticalBuildingPlacement {
+                id: lot.id,
+                program: BuildingProgram::fixture(archetype, seed),
+                centre_metres: lot.centre_metres,
+                orientation: lot.orientation,
+            });
+        } else {
+            distant.push(DistantBuildingPlacement {
+                id: lot.id,
                 archetype,
                 seed,
-                centre_metres: Vec2::new(
-                    x as f32 * MASSIVE_CITY_CELL_SIDE_METRES,
-                    z as f32 * MASSIVE_CITY_CELL_SIDE_METRES,
-                ),
+                centre_metres: lot.centre_metres,
                 base_elevation_metres: 0.0,
-                quarter_turns: (selection >> 32) as u8 % 4,
-            }
-        })
-        .collect()
+                orientation: lot.orientation,
+            });
+        }
+    }
+    (city.streets, city.yards, playable, distant)
 }
 
 fn level_city_vista(vista: &mut VistaSample, has_city: bool) {
@@ -362,13 +337,13 @@ fn building(
     archetype: BuildingArchetype,
     seed: u64,
     centre_metres: Vec2,
-    quarter_turns: u8,
+    orientation: BuildingOrientation,
 ) -> TacticalBuildingPlacement {
     TacticalBuildingPlacement {
         id,
         program: BuildingProgram::fixture(archetype, seed),
         centre_metres,
-        quarter_turns,
+        orientation,
     }
 }
 

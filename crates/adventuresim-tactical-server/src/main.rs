@@ -238,6 +238,8 @@ fn main() {
                 * 0.5,
         ),
         distant_buildings: loaded_scene_input.distant_buildings.clone(),
+        streets: loaded_scene_input.streets.clone(),
+        yards: loaded_scene_input.yards.clone(),
         lods: loaded_scene_input.vista.lods.clone(),
     });
     let mut app = App::new();
@@ -1001,7 +1003,7 @@ fn on_server_started(
                 SceneBuilding {
                     id: building.placement.id,
                     program: building.placement.program,
-                    quarter_turns: building.placement.quarter_turns,
+                    orientation: building.placement.orientation,
                 },
                 Transform::from_xyz(
                     building.placement.centre_metres.x,
@@ -1009,7 +1011,7 @@ fn on_server_started(
                     building.placement.centre_metres.y,
                 )
                 .with_rotation(Quat::from_rotation_y(
-                    f32::from(building.placement.quarter_turns) * core::f32::consts::FRAC_PI_2,
+                    building.placement.orientation.yaw_radians(),
                 )),
             ));
         }
