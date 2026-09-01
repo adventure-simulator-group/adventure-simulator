@@ -42,16 +42,7 @@ impl GarmentSpecification {
             EquipmentChannel::RigidArmor => 0.024,
             _ => 0.008,
         };
-        let (base_color, metallic, roughness) = match material {
-            EquipmentMaterial::PolishedSteel => ([0.769, 0.776, 0.776, 1.0], 1.0, 0.20),
-            EquipmentMaterial::RoughSteel => ([0.769, 0.776, 0.776, 1.0], 1.0, 0.58),
-            EquipmentMaterial::OxidizedSteel => ([0.420, 0.275, 0.196, 1.0], 0.0, 0.82),
-            EquipmentMaterial::MailSteel => ([0.769, 0.776, 0.776, 1.0], 1.0, 0.42),
-            EquipmentMaterial::VegetableTannedLeather => ([0.502, 0.353, 0.231, 1.0], 0.0, 0.58),
-            EquipmentMaterial::Linen => ([0.722, 0.663, 0.510, 1.0], 0.0, 0.88),
-            EquipmentMaterial::Wool => ([0.561, 0.510, 0.408, 1.0], 0.0, 0.92),
-            EquipmentMaterial::QuiltedTextile => ([0.459, 0.416, 0.314, 1.0], 0.0, 0.90),
-        };
+        let (base_color, metallic, roughness) = crate::clothing_material::pbr(material);
         Self {
             name: name.into(),
             material,
@@ -197,9 +188,7 @@ fn normalized(value: [f32; 3]) -> Option<[f32; 3]> {
     (length > f32::EPSILON).then(|| [value[0] / length, value[1] / length, value[2] / length])
 }
 
-/// Raises local valleys toward their one-ring average while leaving convex
-/// points and garment openings in place. The source normals define "outward"
-/// for every pass so the relaxation cannot shrink the shell into the body.
+/// Raises local valleys without shrinking the garment shell into the body.
 fn relax_concavities(
     positions: &[[f32; 3]],
     source_normals: &[[f32; 3]],

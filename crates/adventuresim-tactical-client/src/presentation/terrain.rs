@@ -150,6 +150,9 @@ pub(in crate::presentation) struct TacticalTerrainExtension {
     #[texture(107)]
     #[sampler(108)]
     litter_normal: Handle<Image>,
+    #[texture(109)]
+    #[sampler(110)]
+    blood_mask: Handle<Image>,
 }
 
 impl MaterialExtension for TacticalTerrainExtension {
@@ -850,6 +853,7 @@ pub(in crate::presentation) fn terrain_material(
             soil_height_ao: procedural_assets.forest_soil.height_ao.clone(),
             litter_surface: procedural_assets.forest_soil.litter_surface.clone(),
             litter_normal: procedural_assets.forest_soil.litter_normal.clone(),
+            blood_mask: procedural_assets.terrain_blood_mask.clone(),
         },
     }
 }

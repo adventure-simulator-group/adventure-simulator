@@ -167,35 +167,32 @@ pub(super) fn resolve_ranged_attack(
         flanking,
         body_part,
     );
-    let defender_parry_slot = matches!(defender_response, DefenderResponse::Parry { .. })
-        .then(|| defender_view.shield_holding_side())
-        .flatten()
-        .and_then(|side| match side {
-            BodySide::Left => Some(EquipSlot::HoldingLeft),
-            BodySide::Right => Some(EquipSlot::HoldingRight),
-            BodySide::Both => None,
-        });
-    let attacker_weapon_slot = match attacker_view.weapon_holding_side() {
-        Some(BodySide::Left) => EquipSlot::HoldingLeft,
-        _ => EquipSlot::HoldingRight,
-    };
-    let target_position = target_character
-        .map_or(attacker_transform.translation, |(_, transform)| {
-            transform.translation
-        });
-    let (hits_attacker, impact_velocity_change) = hit_velocity_change(
+    let defender_parry_slot =
+        defender_parry_slot(defender_response, defender_view.shield_holding_side());
+    let attacker_weapon_slot = weapon_slot_or_right(attacker_view.weapon_holding_side());
+    let (_, target_transform) = q_character
+        .get(target)
+        .expect("validated ranged target still has a transform");
+    let (impact_recipient, impact_velocity_change, impact_point, impact_normal) =
+        authoritative_impact(
+            result,
+            shot.attacker(),
+            attacker_transform.translation,
+            attacker_view.body_weight() + attacker_view.inventory_weight(),
+            target,
+            target_transform,
+            defender_view.body_weight() + defender_view.inventory_weight(),
+            body_part,
+            &config,
+        );
+    let impact_effects = authoritative_impact_effects(
+        &viewer.inventory,
+        shot.attacker(),
+        AttackHand::Main,
+        target,
+        body_part,
         result,
-        attacker_transform.translation,
-        target_position,
-        attacker_view.body_weight() + attacker_view.inventory_weight(),
-        defender_view.body_weight() + defender_view.inventory_weight(),
-        &config.realtime_authority.impact,
     );
-    let impact_recipient = if hits_attacker {
-        shot.attacker()
-    } else {
-        target
-    };
     cmd.trigger(ApplyMeleeAttackResult {
         attacker: shot.attacker(),
         target,
@@ -218,6 +215,9 @@ pub(super) fn resolve_ranged_attack(
             defender_response,
             impact_recipient,
             impact_velocity_change,
+            impact_point,
+            impact_normal,
+            impact_effects,
         },
     });
 }

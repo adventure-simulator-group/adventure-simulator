@@ -54,6 +54,7 @@ fn window_mode(value: presentation::WindowModeConfig) -> bevy::window::WindowMod
     reason = "this binary shares animation APIs whose remaining entry points belong to the capture viewer"
 )]
 mod animation;
+mod audio_config;
 #[cfg(target_family = "wasm")]
 mod browser_runtime;
 #[expect(
@@ -61,11 +62,13 @@ mod browser_runtime;
     reason = "the shared camera module includes diagnostics consumed only by capture viewers"
 )]
 mod camera;
+mod combat_effects;
 #[cfg(feature = "debug")]
 mod debug;
 #[cfg(not(target_family = "wasm"))]
 mod diagnostics;
 mod equipment;
+mod movement_audio;
 #[expect(
     dead_code,
     reason = "the shared player module includes input diagnostics consumed only by capture viewers"
@@ -78,6 +81,7 @@ mod player;
 mod presentation;
 mod targeting;
 mod ui;
+mod weather_audio;
 
 #[derive(Parser, Debug, Clone, Resource)]
 #[command(version, about)]
@@ -109,6 +113,9 @@ struct Args {
     /// Tactical graphics YAML. Defaults to assets/config/tactical-graphics.yaml.
     #[arg(long)]
     graphics_config: Option<std::path::PathBuf>,
+    /// Tactical audio YAML. Defaults to assets/config/tactical-audio.yaml.
+    #[arg(long)]
+    audio_config: Option<std::path::PathBuf>,
     /// Run without opening an OS window, for CLI-driven automated testing.
     #[cfg(feature = "debug")]
     #[arg(long)]
@@ -130,7 +137,13 @@ fn main() {
         .unwrap_or_else(|| asset_root.join("config/tactical-graphics.yaml"));
     let config = presentation::TacticalGraphicsConfig::load(&path)
         .unwrap_or_else(|error| panic!("invalid tactical graphics configuration: {error}"));
-    run(args, true, config);
+    let audio_path = args
+        .audio_config
+        .clone()
+        .unwrap_or_else(|| asset_root.join("config/tactical-audio.yaml"));
+    let audio_config = audio_config::TacticalAudioConfig::load(&audio_path)
+        .unwrap_or_else(|error| panic!("invalid tactical audio configuration: {error}"));
+    run(args, true, config, audio_config);
 }
 
 #[cfg(target_family = "wasm")]
@@ -141,10 +154,12 @@ fn main() {
 
 #[cfg(target_family = "wasm")]
 #[wasm_bindgen]
-pub fn wasm_run(args: Vec<String>, graphics_yaml: String) {
+pub fn wasm_run(args: Vec<String>, graphics_yaml: String, audio_yaml: String) {
     let config = presentation::TacticalGraphicsConfig::parse(&graphics_yaml)
         .unwrap_or_else(|error| panic!("invalid tactical graphics configuration: {error}"));
-    run(Args::parse_from(args), true, config);
+    let audio_config = audio_config::TacticalAudioConfig::parse(&audio_yaml)
+        .unwrap_or_else(|error| panic!("invalid tactical audio configuration: {error}"));
+    run(Args::parse_from(args), true, config, audio_config);
 }
 
 /// Start the persistent browser renderer without joining a tactical server.
@@ -152,9 +167,11 @@ pub fn wasm_run(args: Vec<String>, graphics_yaml: String) {
 /// through `wasm_command`; Bevy and its WebGPU device remain alive throughout.
 #[cfg(target_family = "wasm")]
 #[wasm_bindgen]
-pub fn wasm_boot(graphics_yaml: String) {
+pub fn wasm_boot(graphics_yaml: String, audio_yaml: String) {
     let config = presentation::TacticalGraphicsConfig::parse(&graphics_yaml)
         .unwrap_or_else(|error| panic!("invalid tactical graphics configuration: {error}"));
+    let audio_config = audio_config::TacticalAudioConfig::parse(&audio_yaml)
+        .unwrap_or_else(|error| panic!("invalid tactical audio configuration: {error}"));
     run(
         Args {
             id: 0,
@@ -166,6 +183,7 @@ pub fn wasm_boot(graphics_yaml: String) {
             frame_timing_warmup_seconds: 5.0,
             exit_after_script: false,
             graphics_config: None,
+            audio_config: None,
             #[cfg(feature = "debug")]
             headless: false,
             #[cfg(feature = "debug")]
@@ -173,6 +191,7 @@ pub fn wasm_boot(graphics_yaml: String) {
         },
         false,
         config,
+        audio_config,
     );
 }
 
@@ -217,6 +236,7 @@ fn run(
     args: Args,
     initial_tactical: bool,
     mut graphics_config: presentation::TacticalGraphicsConfig,
+    audio_config: audio_config::TacticalAudioConfig,
 ) {
     let startup_started_at = Instant::now();
     #[cfg(not(target_family = "wasm"))]
@@ -309,40 +329,30 @@ fn run(
             }),
         AdventureSimulatorNetPlugins,
     ))
-    .add_input_context::<Player>()
-    .add_plugins((
-        ui::UiPlugin,
-        player::PlayerPlugin,
-        equipment::TacticalEquipmentPlugin,
-        animation::TacticalAnimationPlugin,
-        camera::TacticalCameraPlugin,
-        presentation::TacticalPresentationPlugin {
-            config: graphics_config,
-        },
-    ))
-    .insert_resource(ClearColor(Color::srgb(0.1, 0.1, 0.15)))
-    .insert_resource(presentation::ClientStartupTiming::new(startup_started_at))
-    .add_systems(Startup, setup_initial_client)
-    .add_systems(
-        Update,
-        (
-            capture_cursor.run_if(
-                input_just_pressed(MouseButton::Left)
-                    .and_then(any_with_component::<CharacterController>),
+    .add_input_context::<Player>();
+    add_gameplay_plugins(&mut app, graphics_config);
+    app.insert_resource(ClearColor(Color::srgb(0.1, 0.1, 0.15)))
+        .insert_resource(audio_config)
+        .insert_resource(presentation::ClientStartupTiming::new(startup_started_at))
+        .add_systems(Startup, setup_initial_client)
+        .add_systems(
+            Update,
+            (
+                capture_cursor.run_if(
+                    input_just_pressed(MouseButton::Left)
+                        .and_then(any_with_component::<CharacterController>),
+                ),
+                release_cursor.run_if(
+                    input_just_pressed(KeyCode::Escape)
+                        .and_then(any_with_component::<CharacterController>),
+                ),
             ),
-            release_cursor.run_if(
-                input_just_pressed(KeyCode::Escape)
-                    .and_then(any_with_component::<CharacterController>),
-            ),
-        ),
-    )
-    .insert_resource(player::LocalCharacterId(args.id))
-    .insert_resource(InitialTacticalMode(initial_tactical))
-    .insert_resource(args.clone());
-
+        )
+        .insert_resource(player::LocalCharacterId(args.id))
+        .insert_resource(InitialTacticalMode(initial_tactical))
+        .insert_resource(args.clone());
     #[cfg(target_family = "wasm")]
     app.add_plugins(browser_runtime::BrowserRuntimePlugin::new(initial_tactical));
-
     #[cfg(feature = "debug")]
     app.add_plugins(debug::DebugPlugin);
 
@@ -389,6 +399,19 @@ fn run(
         startup_started_at.elapsed().as_millis()
     );
     app.run();
+}
+
+fn add_gameplay_plugins(app: &mut App, graphics_config: presentation::TacticalGraphicsConfig) {
+    app.add_plugins((
+        (ui::UiPlugin, combat_effects::CombatEffectsPlugin),
+        player::PlayerPlugin,
+        equipment::TacticalEquipmentPlugin,
+        animation::TacticalAnimationPlugin,
+        camera::TacticalCameraPlugin,
+        presentation::TacticalPresentationPlugin {
+            config: graphics_config,
+        },
+    ));
 }
 
 #[cfg(all(not(target_family = "wasm"), feature = "debug"))]

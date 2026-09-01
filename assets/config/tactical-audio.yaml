@@ -1,0 +1,25 @@
+movement:
+  footstep_relative_volume: 0.42
+  body_impact_relative_volume: 0.72
+  tall_grass_rustle_relative_volume: 0.24
+  tall_grass_rustle_pitch: 1.12
+  bush_rustle_relative_volume: 0.38
+  bush_rustle_pitch: 0.88
+  bush_contact_radius_m: 0.85
+  pitch_randomization: [0.94, 1.06]
+  wind:
+    minimum_audible_speed_bps: 250
+    maximum_relative_volume: 0.5
+    response_exponent: 1.35
+
+combat:
+  impact_relative_volume: 0.7
+  impact_pitch_randomization: [0.92, 1.08]
+
+weather:
+  rain_surface_maximum_relative_volume: 0.52
+  rain_storm_maximum_relative_volume: 0.64
+  heavy_rain_start_fraction: 0.42
+  volume_response_per_second: 4.5
+  surface_intensity_exponent: 0.5
+  storm_surface_ducking: 0.28

@@ -44,6 +44,10 @@ var litter_surface_sampler: sampler;
 var litter_normal_map: texture_2d<f32>;
 @group(#{MATERIAL_BIND_GROUP}) @binding(108)
 var litter_normal_sampler: sampler;
+@group(#{MATERIAL_BIND_GROUP}) @binding(109)
+var blood_mask: texture_2d<f32>;
+@group(#{MATERIAL_BIND_GROUP}) @binding(110)
+var blood_mask_sampler: sampler;
 
 fn height_perturbed_normal(
     world_position: vec3<f32>,
@@ -271,14 +275,20 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         snow_mask * detail_distance_fade * upward_response * 0.24,
     ));
 
-    pbr_input.material.base_color = vec4<f32>(color, 1.0);
+    let blood = textureSample(blood_mask, blood_mask_sampler, in.uv).r;
+    let dried_blood = vec3<f32>(0.035, 0.0003, 0.0007);
+    pbr_input.material.base_color = vec4<f32>(mix(color, dried_blood, blood), 1.0);
     let dry_roughness = select(0.84, 0.9, terrain.detail_patch.x > 0.5);
     // A continuous film darkens porous ground and narrows its highlights.
     // Snow remains a rough dielectric unless the underlying surface is water.
     let litter_roughness = litter_region * litter_sample.a * 0.055;
     let base_roughness = dry_roughness + litter_roughness
         - wetness * 0.22 + snow_mask * 0.08 - water * 0.19;
-    pbr_input.material.perceptual_roughness = clamp(base_roughness, 0.55, 1.0);
+    pbr_input.material.perceptual_roughness = mix(
+        clamp(base_roughness, 0.55, 1.0),
+        0.86,
+        blood,
+    );
     pbr_input.material.base_color = alpha_discard(pbr_input.material, pbr_input.material.base_color);
 
 #ifdef PREPASS_PIPELINE

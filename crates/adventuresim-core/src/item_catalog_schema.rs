@@ -41,6 +41,11 @@ pub struct EquipmentDefinition {
     /// Detailed authored assets may later override this with textures.
     #[serde(default)]
     pub material: Option<EquipmentMaterial>,
+    /// Material at the damaging contact point. Weapons must author this
+    /// separately because shafts, stocks, and grips need not match a blade,
+    /// head, projectile, or shot.
+    #[serde(default)]
+    pub striking_material: Option<EquipmentMaterial>,
     /// Tags used by parent attachment points to accept this item. An empty
     /// list is never inferred from ItemKind.
     #[serde(default)]
@@ -104,6 +109,8 @@ pub enum EquipmentMaterial {
     Linen,
     Wool,
     QuiltedTextile,
+    Hardwood,
+    Lead,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

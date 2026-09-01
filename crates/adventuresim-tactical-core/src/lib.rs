@@ -8,6 +8,7 @@ pub mod animation;
 pub mod combat;
 pub mod combat_config;
 pub mod inventory;
+mod inventory_armor;
 mod marching_tetrahedra;
 pub mod physics;
 pub mod player;

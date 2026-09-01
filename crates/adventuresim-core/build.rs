@@ -24,6 +24,8 @@ mod item_catalog_schema;
 )]
 #[path = "src/item_catalog_validation.rs"]
 mod item_catalog_validation;
+#[path = "src/item_catalog_validation_material.rs"]
+mod item_catalog_validation_material;
 #[expect(
     dead_code,
     reason = "the build script imports shared item references but reads only the validation subset"

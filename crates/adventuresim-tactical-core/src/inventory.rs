@@ -3,6 +3,7 @@ use adventuresim_core::{
     combat_style::MeleeAttackStyle,
     inventory_measurement::ItemQuantity,
     item_catalog::{EquipmentChannel, EquipmentLocation},
+    item_catalog_schema::EquipmentMaterial,
     prelude::PlayerEquipment,
 };
 use avian3d::prelude::LayerMask;
@@ -17,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use strum::{Display, EnumCount, VariantArray};
 
 use crate::animation::AttackHand;
+use crate::inventory_armor::fold_armor_layers;
 
 pub const TACTICAL_TERRAIN_LAYER: LayerMask = LayerMask(1 << 5);
 pub const TACTICAL_ITEM_LAYER: LayerMask = LayerMask(1 << 4);
@@ -87,8 +89,10 @@ impl InventoryItems {
 }
 
 #[derive(Component, Reflect, Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+#[reflect(opaque)]
 #[reflect(Component)]
 pub struct ArmorItem {
+    pub material: EquipmentMaterial,
     pub range_of_motion: f32,
     pub coverage: f32,
     pub slot: ArmorSlot,
@@ -114,8 +118,10 @@ pub enum ArmorSide {
 }
 
 #[derive(Component, Reflect, Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+#[reflect(opaque)]
 #[reflect(Component)]
 pub struct WeaponItem {
+    pub striking_material: EquipmentMaterial,
     pub skill_weights: [f32; 9],
     pub accuracy: f32,
     pub swing_precision: f32,
@@ -394,6 +400,24 @@ impl InventoryView<'_, '_, '_> {
         self.striking_item().is_some()
     }
 
+    pub fn striking_material(&self) -> Option<EquipmentMaterial> {
+        self.striking_item()
+            .and_then(|item| item.weapon)
+            .map(|weapon| weapon.striking_material)
+    }
+
+    pub fn armor_materials_for(
+        &self,
+        part: BodyPart,
+    ) -> impl Iterator<Item = EquipmentMaterial> + use<'_> {
+        let index = body_part_index(part);
+        self.iter().filter_map(move |item| {
+            item.armor
+                .filter(|armor| armor.covered_parts[index] && armor.coverage > f32::EPSILON)
+                .map(|armor| armor.material)
+        })
+    }
+
     fn equipped_shield(&self) -> Option<ItemQueryItem<'_, '_>> {
         self.q_inventory
             .get(self.entity)
@@ -408,33 +432,6 @@ impl InventoryView<'_, '_, '_> {
             self.iter().filter_map(|item| item.armor),
         )
     }
-}
-
-fn fold_armor_layers<'a>(
-    index: usize,
-    armor: impl IntoIterator<Item = &'a ArmorItem>,
-) -> adventuresim_core::equipment::LayeredArmor {
-    let mut result = adventuresim_core::equipment::LayeredArmor {
-        range_of_motion: 1.0,
-        ..Default::default()
-    };
-    let mut weighted_flexibility = 0.0;
-    for armor in armor.into_iter().filter(|armor| armor.covered_parts[index]) {
-        result.coverage = 1.0 - (1.0 - result.coverage) * (1.0 - armor.coverage.clamp(0.0, 1.0));
-        let resistance = armor.resistance.max(0.0);
-        result.resistance += resistance;
-        result.padding += armor.padding.max(0.0);
-        weighted_flexibility += armor.flexibility.clamp(0.0, 1.0) * resistance;
-        result.range_of_motion = result
-            .range_of_motion
-            .min(armor.range_of_motion.clamp(0.0, 1.0));
-    }
-    result.flexibility = if result.resistance > f32::EPSILON {
-        weighted_flexibility / result.resistance
-    } else {
-        0.0
-    };
-    result
 }
 
 impl PlayerEquipment for InventoryView<'_, '_, '_> {
@@ -761,6 +758,7 @@ mod tests {
                 ItemOf(owner),
                 EquipSlot::HoldingRight,
                 WeaponItem {
+                    striking_material: EquipmentMaterial::RoughSteel,
                     skill_weights: [0.0; 9],
                     accuracy: 0.0,
                     swing_precision: 0.0,
@@ -800,6 +798,7 @@ mod tests {
     #[test]
     fn tactical_handoff_folds_multiple_layers_once_per_inventory_item() {
         let inner = ArmorItem {
+            material: EquipmentMaterial::QuiltedTextile,
             range_of_motion: 0.9,
             coverage: 0.5,
             slot: ArmorSlot::Chest,
@@ -809,6 +808,7 @@ mod tests {
             covered_parts: [false, false, false, false, true, false, false],
         };
         let outer = ArmorItem {
+            material: EquipmentMaterial::PolishedSteel,
             range_of_motion: 0.7,
             coverage: 0.8,
             slot: ArmorSlot::Chest,
@@ -828,6 +828,7 @@ mod tests {
     #[test]
     fn attached_protection_and_multi_location_projection_do_not_require_legacy_slots() {
         let attached = ArmorItem {
+            material: EquipmentMaterial::VegetableTannedLeather,
             range_of_motion: 1.0,
             coverage: 0.4,
             slot: ArmorSlot::Arms(None),

@@ -6,6 +6,8 @@ use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::{error::Error, fmt};
 
+use crate::item_catalog_validation_material::is_equipment_material_name;
+
 const MAX_DOCUMENTS: usize = 32;
 const MAX_ITEMS: usize = 4_096;
 const MAX_STRING_BYTES: usize = 256;
@@ -648,6 +650,7 @@ fn validate_equipment(
         &[
             "physical",
             "material",
+            "striking_material",
             "attachment_tags",
             "placements",
             "protection",
@@ -657,27 +660,23 @@ fn validate_equipment(
         errors,
     );
     let material = equipment.get("material").and_then(Value::as_str);
-    let valid_materials = [
-        "polished_steel",
-        "rough_steel",
-        "oxidized_steel",
-        "mail_steel",
-        "vegetable_tanned_leather",
-        "linen",
-        "wool",
-        "quilted_textile",
-    ];
-    if matches!(item_kind, "armor" | "clothing") {
-        if material.is_none_or(|material| !valid_materials.contains(&material)) {
-            errors.push(
-                format!("{path}.material"),
-                "armor and clothing require a procedural PBR material",
-            );
-        }
-    } else if material.is_some_and(|material| !valid_materials.contains(&material)) {
+    if !is_equipment_material_name(material) {
         errors.push(
             format!("{path}.material"),
-            "unknown procedural PBR material",
+            "equipment requires a procedural PBR material",
+        );
+    }
+    let weapon = matches!(item_kind, "weapon");
+    let striking_material = equipment.get("striking_material").and_then(Value::as_str);
+    if weapon && !is_equipment_material_name(striking_material) {
+        errors.push(
+            format!("{path}.striking_material"),
+            "weapons require a striking material",
+        );
+    } else if !weapon && striking_material.is_some() {
+        errors.push(
+            format!("{path}.striking_material"),
+            "striking material is valid only for weapons",
         );
     }
     match equipment.get("physical").and_then(Value::as_object) {

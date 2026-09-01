@@ -11,11 +11,15 @@ mod ranged;
 use adventuresim_core::{
     inventory_measurement::ItemQuantity as CoreItemQuantity, item_references::ARROW_ID,
 };
+use adventuresim_tactical_core::inventory::InventoryViewer;
 pub(crate) use adventuresim_tactical_core::player::TacticalCombatSide;
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::{
     bevy_replicon::prelude::{FromClient, SendTargets, ServerTriggerExt, ToClients},
-    message::{DefendRequest, MeleeActionRequest, RangedActionRequest, SuccessfulAttackResponse},
+    message::{
+        DefendRequest, ImpactEffects, ImpactSound, MeleeActionRequest, RangedActionRequest,
+        SuccessfulAttackResponse,
+    },
 };
 use bevy::prelude::*;
 use std::collections::HashMap;
@@ -50,6 +54,164 @@ pub(crate) use protocol::{
 };
 use ragdoll::update_authoritative_ragdoll_lifecycle;
 use ranged::resolve_ranged_attack;
+
+fn canonical_impact_surface(
+    attacker_position: Vec3,
+    target_transform: &Transform,
+    body_part: BodyPart,
+    config: &TacticalCombatConfig,
+) -> (Vec3, Vec3) {
+    let Some(hitbox) = config
+        .targeting
+        .body_part_hitboxes
+        .iter()
+        .find(|hitbox| hitbox.body_part == body_part)
+    else {
+        return (Vec3::ZERO, Vec3::Z);
+    };
+    let center = Vec3::from_array(hitbox.center_metres);
+    let half = Vec3::from_array(hitbox.half_extents_metres);
+    let attacker_local = target_transform
+        .compute_affine()
+        .inverse()
+        .transform_point3(attacker_position);
+    let direction = (attacker_local - center).normalize_or(Vec3::Z);
+    let scale = [
+        (half.x / direction.x.abs())
+            .is_finite()
+            .then_some(half.x / direction.x.abs()),
+        (half.y / direction.y.abs())
+            .is_finite()
+            .then_some(half.y / direction.y.abs()),
+        (half.z / direction.z.abs())
+            .is_finite()
+            .then_some(half.z / direction.z.abs()),
+    ]
+    .into_iter()
+    .flatten()
+    .fold(f32::INFINITY, f32::min);
+    let point = center + direction * scale;
+    let normalized = (point - center) / half;
+    let normal =
+        if normalized.x.abs() >= normalized.y.abs() && normalized.x.abs() >= normalized.z.abs() {
+            Vec3::X * normalized.x.signum()
+        } else if normalized.y.abs() >= normalized.z.abs() {
+            Vec3::Y * normalized.y.signum()
+        } else {
+            Vec3::Z * normalized.z.signum()
+        };
+    (point, normal)
+}
+
+fn authoritative_impact_effects(
+    inventory: &InventoryViewer<'_, '_>,
+    attacker: Entity,
+    attack_hand: AttackHand,
+    target: Entity,
+    body_part: BodyPart,
+    result: AttackResult,
+) -> ImpactEffects {
+    let striking_material = inventory
+        .get_for_attack(attacker, attack_hand)
+        .striking_material();
+    let metal_weapon = striking_material.is_some_and(|material| material.is_metal());
+    let metal_armor = inventory
+        .get(target)
+        .armor_materials_for(body_part)
+        .any(|material| material.is_metal());
+    let sound = match result {
+        AttackResult::ToAttacker {
+            physical_contact: false,
+            ..
+        } => ImpactSound::None,
+        AttackResult::ToAttacker { .. } if metal_weapon => ImpactSound::Metal,
+        AttackResult::ToAttacker { .. } => ImpactSound::NonMetalWeapon,
+        AttackResult::ToDefender {
+            armor_contact: true,
+            ..
+        } if metal_weapon && metal_armor => ImpactSound::Metal,
+        AttackResult::ToDefender { .. } if striking_material.is_some() && !metal_weapon => {
+            ImpactSound::NonMetalWeapon
+        }
+        AttackResult::ToDefender { cut_damage, .. } if cut_damage > f32::EPSILON => {
+            ImpactSound::CutFlesh
+        }
+        AttackResult::ToDefender { .. } => ImpactSound::BluntFlesh,
+    };
+    ImpactEffects {
+        metal_sparks: matches!(
+            result,
+            AttackResult::ToDefender {
+                armor_contact: true,
+                ..
+            }
+        ) && inventory
+            .get_for_attack(attacker, attack_hand)
+            .striking_material()
+            .is_some_and(|material| material.is_metal())
+            && inventory
+                .get(target)
+                .armor_materials_for(body_part)
+                .any(|material| material.is_metal()),
+        blood: matches!(result, AttackResult::ToDefender { cut_damage, .. } if cut_damage > f32::EPSILON),
+        sound,
+    }
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "authoritative impact presentation combines the two combatants and resolved contact"
+)]
+fn authoritative_impact(
+    result: AttackResult,
+    attacker: Entity,
+    attacker_position: Vec3,
+    attacker_mass_kg: f32,
+    target: Entity,
+    target_transform: &Transform,
+    target_mass_kg: f32,
+    body_part: BodyPart,
+    config: &TacticalCombatConfig,
+) -> (Entity, Vec3, Vec3, Vec3) {
+    let (hits_attacker, velocity_change) = hit_velocity_change(
+        result,
+        attacker_position,
+        target_transform.translation,
+        attacker_mass_kg,
+        target_mass_kg,
+        &config.realtime_authority.impact,
+    );
+    let recipient = if hits_attacker { attacker } else { target };
+    let (point, normal) =
+        canonical_impact_surface(attacker_position, target_transform, body_part, config);
+    (recipient, velocity_change, point, normal)
+}
+
+fn defender_parry_slot(
+    response: DefenderResponse,
+    shield_side: Option<BodySide>,
+) -> Option<EquipSlot> {
+    matches!(response, DefenderResponse::Parry { .. })
+        .then_some(shield_side)
+        .flatten()
+        .and_then(|side| match side {
+            BodySide::Left => Some(EquipSlot::HoldingLeft),
+            BodySide::Right => Some(EquipSlot::HoldingRight),
+            BodySide::Both => None,
+        })
+}
+
+fn weapon_slot_for_side(side: Option<BodySide>) -> Option<EquipSlot> {
+    match side? {
+        BodySide::Left => Some(EquipSlot::HoldingLeft),
+        BodySide::Right => Some(EquipSlot::HoldingRight),
+        BodySide::Both => None,
+    }
+}
+
+fn weapon_slot_or_right(side: Option<BodySide>) -> EquipSlot {
+    weapon_slot_for_side(side).unwrap_or(EquipSlot::HoldingRight)
+}
 
 #[derive(Clone, Debug)]
 pub(crate) struct AppliedTacticalInjury {

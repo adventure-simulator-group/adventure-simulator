@@ -19,6 +19,7 @@ mod procedural;
 mod procedural_assets;
 mod sky;
 mod terrain;
+mod terrain_blood;
 mod vista;
 mod volumetric;
 mod weather;

@@ -1,6 +1,9 @@
 use super::*;
 use fabelgeist_determinism::splitmix64;
 
+mod assets;
+pub(crate) use assets::ProceduralEnvironmentAssets;
+
 const TEXTURE_SIZE: u32 = 256;
 const OAK_BARK_TEXTURE_SIZE: u32 = 1024;
 const OAK_BARK_AO_SIZE: u32 = 512;
@@ -14,7 +17,6 @@ pub(super) const FOREST_SOIL_TILE_METRES: f32 = 2.0;
 pub(super) const FOREST_SOIL_HEIGHT_RANGE_METRES: f32 = 0.028;
 pub(super) const FOREST_LITTER_TILE_METRES: f32 = 4.0;
 pub(super) const FOREST_LITTER_HEIGHT_RANGE_METRES: f32 = 0.016;
-
 #[derive(Clone, Debug)]
 pub(super) struct LeafTextureSet {
     pub(super) opacity: Handle<Image>,
@@ -46,19 +48,6 @@ pub(super) struct GroundTextureSet {
     pub(super) height_ao: Handle<Image>,
     pub(super) litter_surface: Handle<Image>,
     pub(super) litter_normal: Handle<Image>,
-}
-
-#[derive(Resource, Clone, Debug)]
-pub(crate) struct ProceduralEnvironmentAssets {
-    pub(super) oak_leaf: LeafTextureSet,
-    pub(super) dry_oak_leaf: LeafTextureSet,
-    pub(super) hazel_leaf: LeafTextureSet,
-    pub(super) blackthorn_leaf: LeafTextureSet,
-    pub(super) hawthorn_leaf: LeafTextureSet,
-    pub(super) beech_leaf: LeafTextureSet,
-    pub(super) oak_bark: BarkTextureSet,
-    pub(super) forest_soil: GroundTextureSet,
-    pub(super) rock: SurfaceTextureSet,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -211,6 +200,7 @@ pub(super) fn generate_procedural_environment_assets(
         oak_bark: generate_oak_bark_texture(images),
         forest_soil: generate_forest_soil_texture(images),
         rock: generate_surface_textures(images, SurfaceRecipe::Rock),
+        terrain_blood_mask: images.add(super::terrain_blood::empty_terrain_blood_mask()),
     }
 }
 
