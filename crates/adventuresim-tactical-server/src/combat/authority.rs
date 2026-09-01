@@ -101,26 +101,32 @@ impl ValidatedMeleeAttack {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(super) struct AuthorizedMeleeAttack(ValidatedMeleeAttack);
+pub(super) struct AuthorizedMeleeAttack {
+    attack: ValidatedMeleeAttack,
+    started_at: CombatInstant,
+}
 
 impl AuthorizedMeleeAttack {
     pub(super) fn attacker(&self) -> Entity {
-        self.0.attacker
+        self.attack.attacker
     }
     pub(super) fn target(&self) -> Entity {
-        self.0.target
+        self.attack.target
     }
     pub(super) fn body_part(&self) -> BodyPart {
-        self.0.body_part
+        self.attack.body_part
     }
     pub(super) fn reported_precision(&self) -> ReportedPrecision {
-        self.0.reported_precision
+        self.attack.reported_precision
     }
     pub(super) fn attacker_yaw(&self) -> f32 {
-        self.0.attacker_yaw
+        self.attack.attacker_yaw
     }
     pub(super) fn target_yaw(&self) -> f32 {
-        self.0.target_yaw
+        self.attack.target_yaw
+    }
+    pub(super) fn started_at(&self) -> CombatInstant {
+        self.started_at
     }
 }
 
@@ -187,13 +193,25 @@ struct ObservedMeleeWindup {
     expires_at: CombatInstant,
 }
 
+#[derive(Debug, Clone)]
+struct ActiveMeleeAttack {
+    target: Option<Entity>,
+    started_at: CombatInstant,
+    reported_precision: ReportedPrecision,
+}
+
 #[derive(Component, Debug, Default, Clone)]
 pub(crate) struct MeleeAttackAuthority {
     windup: Option<ObservedMeleeWindup>,
+    active: Option<ActiveMeleeAttack>,
     cooldown_until: CombatInstant,
 }
 
 impl MeleeAttackAuthority {
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "an observed attack records each independent authoritative timing and targeting fact"
+    )]
     pub(crate) fn observe(
         &mut self,
         attack_key: u64,
@@ -202,6 +220,7 @@ impl MeleeAttackAuthority {
         now: CombatInstant,
         windup: CombatDuration,
         network_allowance: CombatDuration,
+        reported_precision: ReportedPrecision,
     ) {
         let ready_at = now + windup;
         self.windup = Some(ObservedMeleeWindup {
@@ -210,6 +229,11 @@ impl MeleeAttackAuthority {
             body_part,
             ready_at,
             expires_at: ready_at + network_allowance,
+        });
+        self.active = Some(ActiveMeleeAttack {
+            target,
+            started_at: now,
+            reported_precision,
         });
     }
 
@@ -227,21 +251,27 @@ impl MeleeAttackAuthority {
         body_part: BodyPart,
         now: CombatInstant,
         cooldown: CombatDuration,
-    ) -> bool {
-        let valid = self.windup.as_ref().is_some_and(|windup| {
-            windup.target.is_none_or(|observed| observed == target)
+    ) -> Option<CombatInstant> {
+        let started_at = self.windup.as_ref().and_then(|windup| {
+            (windup.target.is_none_or(|observed| observed == target)
                 && windup
                     .body_part
                     .is_none_or(|observed| observed == body_part)
                 && now >= windup.ready_at
                 && now <= windup.expires_at
-                && now >= self.cooldown_until
+                && now >= self.cooldown_until)
+                .then(|| {
+                    self.active
+                        .as_ref()
+                        .expect("an observed windup has active attack metadata")
+                        .started_at
+                })
         });
-        if valid {
+        if started_at.is_some() {
             self.windup = None;
             self.cooldown_until = now + cooldown;
         }
-        valid
+        started_at
     }
 
     pub(super) fn authorize_attack(
@@ -250,8 +280,8 @@ impl MeleeAttackAuthority {
         now: CombatInstant,
         cooldown: CombatDuration,
     ) -> Option<AuthorizedMeleeAttack> {
-        self.authorize(attack.target, attack.body_part, now, cooldown)
-            .then_some(AuthorizedMeleeAttack(attack))
+        let started_at = self.authorize(attack.target, attack.body_part, now, cooldown)?;
+        Some(AuthorizedMeleeAttack { attack, started_at })
     }
 
     pub(crate) fn permits(&self, target: Entity, body_part: BodyPart, now: CombatInstant) -> bool {
@@ -264,6 +294,24 @@ impl MeleeAttackAuthority {
                 && now <= windup.expires_at
                 && now >= self.cooldown_until
         })
+    }
+
+    pub(crate) fn reciprocal_parry(
+        &self,
+        incoming_attacker: Entity,
+        incoming_started_at: CombatInstant,
+        reflex_window: CombatDuration,
+    ) -> Option<(f32, ReportedPrecision)> {
+        let active = self.active.as_ref()?;
+        if active.target != Some(incoming_attacker) || active.started_at <= incoming_started_at {
+            return None;
+        }
+        let delay = active.started_at.elapsed_since(incoming_started_at);
+        let window = reflex_window.as_secs_f32();
+        (delay.as_secs_f32() <= window).then_some((
+            (1.0 - delay.as_secs_f32() / window.max(f32::EPSILON)).clamp(0.0, 1.0),
+            active.reported_precision,
+        ))
     }
 }
 
@@ -349,6 +397,7 @@ mod tests {
             start,
             SECOND,
             SECOND,
+            ReportedPrecision::new(0.75).unwrap(),
         );
         assert!(!authority.permits(target, BodyPart::Chest, start));
         assert!(!authority.permits(target, BodyPart::Head, start + SECOND));
@@ -367,9 +416,49 @@ mod tests {
             CombatInstant(Duration::ZERO),
             SECOND,
             SECOND,
+            ReportedPrecision::new(0.75).unwrap(),
         );
         assert_eq!(authority.complete_miss(), Some(42));
         assert_eq!(authority.attack_key(), None);
+    }
+
+    #[test]
+    fn only_later_reciprocal_attacks_supply_parry_reflex_and_precision() {
+        let incoming_attacker = Entity::from_bits(7);
+        let other_target = Entity::from_bits(9);
+        let incoming_started_at = CombatInstant(Duration::ZERO);
+        let later_started_at = CombatInstant(Duration::from_millis(100));
+        let precision = ReportedPrecision::new(0.25).unwrap();
+        let mut authority = MeleeAttackAuthority::default();
+        authority.observe(
+            8,
+            Some(incoming_attacker),
+            Some(BodyPart::Chest),
+            later_started_at,
+            SECOND,
+            SECOND,
+            precision,
+        );
+
+        let (reflex, reported) = authority
+            .reciprocal_parry(
+                incoming_attacker,
+                incoming_started_at,
+                CombatDuration::from_duration(Duration::from_millis(500)),
+            )
+            .unwrap();
+        assert!((reflex - 0.8).abs() < f32::EPSILON);
+        assert_eq!(reported, precision);
+        assert!(
+            authority
+                .reciprocal_parry(incoming_attacker, later_started_at, SECOND)
+                .is_none()
+        );
+        assert!(
+            authority
+                .reciprocal_parry(other_target, incoming_started_at, SECOND)
+                .is_none()
+        );
     }
 }
 

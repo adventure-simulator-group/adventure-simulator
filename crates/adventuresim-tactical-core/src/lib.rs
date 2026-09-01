@@ -49,7 +49,7 @@ pub mod prelude {
         walk_locomotion_profile,
     };
     pub use crate::combat::{
-        Attack, Dodge, MeleeLunge, Parry, conservative_forward_lunge_acceleration,
+        Attack, Dodge, MeleeLunge, conservative_forward_lunge_acceleration,
         maximum_melee_lunge_range, melee_horizontal_closure, melee_interaction_range, melee_lunge,
         melee_lunge_delay_seconds, melee_lunge_quickstep_threshold_metres,
         melee_lunge_range_window_metres, reachable_melee_strike_point,

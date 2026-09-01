@@ -12,6 +12,7 @@ pub(super) fn resolve_ranged_attack(
     q_character: Query<(&CharacterLook, &Transform)>,
     q_sides: Query<&TacticalCombatSide>,
     q_states: Query<&TacticalCombatState>,
+    q_skeletons: Query<&SkeletonState>,
     mut q_authorities: Query<&mut RangedAttackAuthority>,
     q_bestiary_categories: Query<&BestiaryCategories>,
     q_pending: Query<&PendingDefenderResponse>,
@@ -113,23 +114,8 @@ pub(super) fn resolve_ranged_attack(
     let Some(shot) = authority.authorize_shot(validated, now, cooldown) else {
         return;
     };
-    // Only an authorized shot scans inventory; dry fire still consumes its cooldown.
-    let ammo = q_ammo.iter().find(|(_, owner, properties, quantity)| {
-        owner.0 == shot.attacker() && properties.id == ARROW_ID && quantity.0.get() > 0
-    });
-    let Some((ammo_entity, _, _, quantity)) = ammo else {
+    if !consume_authorized_ammunition(&mut cmd, &q_ammo, &q_ids, &mut consequences, &shot) {
         return;
-    };
-    if let Some(remaining) = remaining_ammo_after_shot(quantity.0) {
-        cmd.entity(ammo_entity)
-            .insert(TacticalItemQuantity(remaining));
-    } else {
-        cmd.entity(ammo_entity).despawn();
-    }
-    if shot.attacker_side() == TacticalCombatSide::Party
-        && let Ok(player_id) = q_ids.get(shot.attacker())
-    {
-        record_party_ammunition_use(&mut consequences, *player_id);
     }
 
     let ValidatedRangedImpact::Hit {
@@ -144,13 +130,17 @@ pub(super) fn resolve_ranged_attack(
     let Ok(defender_view) = viewer.get(target) else {
         return;
     };
+    let Ok(defender_skeleton) = q_skeletons.get(target) else {
+        return;
+    };
     let (a2, a1) = shot.attacker_yaw().sin_cos();
     let (d2, d1) = target_yaw.sin_cos();
     let flanking = flanking_from_dir((a1, a2), (d1, d2));
-    let defender_response = resolve_defender_response(
+    let defender_response = resolve_passive_block(
         q_pending.get(target).ok(),
         &time,
         &defender_view,
+        defender_skeleton,
         &config.realtime_authority.defense,
     );
     cmd.entity(target).remove::<PendingDefenderResponse>();
@@ -167,8 +157,11 @@ pub(super) fn resolve_ranged_attack(
         flanking,
         body_part,
     );
-    let defender_parry_slot =
-        defender_parry_slot(defender_response, defender_view.shield_holding_side());
+    let defender_blocking_slot = defender_blocking_slot(
+        defender_response,
+        defender_view.shield_holding_side(),
+        defender_view.weapon_holding_side(),
+    );
     let attacker_weapon_slot = weapon_slot_or_right(attacker_view.weapon_holding_side());
     let (_, target_transform) = q_character
         .get(target)
@@ -199,7 +192,7 @@ pub(super) fn resolve_ranged_attack(
         body_part,
         result,
         attacker_weapon_slot,
-        defender_parry_slot,
+        defender_blocking_slot,
         attacker_weapon_contact: false,
         impact_recipient,
         impact_velocity_change,
@@ -220,4 +213,32 @@ pub(super) fn resolve_ranged_attack(
             impact_effects,
         },
     });
+}
+
+fn consume_authorized_ammunition(
+    cmd: &mut Commands,
+    q_ammo: &Query<(Entity, &ItemOf, &ItemProperties, &TacticalItemQuantity)>,
+    q_ids: &Query<&CharacterId>,
+    consequences: &mut TacticalConsequenceAccumulator,
+    shot: &authority::AuthorizedRangedShot,
+) -> bool {
+    // Only an authorized shot scans inventory; dry fire still consumes its cooldown.
+    let ammo = q_ammo.iter().find(|(_, owner, properties, quantity)| {
+        owner.0 == shot.attacker() && properties.id == ARROW_ID && quantity.0.get() > 0
+    });
+    let Some((ammo_entity, _, _, quantity)) = ammo else {
+        return false;
+    };
+    if let Some(remaining) = remaining_ammo_after_shot(quantity.0) {
+        cmd.entity(ammo_entity)
+            .insert(TacticalItemQuantity(remaining));
+    } else {
+        cmd.entity(ammo_entity).despawn();
+    }
+    if shot.attacker_side() == TacticalCombatSide::Party
+        && let Ok(player_id) = q_ids.get(shot.attacker())
+    {
+        record_party_ammunition_use(consequences, *player_id);
+    }
+    true
 }

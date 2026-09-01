@@ -95,9 +95,9 @@ pub(super) fn apply_melee_attack_result(
                 contact_force,
                 physical_contact: true,
                 ..
-            } if event.defender_parry_slot.is_some() => (
+            } if event.defender_blocking_slot.is_some() => (
                 contact_force.max(0.0),
-                event.defender_parry_slot,
+                event.defender_blocking_slot,
                 true,
                 false,
             ),

@@ -86,7 +86,6 @@ ai:
       ranged_standoff_slop_metres: 0.5
       ranged_reach_fraction: 0.5
     defense:
-      parry_chance: 0.2
       dodge_chance: 0.2
       reaction_delay_min_seconds: 0.20
       reaction_delay_max_seconds: 0.27
@@ -113,7 +112,6 @@ targeting:
     - { body_part: RightLeg, center_metres: [0.16, -0.40, 0.0], half_extents_metres: [0.15, 0.50, 0.15] }
 
 presentation:
-  block_seconds: 0.125
   dodge_seconds: 0.3125
   body_turn_seconds_per_half_turn: 0.25
   downed_turn_radians_per_second: 1.5707964

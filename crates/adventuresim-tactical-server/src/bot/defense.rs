@@ -15,25 +15,21 @@ type DefensiveBotQuery<'world, 'state> = Query<
     With<MissionEnemy>,
 >;
 
-/// Per-bot chance (each out of 1.0) that a reflex defense (see
-/// `try_start_reaction`) resolves to a parry or dodge. Inserted by a reactive
+/// Per-bot chance (out of 1.0) that a reflex defense (see
+/// `try_start_reaction`) resolves to a dodge. Inserted by a reactive
 /// defense behavior package with balance-tuned defaults; BRP tests
-/// mutate it to force deterministic parry/dodge outcomes (see
+/// mutate it to force deterministic dodge outcomes (see
 /// `DefenseChances` in `scripts/adventuresim_brp_lib.py`, regenerated via
 /// `just generate-brp-types`).
 #[derive(Component, Reflect, Debug, Clone, Copy, PartialEq)]
 #[reflect(Component)]
 pub struct DefenseChances {
-    pub parry_chance: f64,
     pub dodge_chance: f64,
 }
 
 impl Default for DefenseChances {
     fn default() -> Self {
-        Self {
-            parry_chance: 0.2,
-            dodge_chance: 0.2,
-        }
+        Self { dodge_chance: 0.2 }
     }
 }
 
@@ -67,7 +63,7 @@ struct BotReactionAttempt<'a> {
 }
 
 /// Predicts whether the nearest opposing AI facing a client attacker notices
-/// the untargeted client windup and decides to dodge or parry it.
+/// the untargeted client windup and decides to dodge it.
 ///
 /// A bot has no real reflexes: its package controls whether facing is required
 /// and how often it reads the attack correctly. A decision to react is
@@ -213,14 +209,13 @@ fn try_start_reaction(
     let Some(choice) = roll_defend_choice(attempt.chances) else {
         return;
     };
-    let delay =
-        if attempt.chances.dodge_chance >= 1.0 && attempt.chances.parry_chance <= f64::EPSILON {
-            // The authored test dodger is deliberately anticipatory. Leave enough
-            // of even a fast fist windup for the quickstep's launch phase.
-            (attempt.windup_seconds - 0.16).clamp(0.02, 0.12)
-        } else {
-            rand::random_range(config.reaction_delay_min_seconds..config.reaction_delay_max_seconds)
-        };
+    let delay = if attempt.chances.dodge_chance >= 1.0 {
+        // The authored test dodger is deliberately anticipatory. Leave enough
+        // of even a fast fist windup for the quickstep's launch phase.
+        (attempt.windup_seconds - 0.16).clamp(0.02, 0.12)
+    } else {
+        rand::random_range(config.reaction_delay_min_seconds..config.reaction_delay_max_seconds)
+    };
     cmd.entity(attempt.defender).insert(PendingBotReaction {
         timer: Timer::from_seconds(delay, TimerMode::Once),
         choice,
@@ -229,9 +224,7 @@ fn try_start_reaction(
 
 pub(super) fn roll_defend_choice(chances: DefenseChances) -> Option<DefendRequest> {
     let roll: f64 = rand::random();
-    if roll < chances.parry_chance {
-        Some(DefendRequest::Parry)
-    } else if roll < chances.parry_chance + chances.dodge_chance {
+    if roll < chances.dodge_chance {
         Some(DefendRequest::Dodge {
             direction: if rand::random() { Vec2::X } else { Vec2::NEG_X },
         })

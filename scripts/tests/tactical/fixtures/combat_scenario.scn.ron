@@ -610,7 +610,6 @@
         ),
         "adventuresim_tactical_server::bot::MissionEnemy": (),
         "adventuresim_tactical_server::bot::defense::DefenseChances": (
-          parry_chance: 0.2,
           dodge_chance: 0.2,
         ),
         "adventuresim_tactical_server::bot::offense::OffensiveCombatAi": (
