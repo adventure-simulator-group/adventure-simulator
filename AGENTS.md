@@ -22,20 +22,15 @@
 - `README.md` provides repository orientation; `wiki/index.md` owns the game
   vision and product boundaries.
 - Keep documented behavior, architecture, and developer workflow synchronized
-  with implementation changes. Apply public documentation wording that Bruno
-  supplies; when wording is missing, identify the required update and ask Bruno
-  rather than inventing it.
-- For any public-facing prose, first follow
+  with implementation changes.
+- For wiki prose, first follow
   `wiki/contributing/wiki-writing.md`, which defines the project's editorial
   voice.
-- Bruno Segovia writes all public-facing prose, including README and wiki pages
-  and public GitHub issue or pull-request titles and descriptions. Agents may
-  prepare private research drafts, propose information architecture and
-  argument maps, and edit prose Bruno supplies. Do not originate public prose
-  unless Bruno explicitly asks for a draft, and never publish a draft until he
-  approves its exact wording. In the normal workflow, give Bruno the private
-  structure, ask him to write the public section, respond as editor, and apply
-  the wording only after he decides it.
+- Agents may author wiki prose, but only on a dedicated wiki branch created from
+  `main`, never on the implementation branch that made the wiki stale. Open a
+  separate pull request for the wiki update and request Bruno Segovia's review.
+  Agents must not merge wiki prose they authored, and wiki prose must not be
+  merged until Bruno approves its exact wording.
 - `wiki/SUMMARY.md` is generated from `wiki/navigation.toml`. When adding,
   removing, or moving a wiki page, update the manifest and run
   `python scripts/update_wiki_summary.py`; never edit the summary directly.
