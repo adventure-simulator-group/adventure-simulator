@@ -60,10 +60,12 @@ types before combat mutation.
 
 Each AI melee combatant has an explicit Party or Enemy allegiance and chooses
 the nearest opposing combatant, breaking exact distance ties by stable Bevy
-entity identity. It faces that target, walks directly toward it using the
-normal character-controller input, stops once the target is within the shared
-body-and-arms plus equipped-weapon interaction range, and attacks after a
-server-owned windup followed by a cooldown.
+entity identity. It faces that target and moves through the normal character
+controller. Short weapons close to their useful measure. A long weapon instead
+seeks the center of its authored striking head: its wielder advances when the
+enemy is beyond that measure and retreats when the enemy gets inside it. The AI
+adds a short initiative delay and cadence variation before entering the same
+server-owned windup and recovery used by other attacks.
 Its provisional deterministic attack aims at the chest with full input
 precision. Targeted AI windups notify only their intended defender; because
 the existing client windup message does not yet identify a target, that legacy
@@ -78,15 +80,23 @@ server-observed windup/cooldown, and blocked authoritative physics line of
 sight. Cheap state, timing, and range checks run before the physics cast. Finite
 client-reported precision remains trusted rather than reconstructed.
 
-Accepted contacts clamp damage against the targeted limb's remaining health
-and accumulate blood loss and imbalance. Incapacitation is the shared
-autoresolve sum of projected strategic starting condition, pain, blood loss,
-and temporary imbalance. Tactical enrollment carries authoritative body weight,
-blood volume, and strategic condition inputs; pain and blood are recomputed in
-combat instead of double-counted. Balance skill recovers imbalance continuously.
-An actor over the threshold stops moving, attacking, defending, and being
-selected by offensive AI; an imbalance-only incapacitation can recover and
-return the actor to combat. Limb and live combat-state replication provide
+Accepted contacts clamp damage against the contacted limb's remaining health.
+They can cause immediate acute trauma, temporary imbalance, and persistent open
+or internal wounds. Open wounds bleed according to their flow over subsequent
+simulation time; a cut no longer applies its lifetime blood loss at the moment
+of impact. Attacking, intercepting with a weapon, dodging explosively, moving
+under guard, and carrying equipment also create local fatigue and oxygen debt.
+These reduce precision, power, and recovery speed before exhaustion itself is
+large enough to incapacitate anyone.
+
+Incapacitation is the shared sum of projected strategic starting condition,
+pain, blood loss, acute trauma, exhaustion, and temporary imbalance. Tactical
+enrollment carries authoritative body weight, blood volume, and strategic
+condition inputs; pain and blood are recomputed in combat instead of
+double-counted. Balance skill recovers imbalance continuously, and rest recovers
+combat exertion. An actor over the threshold stops moving, attacking, defending,
+and being selected by offensive AI; an actor disabled only by recoverable
+sources can return to combat. Limb and live combat-state replication provide
 basic client feedback, but all of this remains transient server memory.
 Every consumer derives readiness from the one numeric incapacitation value;
 there is no parallel boolean or server marker for AI and authority to observe
@@ -134,57 +144,30 @@ catalog's war hammer is the unusual high-swing-precision example because its
 compact four-sided beak concentrates a swung attack on a small target. Ranged
 weapons retain their single accuracy term. Damage type is not a recruitment
 role.
-2. calculate `dodge_defense`:
-	1. Calculate `armor_dodge_term` from their armor.
-		1. This isn't actually the weight of the armor; it's based on articulations on joints.
-		2. Full-plate gives 0.6, full-body chainmail is 0.8, and unobstructed joints is 1.0.
-	2. Calculate [encumbrance_term](../shared/encumbrance.md) from total weight versus leg-strength
-	3. Multiply a dodge [skill_check](../shared/stats.md#skills) by `armor_dodge_term` and `encumbrance_term`
-		1. LimbWeights should be something like 0.4 for each leg and 0.1 for each arm
-3. calculate `block_defense`:
-   
-   ```
-   let side = // set to whatever side is holding shield
-   block = defender.skill_check(block, Some(LimbWeights { la: 1.0, .. }.flip(side))
-   shield = defender.shield_bonus()
-   ```
-	`shield_bonus()` = 0 for weapon; 1–2 for a small shield; 2–4 for normal; 5 for pavise
-
-$$
-\mathrm{defense}(\mathrm{shield},\mathrm{block}) = 5 \cdot \left(1 -
-e^{-\tfrac{\mathrm{shield}+\mathrm{block}}{2}}\right)
-$$
-
-4. Calculate `defense` from [`input reflex`](../client/controls.md):
-
-   ```
-   if defender is parrying:
-   		defense = block_defense * 2 * input_reflex
-   elif defender is dodging:
-   		defense = dodge_defense * 1.5 * input_reflex
-   else:
-   		defense = block_defense
-   ```
-5. Modify defense by flanking penalty
-	1. a is the angle that the attacker is facing and b is the angle that the defender is facing
-	2. In layman's terms, you have zero defense if someone attacks from behind, full defense if they attack from in front, but the modifier starts at 1 below 45 degrees and is 0 at 135 degrees, rather than at 0 and 180
- 	3.
-	
-$$
-D_{\text{final}} =D_{\text{base}}
-\cdot\mathrm{clamp}\left(\frac{\frac{3\pi}{4}-\left|\mathrm{atan2}(\sin(b-a),
-\cos(b-a))\right|}{\frac{\pi}{2}},0,1\right)
-$$
-
-6. Attack value is accuracy - defense
-7. If attack is less than 0, miss and apply surplus defense as unbalance penalty to attacker
-8. If attack is between 0 and 1, multiply attack force by attack
-	1. 0.1 barely grazes the opponent, 1 is square-on, 0.5 is a glancing blow
-9. If attack is *above* 1 and the attacker's weapon is precise, attacker now attempts to bypass armor with surplus attack.
-	1. An armor's "coverage" is subtracted from the surplus attack to obtain the "critical attack"
-	2. If critical attack is greater than 0, attack bypasses armor completely and its final damage is multiplied by this number
-	3. Though not necessarily relevant for the MVP, critical attacks are relevant even when targets are unarmored because this allows the damage multiplier to exceed 1.0, allowing for instantaneous stealth one-hit-kills.
-	4. If a critical hit cannot be made, then attack just stays at 1.0 for a direct hit
+2. Determine which responses are physically available. A shield can block only
+   contacts it can reach across the frontal plane. A same-hand weapon can parry,
+   but doing so redirects and consumes an attack already in progress. An
+   offhand shield can preserve that attack at reduced power. A combatant already
+   committed to a strike may instead finish the trade when interception would
+   discard too much work or arrive too late.
+3. A dodge is actual displacement, not a second evasion score. Leg agility,
+   fatigue, total mass, reaction time, the attacker's remaining tracking, weapon
+   reach, and committed arc determine whether the intended line misses, catches
+   another body part, or still reaches its original target.
+4. Weapon and shield contacts resolve a continuous alignment from attack and
+   defense skill, available reaction time, leverage, fatigue, and a seeded
+   alignment error. Poor alignment can turn an attempted defense into a weak
+   bind or a complete failure. Flanking reduces the defense available against
+   attacks outside the defender's forward attention.
+5. Revalidate the committed weapon path at contact time. A target outside reach
+   or inside the weapon's path is missed. Closing on a polearm can turn its head
+   strike into a wooden haft or butt contact; closing on a sword shortens its
+   lever arm. Rotational contact energy falls with the square of that lever-arm
+   fraction, so neither case preserves full tip energy at clinch distance.
+6. Resolve the surviving attack margin as directness. A marginal hit is a
+   glancing blow; a square hit transfers the available energy. Surplus precision
+   can place the contact in a gap between authored armor regions, but never
+   changes a material surface into an uncovered one after the fact.
 
 ### Ranged attacks
 
@@ -272,18 +255,16 @@ fn balance_damage(attacker, defender, attack_directness):
 	defender.imbalance += imparted_joules / resistance
 ```
 ### Exhaustion (grey)
-Exhaustion represents how out of breath your character is. Most actions will not
-actually exhaust faster than it recuperates, but climbing, sprinting, and
-fighting with heavy weapons, shield, and armor can. In tactical combat it is
-transient, server-authoritative grey incapacitation. The movement contribution
-is based on server-authoritative locomotion intent, not measured physics
-velocity: full jogging contributes exactly zero, walking or partial input
-recovers exhaustion, and sprinting adds it. External impulses therefore cannot
-create breath exhaustion, while poison, climbing, combat, and other future
-sources remain free to add independent rates. Tactical breath changes use a 5x
-response scale so exertion and recovery resolve quickly enough to matter during
-a fight without changing any movement-speed thresholds. Wheel segments below
-0.5% are hidden as subpixel display noise without changing state.
+Exhaustion represents both local muscular fatigue and accumulated oxygen debt.
+Attacks cost more with a heavy or distal-balanced weapon. Weapon defenses,
+explosive dodges, guarded movement, and carried mass add their own work. Aerobic
+capacity offsets part of that work, and endurance governs recovery. A short bout
+therefore slows and weakens a fighter before it makes them collapse; ordinary
+rest restores both reserves. Tactical combat keeps this server-authoritative
+and transient. External impulses cannot create breath exhaustion because work
+comes from authoritative actions and locomotion intent, not measured physics
+velocity. Wheel segments below 0.5% are hidden as subpixel display noise without
+changing state.
 ```rs
 const BREATH_PER_METERS_PER_SECOND = 0.0034
 const TACTICAL_BREATH_RESPONSE_SCALE = 5.0
@@ -317,8 +298,13 @@ fn update_pain_factor(character):
 	character.pain = pain(damage, character.will)
 ```
 ### Blood loss (red)
-Unbandaged [wounds](../shared/health.md) will cause you to bleed out, which will
-eventually incapacitate you.
+
+Penetrating tissue damage creates wounds rather than depositing an arbitrary
+quantity of lost blood. Open wounds have an external flow rate; internal wounds
+represent blunt or contained trauma and do not use that external flow. The
+simulation integrates the open flows over elapsed time against the combatant's
+blood volume. Thus the same cut becomes progressively more dangerous until it is
+treated, and simultaneous wounds add their flows.
 ### [Fear](../shared/morale.md) (blue)
 Morale only starts affecting incapacitation when it goes below 0, at which point
 each negative point of morale becomes fear, translating to 1% incapacitation.
@@ -329,11 +315,17 @@ has a threshold after which it starts applying nonlinearly ~halfway through the
 day.
 
 ## Penetrating
-Each piece of armor has a "resistance" and "padding", both are in terms of
-joules. Resistance opposes cutting edges and piercing points. When one of those
-attacks connects, the imparted joules are reduced by resistance to determine
-how much energy penetrates, if any. Weapons also have a "penetration"
-coefficient. The actual resistance used for an edged or pointed attack is:
+Armor declares anatomical regions, and the exact contact coordinate decides
+which ordered layers intersect the blow. A contact in a gap reaches tissue; a
+contact on a protected surface must pass through its layers in order. Coverage
+therefore describes geometry, not a percentage rolled independently for every
+hit.
+
+Each layer has resistance and padding, both in terms of joules. Resistance
+opposes cutting edges and piercing points. When one of those attacks connects,
+the imparted joules are reduced by resistance to determine how much energy
+penetrates, if any. Weapons also have a penetration coefficient. The actual
+resistance used for an edged or pointed attack is:
 
 $$
 \mathrm{resistance_{\text{final}}} = \mathrm{resistance_{\text{base}}} -
@@ -414,20 +406,28 @@ pre-engagement phases:
    it; this detour increases the ranged firing window. Weapon melee reach and
    ranged range are separate autoresolve inputs.
 
-During the main engagement, pairings are recomputed every round. Every active
-defender receives one melee opponent before surplus attackers are distributed
-for a second opponent, then a third, and so on. Every surplus attacker applies
-the current 90-degree flanking penalty. A melee screen therefore forces an
-equal number of enemy melee combatants to target it before exposed ranged
-combatants, and the same rules apply to allies and enemies.
+During the main engagement, pairings are recomputed in bounded time windows.
+Every active defender receives one melee opponent before surplus attackers are
+distributed for a second opponent, then a third, and so on. Surplus attackers
+apply the flanking penalty. A melee screen therefore forces an equal number of
+enemy melee combatants to target it before exposed ranged combatants, and the
+same rules apply to allies and enemies.
 
-Melee remains round-based: every capable melee combatant attacks once per main
-round. A faster melee weapon instead reduces the simulated input reflex of the
-defender, representing less time to react. Ranged combat runs on elapsed time;
-weapon attack interval determines how many shots occur in each one-second main
-round. Ranged combatants target opposing ranged combatants before melee targets.
-Every defender chooses dodge, parry/block, or no active response according to
-the response with the best expected result.
+Within each window, melee is a deterministic 64 Hz discrete-event simulation.
+Combatants accelerate, contest measure, lunge, retreat from a clinch, begin
+windups, notice committed threats, choose a response, make contact, and recover
+on an elapsed-time timeline. Ground drive, traction, body and equipment mass,
+leg strength, guarded speed, and minimum body separation bound movement. A
+weapon's cadence schedules its next attack rather than merely penalizing the
+defender's reflex.
+
+Contacts that share a tick resolve as one simultaneous batch, so the first
+processed combatant cannot erase a legitimate trade. A committed combatant can
+finish that trade or redirect the weapon into an intercept; canceled attacks
+cannot later create ghost contacts. A fighter without a usable melee attack
+withdraws or yields instead of continuing to generate abstract attacks.
+Ranged combat continues on elapsed time and ranged combatants prefer opposing
+ranged targets.
 
 Every ranged attack consumes one generic arrow. When a combatant runs out, it
 becomes a melee combatant and uses its separately equipped melee weapon, if it
@@ -435,11 +435,13 @@ has one. Player ammunition spent in autoresolve is removed from personal
 inventory. Enemy ranged profiles carry a bounded encounter supply and a melee
 fallback.
 
-Targeted body part and hit precision are drawn from a deterministic seeded
-random stream. Pain, blood loss, existing strategic incapacitation, and
-temporary imbalance can remove a combatant from the fight. The battle ends
-when one side is incapacitated or after 256 main rounds, in which case it is a
-stalemate.
+Targeted body part, subregion, reaction, contact, and alignment variation come
+from a deterministic seeded random stream. The autoresolver projects the same
+authored weapon geometry and materials, layered armor regions, limb capability,
+wounds and delayed bleeding, exertion, acute trauma, pain, and imbalance used by
+tactical combat. One side's incapacitation or withdrawal ends the battle;
+simultaneous incapacitation remains a distinct outcome, and the bounded outer
+loop can still declare a stalemate.
 
 Autoresolve persists final player wounds, blood loss, and spent ammunition. It
 also writes a compact report containing the seed, victor, round count, summary,

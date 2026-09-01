@@ -6,6 +6,47 @@ the interactive workflows in [Development workflow](developing.md) -
 `tactical-play`, `tactical-isolated`, `tactical`/`client` - which remain the
 right tool for anything a human needs to watch happen.
 
+## Melee combat iteration
+
+`melee-combat-iteration` runs deterministic, melee-only duels without a client,
+SpacetimeDB, networking, or wall-clock pacing. The tactical half advances a
+minimal real server `App` at a fixed timestep. The autoresolve half runs its
+discrete-event simulation over many more seeds. Both use the canonical John
+Fabelgeist build against the same five deliberately different opponents: a
+shield militiaman, demi-lancer, polearm veteran, hammer brute, and knife novice.
+
+Run the default 32 tactical and 1,000 autoresolve seeds per matchup with:
+
+```bash
+just melee-combat-iteration
+```
+
+Use smaller batches while changing a mechanic, and keep each iteration's
+evidence in a separate output directory:
+
+```bash
+just melee-combat-iteration \
+  output=target/melee-combat-iteration-v17 \
+  tactical_seeds=8 \
+  autoresolve_seeds=128
+```
+
+The root `summary.json` compares tactical and autoresolve win rates, timeouts,
+throughput, and causal counts. `acceptance-audit.json` rejects broken invariants
+such as lost simultaneous contacts, ghost contacts from canceled attacks,
+impossible movement, energy creation, or a polearm retaining full head energy
+inside its striking band. Each matchup directory contains every tactical and
+autoresolve trace as newline-delimited JSON, representative pretty-printed
+traces, its aggregate summary, and a `reviewer-packet.json`.
+
+The reviewer packet explains the physically based balance goal, the practical
+zero-to-five attribute and skill scale, and each combatant's ordinary equipment
+and training. It points to the traces without disclosing implementation-only
+coverage percentages or outcome probabilities. Give that packet and its linked
+evidence to an independent reviewer before deciding whether an implausible
+outcome warrants a mechanic change. A tactical/autoresolve win-rate difference
+is diagnostic evidence, not by itself proof that either side is correct.
+
 ## Bevy Remote Protocol (BRP)
 
 Both `adventuresim-tactical-server` and `adventuresim-tactical-client` can
