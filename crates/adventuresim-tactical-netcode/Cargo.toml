@@ -20,6 +20,10 @@ bevy_replicon.workspace = true
 bevy_enhanced_input.workspace = true
 bevy.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+adventuresim-building-generator.workspace = true

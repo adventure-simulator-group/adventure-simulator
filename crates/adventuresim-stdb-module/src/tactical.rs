@@ -4,6 +4,11 @@ use spacetimedb::{
 };
 use std::collections::HashSet;
 
+mod request;
+
+pub use request::TacticalSettlementSnapshot;
+pub(crate) use request::{tactical_party_roster, tactical_settlement_snapshot};
+
 use crate::repair::{ItemCondition, item_condition__view};
 use crate::{
     Character, CharacterAttributes, CharacterLimbs, CharacterSkills, CharacterStats, Item,
@@ -105,6 +110,8 @@ pub struct TacticalServerRequest {
     /// Exact authoritative case-site position captured at request time.
     pub longitude_e7: i32,
     pub latitude_e7: i32,
+    /// Immutable settlement scale captured when entering a settlement scene.
+    pub settlement: Option<TacticalSettlementSnapshot>,
     /// Requesting leader's absolute strategic minute captured atomically.
     pub absolute_minute: u64,
     /// Canonical minute used only for lunar phase. Wilderness time of day may
@@ -828,17 +835,10 @@ pub fn request_tactical_server(
         return Err("Tactical mission roster does not match bound mission authority".into());
     }
     log::info!("Tactical server for '{mission_id}' requested");
-    let authorized_party_member_ids = crate::strategic::living_party_member_ids(ctx, &party_id);
-    let expected_party_members = u32::try_from(authorized_party_member_ids.len())
-        .map_err(|_| "Party is too large for tactical enrollment")?;
-    if expected_party_members == 0 {
-        return Err("A tactical mission requires at least one living party member".into());
-    }
-    if expected_party_members as usize
-        > adventuresim_core::mission::MAX_TACTICAL_RECEIPT_PARTICIPANTS
-    {
-        return Err("Party exceeds the tactical receipt participant limit".into());
-    }
+    let (authorized_party_member_ids, expected_party_members) =
+        tactical_party_roster(ctx, &party_id)?;
+    let settlement =
+        tactical_settlement_snapshot(ctx, &case_site.origin_settlement_id, &case_site.scene_key);
     ctx.db
         .tactical_server_request_authority()
         .insert(TacticalServerRequest {
@@ -849,6 +849,7 @@ pub fn request_tactical_server(
             requested_by: character_id,
             longitude_e7: case_site.longitude_e7,
             latitude_e7: case_site.latitude_e7,
+            settlement,
             absolute_minute,
             lunar_phase_minute,
             expected_party_members,

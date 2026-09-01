@@ -4,7 +4,7 @@ use bevy::audio::{PlaybackMode, Volume};
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 
-use crate::{audio_config::TacticalAudioConfig, presentation::ProceduralEnvironmentAssets};
+use crate::{audio_config::TacticalAudioConfig, presentation::ProceduralTextureAssets};
 
 mod blood_decals;
 use blood_decals::{BloodDecalPlugin, BloodMaskMaterial, BloodMaterialAssets, BloodSurfaceQuery};
@@ -224,7 +224,7 @@ fn move_combat_particles(
     mut commands: Commands,
     time: Res<Time>,
     spatial: SpatialQuery,
-    procedural_assets: Res<ProceduralEnvironmentAssets>,
+    procedural_assets: Res<ProceduralTextureAssets>,
     terrains: Query<&SceneTerrain>,
     mut images: ResMut<Assets<Image>>,
     mut terrain_stain_sequence: Local<u64>,

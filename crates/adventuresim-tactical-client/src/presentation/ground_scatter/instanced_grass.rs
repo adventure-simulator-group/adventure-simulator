@@ -39,6 +39,9 @@ use super::{
     grass_pigment, grass_scatter_density,
 };
 
+mod diagnostics;
+pub(crate) use diagnostics::GrassTriangleCount;
+
 const GRASS_INSTANCED_SHADER: &str = "shaders/tactical_grass_instanced.wgsl";
 
 pub(crate) struct InstancedGrassPlugin;
@@ -339,13 +342,6 @@ const TIERS: [GrassMeshLod; 4] = [
     GrassMeshLod::Vista,
 ];
 
-fn tier_index(lod: GrassMeshLod) -> usize {
-    TIERS
-        .iter()
-        .position(|tier| *tier == lod)
-        .expect("every grass tier is listed")
-}
-
 /// Maximum blade reach above a tuft root: authored ribbon height times the
 /// largest height/species scaling the mesh generator produces.
 const TUFT_HEIGHT_MARGIN_METRES: f32 = 1.5;
@@ -422,14 +418,13 @@ pub(super) fn spawn(
 ) {
     let mask = CoverageMask::new(ground, stable_text_seed(&environment.scene_digest));
 
-    // One batch per (tier, species): 24 instance populations sharing four
-    // materials and twenty-four small tuft meshes.
+    // One batch per (tier, species), sharing one material per tier.
     let mut batches: [[Vec<InstanceData>; GrassSpecies::ALL.len()]; TIERS.len()] =
         Default::default();
 
     for lod in [GrassMeshLod::Near, GrassMeshLod::Far] {
         scatter_cell_tufts(
-            &mut batches[tier_index(lod)],
+            &mut batches[diagnostics::tier_index(lod)],
             terrain,
             ground,
             &mask,
@@ -440,14 +435,13 @@ pub(super) fn spawn(
             grass,
         );
     }
-    // The near-edge ring reuses the exact near-field placements so the
-    // 8-10 m dither crossfade morphs each tuft in place instead of moving it.
+    // Reuse near placements so the near-edge crossfade does not move tufts.
     for species in GrassSpecies::ALL {
-        batches[tier_index(GrassMeshLod::NearEdge)][species.index()] =
-            batches[tier_index(GrassMeshLod::Near)][species.index()].clone();
+        batches[diagnostics::tier_index(GrassMeshLod::NearEdge)][species.index()] =
+            batches[diagnostics::tier_index(GrassMeshLod::Near)][species.index()].clone();
     }
     scatter_cell_tufts(
-        &mut batches[tier_index(GrassMeshLod::Vista)],
+        &mut batches[diagnostics::tier_index(GrassMeshLod::Vista)],
         terrain,
         ground,
         &mask,
@@ -459,41 +453,40 @@ pub(super) fn spawn(
     );
 
     for lod in TIERS {
-        let material = materials.add(TacticalGrassInstancedMaterial {
-            wind: Vec4::new(0.74, 0.67, wind_scale, 1.35),
-            interaction: Vec4::ZERO,
-            interaction_motion: Vec4::ZERO,
-            params: Vec4::new(
-                grass.lighting.root_occlusion,
-                grass_dryness,
-                0.09,
-                lod.width_compensation(grass_density),
-            ),
-            // Every tier - the near field included - shades fast. The near
-            // field already crossfaded seamlessly into this model at 8-10 m,
-            // so its former full PBR was pure per-fragment cost. y=0.72 scales
-            // the flat ambient to stand in for the skipped sky IBL.
-            shading: Vec4::new(1.0, grass.lighting.ambient_scale, 0.0, 0.0),
-        });
+        let material = materials.add(diagnostics::material(
+            lod,
+            grass,
+            grass_density,
+            grass_dryness,
+            wind_scale,
+        ));
         for species in GrassSpecies::ALL {
-            let instances = std::mem::take(&mut batches[tier_index(lod)][species.index()]);
+            let instances =
+                std::mem::take(&mut batches[diagnostics::tier_index(lod)][species.index()]);
             if instances.is_empty() {
                 continue;
             }
-            let mesh = meshes.add(grass_tuft_mesh(
-                grass_color,
-                lod,
-                grass_density,
-                species,
-                splitmix64(base_seed ^ ((species.index() as u64) << 8 | tier_index(lod) as u64)),
-                grass,
-            ));
+            let (mesh, triangle_count) = diagnostics::add_mesh(
+                meshes,
+                grass_tuft_mesh(
+                    grass_color,
+                    lod,
+                    grass_density,
+                    species,
+                    splitmix64(
+                        base_seed
+                            ^ ((species.index() as u64) << 8 | diagnostics::tier_index(lod) as u64),
+                    ),
+                    grass,
+                ),
+            );
             let mut entity = commands.spawn((
                 Name::new(format!(
                     "Instanced grass {species:?} {lod:?} tufts ({})",
                     instances.len()
                 )),
                 GroundScatterLayer::Grass,
+                triangle_count,
                 GpuCullCompute,
                 // Batches span the whole scene, so CPU frustum culling can
                 // only ever hide them wholesale - and worse, a culled frame
@@ -513,13 +506,7 @@ pub(super) fn spawn(
                 Transform::default(),
                 Visibility::Inherited,
             ));
-            let casts_shadows = match lod {
-                GrassMeshLod::Near => grass.lighting.casts_shadows.near,
-                GrassMeshLod::NearEdge => grass.lighting.casts_shadows.near_edge,
-                GrassMeshLod::Far => grass.lighting.casts_shadows.far,
-                GrassMeshLod::Vista => grass.lighting.casts_shadows.vista,
-            };
-            if !casts_shadows {
+            if !diagnostics::casts_shadows(lod, grass) {
                 entity.insert(NotShadowCaster);
             }
         }

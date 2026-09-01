@@ -1,7 +1,15 @@
 use adventuresim_tactical_core::prelude::*;
 use bevy::prelude::*;
 use bevy::state::app::StatesPlugin;
-use bevy_replicon::prelude::*;
+use bevy_replicon::{
+    bytes::Bytes,
+    postcard_utils,
+    prelude::*,
+    shared::replication::registry::{
+        ctx::{SerializeCtx, WriteCtx},
+        rule_fns::RuleFns,
+    },
+};
 
 use crate::FIXED_TIMESTEP_HZ;
 use crate::message::{
@@ -54,6 +62,12 @@ impl Plugin for AdventureSimulatorReplicationPlugin {
             .replicate::<SceneEnvironment>()
             .replicate::<SceneObstacle>()
             .replicate_once::<FaultScarpRecipe>()
+            .replicate_with(RuleFns::new(
+                serialize_scene_building,
+                deserialize_scene_building,
+            ))
+            .replicate::<SceneDoor>()
+            .replicate::<SceneWindow>()
             .add_client_event::<JoinRequest>(Channel::Ordered)
             .add_server_event::<ReconnectCapability>(Channel::Ordered)
             .add_server_event::<SceneVistaBundle>(Channel::Ordered)
@@ -68,31 +82,117 @@ impl Plugin for AdventureSimulatorReplicationPlugin {
             .add_mapped_server_event::<SuccessfulAttackResponse>(Channel::Ordered)
             .add_server_event::<TacticalOutcomeResponse>(Channel::Ordered);
 
-        // Replicating physics components since those don't change and
-        // it's useful for debugging. Can be gated behind a feature flag, but
-        // that's error prone because of how client/server is built independently.
-        app.replicate_once_filtered::<
-            Collider,
-            Or<(
-                With<Player>,
-                With<Sensor>,
-                With<TacticalSceneItem>,
-                With<SceneObstacle>,
-                With<SceneId>,
-            )>,
-        >()
-        .replicate_once_filtered::<
-            RigidBody,
-            Or<(
-                With<Player>,
-                With<TacticalSceneItem>,
-                With<SceneObstacle>,
-                With<SceneId>,
-            )>,
-        >()
-        .replicate_once_filtered::<
-            CollisionLayers,
-            Or<(With<TacticalSceneItem>, With<SceneObstacle>, With<SceneId>)>,
-        >();
+        // Replicate compact static physics components for client diagnostics.
+        // Building compound colliders remain server-authoritative: the client
+        // derives the visual origin from the replicated program, while sending
+        // every wall/roof collision cuboid can overflow the transport budget.
+        app.replicate_once_filtered::<Collider, Or<(
+            With<Player>,
+            With<Sensor>,
+            With<TacticalSceneItem>,
+            With<SceneObstacle>,
+            With<SceneId>,
+        )>>()
+        .replicate_once_filtered::<RigidBody, Or<(
+            With<Player>,
+            With<TacticalSceneItem>,
+            With<SceneObstacle>,
+            With<SceneId>,
+        )>>()
+        .replicate_once_filtered::<CollisionLayers, Or<(
+            With<TacticalSceneItem>,
+            With<SceneObstacle>,
+            With<SceneId>,
+        )>>();
+    }
+}
+
+fn serialize_scene_building(
+    _ctx: &mut SerializeCtx,
+    building: &SceneBuilding,
+    message: &mut Vec<u8>,
+) -> Result<()> {
+    let json = serde_json::to_vec(building)?;
+    postcard_utils::to_extend_mut(&json, message)?;
+    Ok(())
+}
+
+fn deserialize_scene_building(_ctx: &mut WriteCtx, message: &mut Bytes) -> Result<SceneBuilding> {
+    let json: Vec<u8> = postcard_utils::from_buf(message)?;
+    Ok(serde_json::from_slice(&json)?)
+}
+
+#[cfg(test)]
+mod tests {
+    use adventuresim_building_generator::{BuildingArchetype, BuildingProgram};
+
+    use super::*;
+
+    fn building() -> SceneBuilding {
+        SceneBuilding {
+            id: 7,
+            program: BuildingProgram::fixture(BuildingArchetype::FachwerkMerchantHouse, 47),
+            orientation: BuildingOrientation::from_radians(0.73).unwrap(),
+        }
+    }
+
+    #[test]
+    fn scene_building_json_payload_round_trips_through_postcard() {
+        let building = building();
+        let json = serde_json::to_vec(&building).unwrap();
+        let mut bytes = Vec::new();
+        postcard_utils::to_extend_mut(&json, &mut bytes).unwrap();
+        let decoded_json: Vec<u8> = bevy_replicon::postcard::from_bytes(&bytes).unwrap();
+        let decoded: SceneBuilding = serde_json::from_slice(&decoded_json).unwrap();
+
+        assert_eq!(decoded, building);
+    }
+
+    #[test]
+    fn default_postcard_cannot_decode_internally_tagged_building_programs() {
+        let building = building();
+        let mut bytes = Vec::new();
+        postcard_utils::to_extend_mut(&building, &mut bytes).unwrap();
+
+        assert!(bevy_replicon::postcard::from_bytes::<SceneBuilding>(&bytes).is_err());
+    }
+
+    #[test]
+    fn scene_door_round_trips_through_replication_codec() {
+        let door = SceneDoor {
+            building_id: 7,
+            opening_id: 11,
+            size_metres: Vec3::new(1.0, 2.1, 0.07),
+            doorway_centre_metres: Vec3::new(3.0, 1.05, -2.0),
+            tangent: Vec3::X,
+            outward: Vec3::NEG_Z,
+        };
+        let mut bytes = Vec::new();
+        postcard_utils::to_extend_mut(&door, &mut bytes).unwrap();
+
+        assert_eq!(
+            bevy_replicon::postcard::from_bytes::<SceneDoor>(&bytes).unwrap(),
+            door
+        );
+    }
+
+    #[test]
+    fn scene_window_round_trips_through_replication_codec() {
+        let window = SceneWindow {
+            building_id: 7,
+            opening_id: 12,
+            size_metres: Vec3::new(0.9, 1.0, 0.025),
+            opening_centre_metres: Vec3::new(3.0, 1.5, -2.0),
+            tangent: Vec3::X,
+            outward: Vec3::NEG_Z,
+            barred: true,
+        };
+        let mut bytes = Vec::new();
+        postcard_utils::to_extend_mut(&window, &mut bytes).unwrap();
+
+        assert_eq!(
+            bevy_replicon::postcard::from_bytes::<SceneWindow>(&bytes).unwrap(),
+            window
+        );
     }
 }

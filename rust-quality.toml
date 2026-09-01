@@ -13,6 +13,31 @@ path = "crates/adventuresim-core/src/tactical_fixture.rs"
 reason = "This module supplies explicit deterministic tactical fixture data."
 
 [[scopes]]
+kind = "fixture"
+path = "crates/adventuresim-building-generator/src/bin/building-lod-viewer/capture.rs"
+reason = "This module is a deterministic visual-capture fixture and validation harness."
+
+[[scopes]]
+kind = "fixture"
+path = "crates/adventuresim-building-generator/src/viewer/**"
+reason = "The building viewer is a deterministic authoring and visual-validation harness."
+
+[[scopes]]
+kind = "fixture"
+path = "crates/adventuresim-tactical-core/src/bin/generate-scene-fixtures.rs"
+reason = "This binary supplies explicit deterministic tactical scene fixture data."
+
+[[scopes]]
+kind = "fixture"
+path = "crates/adventuresim-tactical-client/src/tactical_scene_viewer.rs"
+reason = "This binary module is the deterministic tactical capture and validation harness."
+
+[[scopes]]
+kind = "fixture"
+path = "crates/adventuresim-tactical-client/src/tactical_scene_viewer/**"
+reason = "These modules define deterministic tactical capture fixtures and validation evidence."
+
+[[scopes]]
 kind = "authored_catalog"
 path = "crates/adventuresim-core/src/quest_catalog.rs"
 reason = "Authored quest definitions are cohesive catalog data."
@@ -21,6 +46,16 @@ reason = "Authored quest definitions are cohesive catalog data."
 kind = "authored_catalog"
 path = "crates/adventuresim-core/src/road_encounter_catalog.rs"
 reason = "Authored encounter definitions are cohesive catalog data."
+
+[[scopes]]
+kind = "authored_catalog"
+path = "crates/adventuresim-procedural-textures/src/foliage.rs"
+reason = "Authored deterministic leaf silhouettes and material recipes are cohesive asset data."
+
+[[scopes]]
+kind = "authored_catalog"
+path = "crates/adventuresim-procedural-textures/src/ground.rs"
+reason = "Authored deterministic soil and litter morphology recipes are cohesive asset data."
 
 [[scopes]]
 kind = "authored_catalog"
@@ -51,6 +86,11 @@ reason = "NumPy header parsing is an external serialization boundary."
 kind = "boundary_adapter"
 path = "crates/adventuresim-tactical-brp-generator/src/resolve.rs"
 reason = "Binding generation adapts reflected external Rust type names."
+
+[[scopes]]
+kind = "boundary_adapter"
+path = "crates/adventuresim-procedural-textures/src/bin/procedural-texture-lab.rs"
+reason = "The texture lab adapts recipe images to CLI input and PNG filesystem output."
 
 [[semantic_families]]
 name = "calendar-year"

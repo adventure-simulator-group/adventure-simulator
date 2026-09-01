@@ -40,11 +40,18 @@ pub(super) enum CapturePose {
     Debris,
     GroundCover,
     LeafSpecimen,
-    UnderstoryReview,
+    UnderstoryReview {
+        distance: f32,
+        elevation_degrees: f32,
+        orbit_degrees: f32,
+    },
     TreeLod {
         distance: f32,
     },
     Overhead,
+    CityOblique {
+        azimuth_degrees: f32,
+    },
     Horizon,
     VistaPeak,
     VistaValley,
@@ -103,6 +110,8 @@ pub(super) struct CaptureViewSpec {
     pub warmup: bool,
     pub observe_recursive_lod: bool,
     pub debris_target: bool,
+    pub temporal_motion: bool,
+    pub verify_settled_readbacks: bool,
 }
 
 impl CaptureViewSpec {
@@ -137,6 +146,8 @@ impl CaptureViewSpec {
             warmup: false,
             observe_recursive_lod: false,
             debris_target: false,
+            temporal_motion: false,
+            verify_settled_readbacks: false,
         }
     }
     pub const fn overlay(mut self) -> Self {
@@ -211,6 +222,14 @@ impl CaptureViewSpec {
         self.debris_target = true;
         self
     }
+    pub const fn motion(mut self) -> Self {
+        self.temporal_motion = true;
+        self
+    }
+    pub const fn settled_readback_pair(mut self) -> Self {
+        self.verify_settled_readbacks = true;
+        self
+    }
 }
 
 macro_rules! v {
@@ -219,7 +238,7 @@ macro_rules! v {
     };
 }
 
-pub(super) const CAPTURE_VIEWS: [CaptureViewSpec; 32] = [
+pub(super) const CAPTURE_VIEWS: [CaptureViewSpec; 40] = [
     v!(
         "warmup",
         "Render-pipeline warmup",
@@ -437,7 +456,11 @@ pub(super) const CAPTURE_VIEWS: [CaptureViewSpec; 32] = [
     v!(
         "understory-common-hazel",
         "Isolated common hazel review",
-        CapturePose::UnderstoryReview,
+        CapturePose::UnderstoryReview {
+            distance: 5.5,
+            elevation_degrees: 5.7,
+            orbit_degrees: 0.0,
+        },
         38.0,
         100
     )
@@ -448,7 +471,11 @@ pub(super) const CAPTURE_VIEWS: [CaptureViewSpec; 32] = [
     v!(
         "understory-blackthorn",
         "Isolated blackthorn review",
-        CapturePose::UnderstoryReview,
+        CapturePose::UnderstoryReview {
+            distance: 5.5,
+            elevation_degrees: 5.7,
+            orbit_degrees: 0.0,
+        },
         38.0,
         100
     )
@@ -457,9 +484,107 @@ pub(super) const CAPTURE_VIEWS: [CaptureViewSpec; 32] = [
     .backdrop()
     .detail(DetailRequirement::UnderstoryFocus),
     v!(
+        "understory-blackthorn-gameplay-distance",
+        "Blackthorn leaf cards at gameplay distance",
+        CapturePose::UnderstoryReview {
+            distance: 12.0,
+            elevation_degrees: 2.0,
+            orbit_degrees: 0.0,
+        },
+        38.0,
+        80
+    )
+    .understory("blackthorn")
+    .hide_obstacles()
+    .backdrop()
+    .detail(DetailRequirement::UnderstoryFocus),
+    v!(
+        "understory-blackthorn-grazing",
+        "Blackthorn leaf cards at a grazing review angle",
+        CapturePose::UnderstoryReview {
+            distance: 5.5,
+            elevation_degrees: 1.0,
+            orbit_degrees: 72.0,
+        },
+        32.0,
+        80
+    )
+    .understory("blackthorn")
+    .hide_obstacles()
+    .backdrop()
+    .detail(DetailRequirement::UnderstoryFocus),
+    v!(
+        "understory-blackthorn-motion-01",
+        "Blackthorn temporal traversal frame 1",
+        CapturePose::UnderstoryReview {
+            distance: 9.0,
+            elevation_degrees: 3.0,
+            orbit_degrees: -4.0,
+        },
+        38.0,
+        80
+    )
+    .understory("blackthorn")
+    .hide_obstacles()
+    .backdrop()
+    .detail(DetailRequirement::UnderstoryFocus)
+    .motion(),
+    v!(
+        "understory-blackthorn-motion-02",
+        "Blackthorn temporal traversal frame 2",
+        CapturePose::UnderstoryReview {
+            distance: 9.0,
+            elevation_degrees: 3.0,
+            orbit_degrees: 0.0,
+        },
+        38.0,
+        80
+    )
+    .understory("blackthorn")
+    .hide_obstacles()
+    .backdrop()
+    .detail(DetailRequirement::UnderstoryFocus)
+    .motion(),
+    v!(
+        "understory-blackthorn-motion-03",
+        "Blackthorn temporal traversal frame 3",
+        CapturePose::UnderstoryReview {
+            distance: 9.0,
+            elevation_degrees: 3.0,
+            orbit_degrees: 4.0,
+        },
+        38.0,
+        80
+    )
+    .understory("blackthorn")
+    .hide_obstacles()
+    .backdrop()
+    .detail(DetailRequirement::UnderstoryFocus)
+    .motion(),
+    v!(
+        "understory-blackthorn-settled",
+        "Blackthorn settled readback identity control",
+        CapturePose::UnderstoryReview {
+            distance: 9.0,
+            elevation_degrees: 3.0,
+            orbit_degrees: 0.0,
+        },
+        38.0,
+        80
+    )
+    .understory("blackthorn")
+    .hide_obstacles()
+    .backdrop()
+    .detail(DetailRequirement::UnderstoryFocus)
+    .settled_readback_pair(),
+    v!(
         "understory-common-hawthorn",
         "Isolated common hawthorn review",
-        CapturePose::UnderstoryReview,
+        CapturePose::UnderstoryReview {
+            distance: 5.5,
+            elevation_degrees: 5.7,
+            orbit_degrees: 0.0,
+        },
         38.0,
         100
     )
@@ -471,6 +596,26 @@ pub(super) const CAPTURE_VIEWS: [CaptureViewSpec; 32] = [
         "beauty-overhead",
         "Overhead distribution view",
         CapturePose::Overhead,
+        65.0,
+        1
+    )
+    .vista(),
+    v!(
+        "city-oblique-northwest",
+        "City-scale oblique view from the northwest",
+        CapturePose::CityOblique {
+            azimuth_degrees: 315.0,
+        },
+        65.0,
+        1
+    )
+    .vista(),
+    v!(
+        "city-oblique-southeast",
+        "City-scale oblique view from the southeast",
+        CapturePose::CityOblique {
+            azimuth_degrees: 135.0,
+        },
         65.0,
         1
     )
@@ -790,4 +935,52 @@ pub(super) const TREE_COLD_TRAVERSAL_VIEWS: [CaptureViewSpec; 41] = [
     traversal_view("tree-warm-second-007", "Warm approach at 7 metres", 7.0),
     traversal_view("tree-warm-second-005", "Warm approach at 5 metres", 5.0),
     traversal_view("tree-warm-second-003", "Warm approach at 3 metres", 3.0),
+];
+
+const fn beech_motion_view(
+    slug: &'static str,
+    label: &'static str,
+    distance: f32,
+) -> CaptureViewSpec {
+    CaptureViewSpec::new(
+        slug,
+        label,
+        CapturePose::TreeColdTraversal { distance },
+        48.0,
+        200,
+    )
+    .vista()
+    .detail(DetailRequirement::TreeFocus)
+    .motion()
+}
+
+// Consecutive zero-settle production frames for BeechLeaf alpha/mip review.
+// The 25 cm camera steps create a slow continuous zoom and fractional-pixel
+// crown motion while remaining within the live individual-leaf/card range.
+pub(super) const BEECH_LEAF_MOTION_VIEWS: [CaptureViewSpec; 17] = [
+    CaptureViewSpec::new(
+        "warmup",
+        "Common-beech leaf-card pipeline warmup",
+        CapturePose::TreeColdTraversal { distance: 22.25 },
+        48.0,
+        200,
+    )
+    .warmup()
+    .vista(),
+    beech_motion_view("beech-leaf-motion-01", "Beech slow zoom frame 1", 22.00),
+    beech_motion_view("beech-leaf-motion-02", "Beech slow zoom frame 2", 21.75),
+    beech_motion_view("beech-leaf-motion-03", "Beech slow zoom frame 3", 21.50),
+    beech_motion_view("beech-leaf-motion-04", "Beech slow zoom frame 4", 21.25),
+    beech_motion_view("beech-leaf-motion-05", "Beech slow zoom frame 5", 21.00),
+    beech_motion_view("beech-leaf-motion-06", "Beech slow zoom frame 6", 20.75),
+    beech_motion_view("beech-leaf-motion-07", "Beech slow zoom frame 7", 20.50),
+    beech_motion_view("beech-leaf-motion-08", "Beech slow zoom frame 8", 20.25),
+    beech_motion_view("beech-leaf-motion-09", "Beech slow zoom frame 9", 20.00),
+    beech_motion_view("beech-leaf-motion-10", "Beech slow zoom frame 10", 19.75),
+    beech_motion_view("beech-leaf-motion-11", "Beech slow zoom frame 11", 19.50),
+    beech_motion_view("beech-leaf-motion-12", "Beech slow zoom frame 12", 19.25),
+    beech_motion_view("beech-leaf-motion-13", "Beech slow zoom frame 13", 19.00),
+    beech_motion_view("beech-leaf-motion-14", "Beech slow zoom frame 14", 18.75),
+    beech_motion_view("beech-leaf-motion-15", "Beech slow zoom frame 15", 18.50),
+    beech_motion_view("beech-leaf-motion-16", "Beech slow zoom frame 16", 18.25),
 ];

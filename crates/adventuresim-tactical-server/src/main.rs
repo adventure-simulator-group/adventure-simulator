@@ -4,7 +4,9 @@ mod bot;
 mod combat;
 mod equipment;
 mod mission;
+mod openings;
 mod player_projection;
+mod scene_setup;
 mod stdb;
 mod terrain_collision;
 
@@ -221,20 +223,7 @@ fn main() {
         "[startup] tactical combat config path={} digest={combat_config_digest}",
         combat_config_path.display()
     );
-    let scene_vista_bundle = Some(SceneVistaBundle {
-        scene_digest: loaded_scene_input
-            .digest()
-            .expect("loaded scene input was validated"),
-        playable_half_extent_metres: Vec2::new(
-            f32::from(loaded_scene_input.playable.width.saturating_sub(1))
-                * loaded_scene_input.playable.spacing_metres
-                * 0.5,
-            f32::from(loaded_scene_input.playable.depth.saturating_sub(1))
-                * loaded_scene_input.playable.spacing_metres
-                * 0.5,
-        ),
-        lods: loaded_scene_input.vista.lods.clone(),
-    });
+    let scene_vista_bundle = scene_setup::vista_bundle(&loaded_scene_input);
     let mut app = App::new();
     app.insert_resource(combat_config);
     // Registered separately from Aeronet's session-despawn observer. The
@@ -263,7 +252,7 @@ fn main() {
     .add_plugins((
         combat::CombatPlugin,
         equipment::TacticalEquipmentPlugin,
-        bot::BotPlugin,
+        (bot::BotPlugin, openings::BuildingOpeningsPlugin),
     ))
     .insert_resource(MissionState::new(
         (!args.no_timeout)
@@ -294,7 +283,8 @@ fn main() {
     .add_systems(OnEnter(ServerState::Running), on_server_started)
     .add_observer(on_player_input)
     .add_observer(on_player_added)
-    .add_observer(on_scene_terrain_added);
+    .add_observer(on_scene_terrain_added)
+    .add_observer(openings::on_scene_building_added);
 
     // Standalone (`--world-dump`) runs never touch SpacetimeDB: a loaded
     // dump already carries every bit of gameplay state a live stdb
@@ -421,6 +411,7 @@ fn on_debug_dump_world_request(_request: On<FromClient<DebugDumpWorldRequest>>, 
         .allow_component::<Transform>()
         .allow_component::<SceneId>()
         .allow_component::<SceneTerrain>()
+        .allow_component::<SceneBuilding>()
         .allow_component::<crate::bot::MissionEnemy>()
         .allow_component::<crate::bot::OffensiveCombatAi>()
         .allow_component::<crate::bot::CombatantBehaviorPackages>()
@@ -890,6 +881,8 @@ fn on_server_started(
             adjusted_height_samples = generated.repairs.adjusted_height_samples,
             repaired_water_samples = generated.repairs.repaired_water_samples,
             removed_corridor_obstacles = generated.repairs.removed_corridor_obstacles,
+            levelled_building_samples = generated.repairs.levelled_building_samples,
+            removed_building_obstacles = generated.repairs.removed_building_obstacles,
             "Loaded deterministic tactical scene input"
         );
         let scene_id = input.scene_key.clone();
@@ -898,6 +891,7 @@ fn on_server_started(
         let ground = generated.ground;
         let environment = input.environment_snapshot(generated.digest);
         let obstacles = generated.obstacles;
+        let buildings = generated.buildings;
         let obstacle_spacing = input.playable.spacing_metres;
         for obstacle in obstacles {
             let (grid_x, grid_z, kind, collider, height_offset, label) = match obstacle {
@@ -937,6 +931,7 @@ fn on_server_started(
                 Transform::from_xyz(x, y, z).with_rotation(Quat::from_rotation_y(yaw)),
             ));
         }
+        openings::spawn_generated_buildings(&mut commands, buildings);
         terrain_collision::spawn_scene(
             &mut commands,
             scene_id,
@@ -947,29 +942,7 @@ fn on_server_started(
             input.fault_scarp,
         );
     }
-    commands.spawn((
-        RigidBody::Static,
-        CollisionLayers::new(TACTICAL_TERRAIN_LAYER, LayerMask::ALL),
-        Transform::default(),
-        children![
-            (
-                Collider::half_space(Vec3::X),
-                Transform::from_xyz(-scene_width * 0.5, 0.0, 0.0)
-            ),
-            (
-                Collider::half_space(Vec3::NEG_X),
-                Transform::from_xyz(scene_width * 0.5, 0.0, 0.0)
-            ),
-            (
-                Collider::half_space(Vec3::Z),
-                Transform::from_xyz(0.0, 0.0, -scene_depth * 0.5)
-            ),
-            (
-                Collider::half_space(Vec3::NEG_Z),
-                Transform::from_xyz(0.0, 0.0, scene_depth * 0.5)
-            )
-        ],
-    ));
+    scene_setup::spawn_world_bounds(&mut commands, scene_width, scene_depth);
     if let Some(conn) = conn {
         info!("Creating tactical server in stdb...");
         conn.reducers().create_tactical_server_for_request(

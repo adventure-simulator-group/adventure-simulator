@@ -4,6 +4,8 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::tactical_settlement_snapshot_type::TacticalSettlementSnapshot;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct TacticalServerRequest {
@@ -14,6 +16,7 @@ pub struct TacticalServerRequest {
     pub requested_by: u64,
     pub longitude_e_7: i32,
     pub latitude_e_7: i32,
+    pub settlement: Option<TacticalSettlementSnapshot>,
     pub absolute_minute: u64,
     pub lunar_phase_minute: u64,
     pub expected_party_members: u32,
@@ -42,6 +45,8 @@ pub struct TacticalServerRequestCols {
     pub requested_by: __sdk::__query_builder::Col<TacticalServerRequest, u64>,
     pub longitude_e_7: __sdk::__query_builder::Col<TacticalServerRequest, i32>,
     pub latitude_e_7: __sdk::__query_builder::Col<TacticalServerRequest, i32>,
+    pub settlement:
+        __sdk::__query_builder::Col<TacticalServerRequest, Option<TacticalSettlementSnapshot>>,
     pub absolute_minute: __sdk::__query_builder::Col<TacticalServerRequest, u64>,
     pub lunar_phase_minute: __sdk::__query_builder::Col<TacticalServerRequest, u64>,
     pub expected_party_members: __sdk::__query_builder::Col<TacticalServerRequest, u32>,
@@ -66,6 +71,7 @@ impl __sdk::__query_builder::HasCols for TacticalServerRequest {
             requested_by: __sdk::__query_builder::Col::new(table_name, "requested_by"),
             longitude_e_7: __sdk::__query_builder::Col::new(table_name, "longitude_e_7"),
             latitude_e_7: __sdk::__query_builder::Col::new(table_name, "latitude_e_7"),
+            settlement: __sdk::__query_builder::Col::new(table_name, "settlement"),
             absolute_minute: __sdk::__query_builder::Col::new(table_name, "absolute_minute"),
             lunar_phase_minute: __sdk::__query_builder::Col::new(table_name, "lunar_phase_minute"),
             expected_party_members: __sdk::__query_builder::Col::new(

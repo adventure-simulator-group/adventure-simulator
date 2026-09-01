@@ -39,6 +39,12 @@ pub struct SceneVistaBundle {
     /// Half-width and half-depth of the authoritative playable heightfield.
     /// Presentation-only vista rings clip exactly to this rectangle.
     pub playable_half_extent_metres: Vec2,
+    /// Presentation-only shell instances surrounding the tactical area.
+    pub distant_buildings: Vec<DistantBuildingPlacement>,
+    /// The same connected surface network used to classify playable ground.
+    pub streets: Vec<CityStreetPatch>,
+    /// Developed block interiors that replace blanket meadow ground cover.
+    pub yards: Vec<CityYardPatch>,
     pub lods: Vec<VistaLod>,
 }
 
@@ -128,6 +134,14 @@ pub enum EquipmentAction {
     Pickup {
         #[entities]
         item: Entity,
+    },
+    OpenDoor {
+        #[entities]
+        door: Entity,
+    },
+    ToggleWindow {
+        #[entities]
+        window: Entity,
     },
 }
 
@@ -271,6 +285,48 @@ mod equipment_action_mapping_tests {
         assert!(matches!(
             request.action,
             EquipmentAction::Pickup { item: found } if found == mapped_item
+        ));
+    }
+
+    #[test]
+    fn request_maps_door_target_nested_inside_equipment_action() {
+        let door = Entity::from_bits(5);
+        let mapped_door = Entity::from_bits(15);
+        let mut request = EquipmentActionRequest {
+            actor: Entity::from_bits(1),
+            sequence: 1,
+            expected_revision: 0,
+            hand: EquipmentHand::Right,
+            expected_hand_item: None,
+            action: EquipmentAction::OpenDoor { door },
+        };
+
+        request.map_entities(&mut (door, mapped_door));
+
+        assert!(matches!(
+            request.action,
+            EquipmentAction::OpenDoor { door: found } if found == mapped_door
+        ));
+    }
+
+    #[test]
+    fn request_maps_window_target_nested_inside_equipment_action() {
+        let window = Entity::from_bits(6);
+        let mapped_window = Entity::from_bits(16);
+        let mut request = EquipmentActionRequest {
+            actor: Entity::from_bits(1),
+            sequence: 1,
+            expected_revision: 0,
+            hand: EquipmentHand::Left,
+            expected_hand_item: None,
+            action: EquipmentAction::ToggleWindow { window },
+        };
+
+        request.map_entities(&mut (window, mapped_window));
+
+        assert!(matches!(
+            request.action,
+            EquipmentAction::ToggleWindow { window: found } if found == mapped_window
         ));
     }
 }

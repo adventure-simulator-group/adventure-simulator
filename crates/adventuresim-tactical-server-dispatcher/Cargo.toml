@@ -10,10 +10,12 @@ path = "src/main.rs"
 [dependencies]
 # SpacetimeDB SDK
 adventuresim-stdb-client = { path = "../adventuresim-stdb-client" }
+adventuresim-building-generator.workspace = true
 adventuresim-core.workspace = true
 adventuresim-tactical-core.workspace = true
 adventuresim-terrain = { path = "../adventuresim-terrain" }
 adventuresim-world-schema.workspace = true
+bevy.workspace = true
 fabelgeist-determinism.workspace = true
 rand.workspace = true
 serde_json.workspace = true

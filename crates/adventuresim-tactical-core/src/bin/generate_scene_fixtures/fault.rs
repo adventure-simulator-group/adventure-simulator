@@ -9,6 +9,7 @@ pub(super) fn fixture() -> Fixture {
         environment: rocky_open,
         weather: clear(),
         vista: VistaKind::Ordinary,
+        buildings: BuildingFixture::Empty,
         fault_scarp: Some(FaultScarpRecipe {
             seed: 47_114,
             origin_cm: [0, 0],
@@ -20,15 +21,4 @@ pub(super) fn fixture() -> Fixture {
             lod: FaultScarpLod::Detail,
         }),
     }
-}
-
-pub(super) fn flat_fixture() -> Fixture {
-    super::fixture(
-        "flat-dry-grassland",
-        "grassland",
-        47_101,
-        super::flat,
-        super::dry_open,
-        super::clear(),
-    )
 }

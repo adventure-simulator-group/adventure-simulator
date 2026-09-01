@@ -5,8 +5,10 @@
 //! which can be extended by networking and visuals in other crates.
 
 pub mod animation;
+pub mod city_layout;
 pub mod combat;
 pub mod combat_config;
+pub mod doors;
 pub mod inventory;
 mod inventory_armor;
 mod marching_tetrahedra;
@@ -48,6 +50,11 @@ pub mod prelude {
         run_locomotion_profile, set_weapon_guard, supine_get_up_counter_yaw_delta,
         walk_locomotion_profile,
     };
+    pub use crate::city_layout::{
+        CityBuildingLot, CityHouseClass, CityStreetPatch, CityStreetSurface, CityYardPatch,
+        CityYardSurface, GeneratedCityLayout, MAX_CITY_LOTS, MAX_CITY_STREET_PATCHES,
+        MAX_CITY_YARD_PATCHES, generate_city,
+    };
     pub use crate::combat::{
         Attack, Dodge, MeleeLunge, conservative_forward_lunge_acceleration,
         maximum_melee_lunge_range, melee_horizontal_closure, melee_interaction_range, melee_lunge,
@@ -55,6 +62,11 @@ pub mod prelude {
         melee_lunge_range_window_metres, reachable_melee_strike_point,
     };
     pub use crate::combat_config::*;
+    pub use crate::doors::{
+        DOOR_GRAB_DEPTH_METRES, DOOR_GRAB_LATERAL_MARGIN_METRES, DoorPassageExemptions,
+        TACTICAL_DOOR_LAYER, TACTICAL_WINDOW_LAYER, can_grab_door_from_inside,
+        can_grab_window_from_inside,
+    };
     pub use crate::inventory::{
         ArmorItem, ArmorSide, ArmorSlot, EquipSlot, EquipmentActionState, EquipmentTopology,
         EquipmentTopologyOccupancy, InventoryItems, ItemOf, ItemProperties, ShieldItem,
@@ -87,12 +99,14 @@ pub mod prelude {
         TerrainGenerator,
     };
     pub use crate::scene_input::{
-        EnvironmentalSample, GeneratedObstacle, GeneratedTacticalScene, ROCK_RADIUS_METRES,
-        RockArchetype, RockLithology, RockRecipe, SceneEnvironment, SceneEnvironmentFixture,
-        SceneInputError, SceneObstacle, SceneRepairReport, SceneSource,
-        TACTICAL_SCENE_GENERATION_VERSION, TACTICAL_SCENE_SCHEMA_VERSION,
+        BuildingOrientation, DistantBuildingPlacement, EnvironmentalSample, GeneratedBuilding,
+        GeneratedObstacle, GeneratedTacticalScene, ROCK_RADIUS_METRES, RockArchetype,
+        RockLithology, RockRecipe, SceneBuilding, SceneDoor, SceneEnvironment,
+        SceneEnvironmentFixture, SceneInputError, SceneObstacle, SceneRepairReport, SceneSource,
+        SceneWindow, TACTICAL_SCENE_GENERATION_VERSION, TACTICAL_SCENE_SCHEMA_VERSION,
         TREE_CANOPY_GROUND_RADIUS_METRES, TREE_TRUNK_HEIGHT_METRES, TREE_TRUNK_RADIUS_METRES,
-        TacticalSceneInput, TacticalSurface, TerrainSampleGrid, VistaLod, VistaSample,
+        TacticalBuildingPlacement, TacticalSceneInput, TacticalSurface, TerrainSampleGrid,
+        VistaLod, VistaSample,
     };
     pub use crate::terrain_transition::TerrainTransitionCollar;
     pub use crate::volumetric_terrain::{

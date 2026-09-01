@@ -28,7 +28,7 @@ use super::obstacles::tree::{
     procedural_woody_plant_skeleton, procedural_woody_sparse_leaf_card_mesh,
 };
 use super::{
-    PresentedCelestialLighting, ProceduralEnvironmentAssets, TacticalGraphicsSettings, bps,
+    PresentedCelestialLighting, ProceduralTextureAssets, TacticalGraphicsSettings, bps,
     stable_text_seed, unit_hash,
 };
 
@@ -36,11 +36,14 @@ use super::{
 
 mod grass;
 #[cfg(all(feature = "instanced-grass", not(target_family = "wasm")))]
-mod instanced_grass;
+pub(crate) mod instanced_grass;
 #[cfg(all(feature = "instanced-grass", not(target_family = "wasm")))]
 mod instanced_understory;
 mod litter;
 mod loose_stone;
+mod review_specimens;
+
+pub(crate) use review_specimens::{UnderstoryReviewSpecimen, spawn_understory_review_specimens};
 mod scene_mask;
 mod understory;
 
@@ -109,7 +112,7 @@ pub(in crate::presentation) struct WoodyUnderstoryPresentation {
 }
 
 #[derive(Resource, Default)]
-pub(in crate::presentation) struct WoodyUnderstoryPresentationCache {
+pub(crate) struct WoodyUnderstoryPresentationCache {
     hazel: WoodyUnderstoryPresentation,
     blackthorn: WoodyUnderstoryPresentation,
     hawthorn: WoodyUnderstoryPresentation,
@@ -302,7 +305,7 @@ pub(super) fn spawn_ground_foliage(
     leaf_materials: &mut Assets<TacticalTreeLeafCardMaterial>,
     understory_cache: &mut WoodyUnderstoryPresentationCache,
     ground_foliage_cache: &mut GroundFoliagePresentationCache,
-    procedural_assets: &ProceduralEnvironmentAssets,
+    procedural_assets: &ProceduralTextureAssets,
     images: &mut Assets<Image>,
     scene_id: &SceneId,
     terrain: &SceneTerrain,
@@ -649,7 +652,7 @@ pub(super) fn present_ground_scatter(
     mut images: ResMut<Assets<Image>>,
     mut understory_cache: ResMut<WoodyUnderstoryPresentationCache>,
     mut ground_foliage_cache: ResMut<GroundFoliagePresentationCache>,
-    procedural_assets: Res<ProceduralEnvironmentAssets>,
+    procedural_assets: Res<ProceduralTextureAssets>,
     graphics: Res<TacticalGraphicsSettings>,
     #[cfg(all(feature = "instanced-grass", not(target_family = "wasm")))]
     mut shrub_bark_materials: ResMut<Assets<TacticalShrubBarkInstancedMaterial>>,
@@ -697,7 +700,7 @@ fn ensure_understory_presentations(
     materials: &mut Assets<StandardMaterial>,
     leaf_materials: &mut Assets<TacticalTreeLeafCardMaterial>,
     cache: &mut WoodyUnderstoryPresentationCache,
-    procedural_assets: &ProceduralEnvironmentAssets,
+    procedural_assets: &ProceduralTextureAssets,
 ) {
     if cache.hazel.branches.is_some() {
         return;

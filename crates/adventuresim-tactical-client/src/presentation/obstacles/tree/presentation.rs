@@ -21,7 +21,7 @@ use super::{
 };
 use crate::presentation::TacticalGameplayCamera;
 use crate::presentation::{
-    ActiveTacticalScene, ActiveVistaSurface, ProceduralEnvironmentAssets, SceneEnvironment,
+    ActiveTacticalScene, ActiveVistaSurface, ProceduralTextureAssets, SceneEnvironment,
     obstacle_seed, unit_hash,
 };
 use adventuresim_tactical_core::prelude::SceneTerrain;
@@ -844,7 +844,7 @@ pub(in crate::presentation) fn present_pending_trees(
     mut images: ResMut<Assets<Image>>,
     mut tree_cache: ResMut<TreePresentationCache>,
     mut residency: ResMut<TreeAssetResidencyDiagnostics>,
-    procedural_assets: Res<ProceduralEnvironmentAssets>,
+    procedural_assets: Res<ProceduralTextureAssets>,
 ) {
     let Some(environment) = active
         .entity

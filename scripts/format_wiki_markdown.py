@@ -19,6 +19,7 @@ SPECIAL_LINE = re.compile(
 INLINE_ATOM = re.compile(
     r"!?\[[^]\n]*\]\([^\n]*?\)|`+[^`\n]+`+|<https?://[^>\n]+>|https?://\S+"
 )
+LIST_ITEM = re.compile(r"^(\s{0,3}(?:[-+*]|\d+[.)])\s+)(.*)$")
 
 
 def _wiki_files() -> list[Path]:
@@ -72,6 +73,21 @@ def _wrap_paragraph(lines: list[str], width: int) -> list[str]:
     return [_restore_inline_atoms(line, atoms) for line in wrapped]
 
 
+def _wrap_list_item(prefix: str, body: str, width: int) -> list[str]:
+    protected, atoms = _protect_inline_atoms(body)
+    wrapped = textwrap.wrap(
+        protected,
+        width=width,
+        initial_indent=prefix,
+        subsequent_indent=" " * len(prefix),
+        break_long_words=False,
+        break_on_hyphens=False,
+        replace_whitespace=True,
+        drop_whitespace=True,
+    )
+    return [_restore_inline_atoms(line, atoms) for line in wrapped]
+
+
 def format_markdown(text: str, *, width: int = 80) -> str:
     source_lines = text.splitlines()
     output: list[str] = []
@@ -111,6 +127,12 @@ def format_markdown(text: str, *, width: int = 80) -> str:
             flush()
             output.append(line)
             fence = fence_match.group(1)
+            continue
+
+        list_item = LIST_ITEM.match(line)
+        if list_item:
+            flush()
+            output.extend(_wrap_list_item(*list_item.groups(), width))
             continue
 
         if SPECIAL_LINE.match(line) or line.startswith("  ") or "$$" in line:

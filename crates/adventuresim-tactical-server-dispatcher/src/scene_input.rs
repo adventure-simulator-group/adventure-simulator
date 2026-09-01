@@ -9,8 +9,13 @@ use adventuresim_terrain::{Cell, Surface, TerrainPack};
 use adventuresim_world_schema::{
     BASIS_POINTS_PER_WHOLE, TerrainFeature, coordinates::Wgs84CoordinateE7,
 };
+use bevy::math::Vec2;
 use fabelgeist_determinism::mix64;
 use sha2::{Digest, Sha256};
+
+use crate::settlement_buildings::{
+    SettlementBuildingLayout, SettlementSceneProfile, place_settlement_buildings,
+};
 
 const PLAYABLE_SIDE: u16 = 101;
 const PLAYABLE_SPACING_METRES: f32 = 1.0;
@@ -25,6 +30,8 @@ const METRES_PER_LATITUDE_DEGREE: f64 = 111_320.0;
 const MIN_LONGITUDE_SCALE: f64 = 0.01;
 const PEAK_SAMPLE_RADIUS_FACTOR: f64 = 0.4;
 const HILLY_DETAIL_AMPLITUDE_METRES: f32 = 0.45;
+const DISTANT_CITY_PAD_MARGIN_METRES: f32 = 50.0;
+const DISTANT_CITY_LEVEL_BLEND_METRES: f32 = 100.0;
 const RANDOM_DETAIL_SCALE: u64 = 10_000;
 const RANDOM_DETAIL_BUCKETS: u64 = RANDOM_DETAIL_SCALE * 2 + 1;
 const SCARP_DEFAULT_THROW_CM: u16 = 800;
@@ -80,6 +87,7 @@ struct GridSampleRequest {
     seed: u64,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn build_imported_scene(
     pack: &TerrainPack,
     mission_id: &str,
@@ -88,6 +96,7 @@ pub fn build_imported_scene(
     longitude_e7: i32,
     absolute_minute: u64,
     lunar_phase_minute: u64,
+    settlement: Option<&SettlementSceneProfile>,
 ) -> Result<TacticalSceneInput, String> {
     let coordinates = Wgs84CoordinateE7::new(latitude_e7, longitude_e7)
         .ok_or("mission coordinate is outside the WGS84 bounds")?;
@@ -110,7 +119,7 @@ pub fn build_imported_scene(
             seed,
         },
     )?;
-    let vista = VistaSample {
+    let mut vista = VistaSample {
         // The near regional ring needs enough spatial frequency to preserve
         // forest boundaries, rolling ground, and the transition from geometric
         // grass. Coarser rings then expand rapidly to the 50-km horizon.
@@ -141,6 +150,9 @@ pub fn build_imported_scene(
             })
             .collect::<Result<Vec<_>, String>>()?,
     };
+    let city_elevation_metres = f32::from(center.elevation_m);
+    let building_layout =
+        settlement_building_layout(settlement, city_elevation_metres, &mut vista)?;
     let input = TacticalSceneInput {
         schema_version: TACTICAL_SCENE_SCHEMA_VERSION,
         generation_version: TACTICAL_SCENE_GENERATION_VERSION,
@@ -154,6 +166,10 @@ pub fn build_imported_scene(
         absolute_elevation_metres: center.elevation_m,
         playable,
         fault_scarp: nearest_fault_scarp(pack.terrain_features(), coordinates, seed),
+        streets: building_layout.streets,
+        yards: building_layout.yards,
+        buildings: building_layout.playable,
+        distant_buildings: building_layout.distant,
         vista,
         weather: weather_at(
             WORLD_WEATHER_SEED,
@@ -165,6 +181,24 @@ pub fn build_imported_scene(
     };
     input.validate().map_err(|error| error.to_string())?;
     Ok(input)
+}
+
+fn settlement_building_layout(
+    settlement: Option<&SettlementSceneProfile>,
+    elevation_metres: f32,
+    vista: &mut VistaSample,
+) -> Result<SettlementBuildingLayout, String> {
+    let playable_half_extent_metres = f32::from(PLAYABLE_SIDE - 1) * PLAYABLE_SPACING_METRES * 0.5;
+    let mut layout = settlement
+        .map(|profile| place_settlement_buildings(profile, playable_half_extent_metres))
+        .transpose()
+        .map_err(|error| error.to_string())?
+        .unwrap_or_default();
+    for building in &mut layout.distant {
+        building.base_elevation_metres = elevation_metres;
+    }
+    level_distant_city_vista(vista, &layout.distant, elevation_metres);
+    Ok(layout)
 }
 
 fn nearest_fault_scarp(
@@ -257,6 +291,38 @@ fn scarp_lod(
             coordinate.abs() <= playable_half_extent + footprint_extent
         })
         .then_some(FaultScarpLod::Fringe)
+}
+
+fn level_distant_city_vista(
+    vista: &mut VistaSample,
+    buildings: &[DistantBuildingPlacement],
+    elevation_metres: f32,
+) {
+    let Some(city_half_extent) = buildings
+        .iter()
+        .map(|building| building.centre_metres.abs())
+        .reduce(Vec2::max)
+        .map(|extent| extent + Vec2::splat(DISTANT_CITY_PAD_MARGIN_METRES))
+    else {
+        return;
+    };
+    for lod in &mut vista.lods {
+        let grid_centre = Vec2::new(
+            (f32::from(lod.width) - 1.0) * 0.5,
+            (f32::from(lod.depth) - 1.0) * 0.5,
+        );
+        for (index, height) in lod.heights_metres.iter_mut().enumerate() {
+            let grid = Vec2::new(
+                (index % usize::from(lod.width)) as f32,
+                (index / usize::from(lod.width)) as f32,
+            );
+            let point = (grid - grid_centre) * lod.spacing_metres;
+            let outside = (point.abs() - city_half_extent).max(Vec2::ZERO).length();
+            let weight = (1.0 - outside / DISTANT_CITY_LEVEL_BLEND_METRES).clamp(0.0, 1.0);
+            let smooth_weight = weight * weight * (3.0 - 2.0 * weight);
+            *height += (elevation_metres - *height) * smooth_weight;
+        }
+    }
 }
 
 pub fn materialize_scene_input(
@@ -447,6 +513,7 @@ mod tests {
             105_000_000,
             123_456,
             123_456,
+            None,
         )
         .expect("known coordinate should produce a tactical scene");
 
