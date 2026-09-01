@@ -70,6 +70,7 @@ fn main() -> Result<(), String> {
         longitude_e7,
         args.absolute_minute,
         args.absolute_minute,
+        None,
     )?;
     let path = materialize_scene_input(&args.output_dir, &mission_id, &input)?;
     println!(

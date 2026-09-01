@@ -111,7 +111,7 @@ pub(in crate::presentation) type TacticalRockMaterial =
 
 pub(in crate::presentation) fn rock_material(
     recipe: RockRecipe,
-    assets: &ProceduralEnvironmentAssets,
+    assets: &ProceduralTextureAssets,
 ) -> TacticalRockMaterial {
     rock_material_with_textures(
         recipe,

@@ -780,17 +780,13 @@ pub fn seed_standalone_tactical_mission(
                 capture_custody_version: None,
             });
     }
-    let authorized_party_member_ids = crate::strategic::living_party_member_ids(ctx, &party_id);
-    let expected_party_members = u32::try_from(authorized_party_member_ids.len())
-        .map_err(|_| "Party is too large for tactical enrollment")?;
-    if expected_party_members == 0 {
-        return Err("A tactical mission requires at least one living party member".into());
-    }
-    if expected_party_members as usize
-        > adventuresim_core::mission::MAX_TACTICAL_RECEIPT_PARTICIPANTS
-    {
-        return Err("Party exceeds the tactical receipt participant limit".into());
-    }
+    let (authorized_party_member_ids, expected_party_members) =
+        crate::tactical::tactical_party_roster(ctx, &party_id)?;
+    let settlement = crate::tactical::tactical_settlement_snapshot(
+        ctx,
+        &case_site.origin_settlement_id,
+        &case_site.scene_key,
+    );
     ctx.db
         .tactical_server_request_authority()
         .insert(crate::tactical::TacticalServerRequest {
@@ -801,6 +797,7 @@ pub fn seed_standalone_tactical_mission(
             requested_by: character_id,
             longitude_e7: case_site.longitude_e7,
             latitude_e7: case_site.latitude_e7,
+            settlement,
             absolute_minute: party_wilderness_environment_minutes(&party)
                 .map_or(adventuresim_core::strategic_time::WORLD_START_MINUTE, |value| value.0),
             lunar_phase_minute: party_wilderness_environment_minutes(&party)

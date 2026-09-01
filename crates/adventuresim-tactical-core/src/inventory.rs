@@ -28,6 +28,8 @@ pub use quantity::*;
 
 pub const TACTICAL_TERRAIN_LAYER: LayerMask = LayerMask(1 << 5);
 pub const TACTICAL_ITEM_LAYER: LayerMask = LayerMask(1 << 4);
+/// Dynamic doors collide with default-layer characters, but not with the
+/// terrain-layer wall, sill, and floor colliders that surround their opening.
 
 #[derive(Component, Serialize, Deserialize, Debug, Reflect, PartialEq, Eq, Clone, MapEntities)]
 #[reflect(Component)]

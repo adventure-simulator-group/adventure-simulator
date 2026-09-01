@@ -402,6 +402,24 @@ impl SceneTerrain {
         true
     }
 
+    /// Rewrites authoritative samples in centered world coordinates while
+    /// preserving the terrain dimensions and render/collider correspondence.
+    pub fn rewrite_heights(&mut self, mut rewrite: impl FnMut(Vec2, f32) -> f32) -> bool {
+        let half_extent = Vec2::new(self.width(), self.depth()) * 0.5;
+        for z in 0..self.grid_depth() {
+            for x in 0..self.grid_width() {
+                let index = z * self.grid_width() + x;
+                let point = Vec2::new(x as f32, z as f32) * self.scale - half_extent;
+                let height = rewrite(point, self.heightmap[index]);
+                if !height.is_finite() {
+                    return false;
+                }
+                self.heightmap[index] = height;
+            }
+        }
+        true
+    }
+
     fn clamp_height_pair(&mut self, source: usize, target: usize, maximum_step: f32) {
         let source_height = self.heightmap[source];
         self.heightmap[target] = self.heightmap[target]

@@ -369,6 +369,10 @@ tactical-reseed profile="tactical-dev" base_port="23200" mission_id_prefix="miss
 tactical-play mode="animation" base_port="24920" graphics_config="assets/config/tactical-graphics.yaml" presentation_trace="auto" window_capture="auto" capture_source="window" render_backend="auto" scene_input="dense-woodland" enemy_fixture="" input_script="" client_profile="dev" frame_timing_seconds="" frame_timing_warmup_seconds="5": preflight verify-db-client
     @{{ python_bin }} scripts/dev_stack.py tactical-play {{ quote(mode) }} {{ quote(base_port) }} --graphics-config {{ quote(graphics_config) }} --presentation-trace {{ quote(presentation_trace) }} --window-capture {{ quote(window_capture) }} --capture-source {{ quote(capture_source) }} --render-backend {{ quote(render_backend) }} --scene-input {{ quote(scene_input) }} --client-profile {{ quote(client_profile) }} --frame-timing-warmup-seconds {{ quote(frame_timing_warmup_seconds) }} {{ if enemy_fixture != "" { "--enemy-fixture " + quote(enemy_fixture) } else { "" } }} {{ if input_script != "" { "--input-script " + quote(input_script) } else { "" } }} {{ if frame_timing_seconds != "" { "--frame-timing-seconds " + quote(frame_timing_seconds) } else { "" } }}
 
+# Launch an unbounded animation session against a named generated scene fixture.
+tactical-play-fixture fixture: preflight verify-db-client
+    @{{ python_bin }} scripts/dev_stack.py tactical-play animation 24920 --graphics-config "assets/config/tactical-graphics.yaml" --presentation-trace auto --window-capture auto --capture-source window --render-backend auto --scene-input {{ quote(fixture) }} --enemy-fixture passive-bandit --client-profile dev --frame-timing-warmup-seconds 5
+
 # Benchmark steady raised-guard locomotion in all four cardinal directions.
 # It records transforms only: OBS and PresentMon are deliberately disabled.
 animation-direction-benchmark base_port="24920" graphics_config="assets/config/tactical-graphics.yaml" render_backend="auto" scene_input="dense-woodland":
@@ -395,6 +399,11 @@ animation-quickstep-parity-analyze trace report="target/dodge-investigation/quic
 tactical-scene-capture fixture="dense-woodland" output="" settle_frames="12" absolute_minute="" profile="semantic":
     @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture {{ quote(fixture) }} --settle-frames {{ quote(settle_frames) }} --profile {{ quote(profile) }} {{ if output != "" { "--output " + quote(output) } else { "" } }} {{ if absolute_minute != "" { "--absolute-minute " + quote(absolute_minute) } else { "" } }}
 
+# Capture a deterministic GPU traversal away from an actual Shell building LOD
+# using the shared coverage-mipped crenellation mask. Output must be fresh.
+building-lod-shell-capture output="target/building-lod-captures/crenellation-shell" fixture="courtyard-castle" seed="42" settle_frames="12":
+    @cargo run -p adventuresim-building-generator --features viewer --bin building-lod-viewer -- --fixture {{ quote(fixture) }} --lod shell --seed {{ quote(seed) }} --capture-output {{ quote(output) }} --capture-settle-frames {{ quote(settle_frames) }}
+
 # Capture the production animation scene from the third-person spawn camera at
 # eight fixed yaw angles plus four live tree-obstruction boom checks, with
 # natural tree LODs and vista presentation enabled.
@@ -406,6 +415,12 @@ tactical-animation-play-capture output="target/tactical-scene-captures/animation
 # traversal plates intentionally preserve the first renderable frame.
 tactical-tree-cold-traversal-capture output="target/tactical-scene-captures/tree-cold-traversal" scene_input="dense-woodland":
     @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --scene-input {{ quote(scene_input) }} --profile tree-cold-traversal --settle-frames 12 --output {{ quote(output) }}
+
+# Capture consecutive production common-beech leaf-card frames under a slow
+# fractional-pixel zoom. The profile fails closed unless dense-woodland focuses
+# a common beech and all sixteen temporal frames are present.
+tactical-beech-leaf-motion-capture output="target/tactical-scene-captures/beech-leaf-motion":
+    @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture dense-woodland --profile beech-leaf-motion --settle-frames 12 --output {{ quote(output) }}
 
 # Capture the production tactical scene sampled from the final real-world
 # terrain pack at signed WGS84 latitude/longitude decimal degrees.
@@ -490,6 +505,12 @@ tactical-environment-review-ledger ledger="assets/tactical-scenes/environment-re
 # Capture one deterministic atmosphere/celestial verification view.
 tactical-sky-capture view="sun" output="target/tactical-sky-captures/sun.png" settle_frames="24":
     @cargo run -p adventuresim-tactical-client --bin tactical-sky-viewer -- --view {{ quote(view) }} --output {{ quote(output) }} --settle-frames {{ quote(settle_frames) }}
+
+# Generate and capture one standalone procedural-building prototype. Exterior
+# captures show massing; cutaway captures omit the south/east shell and roofs
+# so room boundaries and vertical circulation remain assessable.
+building-capture fixture="town-house" view="exterior" output="target/building-captures/town-house-exterior.png" seed="42" settle_frames="240":
+    @cargo run -p adventuresim-building-generator --bin building-viewer -- --fixture {{ quote(fixture) }} --view {{ quote(view) }} --seed {{ seed }} --output {{ quote(output) }} --settle-frames {{ quote(settle_frames) }}
 
 # Capture a deterministic semantic-route preview through pose-buffer playback.
 animation-preview scenario="steady-walk-2.0" output="target/animation-captures/animation-preview":

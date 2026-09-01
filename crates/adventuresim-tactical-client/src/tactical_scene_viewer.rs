@@ -14,14 +14,11 @@ use adventuresim_world_schema::coordinates::{LatitudeMicrodegrees, LongitudeMicr
 use bevy::{
     app::ScheduleRunnerPlugin,
     camera::RenderTarget,
-    camera::{
-        Exposure,
-        visibility::{RenderLayers, VisibilityRange},
-    },
+    camera::{Exposure, visibility::VisibilityRange},
     core_pipeline::tonemapping::Tonemapping,
     ecs::system::SystemParam,
-    light::{AtmosphereEnvironmentMapLight, EnvironmentMapLight, NotShadowCaster},
-    pbr::wireframe::{Wireframe, WireframeColor, WireframeLineWidth, WireframePlugin},
+    light::{EnvironmentMapLight, NotShadowCaster, Skybox},
+    pbr::wireframe::WireframePlugin,
     prelude::*,
     render::view::screenshot::{Screenshot, ScreenshotCaptured, save_to_disk},
     window::{ExitCondition, PresentMode},
@@ -29,45 +26,52 @@ use bevy::{
 };
 use serde::Serialize;
 
+mod buildings;
 mod capture_state;
 mod manifest;
 mod terrain_setup;
+mod triangle_census;
 mod view_camera;
 mod view_specs;
+use buildings::spawn_tactical_buildings;
 use capture_state::{
-    CapturePhase, CaptureReadback, SceneCaptureState, foliage_detail_pixel_bps,
-    foreground_pixel_bps, lighting_samples_stable, luminance_delta, mean_luminance,
-    tree_canopy_pixel_bps,
+    CapturePhase, CaptureReadback, SceneCaptureState, deterministic_readback_hash,
+    foliage_detail_pixel_bps, foreground_pixel_bps, lighting_samples_stable, luminance_delta,
+    mean_luminance, tree_canopy_pixel_bps,
 };
 use manifest::{
     CaptureRecord, CaptureTonemapping, CelestialProvenance, FoliageSummary,
     ObservedPresentationFeatures, ObstacleSummary, PendingSceneCaptureManifest,
-    PresentationFeatureState, PresentationFeatures, RecursiveTreeLodSummary, RepairSummary,
-    SceneCaptureManifest, TerrainSummary, TreeBakeCardSummary, TreeBakeSummary, ValidationSummary,
-    VistaSummary, validation_passes,
+    PresentationFeatureState, PresentationFeatures, RecursiveTreeLodSummary, SceneCaptureManifest,
+    TerrainSummary, TreeBakeCardSummary, TreeBakeSummary, ValidationSummary, VistaSummary,
+    validation_passes,
+};
+use triangle_census::{
+    TerrainWireframeCaptureState, TriangleCensusState, capture_terrain_wireframe,
+    capture_triangle_census,
 };
 #[cfg(test)]
 use view_specs::TREE_BILLBOARD_TRANSITION_SCALES;
 use view_specs::{
-    ANIMATION_PLAY_VIEWS, CAPTURE_VIEWS, CapturePose, CaptureViewSpec, DetailRequirement,
-    ENVIRONMENT_REVIEW_VIEWS, TREE_COLD_TRAVERSAL_VIEWS, TreeLightingModeId,
+    ANIMATION_PLAY_VIEWS, BEECH_LEAF_MOTION_VIEWS, CAPTURE_VIEWS, CapturePose, CaptureViewSpec,
+    DetailRequirement, ENVIRONMENT_REVIEW_VIEWS, TREE_COLD_TRAVERSAL_VIEWS, TreeLightingModeId,
 };
 
 use crate::camera::CameraRigConfig;
 use crate::presentation::{
-    AtmosphereIblAmbientHandoff, DETAIL_PATCH_SPACING_METRES, GroundLitterCaptureAnchors,
-    GroundLitterCapturePair, GroundLitterDiagnostics, GroundScatterLayer, LooseStonePebblePatch,
-    PlayableTreeAggregateWood, PlayableTreeBuds, PlayableTreeCanopyCard,
-    PlayableTreeDetailedLeaves, PlayableTreeDetailedTrunk, PlayableTreeDetailedWood,
-    PlayableTreeMidTrunk, PlayableTreeTrunk, PresentedTree, ProceduralEnvironmentAssets,
-    ProceduralRockVisual, TacticalCloudAnimationStatus, TacticalCloudBenchmarkIsolation,
-    TacticalCloudLayer, TacticalGameplayCamera, TacticalGraphicsSettings,
-    TacticalPresentationPlugin, TacticalTreeBarkMaterial, TacticalTreeBenchmarkIsolation,
-    TacticalTreeLeafCardMaterial, TerrainDetailPatch, TerrainMaterialPresentation,
-    TerrainTriangleCount, TreeAssetResidencyDiagnostics, TreeImpostorProvenance,
+    AtmosphereIblAmbientHandoff, GroundLitterCaptureAnchors, GroundLitterCapturePair,
+    GroundLitterDiagnostics, GroundScatterLayer, LooseStonePebblePatch, PlayableTreeAggregateWood,
+    PlayableTreeBuds, PlayableTreeCanopyCard, PlayableTreeDetailedLeaves,
+    PlayableTreeDetailedTrunk, PlayableTreeDetailedWood, PlayableTreeMidTrunk, PlayableTreeTrunk,
+    PresentedTree, ProceduralRockVisual, ProceduralTextureAssets, TacticalCloudAnimationStatus,
+    TacticalCloudBenchmarkIsolation, TacticalCloudLayer, TacticalGameplayCamera,
+    TacticalGraphicsSettings, TacticalPresentationPlugin, TacticalTreeBarkMaterial,
+    TacticalTreeBenchmarkIsolation, TacticalTreeLeafCardMaterial, TerrainDetailPatch,
+    TerrainMaterialPresentation, TreeAssetResidencyDiagnostics, TreeImpostorProvenance,
     TreeLeafRepresentation, TreeLeafTriangleCount, TreeLod, TreeLodCluster, TreeLodRenderOverride,
-    TreeTrunkLod, VistaTerrain, VistaTerrainMesh, VistaTreePresentation, WeatherParticle,
-    oak_bark_material, oak_leaf_material, oak_review_terminal_specimen, terrain_heightmap_image,
+    TreeTrunkLod, UnderstoryReviewSpecimen, VistaTerrain, VistaTreePresentation, WeatherParticle,
+    WoodyUnderstoryPresentationCache, oak_bark_material, oak_leaf_material,
+    oak_review_terminal_specimen, spawn_understory_review_specimens, terrain_heightmap_image,
 };
 
 const VIEW_WIDTH: u32 = 1280;
@@ -78,46 +82,13 @@ const PERFORMANCE_TARGET_FPS: f64 = 60.0;
 const PERFORMANCE_FRAME_BUDGET_MS: f64 = 1_000.0 / PERFORMANCE_TARGET_FPS;
 const SQUARE_METRES_PER_SQUARE_KILOMETRE: f64 = 1_000_000.0;
 const STANDING_EYE_HEIGHT_METRES: f32 = 1.65;
-const CAPTURE_PROFILE_VERSION: u16 = 19;
+const CAPTURE_PROFILE_VERSION: u16 = 20;
+const BEECH_LEAF_MOTION_PROFILE: &str = "beech-leaf-motion";
 const CAMERA_VERSION: u16 = 13;
 const CAPTURE_CLOCK_PHASE_SECONDS: f32 = 2.0;
 
 #[derive(Resource)]
 struct SceneSetup(Option<SceneSetupData>);
-
-#[derive(Resource)]
-struct TerrainWireframeCaptureState {
-    output: PathBuf,
-    configured: bool,
-    settled_frames: u32,
-    prime_readbacks: u8,
-    readback_in_flight: bool,
-    capture_requested: bool,
-}
-
-#[derive(Default, Serialize)]
-struct TerrainWireframeTierReport {
-    spacing_metres: f32,
-    color: &'static str,
-    resident_meshes: usize,
-    visible_meshes: usize,
-    resident_triangles: usize,
-    visible_triangles: usize,
-}
-
-#[derive(Serialize)]
-struct TerrainWireframeReport {
-    pipeline: &'static str,
-    fixture: String,
-    screenshot: &'static str,
-    resolution: [u32; 2],
-    camera_translation: [f32; 3],
-    camera_target: [f32; 3],
-    vertical_fov_degrees: f32,
-    count_semantics: &'static str,
-    tiers: BTreeMap<String, TerrainWireframeTierReport>,
-    total_visible_triangles: usize,
-}
 
 struct SceneSetupData {
     input: TacticalSceneInput,
@@ -149,6 +120,20 @@ struct LightingObservationParams<'w, 's> {
     settings: Res<'w, TacticalGraphicsSettings>,
     ambient: Res<'w, GlobalAmbientLight>,
     ambient_handoff: Res<'w, AtmosphereIblAmbientHandoff>,
+    images: Res<'w, Assets<Image>>,
+    understory_review_specimens: Query<
+        'w,
+        's,
+        (&'static UnderstoryReviewSpecimen, &'static mut Visibility),
+        (
+            Without<GroundScatterLayer>,
+            Without<CaptureOverlay>,
+            Without<VistaTerrain>,
+            Without<TreeReviewBackdrop>,
+            Without<SceneObstacle>,
+            Without<Camera3d>,
+        ),
+    >,
     tree_trunks: Query<'w, 's, (), With<TreeTrunkLod>>,
     presented_tree_roots: Query<'w, 's, (), With<PresentedTree>>,
     presented_tree_names: Query<'w, 's, &'static Name, With<PresentedTree>>,
@@ -760,6 +745,7 @@ pub(crate) fn run(
     scene_performance_benchmark_frames: Option<u32>,
     scene_performance_render_diagnostics: bool,
     terrain_wireframe: bool,
+    triangle_census: bool,
     tree_review_azimuth_degrees: f32,
     profile: &'static str,
     requested_views: Vec<String>,
@@ -877,14 +863,10 @@ pub(crate) fn run(
     .insert_resource(SceneSetup(Some(setup)));
     if terrain_wireframe {
         app.add_plugins(WireframePlugin::default())
-            .insert_resource(TerrainWireframeCaptureState {
-                output: wireframe_output,
-                configured: false,
-                settled_frames: 0,
-                prime_readbacks: 0,
-                readback_in_flight: false,
-                capture_requested: false,
-            });
+            .insert_resource(TerrainWireframeCaptureState::new(wireframe_output));
+    }
+    if triangle_census {
+        app.init_resource::<TriangleCensusState>();
     }
     app.insert_gizmo_config(
         PhysicsGizmos::default(),
@@ -911,6 +893,8 @@ pub(crate) fn run(
     }
     if terrain_wireframe {
         app.add_systems(Last, capture_terrain_wireframe);
+    } else if triangle_census {
+        app.add_systems(Last, capture_triangle_census);
     } else if leaf_benchmarking {
         app.add_systems(Last, benchmark_leaf_representations);
     } else if tree_lighting_benchmarking {
@@ -924,193 +908,6 @@ pub(crate) fn run(
     if exit != AppExit::Success {
         std::process::exit(1);
     }
-}
-
-#[expect(
-    clippy::type_complexity,
-    reason = "the Bevy query captures each terrain representation and its visibility and diagnostic state"
-)]
-fn capture_terrain_wireframe(
-    mut commands: Commands,
-    mut state: ResMut<TerrainWireframeCaptureState>,
-    capture: Option<Res<SceneCaptureState>>,
-    mut camera: Single<
-        (
-            Entity,
-            &mut Transform,
-            &mut GlobalTransform,
-            &mut Projection,
-        ),
-        With<TacticalGameplayCamera>,
-    >,
-    mut meshes_with_visibility: Query<
-        (
-            Entity,
-            &mut Visibility,
-            &ViewVisibility,
-            Has<TerrainDetailPatch>,
-            Has<TerrainMaterialPresentation>,
-            Option<&VistaTerrainMesh>,
-            Option<&TerrainTriangleCount>,
-            Has<Wireframe>,
-        ),
-        (With<Mesh3d>, Without<Camera3d>),
-    >,
-) {
-    let Some(capture) = capture.as_deref() else {
-        return;
-    };
-    let terrain_meshes = meshes_with_visibility
-        .iter()
-        .filter(|(_, _, _, detail, playable, vista, _, _)| *detail || *playable || vista.is_some())
-        .count();
-    if terrain_meshes == 0 {
-        return;
-    }
-
-    for (entity, mut visibility, _, detail, playable, vista, _, has_wireframe) in
-        &mut meshes_with_visibility
-    {
-        let color = if detail {
-            Some((Color::srgb(1.0, 0.82, 0.12), 1.5))
-        } else if playable {
-            Some((Color::srgb(0.08, 0.95, 1.0), 1.25))
-        } else {
-            vista.map(|lod| {
-                let color = match lod.0 {
-                    0 => Color::srgb(0.18, 1.0, 0.35),
-                    1 => Color::srgb(1.0, 0.36, 0.82),
-                    _ => Color::srgb(1.0, 0.25, 0.12),
-                };
-                (color, 1.0)
-            })
-        };
-        *visibility = if color.is_some() {
-            Visibility::Inherited
-        } else {
-            Visibility::Hidden
-        };
-        if let Some((color, width)) = color
-            && !has_wireframe
-        {
-            commands.entity(entity).insert((
-                Wireframe,
-                WireframeColor { color },
-                WireframeLineWidth { width },
-                NotShadowCaster,
-                RenderLayers::layer(31),
-            ));
-        }
-    }
-
-    if !state.configured {
-        let transform = Transform::from_translation(capture.ground_eye_position)
-            .looking_at(capture.ground_eye_target, Vec3::Y);
-        commands.entity(camera.0).insert(RenderLayers::layer(31));
-        *camera.1 = transform;
-        *camera.2 = GlobalTransform::from(transform);
-        if let Projection::Perspective(projection) = &mut *camera.3 {
-            projection.fov = 80.0_f32.to_radians();
-        }
-        state.configured = true;
-        return;
-    }
-    if state.settled_frames < capture.settle_frames.max(30) {
-        state.settled_frames += 1;
-        return;
-    }
-    if state.readback_in_flight || state.capture_requested {
-        return;
-    }
-    if state.prime_readbacks < 2 {
-        state.readback_in_flight = true;
-        commands.spawn(Screenshot::primary_window()).observe(
-            |_: On<ScreenshotCaptured>, mut state: ResMut<TerrainWireframeCaptureState>| {
-                state.prime_readbacks += 1;
-                state.readback_in_flight = false;
-                state.settled_frames = 0;
-            },
-        );
-        return;
-    }
-
-    let input = TacticalSceneInput::load(&capture.input_path)
-        .unwrap_or_else(|error| panic!("failed to reload terrain wireframe input: {error}"));
-    let vista_spacing = input
-        .vista
-        .lods
-        .iter()
-        .map(|lod| (lod.level, lod.spacing_metres))
-        .collect::<BTreeMap<_, _>>();
-    let mut tiers = BTreeMap::<String, TerrainWireframeTierReport>::new();
-    for (_, _, view_visibility, detail, playable, vista, triangle_count, _) in
-        &mut meshes_with_visibility
-    {
-        let Some(triangle_count) = triangle_count else {
-            continue;
-        };
-        let triangles = triangle_count.0;
-        let (name, spacing_metres, color) = if detail {
-            (
-                "detail patch".to_owned(),
-                DETAIL_PATCH_SPACING_METRES,
-                "yellow",
-            )
-        } else if playable {
-            (
-                "playable terrain".to_owned(),
-                capture.terrain.spacing_metres,
-                "cyan",
-            )
-        } else if let Some(lod) = vista {
-            (
-                format!("vista LOD{}", lod.0),
-                vista_spacing.get(&lod.0).copied().unwrap_or_default(),
-                match lod.0 {
-                    0 => "green",
-                    1 => "magenta",
-                    _ => "red",
-                },
-            )
-        } else {
-            continue;
-        };
-        let tier = tiers.entry(name).or_default();
-        tier.spacing_metres = spacing_metres;
-        tier.color = color;
-        tier.resident_meshes += 1;
-        tier.resident_triangles += triangles;
-        if view_visibility.get() {
-            tier.visible_meshes += 1;
-            tier.visible_triangles += triangles;
-        }
-    }
-    let total_visible_triangles = tiers.values().map(|tier| tier.visible_triangles).sum();
-    let report = TerrainWireframeReport {
-        pipeline: "tactical_terrain_wireframe_v1",
-        fixture: capture.fixture.clone(),
-        screenshot: "terrain-wireframe.png",
-        resolution: [VIEW_WIDTH, VIEW_HEIGHT],
-        camera_translation: camera.1.translation.to_array(),
-        camera_target: capture.ground_eye_target.to_array(),
-        vertical_fov_degrees: 80.0,
-        count_semantics: "Triangles in terrain mesh entities whose Bevy ViewVisibility is true. Chunk-level vista culling is reflected; partial triangle clipping within a visible mesh is not.",
-        tiers,
-        total_visible_triangles,
-    };
-    fs::write(
-        state.output.join("terrain-wireframe.json"),
-        serde_json::to_vec_pretty(&report).expect("terrain wireframe report serializes"),
-    )
-    .expect("terrain wireframe report writes");
-    let path = state.output.join(report.screenshot);
-    state.capture_requested = true;
-    commands.spawn(Screenshot::primary_window()).observe(
-        move |captured: On<ScreenshotCaptured>, mut exit: MessageWriter<AppExit>| {
-            save_to_disk(&path)(captured);
-            exit.write(AppExit::Success);
-        },
-    );
 }
 
 /// Render performance captures into a texture so Windows compositor pacing
@@ -1183,8 +980,9 @@ fn requested_feature_state() -> PresentationFeatureState {
 )]
 fn observed_presentation_features(
     settings: &TacticalGraphicsSettings,
-    environment_map: Option<&AtmosphereEnvironmentMapLight>,
-    filtered_environment_map: Option<&EnvironmentMapLight>,
+    environment_map: Option<&EnvironmentMapLight>,
+    skybox: Option<&Skybox>,
+    images: &Assets<Image>,
     exposure: &Exposure,
     tonemapping: &Tonemapping,
     ambient: &GlobalAmbientLight,
@@ -1193,13 +991,19 @@ fn observed_presentation_features(
 ) -> PresentationFeatures {
     let requested = requested_feature_state();
     let observed_settings = feature_state(settings);
-    let environment_map_size = environment_map.map(|light| light.size.to_array());
+    let environment_map_size = environment_map
+        .and_then(|light| images.get(&light.specular_map))
+        .map(|image| {
+            [
+                image.texture_descriptor.size.width,
+                image.texture_descriptor.size.height,
+            ]
+        });
     let observed = ObservedPresentationFeatures {
         settings: observed_settings,
         camera_environment_map: environment_map.is_some(),
         camera_environment_map_size: environment_map_size,
-        camera_environment_map_allocated: filtered_environment_map.is_some(),
-        camera_environment_map_intensity: filtered_environment_map.map(|light| light.intensity),
+        camera_environment_map_intensity: environment_map.map(|light| light.intensity),
         camera_exposure_ev100: exposure.ev100,
         camera_tonemapping: match tonemapping {
             Tonemapping::None => CaptureTonemapping::None,
@@ -1243,9 +1047,9 @@ fn observed_presentation_features(
             == requested
                 .environment_light
                 .then_some([requested.environment_map_size; 2])
-        && observed.camera_environment_map_allocated == requested.environment_light
         && observed.camera_environment_map_intensity
             == requested.environment_light.then_some(1.0)
+        && skybox.is_some() == requested.environment_light
         // Production exposure is driven by the scene's solar/lunar state and
         // may be between authored targets while the ECS observer settles.
         && observed.camera_exposure_ev100.is_finite()
@@ -1274,6 +1078,7 @@ fn selected_capture_views(
         "environment-review" => ENVIRONMENT_REVIEW_VIEWS.as_slice(),
         "animation-play" => ANIMATION_PLAY_VIEWS.as_slice(),
         "tree-cold-traversal" => TREE_COLD_TRAVERSAL_VIEWS.as_slice(),
+        BEECH_LEAF_MOTION_PROFILE => BEECH_LEAF_MOTION_VIEWS.as_slice(),
         _ => return Err(format!("unknown profile {profile}")),
     };
     if requested.is_empty() {
@@ -1387,10 +1192,10 @@ mod capture_lighting_tests {
     #[test]
     fn semantic_profile_records_lod_transition_controls() {
         let views = selected_capture_views("semantic", &[]).unwrap();
-        assert_eq!(views.len(), 32);
+        assert_eq!(views.len(), 40);
         assert_eq!(
             views.iter().filter(|view| view.slug != "warmup").count(),
-            31
+            39
         );
         assert!(
             views
@@ -1437,7 +1242,7 @@ mod capture_lighting_tests {
         ];
         for (slug, common_name) in expected {
             let view = views.iter().find(|view| view.slug == slug).unwrap();
-            assert_eq!(view.pose, CapturePose::UnderstoryReview);
+            assert!(matches!(view.pose, CapturePose::UnderstoryReview { .. }));
             assert_eq!(view.understory_species, Some(common_name));
             assert_eq!(view.detail_requirement, DetailRequirement::UnderstoryFocus);
             assert!(view.hide_obstacles);
@@ -1475,12 +1280,27 @@ mod capture_lighting_tests {
     }
 
     #[test]
+    fn beech_leaf_motion_profile_is_consecutive_and_fail_closed() {
+        let views = selected_capture_views("beech-leaf-motion", &[]).unwrap();
+        assert_eq!(views.len(), 17);
+        assert_eq!(views[0].slug, "warmup");
+        assert!(views[1..].iter().all(|view| {
+            view.temporal_motion
+                && view.detail_requirement == DetailRequirement::TreeFocus
+                && matches!(view.pose, CapturePose::TreeColdTraversal { .. })
+        }));
+        assert_eq!(views[1].slug, "beech-leaf-motion-01");
+        assert_eq!(views[16].slug, "beech-leaf-motion-16");
+    }
+
+    #[test]
     fn capture_profiles_have_one_implicit_leading_warmup() {
         for profile in [
             "semantic",
             "environment-review",
             "animation-play",
             "tree-cold-traversal",
+            "beech-leaf-motion",
         ] {
             let views = selected_capture_views(profile, &[]).unwrap();
             assert_eq!(views.first().map(|view| view.slug), Some("warmup"));
@@ -1580,7 +1400,7 @@ mod capture_lighting_tests {
     #[test]
     fn environment_profile_has_deterministic_grazing_debris_target() {
         let views = selected_capture_views("environment-review", &[]).unwrap();
-        assert_eq!(views.len(), 12);
+        assert_eq!(views.len(), 14);
         assert!(
             views
                 .iter()
@@ -1803,7 +1623,8 @@ fn setup_scene(
     mut bark_materials: ResMut<Assets<TacticalTreeBarkMaterial>>,
     mut leaf_card_materials: ResMut<Assets<TacticalTreeLeafCardMaterial>>,
     mut images: ResMut<Assets<Image>>,
-    procedural_assets: Res<ProceduralEnvironmentAssets>,
+    procedural_assets: Res<ProceduralTextureAssets>,
+    mut understory_cache: ResMut<WoodyUnderstoryPresentationCache>,
 ) {
     let setup = setup.0.take().expect("scene setup runs exactly once");
     let SceneSetupData {
@@ -1827,6 +1648,7 @@ fn setup_scene(
         terrain,
         ground,
         obstacles,
+        buildings,
         repairs,
         terrain_patch,
     } = generated;
@@ -1848,6 +1670,17 @@ fn setup_scene(
         peak_target,
     ) = vista_metrics(&input);
     let vista_relief_metres = vista_peak_metres - vista_minimum_metres;
+    let city_half_extent_metres = input
+        .buildings
+        .iter()
+        .map(|building| building.centre_metres.abs().max_element())
+        .chain(
+            input
+                .distant_buildings
+                .iter()
+                .map(|building| building.centre_metres.abs().max_element()),
+        )
+        .fold(0.0, f32::max);
     let mut expected_trees = 0;
     let mut expected_rocks = 0;
     let mut obstacle_position_sum = Vec3::ZERO;
@@ -1855,6 +1688,8 @@ fn setup_scene(
     let mut tree_focus = None;
     let mut rock_focus = None;
     let mut tree_focus_entity = None;
+
+    spawn_tactical_buildings(&mut commands, buildings);
 
     for obstacle in obstacles {
         let (grid_x, grid_z, kind, collider, y_offset, overlay_shape, overlay_color) =
@@ -2126,6 +1961,22 @@ fn setup_scene(
                 .id(),
         );
     }
+    let understory_review_origin = Vec3::new(
+        obstacle_focus.x,
+        terrain
+            .height_at(Vec2::new(obstacle_focus.x, obstacle_focus.z))
+            .unwrap_or_default(),
+        obstacle_focus.z,
+    );
+    spawn_understory_review_specimens(
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        &mut leaf_card_materials,
+        &mut understory_cache,
+        &procedural_assets,
+        understory_review_origin,
+    );
     terrain_setup::spawn(
         &mut commands,
         &input,
@@ -2140,6 +1991,9 @@ fn setup_scene(
             terrain_summary.width_metres * 0.5,
             terrain_summary.depth_metres * 0.5,
         ),
+        distant_buildings: input.distant_buildings.clone(),
+        streets: input.streets.clone(),
+        yards: input.yards.clone(),
         lods: input.vista.lods.clone(),
     });
     commands.insert_resource(SceneCaptureState {
@@ -2155,13 +2009,7 @@ fn setup_scene(
         generation_version: input.generation_version,
         scene_source: input.source,
         weather: input.weather,
-        repairs: RepairSummary {
-            upsampled_height_samples: repairs.upsampled_height_samples,
-            microrelief_adjusted_samples: repairs.microrelief_adjusted_samples,
-            adjusted_height_samples: repairs.adjusted_height_samples,
-            repaired_water_samples: repairs.repaired_water_samples,
-            removed_corridor_obstacles: repairs.removed_corridor_obstacles,
-        },
+        repairs: repairs.into(),
         terrain: terrain_summary,
         expected_trees,
         expected_rocks,
@@ -2171,6 +2019,7 @@ fn setup_scene(
         vista_minimum_metres,
         vista_peak_metres,
         vista_relief_metres,
+        city_half_extent_metres,
         peak_target,
         valley_target,
         obstacle_focus,
@@ -2196,6 +2045,7 @@ fn setup_scene(
         view: 0,
         phase: CapturePhase::Configure,
         lighting_luminance_samples: Vec::new(),
+        last_prime_readback_hash: None,
         captures: Vec::new(),
         recursive_lods_observed: BTreeSet::new(),
         recursive_aggregate_lods_observed: BTreeSet::new(),
@@ -3254,14 +3104,14 @@ fn capture_views(
             &mut Transform,
             &mut GlobalTransform,
             &mut Projection,
-            Option<&AtmosphereEnvironmentMapLight>,
             Option<&EnvironmentMapLight>,
+            Option<&Skybox>,
             &Exposure,
             &Tonemapping,
         ),
         With<TacticalGameplayCamera>,
     >,
-    lighting: LightingObservationParams,
+    mut lighting: LightingObservationParams,
     mut overlays: Query<&mut Visibility, (With<CaptureOverlay>, Without<VistaTerrain>)>,
     mut tree_backdrops: Query<
         (&mut Visibility, &mut Transform),
@@ -3385,21 +3235,18 @@ fn capture_views(
                 )
             })
             .collect::<Vec<_>>();
-        let understory_focus = view.understory_species.and_then(|common_name| {
-            ground_scatter_entities
-                .iter()
-                .filter(|(_, layer, _, name)| {
-                    *layer == GroundScatterLayer::Understory
-                        && name == &format!("Shared {common_name} shrub wood")
-                })
-                .min_by(|left, right| {
-                    left.2
-                        .xz()
-                        .length_squared()
-                        .total_cmp(&right.2.xz().length_squared())
-                })
-                .map(|(_, _, position, _)| *position)
-        });
+        let mut understory_focus = None;
+        for (specimen, mut visibility) in &mut lighting.understory_review_specimens {
+            let selected = view.understory_species == Some(specimen.common_name);
+            *visibility = if selected {
+                Visibility::Visible
+            } else {
+                Visibility::Hidden
+            };
+            if selected {
+                understory_focus = Some(specimen.focus);
+            }
+        }
         if view.debris_target {
             let pairs = lighting
                 .litter_anchors
@@ -3514,11 +3361,21 @@ fn capture_views(
                 player_z,
                 yaw_degrees,
             ),
-            CapturePose::UnderstoryReview => {
+            CapturePose::UnderstoryReview {
+                distance,
+                elevation_degrees,
+                orbit_degrees,
+            } => {
                 let focus = understory_focus.unwrap_or(state.obstacle_focus);
-                let azimuth = state.tree_review_azimuth_degrees.to_radians();
+                let azimuth = (state.tree_review_azimuth_degrees + orbit_degrees).to_radians();
+                let elevation = elevation_degrees.to_radians();
                 let target = focus + Vec3::Y * 1.35;
-                let position = focus + Vec3::new(azimuth.sin() * 5.5, 1.9, azimuth.cos() * 5.5);
+                let position = target
+                    + Vec3::new(
+                        azimuth.sin() * elevation.cos(),
+                        elevation.sin(),
+                        azimuth.cos() * elevation.cos(),
+                    ) * distance;
                 (
                     Transform::from_translation(position).looking_at(target, Vec3::Y),
                     target,
@@ -3679,15 +3536,20 @@ fn capture_views(
                 lighting_luminance_samples: Vec::new(),
                 lighting_luminance_delta: f32::INFINITY,
                 lighting_ready: false,
+                temporal_motion_frame: view.temporal_motion,
+                settled_readback_hashes: Vec::new(),
+                settled_readbacks_identical: None,
             });
         }
+        state.last_prime_readback_hash = None;
         return;
     }
     // Custom terrain and foliage pipelines compile asynchronously. Give the
     // warmup view a wider budget so the first review frame cannot race a new
     // shader permutation while ordinary camera transitions stay quick.
     let temporal_tree_traversal = state.profile == "tree-cold-traversal" && !view.warmup;
-    let settle_target = if temporal_tree_traversal {
+    let temporal_motion = temporal_tree_traversal || view.temporal_motion;
+    let settle_target = if temporal_motion {
         0
     } else if state.view == 0 {
         state.settle_frames.saturating_mul(4)
@@ -3731,7 +3593,7 @@ fn capture_views(
     // Bevy's asynchronous window readback can still contain the render world
     // from before a camera transition. Prime one disposable readback per view,
     // then capture again without changing any scene or camera state.
-    let required_prime_readbacks = if temporal_tree_traversal { 0 } else { 2 };
+    let required_prime_readbacks = if temporal_motion { 0 } else { 2 };
     if prime_readbacks < required_prime_readbacks {
         state.phase = CapturePhase::Readback {
             view: state.view,
@@ -3754,6 +3616,8 @@ fn capture_views(
                 state
                     .lighting_luminance_samples
                     .push(mean_luminance(captured.image.data.as_deref()));
+                state.last_prime_readback_hash =
+                    deterministic_readback_hash(captured.image.data.as_deref());
                 state.phase = CapturePhase::Settling {
                     frames: 0,
                     prime_readbacks: prime_readbacks + 1,
@@ -3797,7 +3661,7 @@ fn capture_views(
             .clone_from(&state.lighting_luminance_samples);
         record.lighting_luminance_delta = luminance_delta(&state.lighting_luminance_samples);
         record.lighting_ready =
-            temporal_tree_traversal || lighting_samples_stable(&state.lighting_luminance_samples);
+            temporal_motion || lighting_samples_stable(&state.lighting_luminance_samples);
     }
     let celestial = capture_celestial(
         state.absolute_minute,
@@ -3808,6 +3672,7 @@ fn capture_views(
         &lighting.settings,
         camera.4,
         camera.5,
+        &lighting.images,
         camera.6,
         camera.7,
         &lighting.ambient,
@@ -3865,12 +3730,26 @@ fn capture_views(
                 rendered_width,
                 rendered_height,
             );
+            let final_readback_hash = deterministic_readback_hash(captured.image.data.as_deref());
+            let settled_reference_hash = state.last_prime_readback_hash;
             save_to_disk(&path)(captured);
             if let Some(record) = state.captures.last_mut() {
                 record.foreground_pixel_bps = foreground_pixel_bps;
                 record.detail_pixel_bps = detail_pixel_bps;
                 record.canopy_pixel_bps = canopy_pixel_bps;
                 record.rendered_resolution = [rendered_width, rendered_height];
+                if view.verify_settled_readbacks {
+                    record.settled_readback_hashes = settled_reference_hash
+                        .into_iter()
+                        .chain(final_readback_hash)
+                        .map(|hash| format!("{hash:016x}"))
+                        .collect();
+                    record.settled_readbacks_identical = Some(
+                        settled_reference_hash
+                            .zip(final_readback_hash)
+                            .is_some_and(|(reference, final_hash)| reference == final_hash),
+                    );
+                }
             }
             state.view += 1;
             state.lighting_luminance_samples.clear();
@@ -4031,15 +3910,29 @@ fn camera_for_view(pose: CapturePose, state: &SceneCaptureState) -> (Transform, 
                 )
             },
         ),
-        CapturePose::UnderstoryReview => {
+        CapturePose::UnderstoryReview { .. } => {
             unreachable!("understory review requires the live production ground-scatter query")
         }
         CapturePose::TreeLod { distance } => tree_lod_camera(state, distance),
-        CapturePose::Overhead => (
-            state.obstacle_focus + Vec3::new(0.0, half * 2.15, half * 0.16),
-            state.obstacle_focus,
-            Vec3::Z,
-        ),
+        CapturePose::Overhead => {
+            let frame_half = half.max(state.city_half_extent_metres + 30.0);
+            (
+                state.obstacle_focus + Vec3::new(0.0, frame_half * 1.75, frame_half * 0.08),
+                state.obstacle_focus,
+                Vec3::Z,
+            )
+        }
+        CapturePose::CityOblique { azimuth_degrees } => {
+            let frame_half = half.max(state.city_half_extent_metres + 30.0);
+            let azimuth = azimuth_degrees.to_radians();
+            (
+                state.obstacle_focus
+                    + Vec3::new(azimuth.sin(), 0.0, azimuth.cos()) * (frame_half * 1.6)
+                    + Vec3::Y * (frame_half * 0.85),
+                state.obstacle_focus + Vec3::Y * 4.0,
+                Vec3::Y,
+            )
+        }
         CapturePose::Horizon => {
             let mut position = state.ground_eye_position + Vec3::Y * 12.0;
             position.y = position.y.max(
@@ -4405,6 +4298,43 @@ fn build_manifest(
         state.fixture.as_str(),
         "dense-woodland" | "sparse-woodland" | "saturated-wetland"
     );
+    let requested_understory_motion = state
+        .requested_views
+        .iter()
+        .filter(|view| view.starts_with("understory-blackthorn-motion-"))
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    let expected_understory_motion = [
+        "understory-blackthorn-motion-01",
+        "understory-blackthorn-motion-02",
+        "understory-blackthorn-motion-03",
+    ];
+    let understory_motion_sequence_complete = requested_understory_motion.is_empty()
+        || requested_understory_motion == expected_understory_motion;
+    let expected_beech_motion = (1..=16)
+        .map(|frame| format!("beech-leaf-motion-{frame:02}"))
+        .collect::<Vec<_>>();
+    let beech_leaf_motion_sequence_complete = state.profile != BEECH_LEAF_MOTION_PROFILE
+        || state.fixture == "dense-woodland"
+            && state.requested_views == expected_beech_motion
+            && state.captures.len() == expected_beech_motion.len()
+            && state.captures.iter().all(|capture| {
+                capture.temporal_motion_frame
+                    && capture.focused_tree_species.as_deref() == Some("common beech")
+            });
+    let settled_readback_pairs_identical = state.requested_views.iter().all(|requested| {
+        let requires_pair = state
+            .views
+            .iter()
+            .find(|view| view.slug == requested)
+            .is_some_and(|view| view.verify_settled_readbacks);
+        !requires_pair
+            || state
+                .captures
+                .iter()
+                .find(|capture| &capture.view == requested)
+                .is_some_and(|capture| capture.settled_readbacks_identical == Some(true))
+    });
     let mut validation = ValidationSummary {
         all_views_captured: state.captures.len() == state.views.len() - 1,
         requested_views_captured_exactly_once: state.requested_views.iter().all(|view| {
@@ -4472,6 +4402,9 @@ fn build_manifest(
         }),
         vista_tree_near_field_bounded: true,
         tree_cold_traversal_canopy_continuous: true,
+        understory_motion_sequence_complete,
+        beech_leaf_motion_sequence_complete,
+        settled_readback_pairs_identical,
         production_lighting_parity: presentation_features.requested_matches_observed,
         lighting_readiness: state.captures.iter().all(|capture| capture.lighting_ready),
         all_views_render_content: false,

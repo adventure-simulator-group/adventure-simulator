@@ -8,7 +8,7 @@ pub(super) fn refresh_presentation(
     terrain: &SceneTerrain,
     environment: &SceneEnvironment,
     ground: Option<&SceneGround>,
-    procedural_assets: &ProceduralEnvironmentAssets,
+    procedural_assets: &ProceduralTextureAssets,
     graphics: &TacticalGraphicsSettings,
     vista: &ActiveVistaSurface,
     transition_collar: Option<TerrainTransitionCollar>,

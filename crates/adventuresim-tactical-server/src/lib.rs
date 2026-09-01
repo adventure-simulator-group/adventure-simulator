@@ -23,6 +23,7 @@ pub mod equipment;
 #[cfg(feature = "iteration")]
 pub mod iteration;
 pub mod mission;
+pub mod openings;
 pub mod player_projection;
 pub mod stdb;
 

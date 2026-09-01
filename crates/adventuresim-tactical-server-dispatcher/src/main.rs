@@ -6,16 +6,18 @@
 
 use std::collections::HashSet;
 use std::net::{IpAddr, SocketAddr};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 
 use adventuresim_stdb_client::spacetimedb_sdk::{DbContext, Table};
 use adventuresim_stdb_client::{
-    DbConnection, TacticalServerRequestTableAccess, authorize_tactical_server_claim,
-    revoke_tactical_server_claim, tactical_server_requestQueryTableAccess,
+    DbConnection, TacticalServerRequest, TacticalServerRequestTableAccess,
+    authorize_tactical_server_claim, revoke_tactical_server_claim,
+    tactical_server_requestQueryTableAccess,
 };
 use adventuresim_tactical_server_dispatcher::scene_input;
+use adventuresim_tactical_server_dispatcher::settlement_buildings::SettlementSceneProfile;
 use adventuresim_terrain::{TerrainPack, TerrainPurpose};
 use clap::Parser;
 use sha2::{Digest, Sha256};
@@ -156,24 +158,14 @@ fn main() {
             let expected_party_members = request.expected_party_members.to_string();
             let required_enemy_kills = request.required_enemy_kills.to_string();
             let enemy_combat_scale_bps = request.enemy_combat_scale_bps.to_string();
-            let scene_input = match scene_input::build_imported_scene(
-                &terrain_clone,
-                &mission_id,
-                &scene_key,
-                request.latitude_e_7,
-                request.longitude_e_7,
-                request.absolute_minute,
-                request.lunar_phase_minute,
-            )
-            .and_then(|input| {
-                scene_input::materialize_scene_input(&scene_input_dir, &mission_id, &input)
-            }) {
-                Ok(path) => path.to_string_lossy().into_owned(),
-                Err(error) => {
-                    error!(%mission_id, %error, "Failed to provision tactical scene input");
-                    return;
-                }
-            };
+            let scene_input =
+                match materialize_requested_scene(&terrain_clone, &scene_input_dir, request) {
+                    Ok(path) => path.to_string_lossy().into_owned(),
+                    Err(error) => {
+                        error!(%mission_id, %error, "Failed to provision tactical scene input");
+                        return;
+                    }
+                };
             let spawned = spawned_clone.clone();
             let bin = bin.clone();
             let stdb_url = stdb_url.clone();
@@ -250,6 +242,32 @@ fn main() {
         }
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
+}
+
+fn materialize_requested_scene(
+    terrain: &TerrainPack,
+    directory: &Path,
+    request: &TacticalServerRequest,
+) -> Result<PathBuf, String> {
+    let profile = request
+        .settlement
+        .as_ref()
+        .map(|settlement| SettlementSceneProfile {
+            id: settlement.id.clone(),
+            population_level: settlement.population_level,
+            population_estimate: settlement.population_estimate,
+        });
+    let input = scene_input::build_imported_scene(
+        terrain,
+        &request.mission_id,
+        &request.scene_key,
+        request.latitude_e_7,
+        request.longitude_e_7,
+        request.absolute_minute,
+        request.lunar_phase_minute,
+        profile.as_ref(),
+    )?;
+    scene_input::materialize_scene_input(directory, &request.mission_id, &input)
 }
 
 #[cfg(test)]

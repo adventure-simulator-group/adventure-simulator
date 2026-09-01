@@ -47,7 +47,7 @@ class FormatWikiMarkdownTests(unittest.TestCase):
         source = "This paragraph is already wrapped\nwithin the requested width.\n"
         self.assertEqual(source, format_markdown(source, width=40))
 
-    def test_preserves_lists_code_and_comments(self) -> None:
+    def test_wraps_lists_but_preserves_code_and_comments(self) -> None:
         source = (
             "*   This authored list line remains untouched even when it is long.\n"
             "    Its authored continuation indentation also remains untouched.\n"
@@ -58,7 +58,23 @@ class FormatWikiMarkdownTests(unittest.TestCase):
             "\n"
             "<!-- a deliberately long comment that remains untouched -->\n"
         )
-        self.assertEqual(source, format_markdown(source, width=30))
+        rendered = format_markdown(source, width=30)
+        self.assertIn(
+            "*   This authored list line\n"
+            "    remains untouched even\n"
+            "    when it is long.\n",
+            rendered,
+        )
+        self.assertIn(
+            "```rust\n"
+            "let long_identifier = \"this is not prose wrapping\";\n"
+            "```\n",
+            rendered,
+        )
+        self.assertIn(
+            "<!-- a deliberately long comment that remains untouched -->\n",
+            rendered,
+        )
 
     def test_line_policy_allows_long_link_atom(self) -> None:
         line = "Read [reference](https://example.com/" + ("long/" * 20) + ")"

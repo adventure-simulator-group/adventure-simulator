@@ -10,36 +10,43 @@
 )]
 
 mod atmosphere;
+mod buildings;
 mod clouds;
 mod config;
+mod doors;
 mod environment;
-mod ground_scatter;
+pub(crate) mod ground_scatter;
 mod obstacles;
 mod procedural;
-mod procedural_assets;
+mod procedural_texture_setup;
 mod sky;
 mod terrain;
-mod terrain_blood;
 mod vista;
 mod volumetric;
 mod weather;
+mod windows;
 
+use adventuresim_procedural_textures::LeafTextureSet;
+pub(crate) use adventuresim_procedural_textures::ProceduralTextureAssets;
+#[cfg(test)]
+use adventuresim_procedural_textures::generate_procedural_textures;
 use atmosphere::*;
+use buildings::*;
 use clouds::*;
+pub(crate) use doors::{DoorPresentationPlugin, GrabTargetOutline};
 use environment::*;
 use ground_scatter::*;
 use obstacles::on_scene_obstacle_added;
 use obstacles::rock::TacticalRockMaterial;
 use obstacles::tree::*;
 use procedural::*;
-#[cfg(test)]
-use procedural_assets::generate_procedural_environment_assets;
-use procedural_assets::{LeafTextureSet, setup_procedural_environment_assets};
+use procedural_texture_setup::setup_procedural_texture_assets;
 use sky::*;
 use terrain::*;
 use vista::*;
 use volumetric::*;
 use weather::*;
+use windows::WindowPresentationPlugin;
 
 pub use config::{
     AntiAliasingConfig, PresentModeConfig, ShadowFiltering, SmaaQuality, TacticalGraphicsConfig,
@@ -56,6 +63,7 @@ fn mesh_triangle_count(mesh: &Mesh) -> usize {
 
 // This facade is compiled independently by several binaries, so each binary
 // uses only the subset of the stable presentation interface that it needs.
+pub(crate) use buildings::PresentedBuildingMesh;
 pub(crate) use clouds::{
     TacticalCloudAnimationStatus, TacticalCloudBenchmarkIsolation, TacticalCloudCaptureOverride,
     TacticalCloudCaptureProfile, TacticalCloudLayer, TacticalCloudOffscreenCamera,
@@ -65,7 +73,8 @@ pub(crate) use environment::{
 };
 pub(crate) use ground_scatter::{
     GrassInteractor, GroundLitterCaptureAnchors, GroundLitterCapturePair, GroundLitterDiagnostics,
-    GroundScatterLayer, LooseStonePebblePatch,
+    GroundScatterLayer, LooseStonePebblePatch, UnderstoryReviewSpecimen,
+    WoodyUnderstoryPresentationCache, spawn_understory_review_specimens,
 };
 pub(crate) use obstacles::oak_review_terminal_specimen;
 pub(crate) use obstacles::rock::ProceduralRockVisual;
@@ -79,7 +88,6 @@ pub(crate) use obstacles::tree::{
     TreeLodCluster, TreeLodRenderOverride, TreeTrunkLod, oak_aggregate_bark_material,
     oak_bark_material, oak_leaf_material,
 };
-pub(crate) use procedural_assets::ProceduralEnvironmentAssets;
 pub(crate) use sky::AtmosphereIblAmbientHandoff;
 pub(crate) use sky::{TacticalMoon, TacticalMoonlight, TacticalStars, TacticalSunlight};
 pub(crate) use terrain::{
@@ -164,6 +172,23 @@ impl Default for TacticalPresentationPlugin {
     }
 }
 
+struct TacticalWeatherAndDoorPlugin;
+
+impl Plugin for TacticalWeatherAndDoorPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_plugins(MaterialPlugin::<TacticalWeatherMaterial>::default())
+            .add_plugins((DoorPresentationPlugin, WindowPresentationPlugin));
+    }
+}
+
+fn tactical_global_ambient_light() -> GlobalAmbientLight {
+    GlobalAmbientLight {
+        color: Color::srgb(0.36, 0.48, 0.72),
+        brightness: 0.6,
+        ..default()
+    }
+}
+
 impl Plugin for TacticalPresentationPlugin {
     fn build(&self, app: &mut App) {
         // GPU-instanced grass renders through bevy_eidolon on native builds;
@@ -190,7 +215,7 @@ impl Plugin for TacticalPresentationPlugin {
         ))
         // Split from the tuple above so the material-plugin group stays within
         // Bevy's 15-element `Plugins` tuple arity limit.
-        .add_plugins(MaterialPlugin::<TacticalWeatherMaterial>::default())
+        .add_plugins(TacticalWeatherAndDoorPlugin)
         // Tactical play uses one compact close-range cascade for whichever
         // celestial light is active. Keep the map allocation identical in the
         // game and all tactical review viewers.
@@ -203,15 +228,12 @@ impl Plugin for TacticalPresentationPlugin {
         .init_resource::<TacticalCameraSetup>()
         // The sky observer preserves this low, cool floor at night and restores
         // physically scaled diffuse sky irradiance during daylight.
-        .insert_resource(GlobalAmbientLight {
-            color: Color::srgb(0.36, 0.48, 0.72),
-            brightness: 0.6,
-            ..default()
-        })
+        .insert_resource(tactical_global_ambient_light())
         .add_systems(
             Startup,
             (
-                setup_procedural_environment_assets,
+                setup_procedural_texture_assets,
+                setup_tactical_building_materials,
                 setup_tactical_presentation,
                 setup_tactical_sky,
                 setup_tactical_clouds,
@@ -280,6 +302,8 @@ impl Plugin for TacticalPresentationPlugin {
         .add_observer(terrain::on_environment_added)
         .add_observer(terrain::on_ground_added)
         .add_observer(on_scene_obstacle_added)
+        .add_observer(on_scene_building_added)
+        .add_observer(on_scene_vista_buildings)
         .add_observer(on_scene_vista_bundle);
     }
 

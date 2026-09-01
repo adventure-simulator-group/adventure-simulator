@@ -37,6 +37,7 @@ adventuresim-tactical-core.workspace = true
 adventuresim-core.workspace = true
 adventuresim-weapon-model.workspace = true
 adventuresim-world-schema.workspace = true
+adventuresim-building-generator.workspace = true
 
 # SpacetimeDB client
 adventuresim-stdb-client.workspace = true 

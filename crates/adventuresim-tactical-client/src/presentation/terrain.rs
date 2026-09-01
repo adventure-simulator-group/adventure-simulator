@@ -1,8 +1,8 @@
-use super::procedural_assets::{
+use super::*;
+use adventuresim_procedural_textures::{
     FOREST_LITTER_HEIGHT_RANGE_METRES, FOREST_LITTER_TILE_METRES, FOREST_SOIL_HEIGHT_RANGE_METRES,
     FOREST_SOIL_TILE_METRES,
 };
-use super::*;
 use fabelgeist_determinism::splitmix64;
 
 mod volumetric;
@@ -215,7 +215,7 @@ pub(in crate::presentation) fn present_pending_terrain(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<TacticalTerrainMaterial>>,
     mut images: ResMut<Assets<Image>>,
-    procedural_assets: Res<ProceduralEnvironmentAssets>,
+    procedural_assets: Res<ProceduralTextureAssets>,
     graphics: Res<TacticalGraphicsSettings>,
     vista: Res<ActiveVistaSurface>,
     mut startup: Option<ResMut<crate::presentation::ClientStartupTiming>>,
@@ -772,7 +772,7 @@ pub(in crate::presentation) fn terrain_material(
     terrain: &SceneTerrain,
     environment: &SceneEnvironment,
     ground: Option<&SceneGround>,
-    procedural_assets: &ProceduralEnvironmentAssets,
+    procedural_assets: &ProceduralTextureAssets,
     images: &mut Assets<Image>,
     grass: &crate::presentation::config::GrassConfig,
 ) -> TacticalTerrainMaterial {
@@ -1239,7 +1239,7 @@ mod tests {
         app.insert_resource(TacticalGraphicsSettings::default());
         let procedural_assets = {
             let mut images = app.world_mut().resource_mut::<Assets<Image>>();
-            generate_procedural_environment_assets(&mut images)
+            generate_procedural_textures(&mut images)
         };
         app.insert_resource(procedural_assets);
         app.add_observer(on_game_scene_added);

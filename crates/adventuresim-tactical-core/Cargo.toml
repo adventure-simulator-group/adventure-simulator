@@ -14,6 +14,7 @@ avian_debug = ["avian3d/debug-plugin"]
 [dependencies]
 adventuresim-core.workspace = true
 adventuresim-world-schema.workspace = true
+adventuresim-building-generator.workspace = true
 fabelgeist-determinism.workspace = true
 bevy = { workspace = true, features = ["bevy_color"] }
 serde.workspace = true

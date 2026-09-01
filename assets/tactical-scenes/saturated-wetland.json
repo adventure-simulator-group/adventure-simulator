@@ -1,6 +1,6 @@
 {
-  "schema_version": 4,
-  "generation_version": 18,
+  "schema_version": 8,
+  "generation_version": 24,
   "seed": 47105,
   "scene_key": "wetland",
   "source": {
@@ -832,6 +832,10 @@
     ]
   },
   "fault_scarp": null,
+  "streets": [],
+  "yards": [],
+  "buildings": [],
+  "distant_buildings": [],
   "vista": {
     "lods": [
       {

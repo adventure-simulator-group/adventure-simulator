@@ -12,14 +12,12 @@ use super::geometry::{
     BLACKTHORN_PARAMETERS, COMMON_BEECH_PARAMETERS, COMMON_HAWTHORN_PARAMETERS,
     COMMON_HAZEL_PARAMETERS, ENGLISH_OAK_PARAMETERS,
 };
-#[cfg(test)]
-use crate::presentation::generate_procedural_environment_assets;
-use crate::presentation::procedural_assets::{
-    FOREST_SOIL_HEIGHT_RANGE_METRES, FOREST_SOIL_TILE_METRES,
-};
 use crate::presentation::{
-    LeafTextureSet, ProceduralEnvironmentAssets, color_vec4, terrain::TACTICAL_DIRT_SRGB,
+    LeafTextureSet, ProceduralTextureAssets, color_vec4, terrain::TACTICAL_DIRT_SRGB,
 };
+#[cfg(test)]
+use adventuresim_procedural_textures::generate_procedural_textures;
+use adventuresim_procedural_textures::{FOREST_SOIL_HEIGHT_RANGE_METRES, FOREST_SOIL_TILE_METRES};
 
 const TREE_IMPOSTOR_SHADER: &str = "shaders/tactical_tree_impostor.wgsl";
 const TREE_LEAF_CARD_SHADER: &str = "shaders/tactical_tree_leaf_card.wgsl";
@@ -68,9 +66,7 @@ const OAK_LEAF_DIFFUSE_TRANSMISSION: f32 = 0.46;
 /// remains continuous with the generated material.
 pub(super) const OAK_LEAF_IMPOSTOR_BASE_SRGB: [f32; 3] = [96.0, 113.0, 76.0];
 
-pub(crate) fn oak_leaf_material(
-    assets: &ProceduralEnvironmentAssets,
-) -> TacticalTreeLeafCardMaterial {
+pub(crate) fn oak_leaf_material(assets: &ProceduralTextureAssets) -> TacticalTreeLeafCardMaterial {
     leaf_material(
         &assets.oak_leaf,
         0.28,
@@ -175,7 +171,7 @@ pub(crate) type TacticalTreeAggregateBarkMaterial =
     ExtendedMaterial<StandardMaterial, TacticalTreeAggregateBarkExtension>;
 
 pub(crate) fn oak_bark_material(
-    assets: &ProceduralEnvironmentAssets,
+    assets: &ProceduralTextureAssets,
     terrain_heightmap: Handle<Image>,
     terrain_height_range: Vec2,
     terrain: &SceneTerrain,
@@ -192,7 +188,7 @@ pub(crate) fn oak_bark_material(
 }
 
 pub(in crate::presentation) fn beech_bark_material(
-    assets: &ProceduralEnvironmentAssets,
+    assets: &ProceduralTextureAssets,
     terrain_heightmap: Handle<Image>,
     terrain_height_range: Vec2,
     terrain: &SceneTerrain,
@@ -238,7 +234,7 @@ fn aggregate_bark_material(
 }
 
 fn bark_material(
-    assets: &ProceduralEnvironmentAssets,
+    assets: &ProceduralTextureAssets,
     terrain_heightmap: Handle<Image>,
     terrain_height_range: Vec2,
     terrain: &SceneTerrain,
@@ -293,7 +289,7 @@ fn bark_material(
 }
 
 pub(in crate::presentation) fn hazel_leaf_material(
-    assets: &ProceduralEnvironmentAssets,
+    assets: &ProceduralTextureAssets,
 ) -> TacticalTreeLeafCardMaterial {
     leaf_material(
         &assets.hazel_leaf,
@@ -305,7 +301,7 @@ pub(in crate::presentation) fn hazel_leaf_material(
 }
 
 pub(in crate::presentation) fn blackthorn_leaf_material(
-    assets: &ProceduralEnvironmentAssets,
+    assets: &ProceduralTextureAssets,
 ) -> TacticalTreeLeafCardMaterial {
     leaf_material(
         &assets.blackthorn_leaf,
@@ -317,7 +313,7 @@ pub(in crate::presentation) fn blackthorn_leaf_material(
 }
 
 pub(in crate::presentation) fn hawthorn_leaf_material(
-    assets: &ProceduralEnvironmentAssets,
+    assets: &ProceduralTextureAssets,
 ) -> TacticalTreeLeafCardMaterial {
     leaf_material(
         &assets.hawthorn_leaf,
@@ -329,7 +325,7 @@ pub(in crate::presentation) fn hawthorn_leaf_material(
 }
 
 pub(in crate::presentation) fn beech_leaf_material(
-    assets: &ProceduralEnvironmentAssets,
+    assets: &ProceduralTextureAssets,
 ) -> TacticalTreeLeafCardMaterial {
     leaf_material(
         &assets.beech_leaf,
@@ -499,9 +495,8 @@ mod tests {
         let mut app = App::new();
         app.add_plugins(AssetPlugin::default());
         app.init_asset::<Image>();
-        let assets = generate_procedural_environment_assets(
-            &mut app.world_mut().resource_mut::<Assets<Image>>(),
-        );
+        let assets =
+            generate_procedural_textures(&mut app.world_mut().resource_mut::<Assets<Image>>());
         let terrain = SceneTerrain::new(2, 2, 1.0, |point| point.x * 0.1 + point.y * 0.2);
         let heightmap = Handle::<Image>::default();
         let terrain_height_range = Vec2::new(-0.075, 0.705);
@@ -723,9 +718,8 @@ mod tests {
         let mut app = App::new();
         app.add_plugins(AssetPlugin::default());
         app.init_asset::<Image>();
-        let assets = generate_procedural_environment_assets(
-            &mut app.world_mut().resource_mut::<Assets<Image>>(),
-        );
+        let assets =
+            generate_procedural_textures(&mut app.world_mut().resource_mut::<Assets<Image>>());
         assert_eq!(
             oak_leaf_material(&assets).alpha_mode(),
             AlphaMode::AlphaToCoverage

@@ -9,6 +9,8 @@ members = [
   "crates/adventuresim-world-import",
   "crates/adventuresim-terrain",
   "crates/adventuresim-weapon-model",
+  "crates/adventuresim-building-generator",
+  "crates/adventuresim-procedural-textures",
   "crates/adventuresim-stdb-module",
   "crates/adventuresim-stdb-client",
   "crates/adventuresim-tactical-core",
@@ -53,6 +55,8 @@ adventuresim-dialogue = { version = "0.1.0", path = "crates/adventuresim-dialogu
 adventuresim-strategic-sim = { version = "0.1.0" }
 adventuresim-world-schema = { version = "0.1.0", path = "crates/adventuresim-world-schema" }
 adventuresim-weapon-model = { version = "0.1.0", path = "crates/adventuresim-weapon-model" }
+adventuresim-building-generator = { version = "0.1.0", path = "crates/adventuresim-building-generator" }
+adventuresim-procedural-textures = { version = "0.1.0", path = "crates/adventuresim-procedural-textures" }
 
 fabelgeist-math = { version = "0.1.0", path = "crates/fabelgeist-math" }
 fabelgeist-animation = { version = "0.1.0", path = "crates/fabelgeist-animation" }
@@ -80,6 +84,7 @@ avian3d = { version = "0.7.0", default-features = false, features = [
   "parry-f32",
   "parallel",
   "default-collider",
+  "xpbd_joints",
 ] }
 bevy_ahoy = { version = "0.2.0", default-features = false, features = [
   "serialize",
@@ -96,6 +101,7 @@ bevy_mod_outline = { version = "0.13", default-features = false, features = [
   "flood",
 ] }
 bevy_eidolon = { version = "0.5" }
+bevy_panorbit_camera = { version = "0.35", features = ["bevy_egui"] }
 noiz = "0.5.0"
 serde = { version = "1", default-features = false, features = [
   "alloc",
@@ -118,6 +124,7 @@ rayon = "1.12"
 getrandom = { version = "0.3", features = ["wasm_js"] }
 getrandom_02 = { version = "0.2", features = ["js"], package = "getrandom" }
 thiserror = "2.0.18"
+earcut = "0.4.5"
 tiff = "0.11.3"
 tiny-skia = "0.11.4"
 csv = "1.3"
