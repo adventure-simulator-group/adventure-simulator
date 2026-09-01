@@ -83,6 +83,7 @@ const PERFORMANCE_FRAME_BUDGET_MS: f64 = 1_000.0 / PERFORMANCE_TARGET_FPS;
 const SQUARE_METRES_PER_SQUARE_KILOMETRE: f64 = 1_000_000.0;
 const STANDING_EYE_HEIGHT_METRES: f32 = 1.65;
 const CAPTURE_PROFILE_VERSION: u16 = 20;
+const BEECH_LEAF_MOTION_PROFILE: &str = "beech-leaf-motion";
 const CAMERA_VERSION: u16 = 13;
 const CAPTURE_CLOCK_PHASE_SECONDS: f32 = 2.0;
 
@@ -1077,7 +1078,7 @@ fn selected_capture_views(
         "environment-review" => ENVIRONMENT_REVIEW_VIEWS.as_slice(),
         "animation-play" => ANIMATION_PLAY_VIEWS.as_slice(),
         "tree-cold-traversal" => TREE_COLD_TRAVERSAL_VIEWS.as_slice(),
-        "beech-leaf-motion" => BEECH_LEAF_MOTION_VIEWS.as_slice(),
+        BEECH_LEAF_MOTION_PROFILE => BEECH_LEAF_MOTION_VIEWS.as_slice(),
         _ => return Err(format!("unknown profile {profile}")),
     };
     if requested.is_empty() {
@@ -4313,7 +4314,7 @@ fn build_manifest(
     let expected_beech_motion = (1..=16)
         .map(|frame| format!("beech-leaf-motion-{frame:02}"))
         .collect::<Vec<_>>();
-    let beech_leaf_motion_sequence_complete = state.profile != "beech-leaf-motion"
+    let beech_leaf_motion_sequence_complete = state.profile != BEECH_LEAF_MOTION_PROFILE
         || state.fixture == "dense-woodland"
             && state.requested_views == expected_beech_motion
             && state.captures.len() == expected_beech_motion.len()

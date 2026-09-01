@@ -1,3 +1,4 @@
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn run(
     archetype: BuildingArchetype,
     view: ViewerView,
@@ -26,7 +27,7 @@ pub(crate) fn run(
     let editor_document_path =
         document_path.unwrap_or_else(|| PathBuf::from("building-document.json"));
     let player_build_document = player_build_document_path.as_ref().map(|path| {
-        let bytes = fs::read(&path).unwrap_or_else(|error| {
+        let bytes = fs::read(path).unwrap_or_else(|error| {
             panic!(
                 "failed to read player-build document {}: {error}",
                 path.display()

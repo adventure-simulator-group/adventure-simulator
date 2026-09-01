@@ -7,9 +7,8 @@ use bevy::{
     pbr::Material,
     prelude::{
         AlphaMode, Asset, Assets, Color, Commands, Component, Entity, GlobalTransform, Handle,
-        Image, Local, Mesh, Mesh3d, MeshMaterial3d, Name, Quat, Query, Reflect, Res, ResMut,
-        Resource, StandardMaterial, Time, Transform, Vec2, Vec3, Vec4, Visibility, With, Without,
-        default,
+        Image, Local, Mesh, Quat, Query, Reflect, Res, ResMut, Resource, StandardMaterial, Time,
+        Transform, Vec2, Vec3, Vec4, With, Without, default,
     },
     render::render_resource::{
         AsBindGroup, RenderPipelineDescriptor, SpecializedMeshPipelineError,
@@ -42,6 +41,9 @@ pub(crate) mod instanced_grass;
 mod instanced_understory;
 mod litter;
 mod loose_stone;
+mod review_specimens;
+
+pub(crate) use review_specimens::{UnderstoryReviewSpecimen, spawn_understory_review_specimens};
 mod scene_mask;
 mod understory;
 
@@ -90,15 +92,6 @@ pub(crate) struct GroundLitterCaptureAnchors {
 pub(crate) struct GroundLitterDiagnostics {
     pub(crate) dry_leaf_patch_instances: usize,
     pub(crate) physical_dry_leaf_count: usize,
-}
-
-/// Production geometry/material specimen used only by deterministic capture
-/// views. It avoids coupling review availability to whichever species the
-/// habitat sampler happened to place in a fixture.
-#[derive(Component, Clone, Copy, Debug, PartialEq)]
-pub(crate) struct UnderstoryReviewSpecimen {
-    pub(crate) common_name: &'static str,
-    pub(crate) focus: Vec3,
 }
 
 #[derive(Default)]
@@ -756,79 +749,6 @@ fn ensure_understory_presentations(
             ..default()
         }));
         cache.leaves = Some(leaf_materials.add(leaf_material));
-    }
-}
-
-#[expect(
-    clippy::too_many_arguments,
-    reason = "the capture specimen reuses the production mesh and material stores explicitly"
-)]
-pub(crate) fn spawn_understory_review_specimens(
-    commands: &mut Commands,
-    meshes: &mut Assets<Mesh>,
-    standard_materials: &mut Assets<StandardMaterial>,
-    leaf_materials: &mut Assets<TacticalTreeLeafCardMaterial>,
-    cache: &mut WoodyUnderstoryPresentationCache,
-    procedural_assets: &ProceduralTextureAssets,
-    origin: Vec3,
-) {
-    ensure_understory_presentations(
-        meshes,
-        standard_materials,
-        leaf_materials,
-        cache,
-        procedural_assets,
-    );
-    for (common_name, presentation) in [
-        ("common hazel", &cache.hazel),
-        ("blackthorn", &cache.blackthorn),
-        ("common hawthorn", &cache.hawthorn),
-    ] {
-        let marker = UnderstoryReviewSpecimen {
-            common_name,
-            focus: origin,
-        };
-        commands.spawn((
-            Name::new(format!("Capture {common_name} production shrub wood")),
-            marker,
-            Mesh3d(
-                presentation
-                    .branches
-                    .as_ref()
-                    .expect("understory review branch mesh exists")
-                    .clone(),
-            ),
-            MeshMaterial3d(
-                presentation
-                    .bark
-                    .as_ref()
-                    .expect("understory review bark material exists")
-                    .clone(),
-            ),
-            Visibility::Hidden,
-            Transform::from_translation(origin),
-        ));
-        commands.spawn((
-            Name::new(format!("Capture {common_name} production leaf cards")),
-            marker,
-            TreeLeafRepresentation::AlphaCard,
-            Mesh3d(
-                presentation
-                    .leaf_cards
-                    .as_ref()
-                    .expect("understory review leaf-card mesh exists")
-                    .clone(),
-            ),
-            MeshMaterial3d(
-                presentation
-                    .leaves
-                    .as_ref()
-                    .expect("understory review leaf material exists")
-                    .clone(),
-            ),
-            Visibility::Hidden,
-            Transform::from_translation(origin),
-        ));
     }
 }
 

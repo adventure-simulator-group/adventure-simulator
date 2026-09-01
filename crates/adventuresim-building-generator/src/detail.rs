@@ -343,19 +343,23 @@ mod tests {
             .iter()
             .filter(|mesh| matches!(mesh.material, BuildingLodMaterial::Wall(_)))
             .flat_map(|mesh| {
-                mesh.indices.chunks_exact(3).filter_map(|indices| {
-                    let normal = mesh.vertices[indices[0] as usize]
-                        .normal
-                        .normalize_or_zero();
-                    (normal.y.abs() < 0.5).then_some(AuditTriangle {
-                        points: [
-                            mesh.vertices[indices[0] as usize].position,
-                            mesh.vertices[indices[1] as usize].position,
-                            mesh.vertices[indices[2] as usize].position,
-                        ],
-                        normal,
+                mesh.indices
+                    .as_chunks::<3>()
+                    .0
+                    .iter()
+                    .filter_map(|indices| {
+                        let normal = mesh.vertices[indices[0] as usize]
+                            .normal
+                            .normalize_or_zero();
+                        (normal.y.abs() < 0.5).then_some(AuditTriangle {
+                            points: [
+                                mesh.vertices[indices[0] as usize].position,
+                                mesh.vertices[indices[1] as usize].position,
+                                mesh.vertices[indices[2] as usize].position,
+                            ],
+                            normal,
+                        })
                     })
-                })
             })
             .collect::<Vec<_>>();
 

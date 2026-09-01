@@ -1,7 +1,8 @@
 # Procedural texture agent guide
 
 - Keep texture recipes renderer-independent. A recipe may create Bevy `Image`
-  values or handles, but must not construct tactical materials or scene entities.
+  values or handles, but must not construct tactical materials or scene
+  entities.
 - Give each independently iterated texture its own source file. Shared sampling,
   mip, packing, and image helpers belong in narrowly named shared modules.
 - Preserve stable `TextureRecipeId` slugs. Add real generation before changing a

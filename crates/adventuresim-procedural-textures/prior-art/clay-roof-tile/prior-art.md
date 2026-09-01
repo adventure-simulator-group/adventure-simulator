@@ -132,12 +132,12 @@ variation. It also exposes missing structure:
 
 SPAB gives 229 x 152 mm to 305 x 203 mm as the range of surviving English plain
 peg tiles, which is useful evidence for handmade variability but not a German
-1544 dimension standard. Contemporary German conservation products commonly
-sit near 180 x 380 x 18 mm with about 145–165 mm cover length
+1544 dimension standard. Contemporary German conservation products commonly sit
+near 180 x 380 x 18 mm with about 145–165 mm cover length
 ([Creaton heritage beaver-tail specification](https://www.dachdecker-pahl.de/produkte/creaton/biberschwanz/antik/)).
-The current 160 mm visible width, 150 mm exposure, and 18 mm relief are therefore
-a reasonable **working game scale**, but should remain a tunable preset rather
-than be labeled an exact archaeological reconstruction.
+The current 160 mm visible width, 150 mm exposure, and 18 mm relief are
+therefore a reasonable **working game scale**, but should remain a tunable
+preset rather than be labeled an exact archaeological reconstruction.
 
 ### Fired variation has causes and scale
 
@@ -197,8 +197,8 @@ independently from noise.
 ### Geometry placement solves boundaries that a tileable material cannot
 
 SideFX practitioners building roofs with copied tile geometry construct a grid
-from real tile size, orient it to each roof primitive, stagger rows, and identify
-line endpoints for special edge handling
+from real tile size, orient it to each roof primitive, stagger rows, and
+identify line endpoints for special edge handling
 ([SideFX, *Tile/roof builder*](https://www.sidefx.com/forum/post/208070/);
 [SideFX, *How to project rooftiles on a primitive?*](https://www.sidefx.com/forum/topic/50916/?page=1)).
 The forum examples are not historical authorities, but they expose the same

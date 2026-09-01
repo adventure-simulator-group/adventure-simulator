@@ -1,3 +1,5 @@
+type TimberMemberKey = (u8, (i32, i32, i32), (i32, i32, i32));
+
 struct TimberFrameBuilder<'a> {
     geometry: &'a mut ResolvedGeometry,
     owner: GeometryOwnerId,
@@ -8,7 +10,7 @@ struct TimberFrameBuilder<'a> {
     next_interface: u64,
     node_by_point: BTreeMap<(i32, i32, i32), StructuralNodeId>,
     joint_by_node: BTreeMap<StructuralNodeId, usize>,
-    member_by_key: BTreeMap<(u8, (i32, i32, i32), (i32, i32, i32)), crate::TimberMemberId>,
+    member_by_key: BTreeMap<TimberMemberKey, crate::TimberMemberId>,
     members: Vec<crate::TimberFrameMember>,
     joints: Vec<crate::TimberFrameJoint>,
 }
@@ -586,20 +588,6 @@ fn timber_program_kind(archetype: BuildingArchetype) -> Option<crate::TimberFram
     })
 }
 
-fn closed_polygon(points: impl IntoIterator<Item = Vec2>) -> Polygon<f32> {
-    let mut coords = points
-        .into_iter()
-        .map(|point| Coord {
-            x: point.x,
-            y: point.y,
-        })
-        .collect::<Vec<_>>();
-    if coords.first() != coords.last() {
-        coords.push(coords[0]);
-    }
-    Polygon::new(LineString::new(coords), Vec::new())
-}
-
 fn timber_member_wall_polygon(
     member: &crate::TimberFrameMember,
     wall: &crate::WallAssembly,
@@ -613,21 +601,6 @@ fn timber_member_wall_polygon(
     let start = project(member.start);
     let end = project(member.end);
     timber_member_end_face_polygon(start, end, member.section_metres.max_element() * 0.5)
-}
-
-fn timber_member_end_face_polygon(start: Vec2, end: Vec2, half: f32) -> Polygon<f32> {
-    let axis = (end - start).normalize_or_zero();
-    let normal = Vec2::new(-axis.y, axis.x);
-    // `start` and `end` are the centres of the member's end faces. Extending
-    // the subtraction along `axis` by another half section cuts unsupported
-    // wedges out of the infill at every timber joint because the rendered
-    // cuboid does not extend beyond those faces.
-    closed_polygon([
-        start - normal * half,
-        end - normal * half,
-        end + normal * half,
-        start + normal * half,
-    ])
 }
 
 #[cfg(test)]
@@ -694,7 +667,7 @@ fn resolve_timber_frame_assembly(
     openings: &[crate::OpeningAssembly],
     roofs: &[RoofPiece],
     dormers: &[RoofDormer],
-    stairs: &mut Vec<Stair>,
+    stairs: &mut [Stair],
     roof_assemblies: &mut [RoofAssembly],
     geometry: &mut ResolvedGeometry,
 ) -> Option<crate::TimberFrameAssembly> {
@@ -2013,10 +1986,10 @@ fn resolve_timber_frame_assembly(
     };
     // The programme-to-grid solver owns the core. This assembly expands that
     // authority into alternating physical flights without choosing a new site.
-    let mut straight_flight_index = 0_u16;
-    for stair in stairs
+    for (straight_flight_index, stair) in stairs
         .iter_mut()
         .filter(|stair| matches!(stair, Stair::Straight { .. }))
+        .enumerate()
     {
         let ascending_forward = straight_flight_index.is_multiple_of(2);
         let Stair::Straight {
@@ -2045,7 +2018,6 @@ fn resolve_timber_frame_assembly(
         *width_metres = 1.0;
         *tread_count = 18;
         *run_metres = stair_run;
-        straight_flight_index += 1;
     }
     let stair_lateral = Vec2::new(-stair_axis.y, stair_axis.x);
     let stair_end = stair_origin + stair_axis * stair_run;

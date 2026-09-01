@@ -51,7 +51,8 @@ The following are current repository observations, not external claims.
   distance, perceptual roughness 0.13, double-sided rendering, and fallback
   alpha 0.24.
 - The runtime Bevy `StandardMaterial` uses only the 3.2 mm scalar thickness. It
-  binds packed G as roughness but cannot consume packed R as per-texel thickness.
+  binds packed G as roughness but cannot consume packed R as per-texel
+  thickness.
   Thus thickness variation currently exists only as future-shader and review
   data.
 - `fallback_alpha` is documented as a fallback for a renderer unable to transmit
@@ -63,7 +64,8 @@ The following are current repository observations, not external claims.
 - Tests establish determinism, analytic optical-height seam continuity,
   restrained greenish transmitted tint, varied but bounded normalized thickness
   and roughness, and mip completeness. They do not validate physical thickness
-  decoding, process morphology, Fresnel/refraction behavior, transparent sorting,
+  decoding, process morphology, Fresnel/refraction behavior, transparent
+  sorting,
   transmitted shadows, runtime scene-color transmission, normal mip length, or
   appearance through building LODs.
 - The existing evidence exporter explicitly marks actual `StandardMaterial`
@@ -154,12 +156,12 @@ composition and thickness effects and finds that greener later glass can still
 transmit more light when thinner.
 
 **Inference for the recipe.** The current 3.2 mm nominal thickness is near but
-slightly above the commonly cited 1.5-3 mm evidence band. It may remain plausible
-for a robust or uneven pane, but should not be the unexamined universal value.
-Define process- and grade-specific thickness distributions in metres, and store
-an explicit normalized-channel decode such as nominal plus signed variation.
-Thickness is a continuous property; process identity comes from joint evidence
-in bubble direction, surface character, and source geometry.
+slightly above the commonly cited 1.5-3 mm evidence band. It may remain
+plausible for a robust or uneven pane, but should not be the unexamined
+universal value. Define process- and grade-specific thickness distributions in
+metres, and store an explicit normalized-channel decode such as nominal plus
+signed variation. Thickness is a continuous property; process identity comes
+from joint evidence in bubble direction, surface character, and source geometry.
 
 ## Waviness, bubbles, cords, and inclusions
 
@@ -265,9 +267,9 @@ window. The glass itself could nevertheless remain transparent
 ([Heritage Science: daylight and early-modern windows](https://pmc.ncbi.nlm.nih.gov/articles/PMC8556355/)).
 
 **Inference for the recipe.** Preserve the existing distinction between RGB
-transmittance and fallback alpha. A green, blue-green, straw, or grey bias should
-be modeled as absorption over physical distance, not painted as an opaque blue
-rectangle. A 2 mm and 4 mm area of the same batch should differ because of
+transmittance and fallback alpha. A green, blue-green, straw, or grey bias
+should be modeled as absorption over physical distance, not painted as an opaque
+blue rectangle. A 2 mm and 4 mm area of the same batch should differ because of
 optical path length. The frame/came area blocks light through geometry; the
 glass texture should not pre-darken itself to compensate for missing structure.
 
@@ -496,11 +498,11 @@ transparent-overdraw budget—not “playable area”—to select representation
 - cull/terminal facade: average window value consistent with exposure and
   interior lighting policy.
 
-Do not let glass vanish before its dark came/frame pattern or turn into saturated
-blue holes. When switching from transmission to a baked facade, match average
-luminance and reflection under a controlled capture so the window does not pop.
-Operability and collision remain near-detail concerns, but visual placement is
-the same unified building placement system at all distances.
+Do not let glass vanish before its dark came/frame pattern or turn into
+saturated blue holes. When switching from transmission to a baked facade, match
+average luminance and reflection under a controlled capture so the window does
+not pop. Operability and collision remain near-detail concerns, but visual
+placement is the same unified building placement system at all distances.
 
 ## Recommended procedural representation
 
@@ -516,7 +518,8 @@ The minimum useful implementation split is:
    clear-pane probability.
 6. **Installation geometry:** pane polygon, cames, putty, frame, bars, edge,
    seating, bow, and operable transform supplied by the consumer.
-7. **Condition layers:** clean, dusty, soot/grime, condensation, painted/stained,
+7. **Condition layers:** clean, dusty, soot/grime, condensation,
+   painted/stained,
    weathered, cracked, patched, or missing—each object- and side-aware.
 8. **Renderer contract:** hero transmission/refraction, thin fallback, and far
    opaque representation with explicit limitations.
@@ -547,10 +550,12 @@ completeness. Add tests for:
   nonzero probability of visually clear panes;
 - absence of dominant high-frequency full-tile spectral stripes and repeated
   landmark synchronization across neighboring panes;
-- source-crop continuity inside a pane and intentional discontinuity/decorrelation
+- source-crop continuity inside a pane and intentional
+  discontinuity/decorrelation
   across came-separated pieces;
 - metre-scale thickness bounds and correct normalized encode/decode round trips;
-- channel causality: thickness changes attenuation; optical slope changes normal;
+- channel causality: thickness changes attenuation; optical slope changes
+  normal;
   roughness does not equal height; tint contains no baked reflection or shadow;
 - decoded normal unit length and bounded angular error at every mip;
 - linear-light transmission mip reference values and terminal average;
@@ -617,8 +622,8 @@ Acceptance questions:
 
 An independent reviewer should receive shuffled crown/cylinder candidates,
 metric/process manifests, and the no-glass references. Approval requires correct
-craft identity, optical behavior, assembly ownership, and temporal/LOD stability;
-a convincing grayscale normal map alone is insufficient.
+craft identity, optical behavior, assembly ownership, and temporal/LOD
+stability; a convincing grayscale normal map alone is insufficient.
 
 ## Common failure modes to reject
 
@@ -636,7 +641,8 @@ a convincing grayscale normal map alone is insufficient.
 - IOR reduced toward 1 to compensate for an over-strong optical normal;
 - optical height copied directly to roughness and thickness;
 - packed thickness advertised as rendered while runtime uses only a scalar;
-- lead came grids, putty, bars, latches, or pane cracks baked into the glass tile;
+- lead came grids, putty, bars, latches, or pane cracks baked into the glass
+  tile;
 - zero-thickness double-sided planes sent through a solid-volume refraction
   model without a declared thin-walled approximation;
 - coplanar front/back shells, transparent sorting errors, or opaque glass

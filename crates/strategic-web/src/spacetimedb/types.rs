@@ -520,7 +520,6 @@ impl TryFrom<sats::TravelEdge> for TravelEdgeView {
         })
     }
 }
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct CaseBattleView {
     pub gateway_bucket: u8,
@@ -891,19 +890,8 @@ impl From<sats::TacticalServerRequest> for MissionServerRequestView {
             scene_key,
             party_id,
             requested_by,
-            longitude_e_7: _,
-            latitude_e_7: _,
-            absolute_minute: _,
-            lunar_phase_minute: _,
-            expected_party_members: _,
-            authorized_party_member_ids: _,
             required_enemy_kills,
-            enemy_difficulty: _,
-            enemy_combat_scale_bps: _,
-            countermeasure_multiplier_bps: _,
-            normalized_combat_power: _,
-            enemy_character_ids: _,
-            party_has_surprise: _,
+            ..
         } = row;
         Self {
             mission_id,
@@ -2450,6 +2438,7 @@ mod tests {
             mission_id: "mission:2".into(),
             gateway_bucket: 1,
             scene_key: "road".into(),
+            settlement: None,
             party_id: "party:7".into(),
             requested_by: 7,
             longitude_e_7: 100,

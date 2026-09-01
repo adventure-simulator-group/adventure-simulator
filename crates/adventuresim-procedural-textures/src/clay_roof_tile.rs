@@ -422,7 +422,9 @@ mod tests {
         let normal = base_rgba(&images, &textures.normal_gl);
         let arm = base_rgba(&images, &textures.arm);
         let interpreted = albedo
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .zip(normal.chunks_exact(4))
             .zip(arm.chunks_exact(4))
             .flat_map(|((color, normal), arm)| {
@@ -476,7 +478,9 @@ mod tests {
 
         for (name, channel) in [("ao", 0), ("roughness", 1), ("metallic", 2)] {
             let separated = arm
-                .chunks_exact(4)
+                .as_chunks::<4>()
+                .0
+                .iter()
                 .flat_map(|pixel| {
                     let value = pixel[channel];
                     [value, value, value, 255]

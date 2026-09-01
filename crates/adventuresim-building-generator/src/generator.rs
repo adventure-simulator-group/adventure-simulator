@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments)]
+
 use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
 
 use bevy::math::{Vec2, Vec3};
@@ -33,6 +35,7 @@ use crate::{
 
 include!("generator/core.rs");
 include!("generator/orchestration.rs");
+include!("generator/timber_geometry.rs");
 include!("generator/timber.rs");
 include!("generator/roof_editing.rs");
 include!("generator/layout.rs");
@@ -56,6 +59,7 @@ include!("generator/roof_abutments.rs");
 include!("generator/roof_cutting.rs");
 include!("generator/roof_edge_binding.rs");
 include!("generator/roof_resolution.rs");
+include!("generator/roof_finalization.rs");
 include!("generator/roof_assemblies.rs");
 include!("generator/roof_derivation.rs");
 include!("generator/tower_derivation.rs");

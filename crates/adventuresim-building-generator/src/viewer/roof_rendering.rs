@@ -567,6 +567,7 @@ fn flat_face_mesh(faces: &[Vec<Vec3>]) -> Mesh {
     mesh
 }
 
+#[expect(dead_code, reason = "retained for closed-face roof mesh authoring")]
 fn outward_flat_face_mesh(mut faces: Vec<Vec<Vec3>>) -> Mesh {
     let signed_volume_x6 = faces
         .iter()

@@ -269,8 +269,8 @@ stable after mipping.
 At the same time, the mesh's 18³ sampling is much coarser than the texture.
 Large chips and planar breaks belong in `rock_field`; the 2 m texture should not
 fake silhouette-scale ledges that never affect the outline or contact shadow.
-Use a diagnostic overlay that labels each feature as **mesh**, **height/normal**,
-or **roughness/albedo**, and reject duplicated scale bands.
+Use a diagnostic overlay that labels each feature as **mesh**,
+**height/normal**, or **roughness/albedo**, and reject duplicated scale bands.
 
 ### Triplanar mapping solves UV stretch, not geology
 
@@ -489,7 +489,8 @@ That is not automatically justified for metre-scale background boulders.
 - Verify albedo, normal, and ARM use identical phase, rotation, scale, and mip
   selection.
 - Render the three lithologies on the same neutral sphere and on rounded,
-  angular, and slab boulders. Review with fixed neutral daylight, fixed exposure,
+  angular, and slab boulders. Review with fixed neutral daylight, fixed
+  exposure,
   grazing light, and a roughness-debug view.
 - Capture at close, middle, and far distances and during a slow camera dolly.
   Reject specular crawl, normal sparkle, moiré bedding, mip color shifts, or a

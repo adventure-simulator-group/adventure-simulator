@@ -21,9 +21,7 @@ fn editor_keyboard_shortcuts(keys: Res<ButtonInput<KeyCode>>, mut runtime: ResMu
         Some(EditorUiAction::Undo)
     } else if control && keys.just_pressed(KeyCode::KeyY) {
         Some(EditorUiAction::Redo)
-    } else if keys.just_pressed(KeyCode::Escape) {
-        Some(EditorUiAction::SetMode(EditorMode::Select))
-    } else if keys.just_pressed(KeyCode::Digit1) {
+    } else if keys.just_pressed(KeyCode::Escape) || keys.just_pressed(KeyCode::Digit1) {
         Some(EditorUiAction::SetMode(EditorMode::Select))
     } else if keys.just_pressed(KeyCode::Digit2) {
         Some(EditorUiAction::SetMode(EditorMode::Construct))

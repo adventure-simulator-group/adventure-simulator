@@ -369,7 +369,7 @@ mod tests {
         }
 
         fn hash(bytes: &[u8]) -> u64 {
-            bytes.iter().fold(0xcbf_29ce4_8422_2325, |hash, byte| {
+            bytes.iter().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
                 (hash ^ u64::from(*byte)).wrapping_mul(0x100_0000_01b3)
             })
         }
@@ -443,7 +443,9 @@ mod tests {
         }
 
         let interpreted = channel_data[0]
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .zip(channel_data[1].chunks_exact(4))
             .zip(channel_data[3].chunks_exact(4))
             .flat_map(|((color, normal), arm)| {

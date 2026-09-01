@@ -19,7 +19,7 @@ pub(crate) fn tactical_settlement_snapshot(
         .settlement()
         .id()
         .find(origin_settlement_id.to_owned())?;
-    (settlement.scene_key == scene_key).then(|| TacticalSettlementSnapshot {
+    (settlement.scene_key == scene_key).then_some(TacticalSettlementSnapshot {
         id: settlement.id,
         population_level: settlement.population_level,
         population_estimate: settlement.population_estimate,

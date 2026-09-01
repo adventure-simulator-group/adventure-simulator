@@ -6,6 +6,7 @@ fn roof_face_prism_mesh(face: &RoofFace) -> Mesh {
     flat_face_mesh(&faces)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn spawn_resolved_roof(
     world: &mut World,
     palette: &RenderPalette,

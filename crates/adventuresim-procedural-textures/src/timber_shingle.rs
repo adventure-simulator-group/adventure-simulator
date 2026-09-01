@@ -351,10 +351,12 @@ mod tests {
                 assert!((0.72..=1.28).contains(&width), "shingle width: {width}");
             }
         }
-        assert!(
-            (COURSES * SHINGLES_PER_COURSE) >= 256,
-            "repeat sequence must contain at least 256 distinct shingles"
-        );
+        const {
+            assert!(
+                (COURSES * SHINGLES_PER_COURSE) >= 256,
+                "repeat sequence must contain at least 256 distinct shingles"
+            );
+        }
     }
 
     #[test]
@@ -592,7 +594,9 @@ mod tests {
 
         for (name, channel) in [("ao", 0), ("roughness", 1), ("metallic", 2)] {
             let separated = arm
-                .chunks_exact(4)
+                .as_chunks::<4>()
+                .0
+                .iter()
                 .flat_map(|pixel| {
                     let value = pixel[channel];
                     [value, value, value, 255]
@@ -602,7 +606,9 @@ mod tests {
         }
 
         let interpreted = albedo
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .zip(normal.chunks_exact(4))
             .zip(arm.chunks_exact(4))
             .flat_map(|((color, normal), arm)| {

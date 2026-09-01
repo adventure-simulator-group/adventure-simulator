@@ -1,20 +1,10 @@
 use super::*;
 use fabelgeist_determinism::splitmix64;
 
+mod grass_mask;
 mod streets;
 
-#[derive(Clone, Copy)]
-struct UrbanGround<'a> {
-    streets: &'a [CityStreetPatch],
-    yards: &'a [CityYardPatch],
-}
-
-impl UrbanGround<'_> {
-    fn suppresses_grass(self, point: Vec2) -> bool {
-        self.streets.iter().any(|street| street.contains(point))
-            || self.yards.iter().any(|yard| yard.contains(point))
-    }
-}
+use streets::UrbanGround;
 
 /// Marker for a distant tree billboard spawned as part of a vista ring.
 #[derive(Component)]
@@ -27,10 +17,8 @@ pub(crate) struct VistaGrassPresentation;
 #[derive(Component)]
 pub(crate) struct VistaRockPresentation;
 
-/// Retains the nearest presentation-only height samples after the one-shot
-/// network event has been consumed. Camera-local ground refinement uses this
-/// surface outside the authoritative playable rectangle so geometry quality
-/// remains a function of camera distance rather than gameplay bounds.
+/// Retains nearby presentation-only heights after the event for camera-local refinement.
+/// Outside the playable rectangle, quality follows camera distance, not gameplay bounds.
 #[derive(Resource, Default, Clone)]
 pub(super) struct ActiveVistaSurface {
     revision: u64,
@@ -179,25 +167,15 @@ pub(super) fn on_scene_vista_bundle(
             f32::from(lod.depth.saturating_sub(1)) * lod.spacing_metres * 0.5,
         );
     }
-
     if let (Some(lod), Some((playable_terrain, playable_ground, environment))) =
         (visible_lods.first().copied(), playable_scene)
     {
-        streets::spawn(
+        spawn_near_vista_details(
             &mut commands,
-            &bundle.streets,
-            &bundle.yards,
+            &bundle,
             &active_surface,
-            &bundle.scene_digest,
-            playable_terrain,
-            &mut meshes,
-            &mut standard_materials,
-        );
-        spawn_near_vista_scatter(
-            &mut commands,
             lod,
             visible_lods.get(1).copied(),
-            bundle.playable_half_extent_metres,
             playable_terrain,
             playable_ground,
             environment,
@@ -206,17 +184,73 @@ pub(super) fn on_scene_vista_bundle(
             &mut standard_materials,
             &mut images,
             &settings.config.grass,
-            UrbanGround {
-                streets: &bundle.streets,
-                yards: &bundle.yards,
-            },
         );
     }
+    log_vista_generation(presented_chunk_count, visible_lods.len(), started);
+}
+
+fn log_vista_generation(chunks: usize, lods: usize, started: web_time::Instant) {
     info!(
-        chunks = presented_chunk_count,
-        lods = visible_lods.len(),
+        chunks,
+        lods,
         elapsed_ms = started.elapsed().as_millis(),
         "Generated tactical vista presentation"
+    );
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "near-vista details share the scene stores already injected at the observer boundary"
+)]
+fn spawn_near_vista_details(
+    commands: &mut Commands,
+    bundle: &SceneVistaBundle,
+    active_surface: &ActiveVistaSurface,
+    lod: &VistaLod,
+    coarser_lod: Option<&VistaLod>,
+    playable_terrain: &SceneTerrain,
+    playable_ground: &SceneGround,
+    environment: &SceneEnvironment,
+    meshes: &mut Assets<Mesh>,
+    foliage_materials: &mut Assets<TacticalFoliageMaterial>,
+    standard_materials: &mut Assets<StandardMaterial>,
+    images: &mut Assets<Image>,
+    grass: &crate::presentation::config::GrassConfig,
+) {
+    streets::spawn(
+        commands,
+        &bundle.streets,
+        &bundle.yards,
+        active_surface,
+        &bundle.scene_digest,
+        playable_terrain,
+        meshes,
+        standard_materials,
+    );
+    let urban_ground = UrbanGround::new(&bundle.streets, &bundle.yards);
+    spawn_near_vista_scatter(
+        commands,
+        lod,
+        coarser_lod,
+        bundle.playable_half_extent_metres,
+        playable_terrain,
+        playable_ground,
+        environment,
+        meshes,
+        foliage_materials,
+        images,
+        grass,
+        urban_ground,
+    );
+    spawn_vista_rocks(
+        commands,
+        lod,
+        coarser_lod,
+        bundle.playable_half_extent_metres,
+        playable_terrain,
+        stable_text_seed(&environment.scene_digest),
+        meshes,
+        standard_materials,
     );
 }
 
@@ -234,7 +268,6 @@ fn spawn_near_vista_scatter(
     environment: &SceneEnvironment,
     meshes: &mut Assets<Mesh>,
     foliage_materials: &mut Assets<TacticalFoliageMaterial>,
-    standard_materials: &mut Assets<StandardMaterial>,
     images: &mut Assets<Image>,
     grass: &crate::presentation::config::GrassConfig,
     urban_ground: UrbanGround<'_>,
@@ -244,7 +277,7 @@ fn spawn_near_vista_scatter(
     let wind_scale = 0.16 + bps(environment.weather.wind_speed_bps) * 0.36;
     let grass_seed = scene_seed ^ 0x6772_6173_735f_6c6f;
     let grass_profile = GrassCommunityProfile::from_environment(environment);
-    let (coverage_mask, coverage_transform) = vista_grass_cover_mask_image(
+    let (coverage_mask, coverage_transform) = grass_mask::vista_grass_cover_mask_image(
         lod,
         playable_half_extent,
         playable_ground,
@@ -337,133 +370,9 @@ fn spawn_near_vista_scatter(
             urban_ground,
         );
     }
-
-    spawn_vista_rocks(
-        commands,
-        lod,
-        coarser_lod,
-        playable_half_extent,
-        playable_terrain,
-        scene_seed,
-        meshes,
-        standard_materials,
-    );
 }
 
-const VISTA_GRASS_MASK_TEXEL_METRES: f32 = 1.0;
 const VISTA_GRASS_BOUNDARY_STITCH_METRES: f32 = 12.0;
-
-fn vista_grass_cover_mask_image(
-    lod: &VistaLod,
-    playable_half_extent: Vec2,
-    playable_ground: &SceneGround,
-    seed: u64,
-    outer_collar: f32,
-    urban_ground: UrbanGround<'_>,
-) -> (Image, Vec4) {
-    let (playable_width, playable_depth, playable_mask) =
-        grass_cover_mask_pixels(playable_ground, seed);
-    let requested_outer = playable_half_extent + Vec2::splat(outer_collar);
-    let width =
-        ((requested_outer.x * 2.0 / VISTA_GRASS_MASK_TEXEL_METRES).ceil() as u32 + 1).max(2);
-    let depth =
-        ((requested_outer.y * 2.0 / VISTA_GRASS_MASK_TEXEL_METRES).ceil() as u32 + 1).max(2);
-    let span = Vec2::new(
-        (width - 1) as f32 * VISTA_GRASS_MASK_TEXEL_METRES,
-        (depth - 1) as f32 * VISTA_GRASS_MASK_TEXEL_METRES,
-    );
-    let outer = span * 0.5;
-    let mut pixels = Vec::with_capacity(width as usize * depth as usize);
-    for z in 0..depth {
-        for x in 0..width {
-            let point = Vec2::new(
-                x as f32 * VISTA_GRASS_MASK_TEXEL_METRES - outer.x,
-                z as f32 * VISTA_GRASS_MASK_TEXEL_METRES - outer.y,
-            );
-            let coverage = stitched_vista_grass_coverage(
-                lod,
-                playable_half_extent,
-                playable_ground,
-                &playable_mask,
-                playable_width,
-                playable_depth,
-                point,
-                urban_ground,
-            );
-            pixels.push((coverage.clamp(0.0, 1.0) * 255.0).round() as u8);
-        }
-    }
-    let mut image = Image::new(
-        Extent3d {
-            width,
-            height: depth,
-            depth_or_array_layers: 1,
-        },
-        TextureDimension::D2,
-        pixels,
-        TextureFormat::R8Unorm,
-        RenderAssetUsages::RENDER_WORLD,
-    );
-    image.sampler = ImageSampler::linear();
-    (image, Vec4::new(1.0 / span.x, 1.0 / span.y, 0.5, 0.5))
-}
-
-fn stitched_vista_grass_coverage(
-    lod: &VistaLod,
-    playable_half_extent: Vec2,
-    playable_ground: &SceneGround,
-    playable_mask: &[u8],
-    playable_width: u32,
-    playable_depth: u32,
-    point: Vec2,
-    urban_ground: UrbanGround<'_>,
-) -> f32 {
-    if urban_ground.suppresses_grass(point) {
-        return 0.0;
-    }
-    let boundary = point.clamp(-playable_half_extent, playable_half_extent);
-    let playable_coverage = sample_playable_grass_mask(
-        playable_mask,
-        playable_width,
-        playable_depth,
-        playable_ground,
-        boundary,
-    );
-    let outside = (point.abs() - playable_half_extent)
-        .max(Vec2::ZERO)
-        .max_element();
-    if outside <= 0.0 {
-        return playable_coverage;
-    }
-    let vista_coverage = sample_vista_environment(lod, point)
-        .map(vista_sward_coverage)
-        .unwrap_or(0.0);
-    let blend = smoothstep01(outside / VISTA_GRASS_BOUNDARY_STITCH_METRES);
-    playable_coverage.lerp(vista_coverage, blend)
-}
-
-fn sample_playable_grass_mask(
-    mask: &[u8],
-    width: u32,
-    depth: u32,
-    ground: &SceneGround,
-    point: Vec2,
-) -> f32 {
-    let maximum_coordinate = Vec2::new((width - 1) as f32, (depth - 1) as f32);
-    let coordinate = (Vec2::new(
-        point.x / ground.width().max(f32::EPSILON) + 0.5,
-        point.y / ground.depth().max(f32::EPSILON) + 0.5,
-    ) * maximum_coordinate)
-        .clamp(Vec2::ZERO, maximum_coordinate);
-    let minimum = coordinate.floor().max(Vec2::ZERO);
-    let maximum = (minimum + Vec2::ONE).min(maximum_coordinate);
-    let fraction = coordinate - minimum;
-    let sample = |x: f32, z: f32| f32::from(mask[z as usize * width as usize + x as usize]) / 255.0;
-    let bottom = sample(minimum.x, minimum.y).lerp(sample(maximum.x, minimum.y), fraction.x);
-    let top = sample(minimum.x, maximum.y).lerp(sample(maximum.x, maximum.y), fraction.x);
-    bottom.lerp(top, fraction.y)
-}
-
 fn smoothstep01(value: f32) -> f32 {
     let value = value.clamp(0.0, 1.0);
     value * value * (3.0 - 2.0 * value)
@@ -2038,7 +1947,7 @@ mod tests {
         };
         let (width, depth, mask) = grass_cover_mask_pixels(&ground, 42);
         let coverage = |x| {
-            stitched_vista_grass_coverage(
+            grass_mask::stitched_vista_grass_coverage(
                 &lod,
                 Vec2::splat(10.0),
                 &ground,
@@ -2046,10 +1955,7 @@ mod tests {
                 width,
                 depth,
                 Vec2::new(x, 0.0),
-                UrbanGround {
-                    streets: &[],
-                    yards: &[],
-                },
+                UrbanGround::new(&[], &[]),
             )
         };
         let boundary = coverage(10.0);
@@ -2068,7 +1974,7 @@ mod tests {
             surface: CityStreetSurface::CompactedEarth,
         }];
         assert_eq!(
-            stitched_vista_grass_coverage(
+            grass_mask::stitched_vista_grass_coverage(
                 &lod,
                 Vec2::splat(10.0),
                 &ground,
@@ -2076,10 +1982,7 @@ mod tests {
                 width,
                 depth,
                 Vec2::new(22.0, 0.0),
-                UrbanGround {
-                    streets: &street,
-                    yards: &[],
-                },
+                UrbanGround::new(&street, &[]),
             ),
             0.0
         );

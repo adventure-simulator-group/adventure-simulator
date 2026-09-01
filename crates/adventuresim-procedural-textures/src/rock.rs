@@ -387,7 +387,9 @@ mod tests {
         }
         let arm = first_images.get(&first.arm).unwrap().data.as_ref().unwrap();
         assert!(
-            arm.chunks_exact(4)
+            arm.as_chunks::<4>()
+                .0
+                .iter()
                 .all(|pixel| pixel[2] == 0 && pixel[3] == 255)
         );
     }
@@ -396,11 +398,15 @@ mod tests {
     fn base_color_and_roughness_use_restrained_solid_regions() {
         let [albedo, _, _, arm] = base_levels();
         let colors = albedo
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|pixel| [pixel[0], pixel[1], pixel[2]])
             .collect::<BTreeSet<_>>();
         let roughness = arm
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|pixel| pixel[1])
             .collect::<BTreeSet<_>>();
         assert_eq!(colors, ROCK_PALETTE.into_iter().collect());

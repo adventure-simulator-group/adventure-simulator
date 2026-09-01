@@ -3,6 +3,8 @@
 //! Recipes live here rather than in a scene or material implementation so
 //! each surface family can be reviewed and iterated independently.
 
+#![cfg_attr(test, allow(clippy::chunks_exact_to_as_chunks))]
+
 mod beech_leaf;
 mod blackthorn_leaf;
 pub mod building;

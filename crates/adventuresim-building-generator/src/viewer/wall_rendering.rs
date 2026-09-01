@@ -1,3 +1,4 @@
+#[allow(clippy::too_many_arguments)]
 fn spawn_wall(
     world: &mut World,
     palette: &RenderPalette,
@@ -557,6 +558,7 @@ fn spawn_wall_box_with_depth(
     );
 }
 
+#[allow(clippy::too_many_arguments)]
 fn spawn_wall_box_at_height(
     world: &mut World,
     material: &Handle<StandardMaterial>,

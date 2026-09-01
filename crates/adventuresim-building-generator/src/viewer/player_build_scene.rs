@@ -253,6 +253,7 @@ fn freeform_wall_faces(
     }
 }
 
+#[allow(clippy::type_complexity)]
 fn update_editor_visibility(
     runtime: Res<EditorRuntime>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -283,12 +284,10 @@ fn update_editor_visibility(
         } else {
             Visibility::Visible
         };
-        let translucent = match target.role {
-            EditorVisibilityRole::Wall if runtime.wall_visibility == WallVisibility::Cutaway => {
-                true
-            }
-            _ => false,
-        };
+        let translucent = matches!(
+            target.role,
+            EditorVisibilityRole::Wall if runtime.wall_visibility == WallVisibility::Cutaway
+        );
         if appearance.0 != translucent {
             material.0 = if translucent {
                 let mut ghost = materials

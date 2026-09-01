@@ -95,11 +95,10 @@ than botanical reconstruction. The reverse should carry the stronger relief.
 ### Hairiness is a roughness and value cue, not necessarily explicit fibers
 
 **Evidence.** Both botanical references report fine pubescence, and the
-Biological Flora account locates simple hairs on upper and lower lamina, petiole,
-and vein axils, with more visible underside expression. University College Cork
-summarizes hazel leaves as hairy and soft to the touch
-([UCC Tree Explorers: *Corylus
-avellana*](https://www.ucc.ie/en/tree-explorers/trees/a-z/corylusavellana/)).
+Biological Flora account locates simple hairs on upper and lower lamina,
+petiole, and vein axils, with more visible underside expression. University
+College Cork summarizes hazel leaves as hairy and soft to the touch
+([UCC Tree Explorers: *Corylus avellana*](https://www.ucc.ie/en/tree-explorers/trees/a-z/corylusavellana/)).
 
 **Inference for this recipe.** At 256 pixels and ordinary card distances,
 individual trichome geometry or white hair strokes would alias and make the
@@ -243,7 +242,8 @@ actual AA path should be tested first.
    sizes and spacing modestly without breaking the correspondence.
 4. **Build anatomical relief.** Use midrib and secondary distance fields,
    intercostal panels, and very low-amplitude tissue undulation. Make the upper
-   veins shallow/sunken or only subtly raised; make reverse veins more prominent.
+   veins shallow/sunken or only subtly raised; make reverse veins more
+   prominent.
 5. **Keep a small palette.** The current blade/vein split is compatible with a
    stylized procedural system. If variation is needed, add only a few authored
    greens selected by deterministic broad masks; do not introduce noisy RGB
@@ -295,7 +295,8 @@ actual AA path should be tested first.
   secondary teeth may simplify but the card must not become a solid rectangle.
 - Consecutive capture frames span sub-pixel translation, gradual distance
   change, a mip transition, and a grazing angle.
-- Captures include isolated front, isolated reverse, backlit, three-card cluster,
+- Captures include isolated front, isolated reverse, backlit, three-card
+  cluster,
   and canopy-distance views. Review the opacity diagnostic beside the lit image.
 - Fail on large unexplained frame-to-frame occupancy oscillation, black edge
   halos, lost cordate notch while the leaf is still large on screen, or card-

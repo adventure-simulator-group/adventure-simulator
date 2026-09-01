@@ -129,7 +129,7 @@ pub(super) fn city_yard_patches(
         .map(|block| {
             let surface_key = mix64(seed ^ YARD_SURFACE_DOMAIN ^ block.key());
             let radial_band = (block.centre().length() / NOMINAL_BLOCK_METRES) as u32;
-            let surface = if radial_band >= 3 && surface_key % 7 == 0 {
+            let surface = if radial_band >= 3 && surface_key.is_multiple_of(7) {
                 CityYardSurface::KitchenGarden
             } else {
                 CityYardSurface::PackedEarth

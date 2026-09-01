@@ -334,6 +334,7 @@ fn key_code(input: &str) -> Option<KeyCode> {
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn update_grab_input(
     mut commands: Commands,
     time: Res<Time>,
@@ -366,7 +367,6 @@ fn update_grab_input(
         held.is_some(),
         world_targets.pointed(actor_transform),
     );
-
     for mapping in INPUT_ADDRESS_MAPPINGS {
         let Some(key) = key_code(mapping.input) else {
             continue;
@@ -403,7 +403,6 @@ fn update_grab_input(
             session.invalid_flash_remaining = INVALID_FLASH_SECS;
         }
     }
-
     let released = match hand {
         EquipmentHand::Right => mouse.just_released(MouseButton::Left),
         EquipmentHand::Left => mouse.just_released(MouseButton::Middle),
@@ -442,9 +441,7 @@ fn update_grab_input(
         expected_hand_item: held,
         action,
     });
-    session.active = None;
-    session.selection = None;
-    session.repeated_input = None;
+    (session.active, session.selection, session.repeated_input) = (None, None, None);
 }
 
 #[derive(Clone, Copy)]

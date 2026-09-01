@@ -70,7 +70,8 @@ The following are current repository observations, not external claims.
   welded, riveted, touched, sheltered, or embedded in masonry.
 - Existing visual-review provenance records useful rejected failure modes:
   cloudy/wood-like fields, repeating diagonal stamps, cracked-leather cells,
-  and conspicuous Voronoi masks. The accepted candidate is intentionally quieter,
+  and conspicuous Voronoi masks. The accepted candidate is intentionally
+  quieter,
   but its physical and semantic contracts remain to be validated.
 
 ## Material structure and forge scale
@@ -407,11 +408,11 @@ guessed, not prescribing a universal value
 
 **Inference for this recipe.** Retain explicit tile metres and additionally
 record plausible bands for each generated phenomenon: section drift, hammer
-facet, file/tool mark, oxide island, pit, and grain. The current 0.64 m repeat is
-large relative to a handle or narrow hinge. Consumers should sample member-local
-coordinates at fixed world scale and vary phase/seed per forged piece so two
-neighboring straps do not display the same facet at the same distance from an
-end.
+facet, file/tool mark, oxide island, pit, and grain. The current 0.64 m repeat
+is large relative to a handle or narrow hinge. Consumers should sample
+member-local coordinates at fixed world scale and vary phase/seed per forged
+piece so two neighboring straps do not display the same facet at the same
+distance from an end.
 
 The declared 1.8 mm full height span may be defensible for a rough or damaged
 surface but is not automatically correct for a quiet finished substrate. Visual
@@ -467,7 +468,8 @@ The minimum useful implementation split is:
 1. **Quiet substrate:** broad section drift, intermittent U-aligned working
    flow, fine non-cellular microvariation, and sparse overlapping shallow
    facets.
-2. **Forge-film state:** intact black oxide, brushed/thinned crowns, and optional
+2. **Forge-film state:** intact black oxide, brushed/thinned crowns, and
+   optional
    protected bare/burnished iron. This can be seeded per member but must remain
    repeat-safe.
 3. **Construction masks from the mesh:** edge/end, bend, punch, rivet, collar,
@@ -569,7 +571,8 @@ that the texture contains visible detail.
 - rust, paint, or dirt left metallic because the substrate is iron;
 - mirrored or rectangular “contact zones” unrelated to the fixture;
 - modern arc-weld beads on forge-welded or mechanically joined work;
-- rivets, collars, punched holes, folds, and bevels painted into a seamless tile;
+- rivets, collars, punched holes, folds, and bevels painted into a seamless
+  tile;
 - perfectly uniform factory bar sections on close hero hardware;
 - black paint assumed universal across every building and maintenance state;
 - exaggerated pitting that consumes the silhouette of maintained iron;

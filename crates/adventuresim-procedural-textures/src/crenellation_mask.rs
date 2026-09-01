@@ -124,7 +124,7 @@ mod tests {
         (images, handle)
     }
 
-    fn mip<'a>(data: &'a [u8], level: u32) -> (u32, &'a [u8]) {
+    fn mip(data: &[u8], level: u32) -> (u32, &[u8]) {
         let mut offset = 0_usize;
         let mut size = CRENELLATION_MASK_TEXTURE_SIZE;
         for _ in 0..level {

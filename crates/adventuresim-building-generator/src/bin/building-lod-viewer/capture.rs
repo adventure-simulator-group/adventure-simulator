@@ -319,6 +319,7 @@ pub(super) fn spawn_crown_diagnostic(
     ));
 }
 
+#[allow(clippy::type_complexity)]
 pub(super) fn drive_shell_capture(
     mut commands: Commands,
     state: Option<ResMut<ShellCaptureConfig>>,
@@ -646,7 +647,9 @@ fn non_clear_pixel_bps(bytes: &[u8]) -> u32 {
     }
     let clear = [184_i16, 204, 219];
     let non_clear = bytes
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .filter(|pixel| {
             (i16::from(pixel[0]) - clear[0]).abs() > 12
                 || (i16::from(pixel[1]) - clear[1]).abs() > 12
@@ -658,7 +661,9 @@ fn non_clear_pixel_bps(bytes: &[u8]) -> u32 {
 
 fn diagnostic_pixel_count(bytes: &[u8]) -> u32 {
     bytes
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .filter(|pixel| pixel[0] > 16 || pixel[1] > 16 || pixel[2] > 16)
         .count() as u32
 }
@@ -887,6 +892,6 @@ mod tests {
         assert_eq!(CRENELLATION_ALPHA_CUTOFF, 0.5);
         assert_eq!(PRIME_READBACKS_PER_POSE, 2);
         assert_eq!(MAX_CAPTURE_ATTEMPTS_PER_POSE, 3);
-        assert!(CAMERA_SAMPLE_COUNT >= 24);
+        const { assert!(CAMERA_SAMPLE_COUNT >= 24) };
     }
 }

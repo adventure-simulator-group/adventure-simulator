@@ -201,8 +201,8 @@ any fine band whose wavelength is below two mip-zero texels at the declared
 ### AO follows height, but is not interchangeable with color
 
 The current broad horizon plus full-resolution local cavity construction is
-causal. Retain that relationship and keep AO out of base color. A fissure can
-be darker in pigment because deeper tissue is damp, weathered, or compositionally
+causal. Retain that relationship and keep AO out of base color. A fissure can be
+darker in pigment because deeper tissue is damp, weathered, or compositionally
 different, but that needs its own low-frequency material rule; it should not be
 the same numerical AO multiplied into albedo.
 
@@ -272,8 +272,8 @@ A Killarney field study found moss and lichen coverage negatively correlated,
 with tree species, circumference, canopy, height, and aspect interacting. It
 also reports that aspect alone was not significant and explicitly warns against
 the simple rule that north/east is always the damp side; topography, trunk lean,
-and canopy alter exposure ([Sales, Kerr & Gardner, "Factors influencing epiphytic moss
-and lichen distribution within Killarney National Park"](https://academic.oup.com/biohorizons/article/doi/10.1093/biohorizons/hzw008/2526859)).
+and canopy alter exposure
+([Sales, Kerr & Gardner, "Factors influencing epiphytic moss and lichen distribution within Killarney National Park"](https://academic.oup.com/biohorizons/article/doi/10.1093/biohorizons/hzw008/2526859)).
 
 **Inference for this recipe.** Model four separable fields:
 
@@ -325,7 +325,8 @@ patterns in blend zones. Use this hierarchy:
 - branch-local cylindrical or sweep/growth coordinates for the directional
   primary fissure and plate pattern;
 - a continuous branch frame or guide field through junctions where practical;
-- triplanar/world projection only to conceal junction seams and add low-amplitude
+- triplanar/world projection only to conceal junction seams and add
+  low-amplitude
   nondirectional macro breakup; and
 - derivative-based world normals from the final blended metric height.
 

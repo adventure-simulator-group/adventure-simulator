@@ -822,7 +822,7 @@ mod litter_tests {
 
     use super::*;
 
-    fn base_mip<'a>(image: &'a Image, bytes_per_pixel: usize, level: u32) -> &'a [u8] {
+    fn base_mip(image: &Image, bytes_per_pixel: usize, level: u32) -> &[u8] {
         let size = FOREST_SOIL_TEXTURE_SIZE >> level;
         let offset = (0..level)
             .map(|prior| (FOREST_SOIL_TEXTURE_SIZE >> prior).pow(2) as usize * bytes_per_pixel)
@@ -836,7 +836,9 @@ mod litter_tests {
 
     fn channel(surface: &[u8], channel: usize) -> Vec<u8> {
         surface
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|pixel| pixel[channel])
             .collect()
     }
@@ -858,7 +860,7 @@ mod litter_tests {
 
     fn appearance(surface: &[u8]) -> Vec<u8> {
         let mut rgb = Vec::with_capacity(surface.len() / 4 * 3);
-        for pixel in surface.chunks_exact(4) {
+        for pixel in surface.as_chunks::<4>().0 {
             let tone = pixel[2] as f32 / 255.0;
             let coverage = pixel[3] as f32 / 255.0;
             let tone_mix = smoothstep(0.18, 0.72, tone);
@@ -879,7 +881,7 @@ mod litter_tests {
 
     fn normal_rgb(normal: &[u8]) -> Vec<u8> {
         let mut rgb = Vec::with_capacity(normal.len() / 2 * 3);
-        for pixel in normal.chunks_exact(2) {
+        for pixel in normal.as_chunks::<2>().0 {
             let x = pixel[0] as f32 / 127.5 - 1.0;
             let z = pixel[1] as f32 / 127.5 - 1.0;
             let y = (1.0 - x * x - z * z).max(0.0).sqrt();
@@ -1001,7 +1003,9 @@ mod litter_tests {
     fn litter_mips_preserve_bounded_channel_contrast_at_gameplay_distance() {
         let (surface, _) = generate_forest_litter_textures();
         let mut ao = base_mip(&surface, 4, 0)
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|pixel| pixel[1])
             .collect::<Vec<_>>();
         ao.sort_unstable();
@@ -1011,7 +1015,9 @@ mod litter_tests {
             let mip = base_mip(&surface, 4, level);
             for channel_index in 0..4 {
                 let values = mip
-                    .chunks_exact(4)
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
                     .map(|pixel| pixel[channel_index])
                     .collect::<Vec<_>>();
                 let minimum = *values.iter().min().unwrap();
@@ -1366,7 +1372,9 @@ mod forest_soil_tests {
             let side = (FOREST_SOIL_TEXTURE_SIZE >> level) as usize;
             let level_bytes = side * side * 2;
             let height_values = data[offset..offset + level_bytes]
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .map(|pixel| pixel[0]);
             let minimum = height_values.clone().min().unwrap();
             let maximum = height_values.max().unwrap();

@@ -364,7 +364,7 @@ fn spatial_bucket(point: Vec2) -> (i32, i32) {
 fn street_half_width(line_index: usize) -> f32 {
     if line_index == CENTRAL_MARKET_BLOCK.0 || line_index == CENTRAL_MARKET_BLOCK.0 + 1 {
         PRIMARY_STREET_HALF_WIDTH_METRES
-    } else if line_index % 4 == 0 {
+    } else if line_index.is_multiple_of(4) {
         SECONDARY_STREET_HALF_WIDTH_METRES
     } else {
         ORDINARY_STREET_HALF_WIDTH_METRES
@@ -374,7 +374,7 @@ fn street_half_width(line_index: usize) -> f32 {
 fn street_surface(line_index: usize) -> CityStreetSurface {
     if line_index == CENTRAL_MARKET_BLOCK.0 || line_index == CENTRAL_MARKET_BLOCK.0 + 1 {
         CityStreetSurface::Fieldstone
-    } else if line_index % 4 == 0 {
+    } else if line_index.is_multiple_of(4) {
         CityStreetSurface::Gravel
     } else {
         CityStreetSurface::CompactedEarth
@@ -384,7 +384,7 @@ fn street_surface(line_index: usize) -> CityStreetSurface {
 fn house_class(seed: u64, lot_key: u64, rear_court: bool) -> CityHouseClass {
     let sample = mix64(seed ^ HOUSE_CLASS_DOMAIN ^ lot_key);
     if rear_court {
-        return if sample % 5 == 0 {
+        return if sample.is_multiple_of(5) {
             CityHouseClass::CraftTownHouse
         } else {
             CityHouseClass::Cottage

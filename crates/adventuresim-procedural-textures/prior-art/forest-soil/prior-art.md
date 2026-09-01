@@ -201,10 +201,9 @@ wetness or grain size.
 
 The existing horizon-plus-local-cavity AO is directionally sound. Its present
 four cardinal directions can, however, imprint axis bias on diagonal clods.
-Before increasing sample count, measure rotational error by rotating a
-synthetic mound/cavity through several angles. If visible, use an eight-direction
-kernel or a rotated per-texel/sample pattern whose periodicity remains
-deterministic.
+Before increasing sample count, measure rotational error by rotating a synthetic
+mound/cavity through several angles. If visible, use an eight-direction kernel
+or a rotated per-texel/sample pattern whose periodicity remains deterministic.
 
 ### AO must remain restrained and must not become baked diffuse color
 

@@ -3,10 +3,10 @@
 ## Scope and historical contract
 
 This report concerns exactly the `LeadSheet` procedural surface. Its intended
-uses are lead-covered roofs and spires, gutters, valleys, flashings, weatherings,
-parapet details, and other architectural work actually made from sheet lead. It
-must not become a generic dark metal for iron hardware, a corrugated modern
-roof, or a substitute for slate.
+uses are lead-covered roofs and spires, gutters, valleys, flashings,
+weatherings, parapet details, and other architectural work actually made from
+sheet lead. It must not become a generic dark metal for iron hardware, a
+corrugated modern roof, or a substitute for slate.
 
 For a 1544 setting, “sheet” does not imply modern rolled strip. Historic England
 notes that lead roofing was traditionally cast and only later became rolled
@@ -182,14 +182,12 @@ or age.
 
 **Evidence.** CIPHE describes freshly cut lead as bright silver, ordinary lead
 as bluish grey, and moist-air weathering as a slow transition to a dull grey
-patina. It also notes that early patina can wash off in rain and leave grey-white
-streaks on adjacent brick or tile. Conservation science identifies outdoor
-lead products including lead oxides, basic lead carbonates, cerussite, and in
-polluted air lead sulfites/sulfates
-([Shreir's Corrosion overview: atmospheric corrosion of
-lead](https://www.sciencedirect.com/topics/materials-science/underground-corrosion),
-[Getty Conservation Institute: Lectures on Materials Science for Architectural
-Conservation](https://www.getty.edu/conservation/publications_resources/pdf_publications/pdf/torraca.pdf)).
+patina. It also notes that early patina can wash off in rain and leave
+grey-white streaks on adjacent brick or tile. Conservation science identifies
+outdoor lead products including lead oxides, basic lead carbonates, cerussite,
+and in polluted air lead sulfites/sulfates
+([Shreir's Corrosion overview: atmospheric corrosion of lead](https://www.sciencedirect.com/topics/materials-science/underground-corrosion),
+[Getty Conservation Institute: Lectures on Materials Science for Architectural Conservation](https://www.getty.edu/conservation/publications_resources/pdf_publications/pdf/torraca.pdf)).
 
 The clean-air carbonate/sulfate film is protective and comparatively insoluble.
 Lead is therefore not iron: it should not acquire orange-red rust, deep scaling,

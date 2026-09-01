@@ -192,9 +192,9 @@ physical shape becomes truly granular.
 ### Crack morphology should encode a cause
 
 Ty-Mawr's troubleshooting guide lists distinct causes for lime-plaster cracks.
-Over-trowelling can bring too much lime “fat” to the surface, leaving insufficient
-aggregate and causing shrinkage; moisture and carbonation control also matter;
-some uniform cracks follow reactive mortar beds
+Over-trowelling can bring too much lime “fat” to the surface, leaving
+insufficient aggregate and causing shrinkage; moisture and carbonation control
+also matter; some uniform cracks follow reactive mortar beds
 ([Ty-Mawr, lime-plaster cracking](https://www.lime.org.uk/knowledge-base/application---lime-plaster-cracking/)).
 Historic England distinguishes fine crazing from overworking, wandering
 multidirectional shrinkage cracks, directional cracks over concealed elements,

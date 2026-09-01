@@ -279,12 +279,16 @@ mod tests {
         );
         let arm = images.get(&textures.arm).unwrap().data.as_ref().unwrap();
         assert!(
-            arm.chunks_exact(4)
+            arm.as_chunks::<4>()
+                .0
+                .iter()
                 .all(|pixel| pixel[2] == 0 && pixel[3] == 255)
         );
         let albedo = images.get(&textures.albedo).unwrap().data.as_ref().unwrap();
         let palette = albedo[..LIME_PLASTER_TEXTURE_SIZE.pow(2) as usize * 4]
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|pixel| [pixel[0], pixel[1], pixel[2]])
             .collect::<BTreeSet<_>>();
         assert!(

@@ -48,16 +48,15 @@ sources.
 ### Rounded irregular lobes, auricles, and a short petiole are the primary read
 
 **Evidence.** Kew describes *Q. robur* leaves as dark green above, pale green
-below, with three to six lobes and a particularly short stalk ([Kew: Oak tree,
-*Quercus robur*](https://www.kew.org/plants/oak-tree)). Oregon State describes
-three to six pairs of deep rounded lobes, little basal "ear lobes," a short
-petiole, and dark-green/blue-green upper/lower coloration
-([Oregon State University: *Quercus
-robur*](https://landscapeplants.oregonstate.edu/plants/quercus-robur)). Flora of
-China records five to seven rounded or retuse lobes per side, an auriculate base,
-a 2–5 mm petiole, and five to seven, sometimes ten, secondary veins per side
-([Flora of China: *Quercus
-robur*](https://efloras.org/florataxon.aspx?flora_id=2&taxon_id=210001863)).
+below, with three to six lobes and a particularly short stalk
+([Kew: Oak tree, *Quercus robur*](https://www.kew.org/plants/oak-tree)). Oregon
+State describes three to six pairs of deep rounded lobes, little basal "ear
+lobes," a short petiole, and dark-green/blue-green upper/lower coloration
+([Oregon State University: *Quercus robur*](https://landscapeplants.oregonstate.edu/plants/quercus-robur)).
+Flora of China records five to seven rounded or retuse lobes per side, an
+auriculate base, a 2–5 mm petiole, and five to seven, sometimes ten, secondary
+veins per side
+([Flora of China: *Quercus robur*](https://efloras.org/florataxon.aspx?flora_id=2&taxon_id=210001863)).
 
 The Botanical Society of Scotland emphasizes that *Q. robur* has rounder and
 fewer lobes than sessile oak, an auriculate base, a very short petiole, and
@@ -137,11 +136,11 @@ basic shape and veins ([SideFX: Creating a Procedural Leaf
 Recipe](https://www.sidefx.com/tutorials/creating-a-procedural-leaf-recipe-in-houdini-intermediate-tutorial/)).
 
 **Inference for this recipe.** Keep a broad, low dome and alternating
-interveinal corrugation, but constrain them to the vein graph. Vein ridges should
-taper and soften with order; tertiary forks must not carry the same relief as
-the midrib. Fine tissue mottle should remain lower amplitude than all structural
-veins and should not create high-frequency specular sparkle. A useful physical
-scale split is:
+interveinal corrugation, but constrain them to the vein graph. Vein ridges
+should taper and soften with order; tertiary forks must not carry the same
+relief as the midrib. Fine tissue mottle should remain lower amplitude than all
+structural veins and should not create high-frequency specular sparkle. A useful
+physical scale split is:
 
 - card geometry: centimetre-scale cup, fold, and twist;
 - height/normal: millimetre-scale midrib, secondary veins, and corrugation;
@@ -240,15 +239,13 @@ yellow outlines around every vein.
 **Evidence.** The SideFX Labs Tree Leaf Generator can generate simple cards or
 accept custom leaf inputs; it separately controls deformation, curl noise,
 orientation, normals, atlas variants, and packed instancing
-([SideFX Labs Tree Leaf Generator
-documentation](https://www.sidefx.com/docs/houdini/nodes/sop/labs--tree_leaf_generator.html)).
+([SideFX Labs Tree Leaf Generator documentation](https://www.sidefx.com/docs/houdini/nodes/sop/labs--tree_leaf_generator.html)).
 SideFX's tree-generator course bakes tree designs to a single polygon for
-background use or reuses them as branches ([SideFX: Tree
-Generator](https://www.sidefx.com/tutorials/tree-generator/)). A SideFX forum
-question about an oak with 150,000 leaves illustrates why flat quads, instancing,
-and multiple resolutions matter even outside real-time games ([SideFX forum:
-Tree leaf geometry
-instancing](https://www.sidefx.com/forum/topic/20950/?page=1)).
+background use or reuses them as branches
+([SideFX: Tree Generator](https://www.sidefx.com/tutorials/tree-generator/)). A
+SideFX forum question about an oak with 150,000 leaves illustrates why flat
+quads, instancing, and multiple resolutions matter even outside real-time games
+([SideFX forum: Tree leaf geometry instancing](https://www.sidefx.com/forum/topic/20950/?page=1)).
 
 **Inference for this recipe.** Use opacity for lobe silhouette, normals/height
 for veins and shallow corrugation, a low-vertex card for broad cup/fold, and the

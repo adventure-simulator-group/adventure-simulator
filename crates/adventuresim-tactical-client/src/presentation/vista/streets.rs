@@ -7,6 +7,23 @@ const SURFACE_LIFT_METRES: f32 = 0.035;
 const SURFACE_PRIORITY_LIFT_METRES: f32 = 0.004;
 const YARD_SURFACE_LIFT_METRES: f32 = 0.024;
 
+#[derive(Clone, Copy)]
+pub(super) struct UrbanGround<'a> {
+    streets: &'a [CityStreetPatch],
+    yards: &'a [CityYardPatch],
+}
+
+impl<'a> UrbanGround<'a> {
+    pub(super) const fn new(streets: &'a [CityStreetPatch], yards: &'a [CityYardPatch]) -> Self {
+        Self { streets, yards }
+    }
+
+    pub(super) fn suppresses_grass(self, point: Vec2) -> bool {
+        self.streets.iter().any(|street| street.contains(point))
+            || self.yards.iter().any(|yard| yard.contains(point))
+    }
+}
+
 #[derive(Component)]
 pub(crate) struct CityStreetPresentation;
 

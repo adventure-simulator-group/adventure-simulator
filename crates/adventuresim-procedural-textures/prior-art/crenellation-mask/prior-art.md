@@ -3,10 +3,10 @@
 ## Scope
 
 This report concerns the `CrenellationMask` recipe only: the periodic opacity
-mask used to turn the top edge of a distant shell-LOD wall strip into alternating
-merlons and crenels. It does not propose replacing close crenellations, gameplay
-collision, or the building generator's architectural dimensions with texture
-data.
+mask used to turn the top edge of a distant shell-LOD wall strip into
+alternating merlons and crenels. It does not propose replacing close
+crenellations, gameplay collision, or the building generator's architectural
+dimensions with texture data.
 
 The useful prior art comes mostly from alpha-tested foliage rather than castle
 walls. That is not an aesthetic analogy; it is the same sampling problem. In
@@ -37,14 +37,14 @@ The following are repository constraints, not claims from the sources below.
 
 **Evidence.** Houdini artists generally preserve a small semantic construction
 rule rather than generate an arbitrary bitmap. In a SideFX forum example, a
-procedural castle starts from an orthogonal L-system and places reusable parts on
-points of square polygons; the author exposes module count and a low/high switch
-for complexity. The same author notes that some components are prebuilt
+procedural castle starts from an orthogonal L-system and places reusable parts
+on points of square polygons; the author exposes module count and a low/high
+switch for complexity. The same author notes that some components are prebuilt
 subnetworks or HDAs while shape-dependent pieces consume input geometry. This is
 useful evidence for separating an authored pitch/profile from its placement and
 LOD representation, although that particular castle generator's all-90-degree
-limitation is also explicitly acknowledged ([SideFX forum: Procedural generator
-of random castles](https://www.sidefx.com/forum/topic/72064/?page=1)).
+limitation is also explicitly acknowledged
+([SideFX forum: Procedural generator of random castles](https://www.sidefx.com/forum/topic/72064/?page=1)).
 
 SideFX's castle-wall tutorial similarly treats the wall as a reusable procedural
 asset exported to a game engine, and explicitly adds the inner wall, colliders,
@@ -128,8 +128,8 @@ coverage-aware mips rather than applying an ordinary SDF box chain.
 scintillate during animation and reports alpha-to-coverage as substantially
 reducing that artifact while remaining order-independent. It also notes that
 alpha cutouts were used for LOD fading, which makes sampling behavior part of
-the LOD system rather than merely a texture concern ([GPU Gems 3: Next-Generation
-SpeedTree Rendering](https://developer.nvidia.com/gpugems/gpugems3/part-i-geometry/chapter-4-next-generation-speedtree-rendering)).
+the LOD system rather than merely a texture concern
+([GPU Gems 3: Next-Generation SpeedTree Rendering](https://developer.nvidia.com/gpugems/gpugems3/part-i-geometry/chapter-4-next-generation-speedtree-rendering)).
 
 Wyman and McGuire show that fixed-threshold alpha testing loses aggregate
 appearance when coarse mips are selected. Their hashed threshold is spatially

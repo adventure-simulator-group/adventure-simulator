@@ -110,12 +110,12 @@ mask.
 
 **Evidence.** Technical artist Michael Ekker creates fallen-leaf geometry from
 cards, distributes it, then runs a Houdini Vellum simulation to obtain natural
-pile-up, crinkles, folds, and collision. The settled geometry is tiled and baked;
-front/back IDs allow later material control, and a ground plane fills holes
-([Michael Ekker: Fallen
-Leaves](https://www.michaelekker.com/projects/3de8Bo)). Bisset likewise reports
-that overlapping leaves required correct color and alpha order and that an
-incorrect overlap blend remained visibly wrong.
+pile-up, crinkles, folds, and collision. The settled geometry is tiled and
+baked; front/back IDs allow later material control, and a ground plane fills
+holes
+([Michael Ekker: Fallen Leaves](https://www.michaelekker.com/projects/3de8Bo)).
+Bisset likewise reports that overlapping leaves required correct color and alpha
+order and that an incorrect overlap blend remained visibly wrong.
 
 **Inference for this recipe.** The current random winner per stratum avoids
 commutative blending but does not prove a physically coherent pile. Validate
@@ -289,11 +289,10 @@ dielectric
 OpenPBR](https://experienceleague.adobe.com/en/docs/substance-3d/general-knowledge/openpbr/openpbr-overview)).
 
 Guerrilla's *Horizon Zero Dawn* vegetation shaders output normal, albedo,
-roughness, reflectance, translucency amount/diffusion, depth, and motion vectors,
-demonstrating that vegetation response is not reducible to one tinted diffuse
-map
-([GDC 2018: Between Tech and Art—The Vegetation of *Horizon Zero
-Dawn*](https://media.gdcvault.com/gdc2018/presentations/gilbert_sanders_between_tech_and.pdf)).
+roughness, reflectance, translucency amount/diffusion, depth, and motion
+vectors, demonstrating that vegetation response is not reducible to one tinted
+diffuse map
+([GDC 2018: Between Tech and Art—The Vegetation of *Horizon Zero Dawn*](https://media.gdcvault.com/gdc2018/presentations/gilbert_sanders_between_tech_and.pdf)).
 
 **Inference for this recipe.** The current packed `height/AO/tone/coverage`
 contract is efficient and coherent with its shader, but catalogue language

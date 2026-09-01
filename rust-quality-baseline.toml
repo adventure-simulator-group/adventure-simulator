@@ -1,6 +1,90 @@
 [[files]]
+path = "crates/adventuresim-building-generator/src/audit/artillery.rs"
+ceiling = 715
+
+[[files]]
+path = "crates/adventuresim-building-generator/src/audit/church.rs"
+ceiling = 1100
+
+[[files]]
+path = "crates/adventuresim-building-generator/src/audit/crowns.rs"
+ceiling = 861
+
+[[files]]
+path = "crates/adventuresim-building-generator/src/audit/projected_defenses.rs"
+ceiling = 1061
+
+[[files]]
+path = "crates/adventuresim-building-generator/src/audit/resolved_geometry.rs"
+ceiling = 668
+
+[[files]]
+path = "crates/adventuresim-building-generator/src/audit/roofs.rs"
+ceiling = 1488
+
+[[files]]
+path = "crates/adventuresim-building-generator/src/audit/timber.rs"
+ceiling = 1820
+
+[[files]]
+path = "crates/adventuresim-building-generator/src/audit/wall_openings.rs"
+ceiling = 1054
+
+[[files]]
+path = "crates/adventuresim-building-generator/src/generator/artillery_castle.rs"
+ceiling = 1853
+
+[[files]]
+path = "crates/adventuresim-building-generator/src/generator/artillery_openings.rs"
+ceiling = 554
+
+[[files]]
+path = "crates/adventuresim-building-generator/src/generator/church_assembly.rs"
+ceiling = 1791
+
+[[files]]
+path = "crates/adventuresim-building-generator/src/generator/church_tower.rs"
+ceiling = 880
+
+[[files]]
+path = "crates/adventuresim-building-generator/src/generator/crown_geometry.rs"
+ceiling = 1171
+
+[[files]]
+path = "crates/adventuresim-building-generator/src/generator/projected_defenses.rs"
+ceiling = 1349
+
+[[files]]
+path = "crates/adventuresim-building-generator/src/generator/roof_assemblies.rs"
+ceiling = 603
+
+[[files]]
+path = "crates/adventuresim-building-generator/src/generator/roof_child_fronts.rs"
+ceiling = 511
+
+[[files]]
+path = "crates/adventuresim-building-generator/src/generator/roof_outlets.rs"
+ceiling = 964
+
+[[files]]
+path = "crates/adventuresim-building-generator/src/generator/roof_resolution.rs"
+ceiling = 800
+
+[[files]]
+path = "crates/adventuresim-building-generator/src/generator/timber.rs"
+ceiling = 3085
+
+[[files]]
+path = "crates/adventuresim-building-generator/src/generator/wall_assemblies.rs"
+ceiling = 1210
+
+[[files]]
+path = "crates/adventuresim-building-generator/src/generator/wall_derivation.rs"
+ceiling = 548
+
+[[files]]
 path = "crates/adventuresim-character-creator/src/clothing.rs"
-ceiling = 632
+ceiling = 623
 
 [[files]]
 path = "crates/adventuresim-character-creator/src/export.rs"
@@ -12,7 +96,7 @@ ceiling = 955
 
 [[files]]
 path = "crates/adventuresim-core/src/autoresolve.rs"
-ceiling = 1561
+ceiling = 1511
 
 [[files]]
 path = "crates/adventuresim-core/src/bestiary.rs"
@@ -24,7 +108,7 @@ ceiling = 575
 
 [[files]]
 path = "crates/adventuresim-core/src/combat.rs"
-ceiling = 577
+ceiling = 559
 
 [[files]]
 path = "crates/adventuresim-core/src/courtship.rs"
@@ -60,7 +144,7 @@ ceiling = 788
 
 [[files]]
 path = "crates/adventuresim-core/src/item_catalog_validation.rs"
-ceiling = 1709
+ceiling = 1707
 
 [[files]]
 path = "crates/adventuresim-core/src/knowledge.rs"
@@ -372,7 +456,7 @@ ceiling = 848
 
 [[files]]
 path = "crates/adventuresim-stdb-module/src/strategic/mission_bootstrap.rs"
-ceiling = 2489
+ceiling = 2433
 
 [[files]]
 path = "crates/adventuresim-stdb-module/src/strategic/travel_reducers.rs"
@@ -388,7 +472,7 @@ ceiling = 1095
 
 [[files]]
 path = "crates/adventuresim-stdb-module/src/tactical.rs"
-ceiling = 1226
+ceiling = 1224
 
 [[files]]
 path = "crates/adventuresim-stdb-module/src/time/advancement.rs"
@@ -460,15 +544,15 @@ ceiling = 790
 
 [[files]]
 path = "crates/adventuresim-tactical-client/src/animation/mod.rs"
-ceiling = 1299
+ceiling = 1228
 
 [[files]]
 path = "crates/adventuresim-tactical-client/src/animation/pose_buffer.rs"
-ceiling = 2007
+ceiling = 1955
 
 [[files]]
 path = "crates/adventuresim-tactical-client/src/animation/presentation.rs"
-ceiling = 664
+ceiling = 573
 
 [[files]]
 path = "crates/adventuresim-tactical-client/src/animation/procedural.rs"
@@ -512,11 +596,11 @@ ceiling = 711
 
 [[files]]
 path = "crates/adventuresim-tactical-client/src/equipment.rs"
-ceiling = 1873
+ceiling = 1810
 
 [[files]]
 path = "crates/adventuresim-tactical-client/src/player.rs"
-ceiling = 1117
+ceiling = 1098
 
 [[files]]
 path = "crates/adventuresim-tactical-client/src/presentation/clouds.rs"
@@ -525,10 +609,6 @@ ceiling = 1021
 [[files]]
 path = "crates/adventuresim-tactical-client/src/presentation/ground_scatter/grass.rs"
 ceiling = 1495
-
-[[files]]
-path = "crates/adventuresim-tactical-client/src/presentation/ground_scatter/instanced_grass.rs"
-ceiling = 511
 
 [[files]]
 path = "crates/adventuresim-tactical-client/src/presentation/ground_scatter/litter.rs"
@@ -563,28 +643,16 @@ path = "crates/adventuresim-tactical-client/src/presentation/obstacles/tree/pres
 ceiling = 1005
 
 [[files]]
-path = "crates/adventuresim-tactical-client/src/presentation/procedural_assets/mod.rs"
-ceiling = 1224
-
-[[files]]
 path = "crates/adventuresim-tactical-client/src/presentation/sky/mod.rs"
 ceiling = 646
 
 [[files]]
 path = "crates/adventuresim-tactical-client/src/presentation/terrain.rs"
-ceiling = 690
+ceiling = 687
 
 [[files]]
 path = "crates/adventuresim-tactical-client/src/presentation/vista.rs"
-ceiling = 1409
-
-[[files]]
-path = "crates/adventuresim-tactical-client/src/tactical_scene_viewer.rs"
-ceiling = 4232
-
-[[files]]
-path = "crates/adventuresim-tactical-client/src/tactical_scene_viewer/view_specs.rs"
-ceiling = 861
+ceiling = 1406
 
 [[files]]
 path = "crates/adventuresim-tactical-client/src/tactical_sky_viewer.rs"
@@ -596,7 +664,7 @@ ceiling = 1092
 
 [[files]]
 path = "crates/adventuresim-tactical-core/src/animation/evaluation.rs"
-ceiling = 599
+ceiling = 518
 
 [[files]]
 path = "crates/adventuresim-tactical-core/src/animation/state.rs"
@@ -604,11 +672,11 @@ ceiling = 2661
 
 [[files]]
 path = "crates/adventuresim-tactical-core/src/combat_config.rs"
-ceiling = 1345
+ceiling = 1304
 
 [[files]]
 path = "crates/adventuresim-tactical-core/src/inventory.rs"
-ceiling = 606
+ceiling = 602
 
 [[files]]
 path = "crates/adventuresim-tactical-core/src/physics.rs"
@@ -620,7 +688,7 @@ ceiling = 559
 
 [[files]]
 path = "crates/adventuresim-tactical-core/src/scene_input.rs"
-ceiling = 1225
+ceiling = 1114
 
 [[files]]
 path = "crates/adventuresim-tactical-netcode/src/client.rs"
@@ -628,23 +696,23 @@ ceiling = 674
 
 [[files]]
 path = "crates/adventuresim-tactical-server/src/combat/ingress.rs"
-ceiling = 815
+ceiling = 768
 
 [[files]]
 path = "crates/adventuresim-tactical-server/src/equipment.rs"
-ceiling = 925
+ceiling = 917
 
 [[files]]
 path = "crates/adventuresim-tactical-server/src/main.rs"
-ceiling = 587
+ceiling = 554
 
 [[files]]
 path = "crates/adventuresim-tactical-server/src/player_projection.rs"
-ceiling = 2083
+ceiling = 2082
 
 [[files]]
 path = "crates/adventuresim-terrain/src/builder.rs"
-ceiling = 532
+ceiling = 524
 
 [[files]]
 path = "crates/adventuresim-terrain/src/lib.rs"
@@ -668,7 +736,7 @@ ceiling = 720
 
 [[files]]
 path = "crates/adventuresim-world-import/src/bin/build-strategic-map.rs"
-ceiling = 1159
+ceiling = 1123
 
 [[files]]
 path = "crates/adventuresim-world-import/src/bin/build-strategic-map/tiles.rs"
@@ -676,11 +744,11 @@ ceiling = 1098
 
 [[files]]
 path = "crates/adventuresim-world-import/src/main.rs"
-ceiling = 1288
+ceiling = 1287
 
 [[files]]
 path = "crates/adventuresim-world-import/src/manifest.rs"
-ceiling = 788
+ceiling = 765
 
 [[files]]
 path = "crates/adventuresim-world-import/src/sources/drought.rs"
@@ -712,7 +780,7 @@ ceiling = 694
 
 [[files]]
 path = "crates/adventuresim-world-import/src/sources/viabundus/mod.rs"
-ceiling = 632
+ceiling = 566
 
 [[files]]
 path = "crates/adventuresim-world-import/src/validation.rs"
@@ -724,7 +792,7 @@ ceiling = 568
 
 [[files]]
 path = "crates/adventuresim-world-schema/src/lib.rs"
-ceiling = 4344
+ceiling = 4268
 
 [[files]]
 path = "crates/fabelgeist-animation/src/animation/retarget/retargeter.rs"
@@ -855,6 +923,286 @@ path = "crates/strategic-web/src/templates/settlement/travel.rs"
 ceiling = 1202
 
 [[functions]]
+path = "crates/adventuresim-building-generator/src/audit/artillery.rs"
+item = "audit_artillery_castle"
+ceiling = 715
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/audit/ballistics.rs"
+item = "ray_clear_of_solids"
+ceiling = 220
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/audit/church.rs"
+item = "audit_church_assembly"
+ceiling = 1100
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/audit/core.rs"
+item = "audit_plan"
+ceiling = 145
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/audit/crowns.rs"
+item = "audit_crowns"
+ceiling = 861
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/audit/gatehouses.rs"
+item = "audit_gatehouse_assemblies"
+ceiling = 341
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/audit/guard_access.rs"
+item = "audit_guard_access"
+ceiling = 373
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/audit/guard_chambers.rs"
+item = "audit_guard_chamber"
+ceiling = 126
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/audit/projected_defenses.rs"
+item = "audit_projected_defenses"
+ceiling = 1061
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/audit/resolved_geometry.rs"
+item = "audit_resolved_geometry"
+ceiling = 668
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/audit/roofs.rs"
+item = "audit_roof_assemblies"
+ceiling = 1488
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/audit/timber.rs"
+item = "audit_timber_frame"
+ceiling = 1820
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/audit/timber_intersections.rs"
+item = "undeclared_timber_intersections"
+ceiling = 425
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/audit/wall_openings.rs"
+item = "audit_wall_opening_assemblies"
+ceiling = 1054
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/generator/artillery_castle.rs"
+item = "resolve_artillery_castle"
+ceiling = 1853
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/generator/artillery_openings.rs"
+item = "resolve_artillery_gun_opening"
+ceiling = 533
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/generator/cathedral_clerestory.rs"
+item = "resolve_cathedral_clerestory_walls"
+ceiling = 112
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/generator/church_assembly.rs"
+item = "resolve_church_assembly"
+ceiling = 1791
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/generator/church_tower.rs"
+item = "resolve_cathedral_bell_stage"
+ceiling = 486
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/generator/church_tower.rs"
+item = "resolve_church_tower_door_wall"
+ceiling = 366
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/generator/church_windows.rs"
+item = "resolve_church_pointed_window"
+ceiling = 462
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/generator/crown_geometry.rs"
+item = "resolve_crown_geometry"
+ceiling = 1154
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/generator/defense_derivation.rs"
+item = "derive_battlements"
+ceiling = 117
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/generator/defense_derivation.rs"
+item = "derive_crowns"
+ceiling = 195
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/generator/drainage_catchments.rs"
+item = "push_drainage_catchment"
+ceiling = 207
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/generator/gate_defenses.rs"
+item = "derive_gate_defenses"
+ceiling = 342
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/generator/layout.rs"
+item = "allocate_rooms"
+ceiling = 102
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/generator/layout.rs"
+item = "resolve_straight_stair_core"
+ceiling = 181
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/generator/linear_defenses.rs"
+item = "resolve_linear_defense_host"
+ceiling = 186
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/generator/orchestration.rs"
+item = "apply_opening_edits"
+ceiling = 102
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/generator/orchestration.rs"
+item = "generate_unchecked"
+ceiling = 268
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/generator/projected_defenses.rs"
+item = "resolve_projected_defenses"
+ceiling = 1349
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/generator/roof_abutments.rs"
+item = "resolve_roof_abutment_contours"
+ceiling = 304
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/generator/roof_assemblies.rs"
+item = "resolve_roof_assemblies"
+ceiling = 603
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/generator/roof_child_fronts.rs"
+item = "resolve_roof_child_front_openings"
+ceiling = 511
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/generator/roof_cutting.rs"
+item = "cut_parent_roof_face"
+ceiling = 101
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/generator/roof_derivation.rs"
+item = "derive_roof_dormers"
+ceiling = 110
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/generator/roof_derivation.rs"
+item = "derive_roofs"
+ceiling = 184
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/generator/roof_drainage.rs"
+item = "finalize_roof_drainage"
+ceiling = 281
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/generator/roof_edge_binding.rs"
+item = "bind_coincident_primary_roof_edges"
+ceiling = 155
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/generator/roof_editing.rs"
+item = "set_roof_pitch"
+ceiling = 155
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/generator/roof_geometry.rs"
+item = "roof_face_polygons"
+ceiling = 211
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/generator/roof_outlets.rs"
+item = "consolidate_roof_outlet_stations"
+ceiling = 964
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/generator/roof_resolution.rs"
+item = "resolve_one_roof"
+ceiling = 800
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/generator/roof_split_drainage.rs"
+item = "supplement_split_eave_drainage"
+ceiling = 234
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/generator/timber.rs"
+item = "TimberFrameBuilder<'a>::classify_physical_joints"
+ceiling = 150
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/generator/timber.rs"
+item = "TimberFrameBuilder<'a>::member"
+ceiling = 126
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/generator/timber.rs"
+item = "resolve_timber_frame_assembly"
+ceiling = 2473
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/generator/tower_derivation.rs"
+item = "derive_stairs"
+ceiling = 109
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/generator/tower_derivation.rs"
+item = "derive_towers"
+ceiling = 135
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/generator/wall_assemblies.rs"
+item = "resolve_storey_wall_assemblies"
+ceiling = 1210
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/generator/wall_bonds.rs"
+item = "resolve_storey_wall_corner_bonds"
+ceiling = 201
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/generator/wall_derivation.rs"
+item = "derive_openings"
+ceiling = 237
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/generator/wall_derivation.rs"
+item = "opening_profile_for"
+ceiling = 108
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/model/building_program.rs"
+item = "BuildingProgram::fixture"
+ceiling = 393
+
+[[functions]]
+path = "crates/adventuresim-building-generator/src/model/player_build.rs"
+item = "PlayerBuildDocument::apply"
+ceiling = 218
+
+[[functions]]
 path = "crates/adventuresim-character-creator/src/clothing.rs"
 item = "generate_clothing_shells"
 ceiling = 255
@@ -967,7 +1315,7 @@ ceiling = 237
 [[functions]]
 path = "crates/adventuresim-core/src/item_catalog_validation.rs"
 item = "validate_equipment"
-ceiling = 501
+ceiling = 498
 
 [[functions]]
 path = "crates/adventuresim-core/src/item_catalog_validation.rs"
@@ -1802,7 +2150,7 @@ ceiling = 171
 [[functions]]
 path = "crates/adventuresim-stdb-module/src/strategic/mission_bootstrap.rs"
 item = "seed_standalone_tactical_mission"
-ceiling = 319
+ceiling = 316
 
 [[functions]]
 path = "crates/adventuresim-stdb-module/src/strategic/mission_bootstrap.rs"
@@ -1852,7 +2200,7 @@ ceiling = 277
 [[functions]]
 path = "crates/adventuresim-stdb-module/src/tactical.rs"
 item = "request_tactical_server"
-ceiling = 173
+ceiling = 167
 
 [[functions]]
 path = "crates/adventuresim-stdb-module/src/time/activities.rs"
@@ -2107,7 +2455,7 @@ ceiling = 148
 [[functions]]
 path = "crates/adventuresim-tactical-client/src/animation/mod.rs"
 item = "PoseSampleResolver<'_>::append_layer"
-ceiling = 290
+ceiling = 236
 
 [[functions]]
 path = "crates/adventuresim-tactical-client/src/animation/mod.rs"
@@ -2132,7 +2480,7 @@ ceiling = 219
 [[functions]]
 path = "crates/adventuresim-tactical-client/src/animation/pose_buffer.rs"
 item = "sample_plan"
-ceiling = 331
+ceiling = 323
 
 [[functions]]
 path = "crates/adventuresim-tactical-client/src/animation/pose_buffer.rs"
@@ -2257,7 +2605,7 @@ ceiling = 123
 [[functions]]
 path = "crates/adventuresim-tactical-client/src/equipment.rs"
 item = "update_grab_input"
-ceiling = 117
+ceiling = 110
 
 [[functions]]
 path = "crates/adventuresim-tactical-client/src/equipment.rs"
@@ -2267,7 +2615,7 @@ ceiling = 107
 [[functions]]
 path = "crates/adventuresim-tactical-client/src/main.rs"
 item = "run"
-ceiling = 168
+ceiling = 161
 
 [[functions]]
 path = "crates/adventuresim-tactical-client/src/player.rs"
@@ -2277,7 +2625,7 @@ ceiling = 128
 [[functions]]
 path = "crates/adventuresim-tactical-client/src/player.rs"
 item = "try_start_attack"
-ceiling = 175
+ceiling = 174
 
 [[functions]]
 path = "crates/adventuresim-tactical-client/src/presentation/atmosphere.rs"
@@ -2307,7 +2655,7 @@ ceiling = 123
 [[functions]]
 path = "crates/adventuresim-tactical-client/src/presentation/ground_scatter/instanced_grass.rs"
 item = "spawn"
-ceiling = 107
+ceiling = 104
 
 [[functions]]
 path = "crates/adventuresim-tactical-client/src/presentation/ground_scatter/instanced_understory.rs"
@@ -2337,7 +2685,7 @@ ceiling = 245
 [[functions]]
 path = "crates/adventuresim-tactical-client/src/presentation/mod.rs"
 item = "TacticalPresentationPlugin::build"
-ceiling = 107
+ceiling = 106
 
 [[functions]]
 path = "crates/adventuresim-tactical-client/src/presentation/obstacles/tree/geometry/skeleton.rs"
@@ -2385,11 +2733,6 @@ item = "spawn_streamed_tree_children"
 ceiling = 208
 
 [[functions]]
-path = "crates/adventuresim-tactical-client/src/presentation/procedural_assets/mod.rs"
-item = "oak_bark_height"
-ceiling = 146
-
-[[functions]]
 path = "crates/adventuresim-tactical-client/src/presentation/sky/mod.rs"
 item = "apply_presented_celestial_lighting"
 ceiling = 101
@@ -2397,17 +2740,17 @@ ceiling = 101
 [[functions]]
 path = "crates/adventuresim-tactical-client/src/presentation/terrain.rs"
 item = "present_pending_terrain"
-ceiling = 135
+ceiling = 126
 
 [[functions]]
 path = "crates/adventuresim-tactical-client/src/presentation/vista.rs"
 item = "on_scene_vista_bundle"
-ceiling = 131
+ceiling = 127
 
 [[functions]]
 path = "crates/adventuresim-tactical-client/src/presentation/vista.rs"
 item = "spawn_near_vista_scatter"
-ceiling = 118
+ceiling = 111
 
 [[functions]]
 path = "crates/adventuresim-tactical-client/src/presentation/vista.rs"
@@ -2430,46 +2773,6 @@ item = "extract_surface_nets"
 ceiling = 170
 
 [[functions]]
-path = "crates/adventuresim-tactical-client/src/tactical_scene_viewer.rs"
-item = "benchmark_scene_performance"
-ceiling = 518
-
-[[functions]]
-path = "crates/adventuresim-tactical-client/src/tactical_scene_viewer.rs"
-item = "build_manifest"
-ceiling = 324
-
-[[functions]]
-path = "crates/adventuresim-tactical-client/src/tactical_scene_viewer.rs"
-item = "camera_for_view"
-ceiling = 185
-
-[[functions]]
-path = "crates/adventuresim-tactical-client/src/tactical_scene_viewer.rs"
-item = "capture_views"
-ceiling = 630
-
-[[functions]]
-path = "crates/adventuresim-tactical-client/src/tactical_scene_viewer.rs"
-item = "run"
-ceiling = 173
-
-[[functions]]
-path = "crates/adventuresim-tactical-client/src/tactical_scene_viewer.rs"
-item = "setup_scene"
-ceiling = 417
-
-[[functions]]
-path = "crates/adventuresim-tactical-client/src/tactical_scene_viewer.rs"
-item = "write_scene_performance_benchmark"
-ceiling = 113
-
-[[functions]]
-path = "crates/adventuresim-tactical-client/src/tactical_scene_viewer/manifest.rs"
-item = "finalize_screenshot_validation"
-ceiling = 114
-
-[[functions]]
 path = "crates/adventuresim-tactical-client/src/tactical_sky_viewer.rs"
 item = "capture_view"
 ceiling = 158
@@ -2480,19 +2783,14 @@ item = "setup_ui"
 ceiling = 284
 
 [[functions]]
-path = "crates/adventuresim-tactical-core/src/bin/generate-scene-fixtures.rs"
-item = "fixtures"
-ceiling = 114
-
-[[functions]]
 path = "crates/adventuresim-tactical-core/src/combat_config.rs"
 item = "TacticalCombatConfig::default"
-ceiling = 356
+ceiling = 354
 
 [[functions]]
 path = "crates/adventuresim-tactical-core/src/combat_config.rs"
 item = "TacticalCombatConfig::validate"
-ceiling = 488
+ceiling = 483
 
 [[functions]]
 path = "crates/adventuresim-tactical-core/src/physics.rs"
@@ -2507,12 +2805,12 @@ ceiling = 355
 [[functions]]
 path = "crates/adventuresim-tactical-server-dispatcher/src/main.rs"
 item = "main"
-ceiling = 175
+ceiling = 165
 
 [[functions]]
 path = "crates/adventuresim-tactical-server/src/bot/offense.rs"
 item = "drive_offensive_combat_ai"
-ceiling = 206
+ceiling = 205
 
 [[functions]]
 path = "crates/adventuresim-tactical-server/src/combat/consequence.rs"
@@ -2527,12 +2825,12 @@ ceiling = 132
 [[functions]]
 path = "crates/adventuresim-tactical-server/src/combat/melee.rs"
 item = "resolve_melee_attack"
-ceiling = 253
+ceiling = 239
 
 [[functions]]
 path = "crates/adventuresim-tactical-server/src/combat/ranged.rs"
 item = "resolve_ranged_attack"
-ceiling = 219
+ceiling = 213
 
 [[functions]]
 path = "crates/adventuresim-tactical-server/src/equipment.rs"
@@ -2542,17 +2840,17 @@ ceiling = 175
 [[functions]]
 path = "crates/adventuresim-tactical-server/src/equipment.rs"
 item = "process_equipment_actions"
-ceiling = 153
+ceiling = 146
 
 [[functions]]
 path = "crates/adventuresim-tactical-server/src/main.rs"
 item = "main"
-ceiling = 172
+ceiling = 160
 
 [[functions]]
 path = "crates/adventuresim-tactical-server/src/main.rs"
 item = "on_server_started"
-ceiling = 124
+ceiling = 104
 
 [[functions]]
 path = "crates/adventuresim-tactical-server/src/player_projection.rs"
@@ -2627,7 +2925,7 @@ ceiling = 222
 [[functions]]
 path = "crates/adventuresim-world-import/src/bin/build-strategic-map.rs"
 item = "run"
-ceiling = 160
+ceiling = 152
 
 [[functions]]
 path = "crates/adventuresim-world-import/src/bin/build-strategic-map/tiles.rs"
@@ -2712,7 +3010,7 @@ ceiling = 194
 [[functions]]
 path = "crates/adventuresim-world-import/src/sources/viabundus/mod.rs"
 item = "compile"
-ceiling = 339
+ceiling = 273
 
 [[functions]]
 path = "crates/adventuresim-world-import/src/validation.rs"
@@ -3246,6 +3544,27 @@ ceiling = 140
 
 [[findings]]
 rule = "debug-output-branch"
+path = "crates/adventuresim-building-generator/src/audit/timber.rs"
+item = "audit_timber_frame"
+fingerprint = "debug-local:key"
+occurrences = 1
+
+[[findings]]
+rule = "debug-output-branch"
+path = "crates/adventuresim-building-generator/src/audit/timber.rs"
+item = "audit_timber_frame"
+fingerprint = "debug-local:roles"
+occurrences = 2
+
+[[findings]]
+rule = "debug-output-branch"
+path = "crates/adventuresim-building-generator/src/generator/orchestration.rs"
+item = "apply_opening_edits"
+fingerprint = "debug-local:wall_index"
+occurrences = 2
+
+[[findings]]
+rule = "debug-output-branch"
 path = "crates/adventuresim-stdb-module/src/strategic/authority_model.rs"
 item = "validate_quest_generation_authority"
 fingerprint = "debug-local:regenerated"
@@ -3291,6 +3610,272 @@ rule = "debug-output-branch"
 path = "crates/fabelgeist-rust-quality/src/scan.rs"
 item = "DebugBindingProbe::visit_local"
 fingerprint = "debug-local:debug_initializer"
+occurrences = 1
+
+[[findings]]
+rule = "raw-string-branch"
+path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
+item = "focus_name_matches"
+fingerprint = "string:artillery_assembly"
+occurrences = 1
+
+[[findings]]
+rule = "raw-string-branch"
+path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
+item = "focus_name_matches"
+fingerprint = "string:gate_exterior"
+occurrences = 1
+
+[[findings]]
+rule = "raw-string-branch"
+path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
+item = "focus_name_matches"
+fingerprint = "string:gate_interior_section"
+occurrences = 1
+
+[[findings]]
+rule = "raw-string-branch"
+path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
+item = "focus_name_matches"
+fingerprint = "string:resolved_church_program"
+occurrences = 1
+
+[[findings]]
+rule = "raw-string-branch"
+path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
+item = "focus_name_matches"
+fingerprint = "string:resolved_crown"
+occurrences = 1
+
+[[findings]]
+rule = "raw-string-branch"
+path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
+item = "focus_name_matches"
+fingerprint = "string:resolved_opening"
+occurrences = 1
+
+[[findings]]
+rule = "raw-string-branch"
+path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
+item = "focus_name_matches"
+fingerprint = "string:resolved_projected"
+occurrences = 1
+
+[[findings]]
+rule = "raw-string-branch"
+path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
+item = "focus_name_matches"
+fingerprint = "string:resolved_roof"
+occurrences = 1
+
+[[findings]]
+rule = "raw-string-branch"
+path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
+item = "focus_name_matches"
+fingerprint = "string:resolved_timber_frame"
+occurrences = 1
+
+[[findings]]
+rule = "raw-string-branch"
+path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
+item = "focus_name_matches"
+fingerprint = "string:resolved_wall_section"
+occurrences = 1
+
+[[findings]]
+rule = "raw-string-branch"
+path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
+item = "focus_name_matches"
+fingerprint = "string:tower_portal"
+occurrences = 1
+
+[[findings]]
+rule = "raw-string-branch"
+path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
+item = "focus_requirements_met"
+fingerprint = "string:artillery_assembly"
+occurrences = 1
+
+[[findings]]
+rule = "raw-string-branch"
+path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
+item = "focus_requirements_met"
+fingerprint = "string:gate_exterior"
+occurrences = 1
+
+[[findings]]
+rule = "raw-string-branch"
+path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
+item = "focus_requirements_met"
+fingerprint = "string:gate_interior_section"
+occurrences = 1
+
+[[findings]]
+rule = "raw-string-branch"
+path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
+item = "focus_requirements_met"
+fingerprint = "string:resolved_church_program"
+occurrences = 1
+
+[[findings]]
+rule = "raw-string-branch"
+path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
+item = "focus_requirements_met"
+fingerprint = "string:resolved_crown"
+occurrences = 1
+
+[[findings]]
+rule = "raw-string-branch"
+path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
+item = "focus_requirements_met"
+fingerprint = "string:resolved_opening"
+occurrences = 1
+
+[[findings]]
+rule = "raw-string-branch"
+path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
+item = "focus_requirements_met"
+fingerprint = "string:resolved_projected"
+occurrences = 1
+
+[[findings]]
+rule = "raw-string-branch"
+path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
+item = "focus_requirements_met"
+fingerprint = "string:resolved_roof"
+occurrences = 1
+
+[[findings]]
+rule = "raw-string-branch"
+path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
+item = "focus_requirements_met"
+fingerprint = "string:resolved_timber_frame"
+occurrences = 1
+
+[[findings]]
+rule = "raw-string-branch"
+path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
+item = "focus_requirements_met"
+fingerprint = "string:resolved_wall_section"
+occurrences = 1
+
+[[findings]]
+rule = "raw-string-branch"
+path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
+item = "focus_requirements_met"
+fingerprint = "string:tower_portal"
+occurrences = 1
+
+[[findings]]
+rule = "raw-string-branch"
+path = "crates/adventuresim-building-generator/src/viewer/church_suite.rs"
+item = "validate_church_suite_records"
+fingerprint = "string:church-bay-load"
+occurrences = 1
+
+[[findings]]
+rule = "raw-string-branch"
+path = "crates/adventuresim-building-generator/src/viewer/church_suite.rs"
+item = "validate_church_suite_records"
+fingerprint = "string:church-bay-section"
+occurrences = 1
+
+[[findings]]
+rule = "raw-string-branch"
+path = "crates/adventuresim-building-generator/src/viewer/church_suite.rs"
+item = "validate_church_suite_records"
+fingerprint = "string:church-bay-vault"
+occurrences = 1
+
+[[findings]]
+rule = "raw-string-branch"
+path = "crates/adventuresim-building-generator/src/viewer/church_suite.rs"
+item = "validate_church_suite_records"
+fingerprint = "string:church-drainage"
+occurrences = 1
+
+[[findings]]
+rule = "raw-string-branch"
+path = "crates/adventuresim-building-generator/src/viewer/church_suite.rs"
+item = "validate_church_suite_records"
+fingerprint = "string:church-support-dag"
+occurrences = 1
+
+[[findings]]
+rule = "raw-string-branch"
+path = "crates/adventuresim-building-generator/src/viewer/church_suite.rs"
+item = "validate_church_suite_records"
+fingerprint = "string:church-tower-bell-underside"
+occurrences = 1
+
+[[findings]]
+rule = "raw-string-branch"
+path = "crates/adventuresim-building-generator/src/viewer/church_suite.rs"
+item = "validate_church_suite_records"
+fingerprint = "string:church-tower-frame"
+occurrences = 1
+
+[[findings]]
+rule = "raw-string-branch"
+path = "crates/adventuresim-building-generator/src/viewer/church_suite.rs"
+item = "validate_church_suite_records"
+fingerprint = "string:church-tower-roof-drain"
+occurrences = 1
+
+[[findings]]
+rule = "raw-string-branch"
+path = "crates/adventuresim-building-generator/src/viewer/church_suite.rs"
+item = "validate_church_suite_records"
+fingerprint = "string:church-tower-stair"
+occurrences = 1
+
+[[findings]]
+rule = "raw-string-branch"
+path = "crates/adventuresim-building-generator/src/viewer/focus_helpers.rs"
+item = "focused_wall"
+fingerprint = "string:cathedral_buttress"
+occurrences = 1
+
+[[findings]]
+rule = "raw-string-branch"
+path = "crates/adventuresim-building-generator/src/viewer/focus_helpers.rs"
+item = "focused_wall"
+fingerprint = "string:civilian_masonry"
+occurrences = 1
+
+[[findings]]
+rule = "raw-string-branch"
+path = "crates/adventuresim-building-generator/src/viewer/focus_helpers.rs"
+item = "focused_wall"
+fingerprint = "string:timber_frame"
+occurrences = 1
+
+[[findings]]
+rule = "raw-string-branch"
+path = "crates/adventuresim-building-generator/src/viewer/timber_suite.rs"
+item = "validate_compact_evidence_suite"
+fingerprint = "string:artillery-curtain-section"
+occurrences = 1
+
+[[findings]]
+rule = "raw-string-branch"
+path = "crates/adventuresim-building-generator/src/viewer/timber_suite.rs"
+item = "validate_compact_evidence_suite"
+fingerprint = "string:artillery-gate-interior"
+occurrences = 1
+
+[[findings]]
+rule = "raw-string-branch"
+path = "crates/adventuresim-building-generator/src/viewer/timber_suite.rs"
+item = "validate_compact_evidence_suite"
+fingerprint = "string:artillery-rondel-casemate"
+occurrences = 1
+
+[[findings]]
+rule = "raw-string-branch"
+path = "crates/adventuresim-building-generator/src/viewer/timber_suite.rs"
+item = "validate_compact_evidence_suite"
+fingerprint = "string:artillery-rondel-cutaway"
 occurrences = 1
 
 [[findings]]
@@ -10380,20 +10965,6 @@ occurrences = 1
 [[findings]]
 rule = "raw-string-branch"
 path = "crates/adventuresim-tactical-client/src/tactical_scene_viewer.rs"
-item = "benchmark_scene_performance"
-fingerprint = "string:elapsed_gpu"
-occurrences = 1
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-tactical-client/src/tactical_scene_viewer.rs"
-item = "benchmark_scene_performance"
-fingerprint = "string:render/"
-occurrences = 1
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-tactical-client/src/tactical_scene_viewer.rs"
 item = "build_manifest"
 fingerprint = "string:dense-woodland"
 occurrences = 1
@@ -10429,48 +11000,6 @@ occurrences = 1
 [[findings]]
 rule = "raw-string-branch"
 path = "crates/adventuresim-tactical-client/src/tactical_scene_viewer.rs"
-item = "capture_presentation_plugin"
-fingerprint = "string:TACTICAL_BENCH_CLOUD_QUALITY_SCALE"
-occurrences = 1
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-tactical-client/src/tactical_scene_viewer.rs"
-item = "capture_presentation_plugin"
-fingerprint = "string:TACTICAL_BENCH_CLOUD_RESOLUTION_SCALE"
-occurrences = 1
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-tactical-client/src/tactical_scene_viewer.rs"
-item = "capture_presentation_plugin"
-fingerprint = "string:TACTICAL_BENCH_DISABLE_POST_PROCESSING"
-occurrences = 1
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-tactical-client/src/tactical_scene_viewer.rs"
-item = "capture_presentation_plugin"
-fingerprint = "string:TACTICAL_BENCH_DISABLE_SHADOWS"
-occurrences = 1
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-tactical-client/src/tactical_scene_viewer.rs"
-item = "capture_presentation_plugin"
-fingerprint = "string:TACTICAL_BENCH_GRASS_DENSITY_SCALE"
-occurrences = 1
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-tactical-client/src/tactical_scene_viewer.rs"
-item = "capture_views"
-fingerprint = "string:common beech"
-occurrences = 2
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-tactical-client/src/tactical_scene_viewer.rs"
 item = "selected_capture_views"
 fingerprint = "string:animation-play"
 occurrences = 1
@@ -10494,27 +11023,6 @@ rule = "raw-string-branch"
 path = "crates/adventuresim-tactical-client/src/tactical_scene_viewer.rs"
 item = "selected_capture_views"
 fingerprint = "string:tree-cold-traversal"
-occurrences = 2
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-tactical-client/src/tactical_scene_viewer.rs"
-item = "selected_capture_views"
-fingerprint = "string:warmup"
-occurrences = 2
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-tactical-client/src/tactical_scene_viewer/manifest.rs"
-item = "finalize_screenshot_validation"
-fingerprint = "string:forest-floor-debris-detail"
-occurrences = 1
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-tactical-client/src/tactical_scene_viewer/manifest.rs"
-item = "finalize_screenshot_validation"
-fingerprint = "string:narrow-peak-lod-boundary"
 occurrences = 1
 
 [[findings]]
@@ -14432,13 +14940,6 @@ occurrences = 1
 
 [[findings]]
 rule = "semantic-family:e7-coordinates"
-path = "crates/adventuresim-tactical-core/src/bin/generate-scene-fixtures.rs"
-item = "build_fixture"
-fingerprint = "10000000"
-occurrences = 1
-
-[[findings]]
-rule = "semantic-family:e7-coordinates"
 path = "crates/adventuresim-tactical-core/src/scene_input.rs"
 item = "SceneEnvironmentFixture::snapshot"
 fingerprint = "10000000"
@@ -14499,1788 +15000,3 @@ path = "crates/strategic-web/src/spacetimedb/mod.rs"
 item = "adventuresim_core::surgery::SurgeryProcedure::sats_name"
 fingerprint = "stitch"
 occurrences = 1
-
-# Building generator legacy floor after the responsibility-based module split.
-
-[[files]]
-path = "crates/adventuresim-building-generator/src/audit/artillery.rs"
-ceiling = 715
-
-
-[[files]]
-path = "crates/adventuresim-building-generator/src/audit/church.rs"
-ceiling = 1100
-
-
-[[files]]
-path = "crates/adventuresim-building-generator/src/audit/crowns.rs"
-ceiling = 861
-
-
-[[files]]
-path = "crates/adventuresim-building-generator/src/audit/projected_defenses.rs"
-ceiling = 1061
-
-
-[[files]]
-path = "crates/adventuresim-building-generator/src/audit/resolved_geometry.rs"
-ceiling = 668
-
-
-[[files]]
-path = "crates/adventuresim-building-generator/src/audit/roofs.rs"
-ceiling = 1488
-
-
-[[files]]
-path = "crates/adventuresim-building-generator/src/audit/timber.rs"
-ceiling = 1820
-
-
-[[files]]
-path = "crates/adventuresim-building-generator/src/audit/wall_openings.rs"
-ceiling = 1057
-
-
-[[files]]
-path = "crates/adventuresim-building-generator/src/generator/artillery_castle.rs"
-ceiling = 1853
-
-
-[[files]]
-path = "crates/adventuresim-building-generator/src/generator/artillery_openings.rs"
-ceiling = 554
-
-
-[[files]]
-path = "crates/adventuresim-building-generator/src/generator/church_assembly.rs"
-ceiling = 1791
-
-
-[[files]]
-path = "crates/adventuresim-building-generator/src/generator/church_tower.rs"
-ceiling = 880
-
-
-[[files]]
-path = "crates/adventuresim-building-generator/src/generator/crown_geometry.rs"
-ceiling = 1171
-
-
-[[files]]
-path = "crates/adventuresim-building-generator/src/generator/projected_defenses.rs"
-ceiling = 1349
-
-
-[[files]]
-path = "crates/adventuresim-building-generator/src/generator/roof_assemblies.rs"
-ceiling = 671
-
-
-[[files]]
-path = "crates/adventuresim-building-generator/src/generator/roof_child_fronts.rs"
-ceiling = 511
-
-
-[[files]]
-path = "crates/adventuresim-building-generator/src/generator/roof_outlets.rs"
-ceiling = 964
-
-
-[[files]]
-path = "crates/adventuresim-building-generator/src/generator/roof_resolution.rs"
-ceiling = 800
-
-
-[[files]]
-path = "crates/adventuresim-building-generator/src/generator/timber.rs"
-ceiling = 3106
-
-
-[[files]]
-path = "crates/adventuresim-building-generator/src/generator/wall_assemblies.rs"
-ceiling = 1213
-
-
-[[files]]
-path = "crates/adventuresim-building-generator/src/generator/wall_derivation.rs"
-ceiling = 598
-
-
-[[files]]
-path = "crates/adventuresim-building-generator/src/viewer/architectural_rendering.rs"
-ceiling = 586
-
-
-[[files]]
-path = "crates/adventuresim-building-generator/src/viewer/capture.rs"
-ceiling = 603
-
-
-[[files]]
-path = "crates/adventuresim-building-generator/src/viewer/editor_ui.rs"
-ceiling = 638
-
-
-[[files]]
-path = "crates/adventuresim-building-generator/src/viewer/focus_helpers.rs"
-ceiling = 577
-
-
-[[files]]
-path = "crates/adventuresim-building-generator/src/viewer/fortification_rendering.rs"
-ceiling = 828
-
-
-[[files]]
-path = "crates/adventuresim-building-generator/src/viewer/roof_rendering.rs"
-ceiling = 824
-
-
-[[files]]
-path = "crates/adventuresim-building-generator/src/viewer/run.rs"
-ceiling = 1379
-
-
-[[files]]
-path = "crates/adventuresim-building-generator/src/viewer/setup.rs"
-ceiling = 1713
-
-
-[[files]]
-path = "crates/adventuresim-building-generator/src/viewer/timber_focus.rs"
-ceiling = 1011
-
-
-[[files]]
-path = "crates/adventuresim-building-generator/src/viewer/tower_rendering.rs"
-ceiling = 592
-
-
-[[files]]
-path = "crates/adventuresim-building-generator/src/viewer/wall_rendering.rs"
-ceiling = 597
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/audit/artillery.rs"
-item = "audit_artillery_castle"
-ceiling = 715
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/audit/ballistics.rs"
-item = "ray_clear_of_solids"
-ceiling = 220
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/audit/church.rs"
-item = "audit_church_assembly"
-ceiling = 1100
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/audit/core.rs"
-item = "audit_plan"
-ceiling = 145
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/audit/crowns.rs"
-item = "audit_crowns"
-ceiling = 861
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/audit/gatehouses.rs"
-item = "audit_gatehouse_assemblies"
-ceiling = 341
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/audit/guard_access.rs"
-item = "audit_guard_access"
-ceiling = 373
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/audit/guard_chambers.rs"
-item = "audit_guard_chamber"
-ceiling = 126
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/audit/projected_defenses.rs"
-item = "audit_projected_defenses"
-ceiling = 1061
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/audit/resolved_geometry.rs"
-item = "audit_resolved_geometry"
-ceiling = 668
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/audit/roofs.rs"
-item = "audit_roof_assemblies"
-ceiling = 1488
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/audit/timber.rs"
-item = "audit_timber_frame"
-ceiling = 1820
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/audit/timber_intersections.rs"
-item = "undeclared_timber_intersections"
-ceiling = 425
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/audit/wall_openings.rs"
-item = "audit_wall_opening_assemblies"
-ceiling = 1057
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/generator/artillery_castle.rs"
-item = "resolve_artillery_castle"
-ceiling = 1853
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/generator/artillery_openings.rs"
-item = "resolve_artillery_gun_opening"
-ceiling = 533
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/generator/cathedral_clerestory.rs"
-item = "resolve_cathedral_clerestory_walls"
-ceiling = 112
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/generator/church_assembly.rs"
-item = "resolve_church_assembly"
-ceiling = 1791
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/generator/church_tower.rs"
-item = "resolve_cathedral_bell_stage"
-ceiling = 486
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/generator/church_tower.rs"
-item = "resolve_church_tower_door_wall"
-ceiling = 366
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/generator/church_windows.rs"
-item = "resolve_church_pointed_window"
-ceiling = 462
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/generator/crown_geometry.rs"
-item = "resolve_crown_geometry"
-ceiling = 1154
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/generator/defense_derivation.rs"
-item = "derive_battlements"
-ceiling = 117
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/generator/defense_derivation.rs"
-item = "derive_crowns"
-ceiling = 195
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/generator/drainage_catchments.rs"
-item = "push_drainage_catchment"
-ceiling = 207
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/generator/gate_defenses.rs"
-item = "derive_gate_defenses"
-ceiling = 342
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/generator/layout.rs"
-item = "allocate_rooms"
-ceiling = 102
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/generator/layout.rs"
-item = "resolve_straight_stair_core"
-ceiling = 181
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/generator/linear_defenses.rs"
-item = "resolve_linear_defense_host"
-ceiling = 186
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/generator/orchestration.rs"
-item = "apply_opening_edits"
-ceiling = 102
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/generator/orchestration.rs"
-item = "generate_unchecked"
-ceiling = 268
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/generator/projected_defenses.rs"
-item = "resolve_projected_defenses"
-ceiling = 1349
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/generator/roof_abutments.rs"
-item = "resolve_roof_abutment_contours"
-ceiling = 304
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/generator/roof_assemblies.rs"
-item = "resolve_roof_assemblies"
-ceiling = 671
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/generator/roof_child_fronts.rs"
-item = "resolve_roof_child_front_openings"
-ceiling = 511
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/generator/roof_cutting.rs"
-item = "cut_parent_roof_face"
-ceiling = 101
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/generator/roof_derivation.rs"
-item = "derive_roof_dormers"
-ceiling = 110
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/generator/roof_derivation.rs"
-item = "derive_roofs"
-ceiling = 184
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/generator/roof_drainage.rs"
-item = "finalize_roof_drainage"
-ceiling = 281
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/generator/roof_edge_binding.rs"
-item = "bind_coincident_primary_roof_edges"
-ceiling = 155
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/generator/roof_editing.rs"
-item = "set_roof_pitch"
-ceiling = 155
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/generator/roof_geometry.rs"
-item = "roof_face_polygons"
-ceiling = 211
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/generator/roof_outlets.rs"
-item = "consolidate_roof_outlet_stations"
-ceiling = 964
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/generator/roof_resolution.rs"
-item = "resolve_one_roof"
-ceiling = 800
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/generator/roof_split_drainage.rs"
-item = "supplement_split_eave_drainage"
-ceiling = 234
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/generator/timber.rs"
-item = "TimberFrameBuilder<'a>::classify_physical_joints"
-ceiling = 150
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/generator/timber.rs"
-item = "TimberFrameBuilder<'a>::member"
-ceiling = 126
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/generator/timber.rs"
-item = "resolve_timber_frame_assembly"
-ceiling = 2473
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/generator/tower_derivation.rs"
-item = "derive_stairs"
-ceiling = 109
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/generator/tower_derivation.rs"
-item = "derive_towers"
-ceiling = 135
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/generator/wall_assemblies.rs"
-item = "resolve_storey_wall_assemblies"
-ceiling = 1213
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/generator/wall_bonds.rs"
-item = "resolve_storey_wall_corner_bonds"
-ceiling = 201
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/generator/wall_derivation.rs"
-item = "derive_openings"
-ceiling = 237
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/generator/wall_derivation.rs"
-item = "opening_profile_for"
-ceiling = 108
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/model/building_program.rs"
-item = "BuildingProgram::fixture"
-ceiling = 393
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/model/player_build.rs"
-item = "PlayerBuildDocument::apply"
-ceiling = 218
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/viewer/architectural_rendering.rs"
-item = "opening_boundary_outline_mesh"
-ceiling = 116
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/viewer/architectural_rendering.rs"
-item = "opening_surface_mesh"
-ceiling = 145
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/viewer/architectural_rendering.rs"
-item = "spawn_architectural_section_markers"
-ceiling = 171
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/viewer/architectural_rendering.rs"
-item = "spawn_resolved_architectural_surfaces"
-ceiling = 102
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/viewer/artillery_focus.rs"
-item = "artillery_focus_item_ids"
-ceiling = 109
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/viewer/battlement_rendering.rs"
-item = "spawn_battlement_run"
-ceiling = 198
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/viewer/capture.rs"
-item = "capture_when_ready"
-ceiling = 603
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/viewer/church_suite.rs"
-item = "validate_church_suite_records"
-ceiling = 160
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/viewer/crown_rendering.rs"
-item = "spawn_resolved_crowns"
-ceiling = 388
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/viewer/editor_ui.rs"
-item = "editor_ui"
-ceiling = 424
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/viewer/editor_ui.rs"
-item = "perform_editor_action"
-ceiling = 214
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/viewer/editor_updates.rs"
-item = "configure_editor_scene"
-ceiling = 250
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/viewer/editor_updates.rs"
-item = "editor_owner_targets"
-ceiling = 113
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/viewer/focus_helpers.rs"
-item = "church_focus_item_ids"
-ceiling = 205
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/viewer/fortification_rendering.rs"
-item = "spawn_curtain_wall"
-ceiling = 117
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/viewer/fortification_rendering.rs"
-item = "spawn_gate_guard_chamber"
-ceiling = 560
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/viewer/openings_suite.rs"
-item = "validate_openings_suite_records"
-ceiling = 139
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/viewer/proof_markers.rs"
-item = "spawn_artillery_proof_markers"
-ceiling = 114
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/viewer/proof_markers.rs"
-item = "spawn_projected_proof_markers"
-ceiling = 117
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/viewer/roof_focus.rs"
-item = "roof_proof_assembly_indices"
-ceiling = 142
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/viewer/roof_rendering.rs"
-item = "spawn_gable_detail"
-ceiling = 150
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/viewer/roof_rendering.rs"
-item = "spawn_gable_roof"
-ceiling = 116
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/viewer/roof_rendering.rs"
-item = "spawn_roof_dormer"
-ceiling = 135
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/viewer/run.rs"
-item = "run"
-ceiling = 1379
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/viewer/setup.rs"
-item = "setup"
-ceiling = 1713
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/viewer/timber_focus.rs"
-item = "timber_camera"
-ceiling = 168
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/viewer/timber_focus.rs"
-item = "timber_focus_item_ids"
-ceiling = 557
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/viewer/timber_suite.rs"
-item = "validate_compact_evidence_suite"
-ceiling = 155
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/viewer/timber_suite.rs"
-item = "validate_timber_suite_records"
-ceiling = 146
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/viewer/tower_rendering.rs"
-item = "spawn_round_battlement"
-ceiling = 112
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/viewer/tower_rendering.rs"
-item = "spawn_tower"
-ceiling = 124
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/viewer/tower_rendering.rs"
-item = "tower_shell_mesh"
-ceiling = 144
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/viewer/walk_rendering.rs"
-item = "spawn_stair"
-ceiling = 101
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/viewer/wall_rendering.rs"
-item = "spawn_opening_depth"
-ceiling = 129
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/viewer/wall_rendering.rs"
-item = "spawn_timber_frame"
-ceiling = 189
-
-
-[[functions]]
-path = "crates/adventuresim-building-generator/src/viewer/wall_rendering.rs"
-item = "spawn_wall"
-ceiling = 111
-
-
-[[findings]]
-rule = "debug-output-branch"
-path = "crates/adventuresim-building-generator/src/audit/timber.rs"
-item = "audit_timber_frame"
-fingerprint = "debug-local:key"
-occurrences = 1
-
-
-[[findings]]
-rule = "debug-output-branch"
-path = "crates/adventuresim-building-generator/src/audit/timber.rs"
-item = "audit_timber_frame"
-fingerprint = "debug-local:roles"
-occurrences = 2
-
-
-[[findings]]
-rule = "debug-output-branch"
-path = "crates/adventuresim-building-generator/src/generator/orchestration.rs"
-item = "apply_opening_edits"
-fingerprint = "debug-local:wall_index"
-occurrences = 2
-
-
-[[findings]]
-rule = "debug-output-branch"
-path = "crates/adventuresim-building-generator/src/viewer/editor_ui.rs"
-item = "editor_ui"
-fingerprint = "debug-format"
-occurrences = 2
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/capture.rs"
-item = "capture_when_ready"
-fingerprint = "string:DirectRoofCottage"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/capture.rs"
-item = "capture_when_ready"
-fingerprint = "string:FrameTie"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/capture.rs"
-item = "capture_when_ready"
-fingerprint = "string:artillery-curtain-section"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/capture.rs"
-item = "capture_when_ready"
-fingerprint = "string:artillery-drainage"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/capture.rs"
-item = "capture_when_ready"
-fingerprint = "string:artillery-gate-approach"
-occurrences = 2
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/capture.rs"
-item = "capture_when_ready"
-fingerprint = "string:artillery-gate-interior"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/capture.rs"
-item = "capture_when_ready"
-fingerprint = "string:artillery-rondel-castle"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/capture.rs"
-item = "capture_when_ready"
-fingerprint = "string:artillery-whole-exterior"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/capture.rs"
-item = "capture_when_ready"
-fingerprint = "string:artillery_assembly"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/capture.rs"
-item = "capture_when_ready"
-fingerprint = "string:church-tower-roof-drain"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/capture.rs"
-item = "capture_when_ready"
-fingerprint = "string:circulation-registration-cut"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/capture.rs"
-item = "capture_when_ready"
-fingerprint = "string:exterior"
-occurrences = 5
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/capture.rs"
-item = "capture_when_ready"
-fingerprint = "string:frame-only-facade"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/capture.rs"
-item = "capture_when_ready"
-fingerprint = "string:program-detail"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/capture.rs"
-item = "capture_when_ready"
-fingerprint = "string:resolved_timber_frame"
-occurrences = 6
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/capture.rs"
-item = "capture_when_ready"
-fingerprint = "string:roof-dormer-gabled-exterior"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/capture.rs"
-item = "capture_when_ready"
-fingerprint = "string:support-load"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/capture.rs"
-item = "capture_when_ready"
-fingerprint = "string:timber-jetty-underside"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/capture.rs"
-item = "capture_when_ready"
-fingerprint = "string:timber-joint-close"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/capture.rs"
-item = "capture_when_ready"
-fingerprint = "string:timber-townhall-masonry-junction"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
-item = "focus_name_matches"
-fingerprint = "string:artillery_assembly"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
-item = "focus_name_matches"
-fingerprint = "string:gate_exterior"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
-item = "focus_name_matches"
-fingerprint = "string:gate_interior_section"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
-item = "focus_name_matches"
-fingerprint = "string:resolved_church_program"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
-item = "focus_name_matches"
-fingerprint = "string:resolved_crown"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
-item = "focus_name_matches"
-fingerprint = "string:resolved_opening"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
-item = "focus_name_matches"
-fingerprint = "string:resolved_projected"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
-item = "focus_name_matches"
-fingerprint = "string:resolved_roof"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
-item = "focus_name_matches"
-fingerprint = "string:resolved_timber_frame"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
-item = "focus_name_matches"
-fingerprint = "string:resolved_wall_section"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
-item = "focus_name_matches"
-fingerprint = "string:tower_portal"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
-item = "focus_requirements_met"
-fingerprint = "string:artillery_assembly"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
-item = "focus_requirements_met"
-fingerprint = "string:gate_exterior"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
-item = "focus_requirements_met"
-fingerprint = "string:gate_interior_section"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
-item = "focus_requirements_met"
-fingerprint = "string:resolved_church_program"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
-item = "focus_requirements_met"
-fingerprint = "string:resolved_crown"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
-item = "focus_requirements_met"
-fingerprint = "string:resolved_opening"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
-item = "focus_requirements_met"
-fingerprint = "string:resolved_projected"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
-item = "focus_requirements_met"
-fingerprint = "string:resolved_roof"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
-item = "focus_requirements_met"
-fingerprint = "string:resolved_timber_frame"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
-item = "focus_requirements_met"
-fingerprint = "string:resolved_wall_section"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
-item = "focus_requirements_met"
-fingerprint = "string:tower_portal"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/church_suite.rs"
-item = "validate_church_suite_records"
-fingerprint = "string:cathedral"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/church_suite.rs"
-item = "validate_church_suite_records"
-fingerprint = "string:church-bay-"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/church_suite.rs"
-item = "validate_church_suite_records"
-fingerprint = "string:church-bay-load"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/church_suite.rs"
-item = "validate_church_suite_records"
-fingerprint = "string:church-bay-section"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/church_suite.rs"
-item = "validate_church_suite_records"
-fingerprint = "string:church-bay-vault"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/church_suite.rs"
-item = "validate_church_suite_records"
-fingerprint = "string:church-choir-"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/church_suite.rs"
-item = "validate_church_suite_records"
-fingerprint = "string:church-crossing-"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/church_suite.rs"
-item = "validate_church_suite_records"
-fingerprint = "string:church-drainage"
-occurrences = 2
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/church_suite.rs"
-item = "validate_church_suite_records"
-fingerprint = "string:church-support-dag"
-occurrences = 2
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/church_suite.rs"
-item = "validate_church_suite_records"
-fingerprint = "string:church-tower-"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/church_suite.rs"
-item = "validate_church_suite_records"
-fingerprint = "string:church-tower-bell-underside"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/church_suite.rs"
-item = "validate_church_suite_records"
-fingerprint = "string:church-tower-frame"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/church_suite.rs"
-item = "validate_church_suite_records"
-fingerprint = "string:church-tower-roof-drain"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/church_suite.rs"
-item = "validate_church_suite_records"
-fingerprint = "string:church-tower-stair"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/editor_ui.rs"
-item = "editor_ui"
-fingerprint = "string:Apply roof"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/editor_ui.rs"
-item = "editor_ui"
-fingerprint = "string:Ctrl+Y"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/editor_ui.rs"
-item = "editor_ui"
-fingerprint = "string:Ctrl+Z"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/editor_ui.rs"
-item = "editor_ui"
-fingerprint = "string:Detach generated building"
-occurrences = 2
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/editor_ui.rs"
-item = "editor_ui"
-fingerprint = "string:Home"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/editor_ui.rs"
-item = "editor_ui"
-fingerprint = "string:Load document"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/editor_ui.rs"
-item = "editor_ui"
-fingerprint = "string:Move"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/editor_ui.rs"
-item = "editor_ui"
-fingerprint = "string:New freeform build"
-occurrences = 2
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/editor_ui.rs"
-item = "editor_ui"
-fingerprint = "string:Page Down"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/editor_ui.rs"
-item = "editor_ui"
-fingerprint = "string:Page Up"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/editor_ui.rs"
-item = "editor_ui"
-fingerprint = "string:Place opening"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/editor_ui.rs"
-item = "editor_ui"
-fingerprint = "string:Redo"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/editor_ui.rs"
-item = "editor_ui"
-fingerprint = "string:Remove"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/editor_ui.rs"
-item = "editor_ui"
-fingerprint = "string:Remove opening"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/editor_ui.rs"
-item = "editor_ui"
-fingerprint = "string:Resize"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/editor_ui.rs"
-item = "editor_ui"
-fingerprint = "string:Rotate"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/editor_ui.rs"
-item = "editor_ui"
-fingerprint = "string:Save document"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/editor_ui.rs"
-item = "editor_ui"
-fingerprint = "string:Undo"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/editor_ui.rs"
-item = "editor_ui"
-fingerprint = "string:▲ Higher"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/editor_ui.rs"
-item = "editor_ui"
-fingerprint = "string:▼ Lower"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/focus_helpers.rs"
-item = "focused_wall"
-fingerprint = "string:cathedral_buttress"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/focus_helpers.rs"
-item = "focused_wall"
-fingerprint = "string:civilian_masonry"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/focus_helpers.rs"
-item = "focused_wall"
-fingerprint = "string:round_tower_radial"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/focus_helpers.rs"
-item = "focused_wall"
-fingerprint = "string:timber_frame"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/openings_suite.rs"
-item = "validate_openings_suite_records"
-fingerprint = "string:opening="
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/openings_suite.rs"
-item = "validate_openings_suite_records"
-fingerprint = "string:profile="
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/openings_suite.rs"
-item = "validate_openings_suite_records"
-fingerprint = "string:round_tower_radial"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/openings_suite.rs"
-item = "validate_openings_suite_records"
-fingerprint = "string:thickness="
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/openings_suite.rs"
-item = "validate_openings_suite_records"
-fingerprint = "string:wall="
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/projected_suite.rs"
-item = "validate_projected_suite_records"
-fingerprint = "string:resolved_projected"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/projected_suite.rs"
-item = "validate_projected_suite_records"
-fingerprint = "string:sockets_only"
-occurrences = 2
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/roof_suite.rs"
-item = "validate_roof_suite_records"
-fingerprint = "string:-drainage"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/run.rs"
-item = "run"
-fingerprint = "string:-drainage"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/run.rs"
-item = "run"
-fingerprint = "string:-interior"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/run.rs"
-item = "run"
-fingerprint = "string:roof-abutment-tower-"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/run.rs"
-item = "run"
-fingerprint = "string:roof-cross-gable-exterior"
-occurrences = 2
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/setup.rs"
-item = "setup"
-fingerprint = "string:-cutaway"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/setup.rs"
-item = "setup"
-fingerprint = "string:-drainage"
-occurrences = 3
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/setup.rs"
-item = "setup"
-fingerprint = "string:-high-pitch"
-occurrences = 2
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/setup.rs"
-item = "setup"
-fingerprint = "string:-interior"
-occurrences = 3
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/setup.rs"
-item = "setup"
-fingerprint = "string:-top"
-occurrences = 3
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/setup.rs"
-item = "setup"
-fingerprint = "string:-underside"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/setup.rs"
-item = "setup"
-fingerprint = "string:roof-abutment-tower-"
-occurrences = 2
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/setup.rs"
-item = "setup"
-fingerprint = "string:roof-abutment-wall-cutaway"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/setup.rs"
-item = "setup"
-fingerprint = "string:roof-abutment-wall-exterior"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/setup.rs"
-item = "setup"
-fingerprint = "string:roof-cathedral-exterior"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/setup.rs"
-item = "setup"
-fingerprint = "string:roof-courtyard-valleys-top"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/setup.rs"
-item = "setup"
-fingerprint = "string:roof-cross-gable-"
-occurrences = 3
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/setup.rs"
-item = "setup"
-fingerprint = "string:roof-cross-gable-exterior"
-occurrences = 4
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/setup.rs"
-item = "setup"
-fingerprint = "string:roof-cross-gable-underside"
-occurrences = 2
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/setup.rs"
-item = "setup"
-fingerprint = "string:roof-dormer-"
-occurrences = 2
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/setup.rs"
-item = "setup"
-fingerprint = "string:roof-dormer-gabled-exterior"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/setup.rs"
-item = "setup"
-fingerprint = "string:roof-dormer-gabled-interior"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/setup.rs"
-item = "setup"
-fingerprint = "string:roof-l-valley-underside"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/setup.rs"
-item = "setup"
-fingerprint = "string:roof-pavilion-"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/setup.rs"
-item = "setup"
-fingerprint = "string:roof-pavilion-drainage"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/setup.rs"
-item = "setup"
-fingerprint = "string:roof-round-tower-"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/setup.rs"
-item = "setup"
-fingerprint = "string:roof-round-tower-drainage"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/timber_suite.rs"
-item = "validate_compact_evidence_suite"
-fingerprint = "string:artillery-bridge-denied"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/timber_suite.rs"
-item = "validate_compact_evidence_suite"
-fingerprint = "string:artillery-curtain-section"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/timber_suite.rs"
-item = "validate_compact_evidence_suite"
-fingerprint = "string:artillery-gate-interior"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/timber_suite.rs"
-item = "validate_compact_evidence_suite"
-fingerprint = "string:artillery-rondel-casemate"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/timber_suite.rs"
-item = "validate_compact_evidence_suite"
-fingerprint = "string:artillery-rondel-cutaway"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/timber_suite.rs"
-item = "validate_compact_evidence_suite"
-fingerprint = "string:fixture"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/timber_suite.rs"
-item = "validate_compact_evidence_suite"
-fingerprint = "string:focused_resolved_item_ids"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/timber_suite.rs"
-item = "validate_compact_evidence_suite"
-fingerprint = "string:mesh_integrity_issue_count"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/timber_suite.rs"
-item = "validate_compact_evidence_suite"
-fingerprint = "string:pixel_hash"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/timber_suite.rs"
-item = "validate_compact_evidence_suite"
-fingerprint = "string:plan_audit_issue_count"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/timber_suite.rs"
-item = "validate_compact_evidence_suite"
-fingerprint = "string:rendered_geometry_hash"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/timber_suite.rs"
-item = "validate_compact_evidence_suite"
-fingerprint = "string:resolved_solid_multiset_hash"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/timber_suite.rs"
-item = "validate_compact_evidence_suite"
-fingerprint = "string:resolver_schema_version"
-occurrences = 1
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/timber_suite.rs"
-item = "validate_timber_suite_records"
-fingerprint = "string:WallHost"
-occurrences = 2
-
-
-[[findings]]
-rule = "raw-string-branch"
-path = "crates/adventuresim-building-generator/src/viewer/timber_suite.rs"
-item = "validate_timber_suite_records"
-fingerprint = "string:timber:"
-occurrences = 1
-
-
-[[findings]]
-rule = "semantic-family:basis-points"
-path = "crates/adventuresim-building-generator/src/viewer/capture_metrics.rs"
-item = "luminance_stats"
-fingerprint = "10000"
-occurrences = 4

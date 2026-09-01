@@ -174,19 +174,19 @@ bonds, floors, and drains into the renderer-independent geometry layer.
 Every full battlement run now has an explicit 1.25-metre wall-walk surface on
 the protected side of its parapet. Battlemented round towers have annular top
 decks with open stair wells, and their spiral stairs rise to deck level. The
-plan also records each constructed junction between fighting surfaces as a
-level landing or short flight of steps, including its usable width and
-headroom. Fighting surfaces are assigned exactly once to named defensive
-circuits: the courtyard has one circuit, while the walled keep distinguishes
-its outer curtain from the separately accessed inner keep. Round-tower graph
-edges require explicit wall-walk portals. The renderer cuts those openings
-through the tower shell and crown, adds landings, and gives every spiral stair
-a framed ground entrance. The dark inner cylinder visible through loops and
-portals is explicitly a non-colliding depth backdrop; the cut outer shell and
-portal data define the physical opening. The viewer renders the surfaces as continuous
-structural slabs. They
-are suitable inputs for a future tactical collision or navigation adapter, but
-this standalone prototype does not itself make agents pathfind across them.
+plan also records each constructed junction between fighting surfaces as a level
+landing or short flight of steps, including its usable width and headroom.
+Fighting surfaces are assigned exactly once to named defensive circuits: the
+courtyard has one circuit, while the walled keep distinguishes its outer curtain
+from the separately accessed inner keep. Round-tower graph edges require
+explicit wall-walk portals. The renderer cuts those openings through the tower
+shell and crown, adds landings, and gives every spiral stair a framed ground
+entrance. The dark inner cylinder visible through loops and portals is
+explicitly a non-colliding depth backdrop; the cut outer shell and portal data
+define the physical opening. The viewer renders the surfaces as continuous
+structural slabs. They are suitable inputs for a future tactical collision or
+navigation adapter, but this standalone prototype does not itself make agents
+pathfind across them.
 
 The generator runs a semantic military-structure audit over every curated
 plan. It rejects inward-facing parapets, unsupported battlements, missing or
@@ -293,8 +293,9 @@ westwork floor is borne by the tower-wall nodes; it is not declared grounded
 merely because it occurs inside the tower.
 
 Thirty deterministic church views cover the whole building, a representative
-nave bay, crossing, choir/apse, bell tower, drainage, and support graph. Validate
-that they share one current program and resolved geometry authority with:
+nave bay, crossing, choir/apse, bell tower, drainage, and support graph.
+Validate that they share one current program and resolved geometry authority
+with:
 
 ```powershell
 target\debug\building-viewer.exe --validate-church-suite target/building-captures/stage5-church-proof-v1
@@ -375,73 +376,73 @@ open into a deeper interior embrasure so a defender can aim from cover:
 - [English Heritage: Restormel Castle arrowloops and vulnerable large windows](https://production.english-heritage.org.uk/visit/places/restormel-castle/history/description/)
 - [Canterbury Historical and Archaeological Society: arrow-loop definition](https://www.canterbury-archaeology.org.uk/arrow-loop)
 
-The current regular courtyard castle is one valid late-Renaissance program,
-not the assumed universal castle plan. Contemporary German residences often
-retained inherited, irregular building groups; future programs should add
-incremental accretion rather than merely varying a symmetric four-wing seed.
-Its current military crown is intentionally one continuous permanent masonry
-family: ordinary crenellation runs around the curtain and all four towers,
-while special protection remains localized at the gate. Pierced merlons are
-deferred until their openings can be expressed as true resolved voids rather
-than painted recesses. Each accepted masonry crown is an authoritative resolved
-assembly with a 0.90-metre breastwork below every crenel, a 1.70-metre merlon
-top, coping, open scuppers, protected inner walk edge, stance and firing lines,
-and owned corner/tower splices. The walk itself is resolved as supported,
-outward-sloped catchment solids and drainage surfaces. Each walk slab stops at
-a 0.12-metre exposed-edge slot instead of occupying the channel volume. A
-separate recessed channel floor begins below the adjacent toe, descends
-longitudinally through an obstacle-checked segment chain, and turns through the
-breastwork only inside the open scupper. The audit rejects a raised channel or
-an uncut walk slab, then samples the full inner,
-middle, and outer walk width, verifies downhill reachability, and covers all
-four straight-wall orientations plus 144 radial tower angles. Round deck chords
-overlap at their inner edge and are sized from the outer sector boundary so no
-triangular foot gaps remain. The exact 60-millimetre crossfall,
-18-millimetre channel fall, and 0.12-metre slot are prototype drainage/readability gates, not
-universal historical dimensions. Tower splices resolve explicit return pieces
-whose measured contact area, gap and penetration must fit the local bond prism;
-the audit rejects displaced and over-penetrated bonds. These exact envelope dimensions are prototype
-gameplay gates, not universal historical measurements. The same deterministic
+The current regular courtyard castle is one valid late-Renaissance program, not
+the assumed universal castle plan. Contemporary German residences often retained
+inherited, irregular building groups; future programs should add incremental
+accretion rather than merely varying a symmetric four-wing seed. Its current
+military crown is intentionally one continuous permanent masonry family:
+ordinary crenellation runs around the curtain and all four towers, while special
+protection remains localized at the gate. Pierced merlons are deferred until
+their openings can be expressed as true resolved voids rather than painted
+recesses. Each accepted masonry crown is an authoritative resolved assembly with
+a 0.90-metre breastwork below every crenel, a 1.70-metre merlon top, coping,
+open scuppers, protected inner walk edge, stance and firing lines, and owned
+corner/tower splices. The walk itself is resolved as supported, outward-sloped
+catchment solids and drainage surfaces. Each walk slab stops at a 0.12-metre
+exposed-edge slot instead of occupying the channel volume. A separate recessed
+channel floor begins below the adjacent toe, descends longitudinally through an
+obstacle-checked segment chain, and turns through the breastwork only inside the
+open scupper. The audit rejects a raised channel or an uncut walk slab, then
+samples the full inner, middle, and outer walk width, verifies downhill
+reachability, and covers all four straight-wall orientations plus 144 radial
+tower angles. Round deck chords overlap at their inner edge and are sized from
+the outer sector boundary so no triangular foot gaps remain. The exact
+60-millimetre crossfall, 18-millimetre channel fall, and 0.12-metre slot are
+prototype drainage/readability gates, not universal historical dimensions. Tower
+splices resolve explicit return pieces whose measured contact area, gap and
+penetration must fit the local bond prism; the audit rejects displaced and
+over-penetrated bonds. These exact envelope dimensions are prototype gameplay
+gates, not universal historical measurements. The same deterministic
 resolved-solid IDs, support nodes, drainage routes, voids and dimensions feed
 auditing and rendering. Capture manifests bind the resolver schema, exact
 per-item render multiset, source revision and dirty-source fingerprint, resolved
 geometry hash, and plan/evidence hashes so stale or transformed proof cannot
-silently pass.
-The roof eaves are held
-behind the fighting circuit rather than occupying its headroom. The detached
-walled-keep fixture uses a separate coherent outer crenellation and inner
-gun-loop parapet, a 1.2-metre inferred prototype minimum for curtain and tower
-masonry, and a pair of close flanking towers at the gate. Two modeled, splayed
-firing apertures must geometrically cover both the gate threshold and approach
-within their arcs and ranges. The three-dimensional segment audit rejects
-intervening curtains, tower shells, building walls, gate-chamber structure,
-closures, roofs, decks, and wall walks after subtracting the originating
-aperture. Heavy gate leaves and a second portcullis closure are operated from an
-explicit supported guard chamber: its floor, walls, observation and downward
-openings, windlass position, and stair connection to the wall walk are modeled
-and rendered rather than represented by a capability flag. The courtyard
-towers use the same minimum fortified shell profile. These numeric thickness,
-clearance, chamber-area, arc, and range gates are game-design inferences for
-declared defensive profiles, not universal historical rules.
+silently pass. The roof eaves are held behind the fighting circuit rather than
+occupying its headroom. The detached walled-keep fixture uses a separate
+coherent outer crenellation and inner gun-loop parapet, a 1.2-metre inferred
+prototype minimum for curtain and tower masonry, and a pair of close flanking
+towers at the gate. Two modeled, splayed firing apertures must geometrically
+cover both the gate threshold and approach within their arcs and ranges. The
+three-dimensional segment audit rejects intervening curtains, tower shells,
+building walls, gate-chamber structure, closures, roofs, decks, and wall walks
+after subtracting the originating aperture. Heavy gate leaves and a second
+portcullis closure are operated from an explicit supported guard chamber: its
+floor, walls, observation and downward openings, windlass position, and stair
+connection to the wall walk are modeled and rendered rather than represented by
+a capability flag. The courtyard towers use the same minimum fortified shell
+profile. These numeric thickness, clearance, chamber-area, arc, and range gates
+are game-design inferences for declared defensive profiles, not universal
+historical rules.
 
 The walled-keep gate is authored as one cardinal, wall-local
 `GatehouseAssemblySpec`, not as independently positioned cylinders and boxes.
 Its integral-cell tower diameter and parity-checked lattice anchors derive the
 symmetric flanking towers, chord-cut bonded interfaces, positive-area curtain
 returns, clear gate passage, segmental masonry arch and spandrel bearings,
-guard-chamber volume, closures, access, openings, and firing apertures in any
-of the four wall orientations. Metre-valued plans are resolved output caches;
-the structural audit rejects cache drift, blocked passage or room voids,
-missing bearing paths, unmatched round-to-rectangular splices, unresolved
-apertures, and undeclared overlaps using resolved clear prisms, solid prisms,
-and chord-cut cylinder tests. Even-cell tower centres must occupy room-grid
-vertices and odd-cell tower centres must occupy cell centres; invalid numeric
-values are rejected during construction and deserialization. The 1/30-cell structural lattice and exact
-module dimensions are prototype construction gates, not historical claims.
-The gate passage also carries an explicit rectangular-plus-segmental-arch
-cross-section. Both the heavy plank leaves and portcullis derive their local
-top height from that profile, and the audit rejects any closure line that
-leaves an unsecured rectangular strip or arched lunette.
+guard-chamber volume, closures, access, openings, and firing apertures in any of
+the four wall orientations. Metre-valued plans are resolved output caches; the
+structural audit rejects cache drift, blocked passage or room voids, missing
+bearing paths, unmatched round-to-rectangular splices, unresolved apertures, and
+undeclared overlaps using resolved clear prisms, solid prisms, and chord-cut
+cylinder tests. Even-cell tower centres must occupy room-grid vertices and
+odd-cell tower centres must occupy cell centres; invalid numeric values are
+rejected during construction and deserialization. The 1/30-cell structural
+lattice and exact module dimensions are prototype construction gates, not
+historical claims. The gate passage also carries an explicit
+rectangular-plus-segmental-arch cross-section. Both the heavy plank leaves and
+portcullis derive their local top height from that profile, and the audit
+rejects any closure line that leaves an unsecured rectangular strip or arched
+lunette.
 
 Guard-chamber circulation uses a protected-side military service stair rather
 than an internal flight squeezed beneath the chamber roof. Its authoritative
@@ -460,46 +461,45 @@ murder hole, windlass operating clearance, and door swing, and verifies the
 stair and landings have both vertical and lateral support paths.
 
 Projected defenses are now resolved assemblies rather than battlement enum
-decorations. Permanent masonry machicolations and localized bretèches, stored
-or deployed temporary timber hoardings, and hollow usable bartizans each own
-their floor pieces, downward throat voids, wall-foot rays, protected outer
-wall, access portal and landing, support graph, firing apertures, roof and
-independent drain where exposed. Each assembly records the exact top-storey
-exterior wall-cell IDs it replaces. The resolver rebuilds those source cells
-inside their original vertical envelope, splits them around real access and
-socket voids, and the renderer suppresses the corresponding legacy wall cells,
-so a defense cannot add a freestanding witness screen above the building.
-Host wall walks overlap the access landing, and a positive-area junction bond
-connects the projection supports to grounded masonry. Threatened-wall
-bartizans additionally bear on an explicit grounded, wall-bonded buttress
-rather than claiming support from one flat witness face. Hoarding sockets are host-masonry
-voids; the stored state renders the open holes, while deployed joists occupy
-and embed into those same socket IDs. No non-colliding witness wall participates
-in audit or proof rendering.
+decorations. Permanent masonry machicolations and localized bretèches, stored or
+deployed temporary timber hoardings, and hollow usable bartizans each own their
+floor pieces, downward throat voids, wall-foot rays, protected outer wall,
+access portal and landing, support graph, firing apertures, roof and independent
+drain where exposed. Each assembly records the exact top-storey exterior
+wall-cell IDs it replaces. The resolver rebuilds those source cells inside their
+original vertical envelope, splits them around real access and socket voids, and
+the renderer suppresses the corresponding legacy wall cells, so a defense cannot
+add a freestanding witness screen above the building. Host wall walks overlap
+the access landing, and a positive-area junction bond connects the projection
+supports to grounded masonry. Threatened-wall bartizans additionally bear on an
+explicit grounded, wall-bonded buttress rather than claiming support from one
+flat witness face. Hoarding sockets are host-masonry voids; the stored state
+renders the open holes, while deployed joists occupy and embed into those same
+socket IDs. No non-colliding witness wall participates in audit or proof
+rendering.
 
-Floor solids stop around every throat. Bartizan floors remain continuous
-around their declared throat and access voids, while firing loops split only
-the narrow lower, upper, and jamb portions of nearby shell facets instead of
-removing full-height sides. Supported working positions produce independent
-near, middle, and far rays from the real throat or loop plane; the audit rejects
-below-floor origins and rays crossing friendly circulation. Gallery floors and
-roofed works carry physical slope, feed lower disjoint channels, and reach
-exact open outlets through sampled downhill paths. Lean-to roofs also have a
-resolved high-edge flashing at the host junction so that edge cannot become a
-trapped valley. Open masonry works use sloped, overhanging coping with outward
-drips; round bartizan coping resolves and drains each shell facet independently. The
-localized bretèche roof seats on two explicit wall plates: its outer enclosure
-rises to the low plate, while paired rear posts carry the high plate through the
-gallery support graph. The audit samples both bearing lines and rejects a raised
-roof or missing, shortened, or displaced support.
-audit rejects a gallery slab laid through the opening, a blocked or inward ray,
-unsupported corbel/frame bearings, dangling timber, inaccessible or cramped
-walks, flat, raised, reversed, or trapped drainage, closed bartizans, and
-incoherent material/phase or tactical-target declarations. The 0.90-metre
-route, 1.90-metre headroom,
-0.75-metre doorway pinch, 0.08-square-metre minimum support bearing,
-0.75-metre floor-to-support spacing and 1.20-metre timber cantilever are
-prototype game and animation gates, not historical universal dimensions.
+Floor solids stop around every throat. Bartizan floors remain continuous around
+their declared throat and access voids, while firing loops split only the narrow
+lower, upper, and jamb portions of nearby shell facets instead of removing
+full-height sides. Supported working positions produce independent near, middle,
+and far rays from the real throat or loop plane; the audit rejects below-floor
+origins and rays crossing friendly circulation. Gallery floors and roofed works
+carry physical slope, feed lower disjoint channels, and reach exact open outlets
+through sampled downhill paths. Lean-to roofs also have a resolved high-edge
+flashing at the host junction so that edge cannot become a trapped valley. Open
+masonry works use sloped, overhanging coping with outward drips; round bartizan
+coping resolves and drains each shell facet independently. The localized
+bretèche roof seats on two explicit wall plates: its outer enclosure rises to
+the low plate, while paired rear posts carry the high plate through the gallery
+support graph. The audit samples both bearing lines and rejects a raised roof or
+missing, shortened, or displaced support. audit rejects a gallery slab laid
+through the opening, a blocked or inward ray, unsupported corbel/frame bearings,
+dangling timber, inaccessible or cramped walks, flat, raised, reversed, or
+trapped drainage, closed bartizans, and incoherent material/phase or
+tactical-target declarations. The 0.90-metre route, 1.90-metre headroom,
+0.75-metre doorway pinch, 0.08-square-metre minimum support bearing, 0.75-metre
+floor-to-support spacing and 1.20-metre timber cantilever are prototype game and
+animation gates, not historical universal dimensions.
 
 The curated gatehouse does not display every device as a catalogue. Its main
 state has permanent gate-approach machicolation and sockets showing capacity

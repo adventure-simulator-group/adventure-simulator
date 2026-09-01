@@ -250,14 +250,18 @@ mod tests {
         }
 
         fn separated(data: &[u8], channel: usize) -> Vec<u8> {
-            data.chunks_exact(4)
+            data.as_chunks::<4>()
+                .0
+                .iter()
                 .flat_map(|pixel| [pixel[channel], pixel[channel], pixel[channel], 255])
                 .collect()
         }
 
         fn interpreted(albedo: &[u8], normal: &[u8], arm: &[u8]) -> Vec<u8> {
             albedo
-                .chunks_exact(4)
+                .as_chunks::<4>()
+                .0
+                .iter()
                 .zip(normal.chunks_exact(4))
                 .zip(arm.chunks_exact(4))
                 .flat_map(|((color, normal), arm)| {

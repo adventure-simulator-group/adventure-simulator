@@ -66,6 +66,7 @@ struct TerrainWireframeReport {
 }
 
 #[derive(SystemParam)]
+#[allow(clippy::type_complexity)]
 pub(super) struct WireframeMeshes<'w, 's> {
     meshes: Query<
         'w,
@@ -84,10 +85,6 @@ pub(super) struct WireframeMeshes<'w, 's> {
     >,
 }
 
-#[expect(
-    clippy::type_complexity,
-    reason = "the Bevy query captures each terrain representation and its visibility and diagnostic state"
-)]
 pub(super) fn capture_terrain_wireframe(
     mut commands: Commands,
     mut state: ResMut<TerrainWireframeCaptureState>,
@@ -116,7 +113,7 @@ pub(super) fn capture_terrain_wireframe(
     }
 
     configure_wireframe_entities(&mut commands, &mut wireframe_meshes);
-    if configure_wireframe_camera(&mut commands, &mut state, &capture, &mut camera) {
+    if configure_wireframe_camera(&mut commands, &mut state, capture, &mut camera) {
         return;
     }
     if state.readback_in_flight || state.capture_requested {
@@ -134,7 +131,7 @@ pub(super) fn capture_terrain_wireframe(
         return;
     }
 
-    let report = terrain_wireframe_report(&capture, &camera, &mut wireframe_meshes);
+    let report = terrain_wireframe_report(capture, &camera, &mut wireframe_meshes);
     fs::write(
         state.output.join("terrain-wireframe.json"),
         serde_json::to_vec_pretty(&report).expect("terrain wireframe report serializes"),
@@ -289,19 +286,10 @@ fn terrain_wireframe_report(
     }
 }
 
-#[derive(Resource)]
+#[derive(Resource, Default)]
 pub(super) struct TriangleCensusState {
     configured: bool,
     elapsed_frames: u32,
-}
-
-impl Default for TriangleCensusState {
-    fn default() -> Self {
-        Self {
-            configured: false,
-            elapsed_frames: 0,
-        }
-    }
 }
 
 #[derive(Default, Serialize)]
@@ -422,6 +410,7 @@ pub(super) fn capture_triangle_census(
     exit.write(AppExit::Success);
 }
 
+#[allow(clippy::type_complexity)]
 fn census_terrain(
     meshes: &Query<
         (

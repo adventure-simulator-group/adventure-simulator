@@ -1,5 +1,4 @@
 /// Closure-policy checks kept separate from structural opening geometry.
-
 fn window_closure_is_legal(
     opening: &crate::OpeningAssembly,
     archetype: BuildingArchetype,

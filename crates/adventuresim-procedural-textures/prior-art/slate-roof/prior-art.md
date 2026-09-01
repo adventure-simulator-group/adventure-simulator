@@ -9,9 +9,9 @@ shapes and layouts, overlap and fastening logic, cleavage, chips and geological
 color, weathering, the division between geometry and texture, causal PBR
 channels, metric slope-local UVs, tiling, mipmaps, and LOD behavior.
 
-It does not treat “slate” as a generic blue-gray checker or as a universal German
-roof. Roofing slate is a quarry product with a regional supply geography, and
-the historical evidence indicates that its expense long concentrated it on
+It does not treat “slate” as a generic blue-gray checker or as a universal
+German roof. Roofing slate is a quarry product with a regional supply geography,
+and the historical evidence indicates that its expense long concentrated it on
 churches, castles, palaces, towers, civic buildings, and other high-status work.
 
 ## Repository facts and constraints
@@ -249,7 +249,8 @@ Use the procedural surface for:
 - ordinary interior field coverage on broad planar or smoothly parameterized
   roof regions;
 - top/under-piece overlap and narrow concealed contacts;
-- shallow split-plane relief, cleavage ridges, mineral inclusions, and restrained
+- shallow split-plane relief, cleavage ridges, mineral inclusions, and
+  restrained
   struck-edge variation;
 - quarry/batch color, nonmetallic roughness, contact AO, and small face chips;
 - low-frequency weathering driven by a separate roof-space coordinate field.
@@ -259,7 +260,8 @@ Use the procedural surface for:
 Use LOD0 roof trim or sparse instances for:
 
 - overlapping eave/foot-stone silhouette and exposed slate thickness;
-- hand-shaped verge/`Ort` stones, ridge, hip, valley, and abutment treatments;
+- hand-shaped verge/`Ort` stones, ridge, hip, valley, and abutment
+  treatments;
 - chimney, dormer, turret, and roof-opening intersections;
 - conspicuous slipped, lifted, broken, missing, or repaired pieces;
 - complex conical/curved areas where the course schedule visibly converges;
@@ -282,7 +284,8 @@ decay
 
 Represent these as different phenomena:
 
-- **Slipped slate:** whole-piece translation/rotation down-slope, usually sparse;
+- **Slipped slate:** whole-piece translation/rotation down-slope, usually
+  sparse;
   may reveal a dark under-course or backing and a concealed hole.
 - **Delamination:** thin edge flakes following cleavage, with local roughness
   and normal change; not a round crater.
@@ -334,7 +337,8 @@ exposure, and maintenance justification.
 - Keep split-plane sheen and lighting out of albedo. Broad quarry banding and
   inclusions may change intrinsic color; contact shadows belong to lighting/AO.
 - Link brown/tan weathering and oxide stains to applicable mineral/exposure
-  masks. Link fresh chips to the same stone body rather than a generic white rim.
+  masks. Link fresh chips to the same stone body rather than a generic white
+  rim.
 
 ### Roughness, AO, and metallic
 
@@ -353,9 +357,11 @@ exposure, and maintenance justification.
 
 Every roof field needs an explicit local frame:
 
-- `V` measures metres down the steepest descent direction on the roof surface;
+- `V` measures metres down the steepest descent direction on the roof
+  surface;
 - `U` measures metres along the course in the roof plane;
-- `U,V` distance follows the sloped surface, not its horizontal XZ projection;
+- `U,V` distance follows the sloped surface, not its horizontal XZ
+  projection;
 - all triangles belonging to one semantic slope share origin, handedness,
   course-rise schedule, and eave-to-ridge fraction despite cutouts or
   tessellation;

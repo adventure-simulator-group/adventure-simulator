@@ -63,6 +63,7 @@ fn spawn_square_tower(
     // The roof is rendered once from the authoritative RoofAssembly graph.
 }
 
+#[allow(clippy::too_many_arguments)]
 fn spawn_tower(
     world: &mut World,
     palette: &RenderPalette,

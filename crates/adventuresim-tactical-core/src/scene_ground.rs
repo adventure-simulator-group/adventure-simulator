@@ -11,6 +11,7 @@ use crate::{
     },
 };
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn build_scene_ground(
     width: usize,
     depth: usize,

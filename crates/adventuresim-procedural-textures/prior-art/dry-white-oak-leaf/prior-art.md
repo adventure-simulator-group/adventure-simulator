@@ -97,14 +97,15 @@ species boundary while card geometry supplies larger C-curl/S-curl/fold states.
 ### Dry-leaf materials benefit from simulation-informed folds, but can be baked
 
 **Evidence.** Technical artist Michael Ekker traces leaf alpha cards into
-geometry, remeshes and preserves atlas UVs, then runs a Houdini Vellum simulation
-to obtain natural pile-up, crinkles, and folds. The result is baked to a tiled
-material; a front/back color ID permits separate reverse-side treatment, and
-dirt and dampness are added afterward in Substance Designer
+geometry, remeshes and preserves atlas UVs, then runs a Houdini Vellum
+simulation to obtain natural pile-up, crinkles, and folds. The result is baked
+to a tiled material; a front/back color ID permits separate reverse-side
+treatment, and dirt and dampness are added afterward in Substance Designer
 ([Michael Ekker: Fallen Leaves](https://www.michaelekker.com/projects/3de8Bo)).
 A separate leaf-decay demonstration by Adobe senior technical artist Maximilien
-Vert uses Substance Designer for animated material change and Houdini Vellum
-for mesh deformation ([80.lv: Leaf Decay Animation](https://80.lv/articles/impressive-leaf-decay-animation-made-with-houdini-substance-3d-designer)).
+Vert uses Substance Designer for animated material change and Houdini Vellum for
+mesh deformation
+([80.lv: Leaf Decay Animation](https://80.lv/articles/impressive-leaf-decay-animation-made-with-houdini-substance-3d-designer)).
 
 **Inference for this recipe.** A height-derived normal can carry fine puckering,
 vein relief, and crisp dry wrinkles, but broad curling should eventually be a

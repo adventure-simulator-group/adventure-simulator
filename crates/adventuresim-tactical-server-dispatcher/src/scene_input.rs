@@ -13,7 +13,9 @@ use bevy::math::Vec2;
 use fabelgeist_determinism::mix64;
 use sha2::{Digest, Sha256};
 
-use crate::settlement_buildings::{SettlementSceneProfile, place_settlement_buildings};
+use crate::settlement_buildings::{
+    SettlementBuildingLayout, SettlementSceneProfile, place_settlement_buildings,
+};
 
 const PLAYABLE_SIDE: u16 = 101;
 const PLAYABLE_SPACING_METRES: f32 = 1.0;
@@ -85,6 +87,7 @@ struct GridSampleRequest {
     seed: u64,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn build_imported_scene(
     pack: &TerrainPack,
     mission_id: &str,
@@ -147,20 +150,9 @@ pub fn build_imported_scene(
             })
             .collect::<Result<Vec<_>, String>>()?,
     };
-    let mut building_layout = settlement
-        .map(|settlement| {
-            let playable_half_extent_metres =
-                f32::from(PLAYABLE_SIDE - 1) * PLAYABLE_SPACING_METRES * 0.5;
-            place_settlement_buildings(settlement, playable_half_extent_metres)
-        })
-        .transpose()
-        .map_err(|error| error.to_string())?
-        .unwrap_or_default();
     let city_elevation_metres = f32::from(center.elevation_m);
-    for building in &mut building_layout.distant {
-        building.base_elevation_metres = city_elevation_metres;
-    }
-    level_distant_city_vista(&mut vista, &building_layout.distant, city_elevation_metres);
+    let building_layout =
+        settlement_building_layout(settlement, city_elevation_metres, &mut vista)?;
     let input = TacticalSceneInput {
         schema_version: TACTICAL_SCENE_SCHEMA_VERSION,
         generation_version: TACTICAL_SCENE_GENERATION_VERSION,
@@ -189,6 +181,24 @@ pub fn build_imported_scene(
     };
     input.validate().map_err(|error| error.to_string())?;
     Ok(input)
+}
+
+fn settlement_building_layout(
+    settlement: Option<&SettlementSceneProfile>,
+    elevation_metres: f32,
+    vista: &mut VistaSample,
+) -> Result<SettlementBuildingLayout, String> {
+    let playable_half_extent_metres = f32::from(PLAYABLE_SIDE - 1) * PLAYABLE_SPACING_METRES * 0.5;
+    let mut layout = settlement
+        .map(|profile| place_settlement_buildings(profile, playable_half_extent_metres))
+        .transpose()
+        .map_err(|error| error.to_string())?
+        .unwrap_or_default();
+    for building in &mut layout.distant {
+        building.base_elevation_metres = elevation_metres;
+    }
+    level_distant_city_vista(vista, &layout.distant, elevation_metres);
+    Ok(layout)
 }
 
 fn nearest_fault_scarp(

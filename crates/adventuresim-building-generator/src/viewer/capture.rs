@@ -1,3 +1,4 @@
+#[allow(clippy::too_many_arguments)]
 fn capture_when_ready(
     mut commands: Commands,
     mut state: ResMut<CaptureState>,
