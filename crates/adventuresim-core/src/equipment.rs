@@ -831,6 +831,7 @@ mod tests {
             crate::combat::resolve_melee_contact_at_time(crate::combat::MeleeContactAtTimeFacts {
                 scheduled_measure_metres: 2.1,
                 actual_measure_metres: 2.1,
+                ideal_measure_metres: preferred(geometry),
                 effective_reach_metres: geometry.melee_reach_m(),
                 grip_to_tip_metres: geometry.grip_to_tip_m,
                 total_length_metres: geometry.total_length_m,

@@ -1,5 +1,9 @@
 use super::*;
 
+pub(in crate::autoresolve) fn melee_effective_reach(combatant: &Combatant) -> f32 {
+    HUMANOID_REFERENCE_ARM_REACH_METRES + combatant.equipment.weapon_reach().max(0.0)
+}
+
 pub(in crate::autoresolve) fn available_attack_start(
     window_start: f32,
     window_end: f32,
@@ -15,9 +19,11 @@ pub(super) fn movement_intent(
     distance: f32,
     parameters: crate::combat::AutoresolveParameters,
 ) -> MovementIntent {
-    let reach = combatant.equipment.weapon_reach().max(0.4);
+    let reach = melee_effective_reach(combatant);
     let preferred = preferred_melee_measure(combatant, parameters);
-    if reach >= parameters.long_weapon_measure_threshold_metres && distance < preferred {
+    if combatant.equipment.weapon_reach() >= parameters.long_weapon_measure_threshold_metres
+        && distance < preferred
+    {
         MovementIntent::Retreat
     } else if distance > reach
         || combatant.melee_attack_started_at_seconds.is_some() && distance >= preferred
@@ -86,7 +92,7 @@ pub(in crate::autoresolve) fn preview_melee_pair_movement(
     (movement, first_intent, second_intent)
 }
 
-pub(in crate::autoresolve) fn swept_entry_seconds(
+pub(in crate::autoresolve) fn reach_entry_seconds(
     first: &Combatant,
     second: &Combatant,
     first_attacks: bool,
@@ -95,7 +101,7 @@ pub(in crate::autoresolve) fn swept_entry_seconds(
 ) -> Option<f32> {
     let attacker = if first_attacks { first } else { second };
     attacker.melee_attack_started_at_seconds?;
-    let reach = attacker.equipment.weapon_reach().max(0.4);
+    let reach = melee_effective_reach(attacker);
     if first
         .melee_engagement_distance_metres
         .min(second.melee_engagement_distance_metres)
@@ -126,7 +132,7 @@ pub(in crate::autoresolve) fn swept_entry_seconds(
     Some(upper)
 }
 
-pub(in crate::autoresolve) fn reschedule_swept_pair_contacts(
+pub(in crate::autoresolve) fn reschedule_pair_contacts_at_reach_entry(
     first: &mut Combatant,
     second: &mut Combatant,
     start: f32,
@@ -136,8 +142,8 @@ pub(in crate::autoresolve) fn reschedule_swept_pair_contacts(
     if elapsed <= 0.0 {
         return;
     }
-    let first_entry = swept_entry_seconds(first, second, true, elapsed, parameters);
-    let second_entry = swept_entry_seconds(first, second, false, elapsed, parameters);
+    let first_entry = reach_entry_seconds(first, second, true, elapsed, parameters);
+    let second_entry = reach_entry_seconds(first, second, false, elapsed, parameters);
     let end = start + elapsed;
     if let Some(entry) = first_entry {
         let contact = start + entry;
@@ -163,7 +169,7 @@ pub(in crate::autoresolve) fn preferred_melee_measure(
     combatant: &Combatant,
     parameters: crate::combat::AutoresolveParameters,
 ) -> f32 {
-    let reach = combatant.equipment.weapon_reach().max(0.4);
+    let reach = melee_effective_reach(combatant);
     combatant.equipment.melee_weapon.map_or(
         reach * parameters.melee_measure_reach_fraction,
         |weapon| {

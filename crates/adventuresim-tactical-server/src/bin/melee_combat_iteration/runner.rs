@@ -209,11 +209,7 @@ fn record_autoresolve_dodge(
         return;
     }
     causal.dodge_attempts += 1;
-    let contacted = entry
-        .melee_telemetry
-        .as_ref()
-        .and_then(|telemetry| telemetry.dodge_contacted_body_part)
-        .is_some();
+    let contacted = entry.outcome != BattleAttackOutcome::Missed;
     causal.dodge_avoids += u64::from(!contacted);
     causal.dodge_contacts += u64::from(contacted);
 }

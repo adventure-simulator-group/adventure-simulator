@@ -56,14 +56,14 @@ pub(super) fn offensive_facts(
     combat_config: &TacticalCombatConfig,
     config: &AiOffenseConfig,
 ) -> OffensiveFacts {
+    let dimensions = dimensions.get(entity).copied().unwrap_or_default();
     let (reach, preferred, melee, ranged, strike, available, recovery) =
-        weapon_facts(entity, state, viewer, config);
+        weapon_facts(entity, state, viewer, dimensions.arm_reach_metres, config);
     let has_ammo = ranged_weapon_needs_ammo_lookup(ranged, reach)
         && viewer.inventory.get(entity).has_item_id(ARROW_ID);
     let instinct = viewer.get(entity).map_or(5.0, |view| {
         view.raw_single_body_part_attr(SimpleAttribute::Instinct)
     });
-    let dimensions = dimensions.get(entity).copied().unwrap_or_default();
     let quickstep_distance = quickstep_target_displacement_metres(
         dimensions.leg_length_metres,
         &combat_config.movement.motor,
@@ -78,7 +78,6 @@ pub(super) fn offensive_facts(
         quickstep_distance,
         colliders,
         combat_config,
-        config,
     );
     OffensiveFacts {
         weapon_reach: reach,
@@ -98,6 +97,7 @@ fn weapon_facts(
     entity: Entity,
     state: &TacticalCombatState,
     viewer: &TacticalPlayerViewer<'_, '_>,
+    arm_reach_metres: f32,
     config: &AiOffenseConfig,
 ) -> (f32, f32, bool, bool, StrikeFamily, bool, f32) {
     viewer.get(entity).map_or(
@@ -132,7 +132,7 @@ fn weapon_facts(
             (
                 reach,
                 preferred_melee_striking_measure(
-                    reach,
+                    melee_interaction_range(arm_reach_metres, reach),
                     grip,
                     head,
                     distal,
@@ -162,21 +162,19 @@ fn lunge_delay(
     quickstep_distance: f32,
     colliders: &Query<&Collider>,
     combat_config: &TacticalCombatConfig,
-    config: &AiOffenseConfig,
 ) -> Option<f32> {
     colliders
         .get(entity)
         .ok()
         .zip(colliders.get(target).ok())
         .and_then(|(attacker_collider, target_collider)| {
-            crate::combat::melee_body_part_lunge_delay(
+            crate::combat::melee_target_lunge_delay(
                 crate::combat::MeleeLungeRequest {
                     attacker_position: transform.translation,
                     attacker_collider,
                     attacker_dimensions: dimensions,
                     target_transform,
                     target_collider,
-                    target_body_part: config.target_body_part,
                     weapon_reach_metres: weapon_reach,
                     quickstep_distance_metres: quickstep_distance,
                 },

@@ -20,6 +20,32 @@ fn resolve_requested_dodge(
     })
 }
 
+fn resolve_requested_melee_dodge(
+    pending: Option<&PendingDefenderResponse>,
+    incoming_started_at: CombatInstant,
+    config: &DefenseAuthorityConfig,
+) -> Option<DefenderResponse> {
+    let pending = pending?;
+    if pending.set_at < incoming_started_at {
+        return None;
+    }
+    let delay = pending
+        .set_at
+        .elapsed_since(incoming_started_at)
+        .as_secs_f32();
+    let window = config.reflex_window_seconds.max(f32::EPSILON);
+    if delay > window {
+        return None;
+    }
+    let input_reflex = (1.0 - delay / window).clamp(0.0, 1.0);
+    Some(match pending.choice {
+        DefendRequest::Dodge { .. } => DefenderResponse::Dodge { input_reflex },
+        DefendRequest::Roll => DefenderResponse::Dodge {
+            input_reflex: roll_dodge_reflex(input_reflex, config.roll_dodge_effectiveness),
+        },
+    })
+}
+
 pub(super) fn resolve_passive_block(
     pending: Option<&PendingDefenderResponse>,
     time: &Time<()>,
@@ -65,7 +91,7 @@ pub(super) fn resolve_melee_defender_response(
     incoming_started_at: CombatInstant,
     config: &DefenseAuthorityConfig,
 ) -> DefenderResponse {
-    if let Some(response) = resolve_requested_dodge(pending, time, config) {
+    if let Some(response) = resolve_requested_melee_dodge(pending, incoming_started_at, config) {
         return response;
     }
     let can_intercept =
@@ -107,7 +133,11 @@ pub(super) fn resolve_melee_defender_response(
             defender_view.shield_block_bonus(),
         );
     }
-    resolve_passive_block(pending, time, defender_view, defender_skeleton, config)
+    passive_block_response(
+        defender_skeleton.weapon_guard(),
+        defender_skeleton.action_kind(),
+        !defender_view.weapon_is_unarmed() || defender_view.shield_block_bonus() > 0.0,
+    )
 }
 
 pub(super) fn roll_dodge_reflex(input_reflex: f32, effectiveness: f32) -> f32 {
@@ -117,6 +147,42 @@ pub(super) fn roll_dodge_reflex(input_reflex: f32, effectiveness: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
+
+    fn dodge_reflex(response: Option<DefenderResponse>) -> Option<f32> {
+        match response {
+            Some(DefenderResponse::Dodge { input_reflex }) => Some(input_reflex),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn melee_dodge_reflex_decreases_with_reaction_delay_and_rejects_pre_attack_input() {
+        let config = TacticalCombatConfig::default().realtime_authority.defense;
+        let start = CombatInstant::from_duration(Duration::from_secs(1));
+        let pending = |milliseconds| PendingDefenderResponse {
+            choice: DefendRequest::Roll,
+            set_at: CombatInstant::from_duration(Duration::from_millis(milliseconds)),
+        };
+        let early = dodge_reflex(resolve_requested_melee_dodge(
+            Some(&pending(1_050)),
+            start,
+            &config,
+        ))
+        .unwrap();
+        let late = dodge_reflex(resolve_requested_melee_dodge(
+            Some(&pending(1_300)),
+            start,
+            &config,
+        ))
+        .unwrap();
+        assert!(early > late);
+        assert!(resolve_requested_melee_dodge(Some(&pending(900)), start, &config).is_none());
+        let after_window = 1_000 + (config.reflex_window_seconds * 1_000.0) as u64 + 1;
+        assert!(
+            resolve_requested_melee_dodge(Some(&pending(after_window)), start, &config).is_none()
+        );
+    }
 
     #[test]
     fn raised_item_blocks_only_during_neutral_action_state() {

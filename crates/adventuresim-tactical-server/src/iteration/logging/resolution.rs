@@ -102,15 +102,13 @@ pub(super) fn resolved_attack_entry(
             .inventory
             .get(event.target)
             .armor_layer_chain(event.body_part, event.surface_coordinate),
-        redirected_from_body_part: event
-            .redirected_from
-            .map(|part| format!("{part:?}").to_lowercase()),
-        closest_approach_metres: event.closest_approach_metres,
         scheduled_contact_measure_metres: event.contact_at_time.scheduled_measure_metres,
+        ideal_contact_measure_metres: event.contact_at_time.ideal_measure_metres,
         actual_contact_measure_metres: event.contact_at_time.actual_measure_metres,
         contact_classification: event.contact_at_time.classification,
         contact_lever_arm_metres: event.contact_at_time.lever_arm_metres,
         contact_energy_fraction: event.contact_at_time.energy_fraction,
+        measure_accuracy_multiplier: event.contact_at_time.measure_accuracy_multiplier,
         contact_invalidation_cause: event.contact_at_time.invalidation_cause,
         contact_material: event.contact_at_time.contact_material,
         outcome: energy.outcome,

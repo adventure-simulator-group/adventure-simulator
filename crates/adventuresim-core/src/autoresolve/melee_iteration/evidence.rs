@@ -9,7 +9,6 @@ use armor::{forced_armor_contacts, mirrored_vambrace_contacts};
 pub struct MeleeIterationAcceptanceEvidence {
     pub armor_contacts: Vec<ForcedArmorContactEvidence>,
     pub mirrored_vambrace_contacts: Vec<MirroredArmorContactEvidence>,
-    pub partial_dodge: PartialDodgeEvidence,
     pub defense_matrix: Vec<DefenseEvidence>,
     pub disabled_weapon_arm: Vec<DisabledWeaponArmEvidence>,
     pub fatigue_cadence: FatigueCadenceEvidence,
@@ -86,13 +85,6 @@ pub struct MirroredArmorContactEvidence {
 }
 
 #[derive(Clone, Debug, serde::Serialize)]
-pub struct PartialDodgeEvidence {
-    pub intended_body_part: BodyPart,
-    pub contacted_body_part: Option<BodyPart>,
-    pub closest_approach_metres: f32,
-}
-
-#[derive(Clone, Debug, serde::Serialize)]
 pub struct DefenseEvidence {
     pub defender: &'static str,
     pub situation: &'static str,
@@ -135,22 +127,6 @@ pub fn melee_iteration_acceptance_evidence() -> Result<MeleeIterationAcceptanceE
     let militia = opponent("militia")?;
     let demi_lancer = opponent("demi_lancer")?;
     let armor_contacts = forced_armor_contacts(&john.combatant, &hammer.combatant)?;
-    let partial_dodge = resolve_melee_dodge_geometry(
-        (0.0, 0.0),
-        (1.0, 0.0),
-        (1.0, 0.42),
-        BodyPart::Chest,
-        MeleeDodgeKinematics {
-            defender_leg_agility: 3.0,
-            defender_fatigue_performance: 1.0,
-            defender_body_mass_kg: 75.0,
-            defender_equipment_mass_kg: 5.0,
-            displacement_time_seconds: 0.4,
-            attacker_tracking: 0.1,
-            weapon_reach_metres: 0.8,
-            committed_arc_radians: 0.5,
-        },
-    );
     let defense_matrix = vec![
         defense_evidence(
             &john.combatant,
@@ -175,11 +151,6 @@ pub fn melee_iteration_acceptance_evidence() -> Result<MeleeIterationAcceptanceE
     Ok(MeleeIterationAcceptanceEvidence {
         armor_contacts,
         mirrored_vambrace_contacts: mirrored_vambrace_contacts()?,
-        partial_dodge: PartialDodgeEvidence {
-            intended_body_part: BodyPart::Chest,
-            contacted_body_part: partial_dodge.contacted_body_part,
-            closest_approach_metres: partial_dodge.closest_approach_metres,
-        },
         defense_matrix,
         disabled_weapon_arm: [militia, demi_lancer]
             .map(disabled_weapon_arm_evidence)
@@ -205,7 +176,7 @@ fn all_weapon_contact_band_evidence(
     .into_iter()
     .flat_map(|(build, weapon, incident_energy_joules)| {
         let equipment = build.combatant.equipment.for_melee();
-        let reach = equipment.weapon_reach();
+        let reach = melee_effective_reach(&build.combatant);
         let grip = equipment.weapon_grip_to_tip();
         let grip_origin = (reach - grip).max(0.0);
         let butt = (equipment.weapon_total_length() - grip).max(0.0);
@@ -218,9 +189,17 @@ fn all_weapon_contact_band_evidence(
             0.0,
         ]
         .map(move |surface_measure_metres| {
+            let ideal_measure_metres = preferred_melee_striking_measure(
+                reach,
+                grip,
+                equipment.weapon_striking_head_length(),
+                equipment.weapon.is_some_and(|weapon| weapon.distal_headed),
+                EMBEDDED_AUTORESOLVE_PARAMETERS.melee_measure_reach_fraction,
+            );
             let contact = resolve_melee_contact_at_time(MeleeContactAtTimeFacts {
                 scheduled_measure_metres: reach,
                 actual_measure_metres: surface_measure_metres,
+                ideal_measure_metres,
                 effective_reach_metres: reach,
                 grip_to_tip_metres: grip,
                 total_length_metres: equipment.weapon_total_length(),
@@ -253,11 +232,18 @@ fn polearm_contact_revalidation_evidence(
 ) -> Vec<PolearmContactRevalidationEvidence> {
     const REVIEWED_INCIDENT_ENERGY_JOULES: f32 = 101.4;
     let equipment = veteran.combatant.equipment.for_melee();
-    let effective_reach = equipment.weapon_reach();
+    let effective_reach = melee_effective_reach(&veteran.combatant);
     let grip_to_tip = equipment.weapon_grip_to_tip();
     let grip_origin = (effective_reach - grip_to_tip).max(0.0);
     let head_boundary =
         grip_origin + (grip_to_tip - equipment.weapon_striking_head_length()).max(0.0);
+    let ideal_measure_metres = preferred_melee_striking_measure(
+        effective_reach,
+        grip_to_tip,
+        equipment.weapon_striking_head_length(),
+        equipment.weapon.is_some_and(|weapon| weapon.distal_headed),
+        EMBEDDED_AUTORESOLVE_PARAMETERS.melee_measure_reach_fraction,
+    );
     [
         effective_reach,
         head_boundary,
@@ -270,6 +256,7 @@ fn polearm_contact_revalidation_evidence(
         let contact = resolve_melee_contact_at_time(MeleeContactAtTimeFacts {
             scheduled_measure_metres: 2.0,
             actual_measure_metres,
+            ideal_measure_metres,
             effective_reach_metres: effective_reach,
             grip_to_tip_metres: equipment.weapon_grip_to_tip(),
             total_length_metres: equipment.weapon_total_length(),

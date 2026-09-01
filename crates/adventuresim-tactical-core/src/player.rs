@@ -55,7 +55,7 @@ impl Default for CharacterDimensions {
         Self {
             leg_length_metres: 0.840_348,
             body_height_metres: 1.9,
-            arm_reach_metres: 0.526_801,
+            arm_reach_metres: adventuresim_core::combat::HUMANOID_REFERENCE_ARM_REACH_METRES,
         }
     }
 }

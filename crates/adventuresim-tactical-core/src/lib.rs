@@ -57,9 +57,8 @@ pub mod prelude {
     };
     pub use crate::combat::{
         Attack, Dodge, MeleeLunge, conservative_forward_lunge_acceleration,
-        maximum_melee_lunge_range, melee_horizontal_closure, melee_interaction_range, melee_lunge,
-        melee_lunge_delay_seconds, melee_lunge_quickstep_threshold_metres,
-        melee_lunge_range_window_metres, reachable_melee_strike_point,
+        maximum_melee_lunge_range, melee_interaction_range, melee_lunge, melee_lunge_delay_seconds,
+        melee_lunge_quickstep_threshold_metres, melee_lunge_range_window_metres,
     };
     pub use crate::combat_config::*;
     pub use crate::doors::{

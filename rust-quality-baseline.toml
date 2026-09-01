@@ -107,10 +107,6 @@ path = "crates/adventuresim-core/src/case.rs"
 ceiling = 575
 
 [[files]]
-path = "crates/adventuresim-core/src/combat.rs"
-ceiling = 559
-
-[[files]]
 path = "crates/adventuresim-core/src/courtship.rs"
 ceiling = 616
 

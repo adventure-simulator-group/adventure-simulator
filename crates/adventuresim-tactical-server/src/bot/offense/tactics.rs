@@ -20,8 +20,26 @@ pub(super) fn committed_threat_recognition_probability(attack_phase: f32, instin
 pub(super) fn below_preferred_long_weapon_measure(
     reach_metres: f32,
     preferred_measure_metres: f32,
-    distance_metres: f32,
+    center_distance_metres: f32,
     long_weapon_threshold_metres: f32,
 ) -> bool {
-    reach_metres >= long_weapon_threshold_metres && distance_metres < preferred_measure_metres
+    let preferred_center_distance_metres = preferred_measure_metres
+        + adventuresim_core::combat::HUMANOID_MELEE_MINIMUM_CENTER_SEPARATION_METRES;
+    reach_metres >= long_weapon_threshold_metres
+        && center_distance_metres < preferred_center_distance_metres
+}
+
+pub(super) fn long_weapon_windup_movement(
+    reach_metres: f32,
+    preferred_measure_metres: f32,
+    center_distance_metres: f32,
+    long_weapon_threshold_metres: f32,
+) -> Option<Vec2> {
+    below_preferred_long_weapon_measure(
+        reach_metres,
+        preferred_measure_metres,
+        center_distance_metres,
+        long_weapon_threshold_metres,
+    )
+    .then_some(-Vec2::Y)
 }

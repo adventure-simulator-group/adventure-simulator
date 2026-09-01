@@ -322,16 +322,6 @@ pub struct InventoryView<'v, 'w, 's> {
 }
 
 impl InventoryView<'_, '_, '_> {
-    pub(super) fn iter(&self) -> impl Iterator<Item = ItemQueryItem<'_, '_>> + use<'_> {
-        let items = self
-            .q_inventory
-            .get(self.entity)
-            .into_iter()
-            .flat_map(|inv| inv.iter());
-
-        self.q_item.iter_many(items)
-    }
-
     /// Returns whether this actor owns a non-empty stack of the requested
     /// tactical item without scanning other actors' inventories.
     pub fn has_item_id(&self, item_id: &str) -> bool {

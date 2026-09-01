@@ -50,7 +50,7 @@ use consequence::{
 use contact::canonical_impact_surface;
 use defense::{resolve_melee_defender_response, resolve_passive_block};
 pub(crate) use ingress::apply_defend_intent;
-pub(crate) use ingress::{MeleeLungeRequest, melee_body_part_lunge_delay};
+pub(crate) use ingress::{MeleeLungeRequest, melee_target_lunge_delay};
 use ingress::{
     authoritative_line_of_sight, on_defender_response_request, on_melee_action_request,
     on_ranged_action_request, on_ranged_attack_started,
@@ -231,8 +231,6 @@ pub(crate) struct ApplyMeleeAttackResult {
     pub(crate) attacker_weapon_contact: bool,
     pub(crate) impact_recipient: Entity,
     pub(crate) impact_velocity_change: Vec3,
-    pub(crate) closest_approach_metres: Option<f32>,
-    pub(crate) redirected_from: Option<BodyPart>,
     pub(crate) contact_at_time: MeleeContactAtTime,
 }
 
@@ -251,8 +249,6 @@ pub struct MeleeAttackResolved {
     pub defense_success_probability: Option<f32>,
     pub defense_alignment_sample: Option<f32>,
     pub defense_engagement: Option<f32>,
-    pub closest_approach_metres: Option<f32>,
-    pub redirected_from: Option<BodyPart>,
     pub defender_blocking_slot: Option<EquipSlot>,
     pub contact_at_time: MeleeContactAtTime,
 }
@@ -299,14 +295,14 @@ fn trace_melee_attack_resolution(event: On<MeleeAttackResolved>) {
         defense_success_probability = ?event.defense_success_probability,
         defense_alignment_sample = ?event.defense_alignment_sample,
         defense_engagement = ?event.defense_engagement,
-        closest_approach_metres = ?event.closest_approach_metres,
-        redirected_from = ?event.redirected_from,
         defender_blocking_slot = ?event.defender_blocking_slot,
         scheduled_measure_metres = event.contact_at_time.scheduled_measure_metres,
+        ideal_measure_metres = event.contact_at_time.ideal_measure_metres,
         actual_measure_metres = event.contact_at_time.actual_measure_metres,
         contact_classification = ?event.contact_at_time.classification,
         lever_arm_metres = event.contact_at_time.lever_arm_metres,
         contact_energy_fraction = event.contact_at_time.energy_fraction,
+        measure_accuracy_multiplier = event.contact_at_time.measure_accuracy_multiplier,
         invalidation_cause = ?event.contact_at_time.invalidation_cause,
         contact_material = ?event.contact_at_time.contact_material,
         "melee_attack_resolved"
@@ -597,7 +593,6 @@ mod tests {
             validate_melee_line_of_sight(false),
             Err(MeleeIntentRejection::BlockedLineOfSight)
         );
-
         let cases = [
             (
                 MeleeIntentFacts {

@@ -115,17 +115,9 @@ pub fn melee_attack_value_by_parts(
                 defender_body,
                 defender_essentials,
                 defender_equip,
-                LimbWeights {
-                    left_arm: 1.0,
-                    right_arm: 1.0,
-                    left_leg: 0.4,
-                    right_leg: 0.4,
-                }
-                .normalize(),
+                LimbWeights::both_legs(),
             );
             dodge_skill
-                * defender_equip.armor_penalty(BodyPart::FULL_BODY)
-                * defender_equip.encumbrance_penalty_by_parts(defender_attr, defender_body)
         }
     } * defender_response.factor()
         * (1.0 - flanking).clamp(0.0, 1.0);
@@ -161,6 +153,17 @@ pub fn melee_attack_accuracy_by_parts(
         })
         * attacker_equip.weapon_melee_precision(attack_style)
         * hit_precision.clamp(0.0, 1.0)
+}
+
+/// Applies the authored contact-measure contribution exactly once to the
+/// sampled attack precision used by both hit adjudication and implement
+/// alignment.
+#[must_use]
+pub fn melee_measure_adjusted_precision(
+    hit_precision: f32,
+    contact: crate::combat::MeleeContactAtTime,
+) -> f32 {
+    hit_precision * contact.measure_accuracy_multiplier
 }
 
 #[must_use]
@@ -249,6 +252,7 @@ fn weighted_body_part_and_local(sample: f32, factor: impl Fn(BodyPart) -> f32) -
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::autoresolve::{body_part_index, melee_iteration_roster};
 
     #[test]
     fn torso_subregions_follow_named_area_and_accessibility_weights() {
@@ -355,5 +359,37 @@ mod tests {
             assert!((left_coordinate - right_coordinate).abs() < 1.0e-5);
             assert_eq!(left_coordinate < 0.85, right_coordinate < 0.85);
         }
+    }
+
+    #[test]
+    fn quickstep_dodge_uses_leg_function_not_arm_function() {
+        let (attacker, opponents) = melee_iteration_roster().unwrap();
+        let defender = &opponents[0].combatant;
+        let margin = |body: &crate::autoresolve::CombatBody| {
+            melee_attack_value_by_parts(
+                &attacker.combatant.skills,
+                &attacker.combatant.attributes,
+                &attacker.combatant.body,
+                &attacker.combatant.essentials,
+                &attacker.combatant.equipment,
+                attacker.combatant.equipment.melee_holding_side,
+                attacker.combatant.equipment.weapon_preferred_melee_style(),
+                0.8,
+                0.0,
+                DefenderResponse::Dodge { input_reflex: 0.8 },
+                &defender.skills,
+                &defender.attributes,
+                body,
+                &defender.essentials,
+                &defender.equipment,
+            )
+        };
+        let mut impaired_arms = defender.body.clone();
+        impaired_arms.health[body_part_index(BodyPart::LeftArm)] = 0.0;
+        impaired_arms.health[body_part_index(BodyPart::RightArm)] = 0.0;
+        let mut impaired_legs = defender.body.clone();
+        impaired_legs.health[body_part_index(BodyPart::LeftLeg)] = 0.0;
+        impaired_legs.health[body_part_index(BodyPart::RightLeg)] = 0.0;
+        assert!(margin(&impaired_legs) > margin(&impaired_arms));
     }
 }

@@ -7,7 +7,6 @@ mod capability;
 mod config;
 mod contact_geometry;
 mod defense;
-mod dodge;
 mod fatigue;
 mod melee_resolution;
 pub(crate) mod targeting;
@@ -21,22 +20,21 @@ pub use capability::{MeleeAttackCapability, melee_attack_capability};
 pub use config::*;
 pub use contact_geometry::{
     HUMANOID_COLLISION_RADIUS_METRES, HUMANOID_MELEE_MINIMUM_CENTER_SEPARATION_METRES,
-    MeleeContactAtTime, MeleeContactAtTimeFacts, MeleeContactClassification,
-    MeleeContactInvalidationCause, has_distal_striking_surface, preferred_melee_striking_measure,
-    resolve_melee_contact_at_time,
+    HUMANOID_REFERENCE_ARM_REACH_METRES, MeleeContactAtTime, MeleeContactAtTimeFacts,
+    MeleeContactClassification, MeleeContactInvalidationCause, has_distal_striking_surface,
+    preferred_melee_striking_measure, resolve_melee_contact_at_time,
 };
 pub use defense::{
     CommittedThreatChoice, CommittedThreatDecision, CommittedThreatFacts, WeaponDefenseAlignment,
     choose_committed_threat_response, reciprocal_intercept_response,
     resolve_weapon_defense_alignment, shield_aligned_response,
 };
-pub use dodge::{MeleeDodgeGeometry, MeleeDodgeKinematics, resolve_melee_dodge_geometry};
 pub use fatigue::*;
 pub use melee_resolution::resolve_melee_attack_by_parts;
 pub use targeting::{
     AnatomicalSubregion, MeleeContactLocation, anatomical_subregion,
     melee_attack_accuracy_by_parts, melee_attack_value_by_parts, melee_contact_location,
-    whole_body_armor_coverage,
+    melee_measure_adjusted_precision, whole_body_armor_coverage,
 };
 pub use wounds::*;
 
@@ -354,16 +352,9 @@ fn defense_by_parts(
                 body,
                 essentials,
                 equip,
-                LimbWeights {
-                    left_arm: 0.1,
-                    right_arm: 0.1,
-                    left_leg: 0.4,
-                    right_leg: 0.4,
-                },
+                LimbWeights::both_legs(),
             );
             dodge
-                * equip.armor_penalty(BodyPart::FULL_BODY)
-                * equip.encumbrance_penalty_by_parts(attr, body)
         }
     };
     base * response.factor()
@@ -1068,6 +1059,7 @@ mod tests {
         let contact = resolve_melee_contact_at_time(MeleeContactAtTimeFacts {
             scheduled_measure_metres: 2.0,
             actual_measure_metres: 1.25,
+            ideal_measure_metres: 1.92,
             effective_reach_metres: 2.0,
             grip_to_tip_metres: 1.9,
             total_length_metres: 2.1,

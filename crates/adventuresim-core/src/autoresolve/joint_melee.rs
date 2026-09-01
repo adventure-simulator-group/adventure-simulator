@@ -46,7 +46,7 @@ fn resolve_joint_melee_window(
     parameters: crate::combat::AutoresolveParameters,
 ) {
     let window_end_seconds = window_start_seconds + window_seconds;
-    reschedule_joint_swept_contacts(
+    reschedule_joint_contacts_at_reach_entry(
         allies,
         enemies,
         window_start_seconds,
@@ -285,7 +285,7 @@ fn schedule_both_sides(
     );
 }
 
-fn reschedule_joint_swept_contacts(
+fn reschedule_joint_contacts_at_reach_entry(
     allies: &mut [Combatant],
     enemies: &mut [Combatant],
     interval_start_seconds: f32,
@@ -298,7 +298,7 @@ fn reschedule_joint_swept_contacts(
         } else {
             (&mut enemies[index], &mut allies[index])
         };
-        reschedule_swept_pair_contacts(
+        reschedule_pair_contacts_at_reach_entry(
             first,
             second,
             interval_start_seconds,

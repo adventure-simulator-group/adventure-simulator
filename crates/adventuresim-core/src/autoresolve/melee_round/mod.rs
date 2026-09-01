@@ -38,7 +38,6 @@ pub(super) fn resolve_melee_turn(
     let PreparedMeleeExchange {
         attack_power_multiplier,
         contact_at_time,
-        reaction_timing_sample,
         scheduled_defender_timing_before,
         defender_phase,
         defender_decision,
@@ -72,8 +71,6 @@ pub(super) fn resolve_melee_turn(
         part,
         &exchange,
         contact_at_time,
-        reaction_timing_sample,
-        parameters,
         defense_commitment,
         attack_power_multiplier,
         attacker_fatigue_performance,
@@ -97,8 +94,6 @@ fn record_melee_result(
     part: BodyPart,
     exchange: &MeleeExchangeOutcome,
     contact: MeleeContactAtTime,
-    reaction_sample: f32,
-    parameters: crate::combat::AutoresolveParameters,
     commitment: DefenseCommitment,
     power: f32,
     performance: f32,
@@ -125,24 +120,15 @@ fn record_melee_result(
             anatomical_subregion: exchange.contact.anatomical_subregion,
             surface_coordinate: exchange.contact.surface_coordinate,
             armor_layer_chain: autoresolve_armor_layer_chain(&defender.equipment, exchange.contact),
-            redirected_from: exchange.redirected_from,
-            dodge_closest_approach_metres: exchange
-                .dodge_geometry
-                .map(|geometry| geometry.closest_approach_metres),
-            dodge_displacement_time_seconds: exchange.dodge_geometry.map(|_| {
-                autoresolve_melee_reaction_timing(reaction_sample, parameters)
-                    .displacement_time_seconds
-            }),
-            dodge_contacted_body_part: exchange
-                .dodge_geometry
-                .and_then(|geometry| geometry.contacted_body_part),
             scheduled_contact_measure_metres: contact.scheduled_measure_metres,
+            ideal_contact_measure_metres: contact.ideal_measure_metres,
             actual_contact_measure_metres: contact.actual_measure_metres,
             actual_center_separation_metres: contact.actual_measure_metres
                 + HUMANOID_MELEE_MINIMUM_CENTER_SEPARATION_METRES,
             contact_classification: contact.classification,
             contact_lever_arm_metres: contact.lever_arm_metres,
             contact_energy_fraction: contact.energy_fraction,
+            measure_accuracy_multiplier: contact.measure_accuracy_multiplier,
             contact_invalidation_cause: contact.invalidation_cause,
             contact_material: contact.contact_material,
             defense_success_probability: exchange
@@ -342,7 +328,6 @@ fn record_response_timeline(
 struct PreparedMeleeExchange {
     attack_power_multiplier: f32,
     contact_at_time: MeleeContactAtTime,
-    reaction_timing_sample: f32,
     scheduled_defender_timing_before: Option<ScheduledMeleeTiming>,
     defender_phase: MeleeDefenderPhase,
     defender_decision: AutoresolveMeleeDefenderDecision,
@@ -370,11 +355,13 @@ fn prepare_melee_exchange(
         .melee_engagement_distance_metres
         .min(defender.melee_engagement_distance_metres)
         .max(0.0);
+    let ideal_measure = mobility::preferred_melee_measure(attacker, parameters);
     let equipment = attacker.equipment.for_melee();
     let contact_at_time = resolve_melee_contact_at_time(MeleeContactAtTimeFacts {
         scheduled_measure_metres: scheduled_measure,
         actual_measure_metres: actual_measure,
-        effective_reach_metres: equipment.weapon_reach().max(0.4),
+        ideal_measure_metres: ideal_measure,
+        effective_reach_metres: melee_effective_reach(attacker),
         grip_to_tip_metres: equipment.weapon_grip_to_tip(),
         total_length_metres: equipment.weapon_total_length(),
         striking_head_length_metres: equipment.weapon_striking_head_length(),
@@ -422,15 +409,12 @@ fn prepare_melee_exchange(
         sample,
         response,
         random.unit_f32(),
-        autoresolve_melee_reaction_timing(reaction_sample, parameters).displacement_time_seconds,
-        actual_measure,
         contact_at_time,
     );
     let result = exchange.result * power;
     PreparedMeleeExchange {
         attack_power_multiplier: power,
         contact_at_time,
-        reaction_timing_sample: reaction_sample,
         scheduled_defender_timing_before: defender_timing,
         defender_phase: phase,
         defender_decision: decision,
@@ -477,12 +461,13 @@ mod tests {
             ..CombatWeapon::default()
         });
         fighter.equipment.weapon = fighter.equipment.melee_weapon;
+        let reach = melee_effective_reach(&fighter);
         assert_eq!(
-            movement_intent(&fighter, 1.0, parameters),
+            movement_intent(&fighter, reach, parameters),
             MovementIntent::Hold
         );
         assert_eq!(
-            movement_intent(&fighter, 1.01, parameters),
+            movement_intent(&fighter, reach + 0.01, parameters),
             MovementIntent::Close
         );
     }
@@ -506,7 +491,7 @@ mod tests {
         });
         long.equipment.weapon = long.equipment.melee_weapon;
         assert_eq!(
-            movement_intent(&short, 0.9, parameters),
+            movement_intent(&short, 1.2, parameters),
             MovementIntent::Close
         );
         assert_eq!(
@@ -530,7 +515,9 @@ mod tests {
         });
         polearm.equipment.weapon = polearm.equipment.melee_weapon;
         let preferred = preferred_melee_measure(&polearm, parameters);
-        assert!((preferred - 1.92).abs() < 1.0e-6);
+        let reach = melee_effective_reach(&polearm);
+        let expected = preferred_melee_striking_measure(reach, 1.9, 0.16, true, 0.7);
+        assert!((preferred - expected).abs() < 1.0e-6);
         assert_eq!(
             movement_intent(&polearm, 1.8, parameters),
             MovementIntent::Retreat
@@ -556,40 +543,42 @@ mod tests {
     }
 
     #[test]
-    fn swept_entry_finds_first_reach_crossing_without_tunneling() {
+    fn reach_entry_finds_first_crossing_without_tunneling() {
         let parameters = crate::combat::EMBEDDED_AUTORESOLVE_PARAMETERS;
-        let first = committed_fighter(1, 1.25, 1.27);
+        let reach = 1.25 + HUMANOID_REFERENCE_ARM_REACH_METRES;
+        let first = committed_fighter(1, 1.25, reach + 0.02);
         let mut second = Combatant::new(2);
-        second.melee_engagement_distance_metres = 1.27;
+        second.melee_engagement_distance_metres = reach + 0.02;
         second.melee_separation_velocity_metres_per_second = -1.0;
-        let crossing = swept_entry_seconds(&first, &second, true, 0.5, parameters)
+        let crossing = reach_entry_seconds(&first, &second, true, 0.5, parameters)
             .expect("mutual closure should enter sword reach");
         let (before, _, _) =
             preview_melee_pair_movement(&first, &second, (crossing - 0.000_1).max(0.0), parameters);
         let (at, _, _) = preview_melee_pair_movement(&first, &second, crossing, parameters);
-        assert!(before.distance_after_metres > 1.25);
-        assert!(at.distance_after_metres <= 1.25 + 1.0e-5);
+        assert!(before.distance_after_metres > reach);
+        assert!(at.distance_after_metres <= reach + 1.0e-5);
     }
 
     #[test]
-    fn swept_entry_is_dt_invariant_and_side_symmetric() {
+    fn reach_entry_is_dt_invariant_and_side_symmetric() {
         let parameters = crate::combat::EMBEDDED_AUTORESOLVE_PARAMETERS;
-        let first = committed_fighter(1, 1.25, 1.27);
+        let reach = 1.25 + HUMANOID_REFERENCE_ARM_REACH_METRES;
+        let first = committed_fighter(1, 1.25, reach + 0.02);
         let mut second = Combatant::new(2);
-        second.melee_engagement_distance_metres = 1.27;
+        second.melee_engagement_distance_metres = reach + 0.02;
         second.melee_separation_velocity_metres_per_second = -1.0;
-        let short = swept_entry_seconds(&first, &second, true, 0.3, parameters)
+        let short = reach_entry_seconds(&first, &second, true, 0.3, parameters)
             .expect("crossing occurs in the shorter interval");
-        let long = swept_entry_seconds(&first, &second, true, 0.6, parameters)
+        let long = reach_entry_seconds(&first, &second, true, 0.6, parameters)
             .expect("crossing occurs in the longer interval");
-        let swapped = swept_entry_seconds(&second, &first, false, 0.6, parameters)
+        let swapped = reach_entry_seconds(&second, &first, false, 0.6, parameters)
             .expect("actor identity swap preserves the same physical crossing");
         assert!((short - long).abs() < 1.0e-5);
         assert!((long - swapped).abs() < 1.0e-5);
     }
 
     #[test]
-    fn retreating_path_does_not_fabricate_a_swept_entry() {
+    fn retreating_path_does_not_fabricate_a_reach_entry() {
         let parameters = crate::combat::EMBEDDED_AUTORESOLVE_PARAMETERS;
         let mut first = committed_fighter(1, 1.25, 1.5);
         let mut second = Combatant::new(2);
@@ -597,7 +586,7 @@ mod tests {
         first.melee_separation_velocity_metres_per_second = 2.0;
         second.melee_separation_velocity_metres_per_second = 2.0;
         assert_eq!(
-            swept_entry_seconds(&first, &second, true, 0.01, parameters),
+            reach_entry_seconds(&first, &second, true, 0.01, parameters),
             None
         );
     }
@@ -605,10 +594,11 @@ mod tests {
     #[test]
     fn simultaneous_equal_reach_entries_have_the_same_contact_time() {
         let parameters = crate::combat::EMBEDDED_AUTORESOLVE_PARAMETERS;
-        let first = committed_fighter(1, 1.25, 1.27);
-        let second = committed_fighter(2, 1.25, 1.27);
-        let first_entry = swept_entry_seconds(&first, &second, true, 0.5, parameters).unwrap();
-        let second_entry = swept_entry_seconds(&first, &second, false, 0.5, parameters).unwrap();
+        let distance = 1.25 + HUMANOID_REFERENCE_ARM_REACH_METRES + 0.02;
+        let first = committed_fighter(1, 1.25, distance);
+        let second = committed_fighter(2, 1.25, distance);
+        let first_entry = reach_entry_seconds(&first, &second, true, 0.5, parameters).unwrap();
+        let second_entry = reach_entry_seconds(&first, &second, false, 0.5, parameters).unwrap();
         assert!((first_entry - second_entry).abs() < 1.0e-6);
     }
 }

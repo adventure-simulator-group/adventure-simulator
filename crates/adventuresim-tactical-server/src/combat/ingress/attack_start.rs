@@ -2,7 +2,6 @@ use super::*;
 
 pub(super) fn started_attack_lunge_delay(
     event: &MeleeAttackStartedIntent,
-    selected_body_part: Option<BodyPart>,
     weapon_reach: f32,
     transforms: &Query<&Transform>,
     dimensions: &Query<&CharacterDimensions>,
@@ -11,13 +10,11 @@ pub(super) fn started_attack_lunge_delay(
 ) -> f32 {
     event
         .target
-        .zip(selected_body_part)
-        .and_then(|(target, body_part)| {
+        .and_then(|target| {
             planned_melee_lunge_for_entities(
                 EntityMeleeLungeRequest {
                     attacker: event.attacker,
                     target,
-                    body_part,
                     weapon_reach_metres: weapon_reach,
                 },
                 transforms,
@@ -31,31 +28,18 @@ pub(super) fn started_attack_lunge_delay(
 
 pub(super) fn scheduled_attack_measure(
     event: &MeleeAttackStartedIntent,
-    selected_body_part: Option<BodyPart>,
     weapon_reach: f32,
     transforms: &Query<&Transform>,
-    dimensions: &Query<&CharacterDimensions>,
-    colliders: &Query<&Collider>,
-    config: &TacticalCombatConfig,
 ) -> f32 {
     event
         .target
-        .zip(selected_body_part)
-        .and_then(|(target, body_part)| {
+        .and_then(|target| {
             let attacker_transform = transforms.get(event.attacker).ok()?;
-            let attacker_dimensions = dimensions.get(event.attacker).ok()?;
-            let attacker_collider = colliders.get(event.attacker).ok()?;
             let target_transform = transforms.get(target).ok()?;
-            configured_body_part_surface_distance(
-                melee_attack_origin(
-                    attacker_transform.translation,
-                    attacker_collider,
-                    *attacker_dimensions,
-                ),
-                target_transform,
-                body_part,
-                config,
-            )
+            Some(melee_surface_measure(
+                attacker_transform.translation,
+                target_transform.translation,
+            ))
         })
         .unwrap_or(weapon_reach)
 }
@@ -126,13 +110,12 @@ pub(super) fn begin_started_attack_movement(
         contact_tick,
         transforms,
     );
-    if let (Some(target), Some(body_part)) = (event.target, selected_body_part) {
+    if let Some(target) = event.target {
         begin_melee_lunge(
             commands,
             EntityMeleeLungeRequest {
                 attacker: event.attacker,
                 target,
-                body_part,
                 weapon_reach_metres: weapon_reach,
             },
             animation_start_tick,

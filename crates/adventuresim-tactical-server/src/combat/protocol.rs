@@ -10,7 +10,6 @@ use super::{CombatDuration, CombatInstant, ReportedPrecision};
 pub(crate) struct PendingDefenderResponse {
     pub(crate) choice: DefendRequest,
     pub(crate) set_at: CombatInstant,
-    pub(crate) origin: Vec3,
 }
 
 /// Authoritative defensive action requested by either an authenticated client

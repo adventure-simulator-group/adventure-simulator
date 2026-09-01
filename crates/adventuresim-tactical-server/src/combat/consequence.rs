@@ -70,8 +70,6 @@ pub(super) fn apply_melee_attack_result(
         defense_success_probability: event.defense_success_probability,
         defense_alignment_sample: event.defense_alignment_sample,
         defense_engagement: event.defense_engagement,
-        closest_approach_metres: event.closest_approach_metres,
-        redirected_from: event.redirected_from,
         defender_blocking_slot: event.defender_blocking_slot,
         contact_at_time: event.contact_at_time,
     });

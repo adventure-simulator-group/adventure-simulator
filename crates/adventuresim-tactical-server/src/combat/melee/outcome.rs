@@ -15,8 +15,6 @@ pub(super) fn emit_melee_outcome(
     attacker_side: BodySide,
     response: DefenderResponse,
     alignment: Option<WeaponDefenseAlignment>,
-    dodge: Option<MeleeDodgeGeometry>,
-    redirected_body_part: Option<BodyPart>,
     contact_at_time: MeleeContactAtTime,
     contact: MeleeContactLocation,
     result: AttackResult,
@@ -66,10 +64,6 @@ pub(super) fn emit_melee_outcome(
         attacker_weapon_contact: attacker_has_weapon,
         impact_recipient: recipient,
         impact_velocity_change: velocity_change,
-        closest_approach_metres: dodge.map(|geometry| geometry.closest_approach_metres),
-        redirected_from: redirected_body_part
-            .filter(|body_part| *body_part != attack.body_part())
-            .map(|_| attack.body_part()),
         contact_at_time,
     });
     log_melee_result(

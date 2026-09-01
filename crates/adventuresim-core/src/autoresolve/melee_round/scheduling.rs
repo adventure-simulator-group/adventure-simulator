@@ -90,7 +90,7 @@ fn schedule_attacker(
     }
     let (attacker_id, target_id, distance) =
         establish_engagement(index, target_index, attackers, defenders, parameters);
-    let reach = attackers[index].equipment.weapon_reach().max(0.4);
+    let reach = melee_effective_reach(&attackers[index]);
     if distance > reach + parameters.melee_lunge_maximum_travel_metres {
         return None;
     }

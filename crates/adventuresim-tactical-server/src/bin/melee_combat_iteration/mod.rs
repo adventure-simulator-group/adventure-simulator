@@ -87,7 +87,6 @@ struct TacticalCausalSummary {
     dodge_attempts: u64,
     dodge_avoids: u64,
     dodge_contacts: u64,
-    dodge_redirections: u64,
     shield_block_attempts: u64,
     shield_blocks_defended: u64,
     shield_blocks_failed: u64,
@@ -121,7 +120,6 @@ struct TacticalCombatantCausal {
     effective_shield_blocks: u64,
     dodge_avoids: u64,
     dodge_contacts: u64,
-    dodge_redirections: u64,
     committed_attacks_canceled: u64,
     committed_attacks_transformed: u64,
     armor_surface_contacts_received: u64,
@@ -213,7 +211,6 @@ struct AutoresolveCombatantCausal {
     effective_weapon_contacts: u64,
     dodge_avoids: u64,
     dodge_contacts: u64,
-    dodge_redirections: u64,
     committed_attacks_canceled: u64,
     committed_attacks_transformed: u64,
     movement_actions: BTreeMap<String, u64>,
@@ -445,11 +442,7 @@ fn record_autoresolve_combatant_causal(
         _ => {}
     }
     if entry.defender_response == MeleeResponseChoice::Dodge {
-        let contacted = entry
-            .melee_telemetry
-            .as_ref()
-            .and_then(|telemetry| telemetry.dodge_contacted_body_part)
-            .is_some();
+        let contacted = entry.outcome != BattleAttackOutcome::Missed;
         defender.dodge_avoids += u64::from(!contacted);
         defender.dodge_contacts += u64::from(contacted);
     }

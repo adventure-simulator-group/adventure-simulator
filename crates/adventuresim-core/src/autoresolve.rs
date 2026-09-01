@@ -556,11 +556,8 @@ pub struct MeleeContactTelemetry {
     pub anatomical_subregion: AnatomicalSubregion,
     pub surface_coordinate: f32,
     pub armor_layer_chain: Vec<ArmorLayerTelemetry>,
-    pub redirected_from: Option<BodyPart>,
-    pub dodge_closest_approach_metres: Option<f32>,
-    pub dodge_displacement_time_seconds: Option<f32>,
-    pub dodge_contacted_body_part: Option<BodyPart>,
     pub scheduled_contact_measure_metres: f32,
+    pub ideal_contact_measure_metres: f32,
     /// Gap from the attack origin to the target body's near surface.
     pub actual_contact_measure_metres: f32,
     /// Physical center separation after adding both 0.4 m humanoid radii.
@@ -568,6 +565,7 @@ pub struct MeleeContactTelemetry {
     pub contact_classification: MeleeContactClassification,
     pub contact_lever_arm_metres: f32,
     pub contact_energy_fraction: f32,
+    pub measure_accuracy_multiplier: f32,
     pub contact_invalidation_cause: Option<MeleeContactInvalidationCause>,
     pub contact_material: Option<crate::item_catalog_schema::EquipmentMaterial>,
     pub defense_success_probability: Option<f32>,
@@ -1860,7 +1858,6 @@ mod tests {
             MeleeExchangeSamples {
                 contact: 0.5,
                 defense_alignment: 0.5,
-                dodge_displacement_time_seconds: 0.5,
             },
         );
         health_damage_from_attack(exchange.result, exchange.contact.body_part)
@@ -2086,7 +2083,6 @@ mod tests {
             MeleeExchangeSamples {
                 contact: 0.5,
                 defense_alignment: 0.5,
-                dodge_displacement_time_seconds: 0.5,
             },
         )
         .result;
@@ -2108,7 +2104,6 @@ mod tests {
             MeleeExchangeSamples {
                 contact: 0.5,
                 defense_alignment: 0.5,
-                dodge_displacement_time_seconds: 0.5,
             },
         )
         .result;
@@ -2145,7 +2140,6 @@ mod tests {
             MeleeExchangeSamples {
                 contact: 0.5,
                 defense_alignment: 0.5,
-                dodge_displacement_time_seconds: 0.5,
             },
         );
         let result = exchange.result;
@@ -2309,7 +2303,6 @@ mod tests {
             MeleeExchangeSamples {
                 contact: 0.5,
                 defense_alignment: 0.5,
-                dodge_displacement_time_seconds: 0.5,
             },
         );
         attacker.equipment.melee_weapon.as_mut().unwrap().precise = false;
@@ -2322,7 +2315,6 @@ mod tests {
             MeleeExchangeSamples {
                 contact: 0.5,
                 defense_alignment: 0.5,
-                dodge_displacement_time_seconds: 0.5,
             },
         );
 
@@ -2579,9 +2571,12 @@ mod tests {
     }
 
     #[test]
-    fn autoresolve_reaction_timing_matches_fixed_server_windup() {
-        let reflex = autoresolve_melee_input_reflex(0.5, autoresolve_parameters());
-        assert!((0.1..0.25).contains(&reflex));
+    fn autoresolve_earlier_reaction_has_at_least_as_much_dodge_reflex() {
+        let parameters = autoresolve_parameters();
+        let early = autoresolve_melee_input_reflex(0.0, parameters);
+        let middle = autoresolve_melee_input_reflex(0.5, parameters);
+        let late = autoresolve_melee_input_reflex(1.0, parameters);
+        assert!(early > middle && middle > late);
     }
 
     #[test]

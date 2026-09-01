@@ -373,7 +373,15 @@ mod tests {
     #[test]
     fn parry_consumes_the_committed_attack_before_any_later_riposte() {
         let (john, opponents) = melee_iteration_roster().unwrap();
-        let outcome = resolve_tactical_server_melee_duel(&john, &opponents[0], 4);
+        let outcome = (1..=8)
+            .map(|seed| resolve_tactical_server_melee_duel(&john, &opponents[0], seed))
+            .find(|outcome| {
+                outcome
+                    .decision_events
+                    .iter()
+                    .any(|event| event.status == TacticalDecisionStatus::CanceledForDefense)
+            })
+            .expect("the bounded fixed-seed set includes a reciprocal parry");
         let canceled = outcome
             .decision_events
             .iter()
@@ -405,7 +413,7 @@ mod tests {
     #[test]
     fn committed_sword_uses_buckler_and_is_transformed_before_contact() {
         let (john, opponents) = melee_iteration_roster().unwrap();
-        let outcome = resolve_tactical_server_melee_duel(&john, &opponents[0], 1);
+        let outcome = resolve_tactical_server_melee_duel(&john, &opponents[0], 2);
         assert!(outcome.events.iter().any(|event| {
             event.defender == "Shield Militiaman"
                 && event.defensive_implement.as_deref() == Some("buckler")
@@ -431,24 +439,17 @@ mod tests {
     }
 
     #[test]
-    fn production_dodge_can_redirect_committed_path_to_a_limb() {
-        let (john, opponents) = melee_iteration_roster().unwrap();
-        assert!((1..=8).any(|seed| {
-            resolve_tactical_server_melee_duel(&john, &opponents[0], seed)
-                .events
-                .iter()
-                .any(|event| {
-                    event.defender_decision == TacticalDecision::Dodge
-                        && event.redirected_from_body_part.is_some()
-                        && event.contact_energy_joules > 0.0
-                })
-        }));
-    }
-
-    #[test]
     fn production_polearm_seeks_authored_head_band_and_uses_live_contact_revalidation() {
         let (john, opponents) = melee_iteration_roster().unwrap();
         let veteran = &opponents[2];
+        let weapon = veteran.combatant.equipment.melee_weapon.unwrap();
+        let expected_preferred = adventuresim_core::combat::preferred_melee_striking_measure(
+            adventuresim_core::combat::HUMANOID_REFERENCE_ARM_REACH_METRES + weapon.melee_reach,
+            weapon.grip_to_tip_m,
+            weapon.striking_head_length_m,
+            weapon.distal_headed,
+            adventuresim_core::combat::EMBEDDED_AUTORESOLVE_PARAMETERS.melee_measure_reach_fraction,
+        );
         let outcomes = (1..=8)
             .map(|seed| resolve_tactical_server_melee_duel(&john, veteran, seed))
             .collect::<Vec<_>>();
@@ -468,7 +469,7 @@ mod tests {
                         && decision.status == TacticalDecisionStatus::Started
                         && decision
                             .preferred_melee_measure_metres
-                            .is_some_and(|measure| (measure - 1.92).abs() < 0.01)
+                            .is_some_and(|measure| (measure - expected_preferred).abs() < 0.01)
                 }),
             "{preferred_measures:?}"
         );

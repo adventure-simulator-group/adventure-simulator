@@ -91,13 +91,13 @@ pub struct TacticalMeleeLogEntry {
     pub anatomical_subregion: String,
     pub contact_surface_coordinate: f32,
     pub armor_layer_chain: Vec<ArmorLayerContact>,
-    pub redirected_from_body_part: Option<String>,
-    pub closest_approach_metres: Option<f32>,
     pub scheduled_contact_measure_metres: f32,
+    pub ideal_contact_measure_metres: f32,
     pub actual_contact_measure_metres: f32,
     pub contact_classification: adventuresim_core::combat::MeleeContactClassification,
     pub contact_lever_arm_metres: f32,
     pub contact_energy_fraction: f32,
+    pub measure_accuracy_multiplier: f32,
     pub contact_invalidation_cause:
         Option<adventuresim_core::combat::MeleeContactInvalidationCause>,
     pub contact_material: Option<adventuresim_core::item_catalog_schema::EquipmentMaterial>,
@@ -195,6 +195,7 @@ pub(super) fn record_attack_start(
     event: On<crate::combat::MeleeAttackStartedIntent>,
     clock: Res<IterationClock>,
     players: Query<(&Player, &Transform)>,
+    dimensions: Query<&CharacterDimensions>,
     viewer: TacticalPlayerViewer,
     config: Res<TacticalCombatConfig>,
     mut log: ResMut<IterationLog>,
@@ -205,7 +206,15 @@ pub(super) fn record_attack_start(
     };
     let target = event.target.and_then(|entity| players.get(entity).ok());
     let preferred_melee_measure_metres = viewer.get(event.attacker).ok().map(|view| {
-        let reach = view.weapon_reach();
+        let weapon_reach = view.weapon_reach();
+        let reach = melee_interaction_range(
+            dimensions
+                .get(event.attacker)
+                .copied()
+                .unwrap_or_default()
+                .arm_reach_metres,
+            weapon_reach,
+        );
         let grip = view.weapon_grip_to_tip();
         let head = view.weapon_striking_head_length();
         let distal = adventuresim_core::combat::has_distal_striking_surface(

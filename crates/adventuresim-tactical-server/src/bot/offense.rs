@@ -219,6 +219,11 @@ fn maintain_committed_threat_guard(
     }
 }
 
+fn hold_and_tick(input: &mut AuthoritativeMovementIntent, timer: &mut Timer, time: &Time<()>) {
+    input.0 = None;
+    timer.tick(time.delta());
+}
+
 fn continue_withdrawal(
     cmd: &mut Commands,
     time: &Time<()>,
@@ -285,8 +290,7 @@ fn drive_offensive_phase(
             );
         }
         OffensiveCombatPhase::Assessing(timer) => {
-            input.0 = None;
-            timer.tick(time.delta());
+            hold_and_tick(input, timer, time);
             if timer.is_finished() {
                 controller.phase = OffensiveCombatPhase::Pursuing;
             }
@@ -296,7 +300,12 @@ fn drive_offensive_phase(
             strike_family: _,
             recovery_seconds,
         } => {
-            input.0 = None;
+            input.0 = long_weapon_windup_movement(
+                facts.weapon_reach,
+                facts.preferred_melee_measure,
+                distance,
+                config.long_weapon_measure_threshold_metres,
+            );
             timer.tick(time.delta());
             if timer.is_finished() {
                 controller.phase = OffensiveCombatPhase::Cooldown(Timer::from_seconds(
@@ -511,10 +520,10 @@ mod tests {
             adventuresim_core::combat::preferred_melee_striking_measure(2.0, 1.9, 0.16, true, 0.7);
         assert!((preferred - 1.92).abs() < 1.0e-6);
         assert!(below_preferred_long_weapon_measure(
-            2.0, preferred, 1.8, 1.2
+            2.0, preferred, 2.6, 1.2
         ));
         assert!(!below_preferred_long_weapon_measure(
-            2.0, preferred, 1.95, 1.2
+            2.0, preferred, 2.8, 1.2
         ));
     }
 }

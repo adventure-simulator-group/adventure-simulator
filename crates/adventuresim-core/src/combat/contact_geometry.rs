@@ -10,6 +10,8 @@ use crate::item_catalog_schema::EquipmentMaterial;
 pub struct MeleeContactAtTimeFacts {
     pub scheduled_measure_metres: f32,
     pub actual_measure_metres: f32,
+    /// Authored preferred striking measure; scheduling never redefines it.
+    pub ideal_measure_metres: f32,
     pub effective_reach_metres: f32,
     pub grip_to_tip_metres: f32,
     pub total_length_metres: f32,
@@ -33,12 +35,14 @@ pub enum MeleeContactClassification {
 #[serde(rename_all = "snake_case")]
 pub enum MeleeContactInvalidationCause {
     OutsideReach,
-    InsideWeaponPath,
     InvalidGeometry,
 }
 
 /// Radius of the authoritative tactical humanoid collision cylinder.
 pub const HUMANOID_COLLISION_RADIUS_METRES: f32 = 0.4;
+/// Shoulder-to-hand reach of the reference humanoid used when autoresolve has
+/// no per-instance tactical dimensions.
+pub const HUMANOID_REFERENCE_ARM_REACH_METRES: f32 = 0.526_801;
 
 /// Two authoritative humanoid collision radii. Autoresolve therefore cannot
 /// project the combatants' centers through one another.
@@ -88,8 +92,12 @@ pub struct MeleeContactAtTime {
     pub classification: MeleeContactClassification,
     pub scheduled_measure_metres: f32,
     pub actual_measure_metres: f32,
+    pub ideal_measure_metres: f32,
     pub lever_arm_metres: f32,
     pub energy_fraction: f32,
+    /// Continuous accuracy contribution from deviation from the committed
+    /// ideal measure. This never independently adjudicates a hit in reach.
+    pub measure_accuracy_multiplier: f32,
     pub invalidation_cause: Option<MeleeContactInvalidationCause>,
     pub contact_material: Option<EquipmentMaterial>,
 }
@@ -100,8 +108,10 @@ impl MeleeContactAtTime {
             classification: MeleeContactClassification::IntendedSurface,
             scheduled_measure_metres: measure_metres,
             actual_measure_metres: measure_metres,
+            ideal_measure_metres: measure_metres,
             lever_arm_metres: 0.0,
             energy_fraction: 1.0,
+            measure_accuracy_multiplier: 1.0,
             invalidation_cause: None,
             contact_material: None,
         }
@@ -112,23 +122,45 @@ impl MeleeContactAtTime {
             classification: MeleeContactClassification::InvalidatedMiss,
             scheduled_measure_metres: facts.scheduled_measure_metres,
             actual_measure_metres: facts.actual_measure_metres,
+            ideal_measure_metres: facts.ideal_measure_metres,
             lever_arm_metres: 0.0,
             energy_fraction: 0.0,
+            measure_accuracy_multiplier: 0.0,
             invalidation_cause: Some(cause),
             contact_material: None,
         }
     }
 }
 
-/// Revalidates the one committed weapon path at contact time. A polearm's
-/// authored transverse head dimension defines its distal striking band; a
-/// target inside that band can meet shaft or butt, but cannot receive the
-/// unchanged full-head edge energy scheduled at outer measure.
+/// Classifies the physical surface and lever available at contact measure.
+/// This never adjudicates an in-reach hit: a polearm contacted inside its
+/// distal band can meet shaft or butt, but cannot deliver unchanged head-edge
+/// energy intended for outer measure.
 #[must_use]
 pub fn resolve_melee_contact_at_time(facts: MeleeContactAtTimeFacts) -> MeleeContactAtTime {
+    if let Some(cause) = invalid_contact_cause(facts) {
+        return MeleeContactAtTime::invalid(facts, cause);
+    }
+    let measure_accuracy_multiplier = measure_accuracy_multiplier(facts);
+    if facts.grip_to_tip_metres <= f32::EPSILON {
+        return unarmed_contact(facts, measure_accuracy_multiplier);
+    }
+
+    let grip_origin_measure = (facts.effective_reach_metres - facts.grip_to_tip_metres).max(0.0);
+    let lever_arm = facts.actual_measure_metres - grip_origin_measure;
+    let butt_length = (facts.total_length_metres - facts.grip_to_tip_metres).max(0.0);
+    if lever_arm <= 0.0 {
+        return close_contact(facts, lever_arm, butt_length, measure_accuracy_multiplier);
+    }
+
+    resolve_positive_lever_contact(facts, lever_arm, measure_accuracy_multiplier)
+}
+
+fn invalid_contact_cause(facts: MeleeContactAtTimeFacts) -> Option<MeleeContactInvalidationCause> {
     let values = [
         facts.scheduled_measure_metres,
         facts.actual_measure_metres,
+        facts.ideal_measure_metres,
         facts.effective_reach_metres,
         facts.grip_to_tip_metres,
         facts.total_length_metres,
@@ -139,30 +171,78 @@ pub fn resolve_melee_contact_at_time(facts: MeleeContactAtTimeFacts) -> MeleeCon
         .any(|value| !value.is_finite() || value < 0.0)
         || facts.effective_reach_metres <= f32::EPSILON
     {
-        return MeleeContactAtTime::invalid(facts, MeleeContactInvalidationCause::InvalidGeometry);
+        return Some(MeleeContactInvalidationCause::InvalidGeometry);
     }
     if facts.actual_measure_metres > facts.effective_reach_metres {
-        return MeleeContactAtTime::invalid(facts, MeleeContactInvalidationCause::OutsideReach);
+        return Some(MeleeContactInvalidationCause::OutsideReach);
     }
-    let grip_origin_measure = (facts.effective_reach_metres - facts.grip_to_tip_metres).max(0.0);
-    let lever_arm = facts.actual_measure_metres - grip_origin_measure;
-    let butt_length = (facts.total_length_metres - facts.grip_to_tip_metres).max(0.0);
-    if lever_arm <= 0.0 {
-        if -lever_arm <= butt_length && facts.attack_style == MeleeAttackStyle::Swing {
-            let fraction = (-lever_arm / facts.grip_to_tip_metres).clamp(0.0, 1.0);
-            return MeleeContactAtTime {
-                classification: MeleeContactClassification::Pommel,
-                scheduled_measure_metres: facts.scheduled_measure_metres,
-                actual_measure_metres: facts.actual_measure_metres,
-                lever_arm_metres: -lever_arm,
-                energy_fraction: fraction * fraction,
-                invalidation_cause: None,
-                contact_material: facts.body_material,
-            };
-        }
-        return MeleeContactAtTime::invalid(facts, MeleeContactInvalidationCause::InsideWeaponPath);
-    }
+    None
+}
 
+fn unarmed_contact(
+    facts: MeleeContactAtTimeFacts,
+    measure_accuracy_multiplier: f32,
+) -> MeleeContactAtTime {
+    MeleeContactAtTime {
+        classification: MeleeContactClassification::IntendedSurface,
+        scheduled_measure_metres: facts.scheduled_measure_metres,
+        actual_measure_metres: facts.actual_measure_metres,
+        ideal_measure_metres: facts.ideal_measure_metres,
+        lever_arm_metres: 0.0,
+        energy_fraction: 1.0,
+        measure_accuracy_multiplier,
+        invalidation_cause: None,
+        contact_material: facts.striking_material.or(facts.body_material),
+    }
+}
+
+fn close_contact(
+    facts: MeleeContactAtTimeFacts,
+    lever_arm: f32,
+    butt_length: f32,
+    measure_accuracy_multiplier: f32,
+) -> MeleeContactAtTime {
+    if -lever_arm <= butt_length && facts.attack_style == MeleeAttackStyle::Swing {
+        let fraction = (-lever_arm / facts.grip_to_tip_metres).clamp(0.0, 1.0);
+        return MeleeContactAtTime {
+            classification: MeleeContactClassification::Pommel,
+            scheduled_measure_metres: facts.scheduled_measure_metres,
+            actual_measure_metres: facts.actual_measure_metres,
+            ideal_measure_metres: facts.ideal_measure_metres,
+            lever_arm_metres: -lever_arm,
+            energy_fraction: fraction * fraction,
+            measure_accuracy_multiplier,
+            invalidation_cause: None,
+            contact_material: facts.body_material,
+        };
+    }
+    let close_contact_lever = butt_length
+        .max(facts.grip_to_tip_metres * 0.1)
+        .min(facts.grip_to_tip_metres);
+    let close_lever = facts
+        .actual_measure_metres
+        .max(close_contact_lever)
+        .min(facts.grip_to_tip_metres);
+    MeleeContactAtTime {
+        classification: MeleeContactClassification::Haft,
+        scheduled_measure_metres: facts.scheduled_measure_metres,
+        actual_measure_metres: facts.actual_measure_metres,
+        ideal_measure_metres: facts.ideal_measure_metres,
+        lever_arm_metres: close_lever,
+        energy_fraction: (close_lever / facts.grip_to_tip_metres)
+            .clamp(0.0, 1.0)
+            .powi(2),
+        measure_accuracy_multiplier,
+        invalidation_cause: None,
+        contact_material: facts.body_material,
+    }
+}
+
+fn resolve_positive_lever_contact(
+    facts: MeleeContactAtTimeFacts,
+    lever_arm: f32,
+    measure_accuracy_multiplier: f32,
+) -> MeleeContactAtTime {
     let head_length = if facts.distal_headed {
         facts
             .striking_head_length_metres
@@ -178,10 +258,12 @@ pub fn resolve_melee_contact_at_time(facts: MeleeContactAtTimeFacts) -> MeleeCon
             classification: MeleeContactClassification::IntendedSurface,
             scheduled_measure_metres: facts.scheduled_measure_metres,
             actual_measure_metres: facts.actual_measure_metres,
+            ideal_measure_metres: facts.ideal_measure_metres,
             lever_arm_metres: lever_arm.min(facts.grip_to_tip_metres),
             energy_fraction: (lever_arm / facts.grip_to_tip_metres)
                 .clamp(0.0, 1.0)
                 .powi(2),
+            measure_accuracy_multiplier,
             invalidation_cause: None,
             contact_material: facts.striking_material,
         };
@@ -192,11 +274,31 @@ pub fn resolve_melee_contact_at_time(facts: MeleeContactAtTimeFacts) -> MeleeCon
         classification: MeleeContactClassification::Haft,
         scheduled_measure_metres: facts.scheduled_measure_metres,
         actual_measure_metres: facts.actual_measure_metres,
+        ideal_measure_metres: facts.ideal_measure_metres,
         lever_arm_metres: lever_arm,
         energy_fraction: lever_fraction * lever_fraction,
+        measure_accuracy_multiplier,
         invalidation_cause: None,
         contact_material: facts.body_material,
     }
+}
+
+fn measure_accuracy_multiplier(facts: MeleeContactAtTimeFacts) -> f32 {
+    let ideal = facts
+        .ideal_measure_metres
+        .clamp(0.0, facts.effective_reach_metres);
+    let deviation = (facts.actual_measure_metres - ideal).abs();
+    let style_tolerance = match facts.attack_style {
+        MeleeAttackStyle::Swing => 0.30,
+        MeleeAttackStyle::Stab => 0.18,
+    };
+    let striking_tolerance = if facts.distal_headed {
+        facts.striking_head_length_metres * 0.5
+    } else {
+        facts.grip_to_tip_metres * style_tolerance
+    };
+    let tolerance = striking_tolerance.max(facts.effective_reach_metres * 0.08);
+    (tolerance / (tolerance + deviation)).clamp(0.0, 1.0)
 }
 
 #[cfg(test)]
@@ -207,6 +309,7 @@ mod tests {
         MeleeContactAtTimeFacts {
             scheduled_measure_metres: 2.0,
             actual_measure_metres,
+            ideal_measure_metres: 1.92,
             effective_reach_metres: 2.0,
             grip_to_tip_metres: 1.9,
             total_length_metres: 2.1,
@@ -222,6 +325,7 @@ mod tests {
         MeleeContactAtTimeFacts {
             scheduled_measure_metres: 1.25,
             actual_measure_metres,
+            ideal_measure_metres: 0.875,
             effective_reach_metres: 1.25,
             grip_to_tip_metres: 1.0,
             total_length_metres: 1.2,
@@ -237,6 +341,7 @@ mod tests {
         MeleeContactAtTimeFacts {
             scheduled_measure_metres: 0.8,
             actual_measure_metres,
+            ideal_measure_metres: 0.72,
             effective_reach_metres: 0.8,
             grip_to_tip_metres: 0.56,
             total_length_metres: 0.70,
@@ -328,7 +433,7 @@ mod tests {
     }
 
     #[test]
-    fn outside_reach_and_inside_path_are_explicit_misses() {
+    fn only_outside_reach_is_a_spatial_miss() {
         let outside = resolve_melee_contact_at_time(halberd(2.01));
         assert_eq!(
             outside.classification,
@@ -338,13 +443,12 @@ mod tests {
             outside.invalidation_cause,
             Some(MeleeContactInvalidationCause::OutsideReach)
         );
-        let mut inside = halberd(0.0);
-        inside.total_length_metres = inside.grip_to_tip_metres;
-        let inside = resolve_melee_contact_at_time(inside);
-        assert_eq!(
-            inside.invalidation_cause,
-            Some(MeleeContactInvalidationCause::InsideWeaponPath)
+        let inside = resolve_melee_contact_at_time(halberd(0.0));
+        assert_ne!(
+            inside.classification,
+            MeleeContactClassification::InvalidatedMiss
         );
+        assert!(inside.energy_fraction > 0.0);
     }
 
     #[test]
@@ -356,5 +460,29 @@ mod tests {
             preferred_melee_striking_measure(1.25, 1.0, 1.0, false, 0.7),
             0.875
         );
+    }
+
+    #[test]
+    fn scheduled_distance_does_not_redefine_authored_ideal_measure() {
+        let first = resolve_melee_contact_at_time(halberd(1.5));
+        let mut rescheduled = halberd(1.5);
+        rescheduled.scheduled_measure_metres = 0.25;
+        let second = resolve_melee_contact_at_time(rescheduled);
+        assert_eq!(first.ideal_measure_metres, second.ideal_measure_metres);
+        assert_eq!(
+            first.measure_accuracy_multiplier,
+            second.measure_accuracy_multiplier
+        );
+    }
+
+    #[test]
+    fn measure_accuracy_is_continuous_nonzero_and_best_at_authored_measure() {
+        let ideal = resolve_melee_contact_at_time(halberd(1.92));
+        let near = resolve_melee_contact_at_time(halberd(1.8));
+        let clinch = resolve_melee_contact_at_time(halberd(0.0));
+        assert_eq!(ideal.measure_accuracy_multiplier, 1.0);
+        assert!(near.measure_accuracy_multiplier < ideal.measure_accuracy_multiplier);
+        assert!(clinch.measure_accuracy_multiplier > 0.0);
+        assert!(clinch.energy_fraction > 0.0);
     }
 }

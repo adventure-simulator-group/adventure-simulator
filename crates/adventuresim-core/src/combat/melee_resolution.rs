@@ -25,6 +25,10 @@ pub fn resolve_melee_attack_by_parts(
     defender_essentials: &impl PlayerEssentials,
     defender_equip: &impl PlayerEquipment,
 ) -> AttackResult {
+    if let Some(miss) = invalidated_contact_miss(contact_at_time) {
+        return miss;
+    }
+    let hit_precision = melee_measure_adjusted_precision(hit_precision, contact_at_time);
     let accuracy = melee_attack_accuracy_by_parts(
         attacker_skills,
         attacker_attr,
@@ -95,6 +99,16 @@ pub fn resolve_melee_attack_by_parts(
     }
 }
 
+fn invalidated_contact_miss(contact: MeleeContactAtTime) -> Option<AttackResult> {
+    (contact.classification == MeleeContactClassification::InvalidatedMiss).then_some(
+        AttackResult::ToAttacker {
+            balance_damage: 0.0,
+            contact_force: 0.0,
+            physical_contact: false,
+        },
+    )
+}
+
 fn avoided_contact(
     accuracy: f32,
     attacker_attr: &impl PlayerAttributes,
@@ -104,13 +118,6 @@ fn avoided_contact(
     response: DefenderResponse,
     contact: MeleeContactAtTime,
 ) -> AttackResult {
-    if contact.classification == MeleeContactClassification::InvalidatedMiss {
-        return AttackResult::ToAttacker {
-            balance_damage: 0.0,
-            contact_force: 0.0,
-            physical_contact: false,
-        };
-    }
     AttackResult::ToAttacker {
         balance_damage: avoided_attack_balance_damage(
             accuracy,

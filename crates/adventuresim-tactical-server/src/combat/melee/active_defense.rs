@@ -2,14 +2,12 @@ use super::*;
 
 #[expect(
     clippy::too_many_arguments,
-    reason = "active defense bridges live authority, animation, physiology, and geometry"
+    reason = "active defense bridges live authority, animation, and physiology"
 )]
 pub(super) fn resolve_active_defense(
     attack: &AuthorizedMeleeAttack,
     attacker_view: &TacticalPlayerView<'_, '_, '_>,
     defender_view: &TacticalPlayerView<'_, '_, '_>,
-    attacker_transform: &Transform,
-    defender_transform: &Transform,
     attacker_performance: f32,
     attack_style: MeleeAttackStyle,
     contact_sample: f32,
@@ -19,7 +17,7 @@ pub(super) fn resolve_active_defense(
     q_states: &mut Query<&mut TacticalCombatState>,
     time: &Time<()>,
     config: &TacticalCombatConfig,
-) -> Option<(DefenderResponse, Option<MeleeDodgeGeometry>)> {
+) -> Option<DefenderResponse> {
     let defender_skeleton = q_skeletons.get(attack.target()).ok()?;
     let pending = q_pending.get(attack.target()).ok();
     let (incapacitation, performance) = defender_condition(attack, defender_view, q_states);
@@ -48,22 +46,8 @@ pub(super) fn resolve_active_defense(
         contact_sample,
     );
     let response = shield_aligned_response(response, defender_view.shield_holding_side(), preview);
-    let dodge = matches!(response, DefenderResponse::Dodge { .. }).then(|| {
-        dodge_geometry(
-            attack,
-            attacker_view,
-            defender_view,
-            attacker_transform,
-            defender_transform,
-            attacker_performance,
-            performance,
-            attack_style,
-            pending,
-            time,
-        )
-    });
     charge_defense_work(response, attack, defender_view, q_states, config);
-    Some((response, dodge))
+    Some(response)
 }
 
 fn defender_condition(
@@ -81,63 +65,6 @@ fn defender_condition(
             ),
         )
     })
-}
-
-#[expect(
-    clippy::too_many_arguments,
-    reason = "dodge geometry projects both live actors"
-)]
-fn dodge_geometry(
-    attack: &AuthorizedMeleeAttack,
-    attacker: &TacticalPlayerView<'_, '_, '_>,
-    defender: &TacticalPlayerView<'_, '_, '_>,
-    attacker_transform: &Transform,
-    defender_transform: &Transform,
-    attacker_performance: f32,
-    defender_performance: f32,
-    attack_style: MeleeAttackStyle,
-    pending: Option<&PendingDefenderResponse>,
-    time: &Time<()>,
-) -> MeleeDodgeGeometry {
-    let intended = pending.map_or(defender_transform.translation, |value| value.origin);
-    let origin = attacker_transform.translation.xz();
-    let intended = intended.xz();
-    let displaced = defender_transform.translation.xz();
-    let defender_agility = defender.limb_attr_by_weight_by_parts(
-        LimbAttribute::Agility,
-        defender,
-        LimbWeights::both_legs(),
-    );
-    let attacker_agility = attacker.limb_attr_by_weight_by_parts(
-        LimbAttribute::Agility,
-        attacker,
-        LimbWeights::both_arms(),
-    );
-    let displacement_time_seconds = pending.map_or(0.0, |value| {
-        CombatInstant::from_elapsed(time)
-            .elapsed_since(value.set_at)
-            .as_secs_f32()
-    });
-    resolve_melee_dodge_geometry(
-        (origin.x, origin.y),
-        (intended.x, intended.y),
-        (displaced.x, displaced.y),
-        attack.body_part(),
-        MeleeDodgeKinematics {
-            defender_leg_agility: defender_agility,
-            defender_fatigue_performance: defender_performance,
-            defender_body_mass_kg: defender.body_weight(),
-            defender_equipment_mass_kg: defender.inventory_weight(),
-            displacement_time_seconds,
-            attacker_tracking: (attacker_agility / 5.0).clamp(0.0, 1.0) * attacker_performance
-                / (1.0 + attacker.weapon_moment_of_inertia().max(0.0) * 2.0),
-            weapon_reach_metres: attacker.weapon_reach().max(0.4),
-            committed_arc_radians: match attack_style {
-                MeleeAttackStyle::Swing => 0.8,
-                MeleeAttackStyle::Stab => 0.25,
-            },
-        },
-    )
 }
 
 fn charge_defense_work(

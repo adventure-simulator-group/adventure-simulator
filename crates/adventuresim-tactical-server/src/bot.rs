@@ -838,14 +838,15 @@ mod tests {
         // Production consumes this through `resolve_ranged_attack`; removing
         // it here isolates deterministic controller selection from physics.
         app.world_mut().despawn(ammo);
-        // Put the target inside the hybrid weapon's melee measure. In the
+        // Put the target just outside the hybrid weapon's preferred measure,
+        // while remaining inside its absolute melee reach. In the
         // production schedule movement would create this separation while the
         // bot retreats; this controller-only test intentionally has no motor.
         app.world_mut()
             .entity_mut(target)
             .get_mut::<Transform>()
             .unwrap()
-            .translation = Vec3::new(0.0, 0.0, -4.0);
+            .translation = Vec3::new(0.0, 0.0, -5.0);
         for _ in 0..30 {
             app.world_mut()
                 .resource_mut::<Time<()>>()
@@ -934,7 +935,7 @@ mod tests {
                     CharacterDimensions::default().arm_reach_metres,
                     KATZBALGER_REACH,
                     quickstep_distance,
-                ),
+                ) + TWO_CHARACTER_COLLIDER_RADII,
             "AI stopped outside reachable lunge range: {separation}"
         );
         assert!(
@@ -942,7 +943,7 @@ mod tests {
                 > melee_interaction_range(
                     CharacterDimensions::default().arm_reach_metres,
                     KATZBALGER_REACH,
-                ),
+                ) + TWO_CHARACTER_COLLIDER_RADII,
             "AI should commit its attack while the lunge still has a gap to close: {separation}"
         );
         assert!(

@@ -181,7 +181,7 @@ pub(super) fn autoresolve_melee_reaction_timing(
             * timing_sample.clamp(0.0, 1.0);
     let elapsed_after_input = (windup - reaction_delay).max(0.0);
     AutoresolveMeleeReactionTiming {
-        input_reflex: (1.0 - elapsed_after_input / parameters.melee_reflex_window_seconds)
+        input_reflex: (1.0 - reaction_delay / parameters.melee_reflex_window_seconds)
             .clamp(parameters.minimum_melee_input_reflex, 1.0),
         displacement_time_seconds: elapsed_after_input,
     }

@@ -504,60 +504,49 @@ mod tests {
     }
 
     #[test]
-    fn shared_dodge_projection_preserves_polearm_contact_time_and_tracking_advantage() {
-        let (john, opponents) = melee_iteration_roster().unwrap();
-        let veteran = opponents
+    fn dodge_skill_participates_in_the_shared_exchange_equation() {
+        let (_john, opponents) = melee_iteration_roster().unwrap();
+        let attacker = opponents
             .iter()
-            .find(|build| build.key == "polearm_veteran")
+            .find(|build| build.key == "knife_novice")
             .unwrap();
-        let dodge = DefenderResponse::Dodge { input_reflex: 0.2 };
-        let john_against_halberd = melee_exchange(
-            &veteran.combatant,
-            &john.combatant,
-            1.0,
-            0.0,
-            dodge,
-            MeleeExchangeSamples {
-                contact: 0.4,
-                defense_alignment: 0.5,
-                dodge_displacement_time_seconds: 0.42,
-            },
-        );
-        let veteran_against_longsword = melee_exchange(
-            &john.combatant,
-            &veteran.combatant,
-            1.0,
-            0.0,
-            dodge,
-            MeleeExchangeSamples {
-                contact: 0.4,
-                defense_alignment: 0.5,
-                dodge_displacement_time_seconds: 0.42,
-            },
-        );
-        let john_clearance = john_against_halberd
-            .dodge_geometry
-            .unwrap()
-            .closest_approach_metres;
-        let veteran_clearance = veteran_against_longsword
-            .dodge_geometry
-            .unwrap()
-            .closest_approach_metres;
-        assert!(john_clearance > veteran_clearance);
-        assert!(matches!(
-            john_against_halberd.result,
-            AttackResult::ToAttacker {
-                physical_contact: false,
-                ..
-            }
-        ));
-        assert!(
-            veteran_against_longsword
-                .dodge_geometry
-                .unwrap()
-                .contacted_body_part
-                .is_some()
-        );
+        let mut untrained = opponents[0].combatant.clone();
+        untrained.skills.dodge_hours = 0.0;
+        let mut expert = untrained.clone();
+        expert.skills.dodge_hours = 100_000.0;
+        let response = DefenderResponse::Dodge { input_reflex: 1.0 };
+        let samples = MeleeExchangeSamples {
+            contact: 0.4,
+            defense_alignment: 0.5,
+        };
+        let separated = (1..=100).any(|step| {
+            let precision = step as f32 / 100.0;
+            let low = melee_exchange(
+                &attacker.combatant,
+                &untrained,
+                precision,
+                0.0,
+                response,
+                samples,
+            );
+            let high = melee_exchange(
+                &attacker.combatant,
+                &expert,
+                precision,
+                0.0,
+                response,
+                samples,
+            );
+            matches!(low.result, AttackResult::ToDefender { .. })
+                && matches!(
+                    high.result,
+                    AttackResult::ToAttacker {
+                        physical_contact: false,
+                        ..
+                    }
+                )
+        });
+        assert!(separated);
     }
 
     #[test]
@@ -736,7 +725,7 @@ mod tests {
     }
 
     #[test]
-    fn acceptance_evidence_exercises_surface_gap_redirection_and_nonbinary_defense() {
+    fn acceptance_evidence_exercises_surface_gaps_and_nonbinary_defense() {
         let evidence = melee_iteration_acceptance_evidence().unwrap();
         assert_eq!(evidence.armor_contacts.len(), 2);
         assert!(evidence.armor_contacts[0].armor_layer_chain[0].intersected);
@@ -766,10 +755,6 @@ mod tests {
                 ..
             }
         ));
-        assert_ne!(
-            evidence.partial_dodge.contacted_body_part,
-            Some(evidence.partial_dodge.intended_body_part)
-        );
         assert!(!evidence.defense_matrix[0].defended);
         assert!(evidence.defense_matrix[1].defended);
         assert_eq!(evidence.disabled_weapon_arm.len(), 2);

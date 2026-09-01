@@ -15,6 +15,11 @@ pub(crate) use ranged::RangedAttackAuthority;
 pub(crate) struct CombatInstant(Duration);
 
 impl CombatInstant {
+    #[cfg(test)]
+    pub(crate) const fn from_duration(duration: Duration) -> Self {
+        Self(duration)
+    }
+
     pub(crate) fn from_elapsed(time: &Time<()>) -> Self {
         Self(time.elapsed())
     }

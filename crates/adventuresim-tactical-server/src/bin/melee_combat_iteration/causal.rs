@@ -19,7 +19,6 @@ pub(super) fn record_autoresolve_telemetry(
         .anatomical_subregions_received
         .entry(format!("{:?}", telemetry.anatomical_subregion))
         .or_default() += 1;
-    defender.dodge_redirections += u64::from(telemetry.redirected_from.is_some());
     for layer in &telemetry.armor_layer_chain {
         let key = format!("{:?}:{:?}", layer.inventory_item_id, layer.material);
         let distribution = if layer.intersected {
@@ -325,7 +324,6 @@ fn record_tactical_defender(
     if event.defender_decision == TacticalDecision::Dodge {
         defender.dodge_avoids += u64::from(event.outcome == TacticalContactOutcome::Avoided);
         defender.dodge_contacts += u64::from(event.outcome != TacticalContactOutcome::Avoided);
-        defender.dodge_redirections += u64::from(event.redirected_from_body_part.is_some());
     }
     record_defensive_implement(defender, event);
     record_defender_armor(defender, event);
@@ -407,7 +405,6 @@ fn record_dodge_totals(
     summary.dodge_attempts += 1;
     summary.dodge_avoids += u64::from(event.outcome == TacticalContactOutcome::Avoided);
     summary.dodge_contacts += u64::from(event.outcome != TacticalContactOutcome::Avoided);
-    summary.dodge_redirections += u64::from(event.redirected_from_body_part.is_some());
 }
 
 fn record_defense_totals(

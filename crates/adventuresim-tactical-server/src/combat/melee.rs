@@ -12,26 +12,35 @@ fn contact_at_completion(
     surface_distance: f32,
     reach: f32,
     attack_style: MeleeAttackStyle,
+    fallback_reach_fraction: f32,
 ) -> MeleeContactAtTime {
     let grip_to_tip_metres = attacker.weapon_grip_to_tip();
     let striking_head_length_metres = attacker.weapon_striking_head_length();
     let body_material = attacker.weapon_body_material();
     let striking_material = attacker.weapon_striking_material();
+    let distal_headed = adventuresim_core::combat::has_distal_striking_surface(
+        grip_to_tip_metres,
+        striking_head_length_metres,
+        body_material,
+        striking_material,
+    );
     resolve_melee_contact_at_time(MeleeContactAtTimeFacts {
         scheduled_measure_metres: authority
             .scheduled_measure_metres()
             .unwrap_or(surface_distance),
         actual_measure_metres: surface_distance,
+        ideal_measure_metres: adventuresim_core::combat::preferred_melee_striking_measure(
+            reach,
+            grip_to_tip_metres,
+            striking_head_length_metres,
+            distal_headed,
+            fallback_reach_fraction,
+        ),
         effective_reach_metres: reach,
         grip_to_tip_metres,
         total_length_metres: attacker.weapon_total_length(),
         striking_head_length_metres,
-        distal_headed: adventuresim_core::combat::has_distal_striking_surface(
-            grip_to_tip_metres,
-            striking_head_length_metres,
-            body_material,
-            striking_material,
-        ),
+        distal_headed,
         attack_style,
         body_material,
         striking_material,
@@ -147,6 +156,7 @@ fn weapon_defense_alignment(
     flanking: f32,
     response: DefenderResponse,
     sample: f32,
+    contact_at_time: MeleeContactAtTime,
 ) -> Option<adventuresim_core::combat::WeaponDefenseAlignment> {
     response.is_weapon_contact().then(|| {
         let attack_value = adventuresim_core::combat::melee_attack_value_by_parts(
@@ -157,7 +167,10 @@ fn weapon_defense_alignment(
             attacker,
             attacker_side,
             attack_style,
-            precision.get(),
+            adventuresim_core::combat::melee_measure_adjusted_precision(
+                precision.get(),
+                contact_at_time,
+            ),
             flanking,
             response,
             defender,
@@ -175,7 +188,6 @@ fn weapon_defense_alignment(
     reason = "contact resolution consumes the defended strike projection"
 )]
 fn contact_after_defense(
-    attack: &AuthorizedMeleeAttack,
     attacker: &TacticalPlayerView<'_, '_, '_>,
     defender: &TacticalPlayerView<'_, '_, '_>,
     defender_categories: &[BestiaryCategory],
@@ -185,26 +197,9 @@ fn contact_after_defense(
     precision: ReportedPrecision,
     flanking: f32,
     contact_sample: f32,
-    dodge: Option<MeleeDodgeGeometry>,
     contact_at_time: MeleeContactAtTime,
     config: &TacticalCombatConfig,
 ) -> (MeleeContactLocation, AttackResult) {
-    let redirected = dodge.and_then(|geometry| geometry.contacted_body_part);
-    if dodge.is_some_and(|geometry| geometry.contacted_body_part.is_none()) {
-        return (
-            MeleeContactLocation::new(
-                attack.body_part(),
-                anatomical_subregion(attack.body_part(), 1.0),
-                1.0,
-                None,
-            ),
-            AttackResult::ToAttacker {
-                balance_damage: 0.0,
-                contact_force: 0.0,
-                physical_contact: false,
-            },
-        );
-    }
     super::contact::resolve_melee_contact(
         attacker,
         defender,
@@ -216,7 +211,7 @@ fn contact_after_defense(
         precision,
         flanking,
         contact_sample,
-        redirected,
+        None,
         contact_at_time,
     )
 }
@@ -231,7 +226,6 @@ pub(super) fn resolve_melee_attack(
     viewer: TacticalPlayerViewer,
     spatial: SpatialQuery,
     q_character: Query<(&CharacterLook, &Transform)>,
-    q_colliders: Query<&Collider>,
     q_dimensions: Query<&CharacterDimensions>,
     q_sides: Query<&TacticalCombatSide>,
     mut q_states: Query<&mut TacticalCombatState>,
@@ -279,33 +273,22 @@ pub(super) fn resolve_melee_attack(
         info!(attack_key, attacker = ?entity, reason = "missing_attacker_dimensions", "melee_completion_rejected");
         return;
     };
-    let Ok(attacker_collider) = q_colliders.get(entity) else {
-        info!(attack_key, attacker = ?entity, reason = "missing_attacker_collider", "melee_completion_rejected");
-        return;
-    };
-    let Ok(_defender_collider) = q_colliders.get(event.target) else {
-        info!(attack_key, attacker = ?entity, target = ?event.target, reason = "missing_defender_collider", "melee_completion_rejected");
-        return;
-    };
     let now = CombatInstant::from_elapsed(&time);
     let reach = melee_interaction_range(attacker_dimensions.arm_reach_metres, weapon_reach);
-    let surface_distance = super::ingress::configured_body_part_surface_distance(
-        super::ingress::melee_attack_origin(
-            attacker_transform.translation,
-            attacker_collider,
-            *attacker_dimensions,
-        ),
-        defender_transform,
-        event.body_part,
-        &config,
-    )
-    .unwrap_or(f32::INFINITY);
+    let center_separation = attacker_transform
+        .translation
+        .xz()
+        .distance(defender_transform.translation.xz());
+    let surface_distance = (center_separation
+        - adventuresim_core::combat::HUMANOID_MELEE_MINIMUM_CENTER_SEPARATION_METRES)
+        .max(0.0);
     let contact_at_time = contact_at_completion(
         &attacker_view,
         &authority,
         surface_distance,
         reach,
         attack_style,
+        config.ai.ordinary.offense.melee_measure_reach_fraction,
     );
     let facts = completion_intent_facts(
         &event,
@@ -356,12 +339,10 @@ pub(super) fn resolve_melee_attack(
         )
     });
 
-    let Some((attempted_defender_response, dodge_geometry)) = resolve_active_defense(
+    let Some(attempted_defender_response) = resolve_active_defense(
         &attack,
         &attacker_view,
         &defender_view,
-        attacker_transform,
-        defender_transform,
         attacker_performance,
         attack_style,
         contact_sample,
@@ -396,19 +377,10 @@ pub(super) fn resolve_melee_attack(
         flanking,
         attempted_defender_response,
         defense_alignment_sample,
+        contact_at_time,
     );
-    let effective_defender_response = defense_alignment.map_or_else(
-        || {
-            if matches!(attempted_defender_response, DefenderResponse::Dodge { .. })
-                && dodge_geometry.is_some_and(|geometry| geometry.contacted_body_part.is_some())
-            {
-                DefenderResponse::None
-            } else {
-                attempted_defender_response
-            }
-        },
-        |alignment| alignment.effective,
-    );
+    let effective_defender_response =
+        defense_alignment.map_or(attempted_defender_response, |alignment| alignment.effective);
     commit_defense_during_attack(
         &mut cmd,
         &attack,
@@ -419,9 +391,7 @@ pub(super) fn resolve_melee_attack(
         &mut q_authorities,
         &mut q_skeletons,
     );
-    let redirected_body_part = dodge_geometry.and_then(|geometry| geometry.contacted_body_part);
     let (contact, result) = contact_after_defense(
-        &attack,
         &attacker_view,
         &defender_view,
         &defender_categories.0,
@@ -431,7 +401,6 @@ pub(super) fn resolve_melee_attack(
         fatigued_precision,
         flanking,
         contact_sample,
-        dodge_geometry,
         contact_at_time,
         &config,
     );
@@ -445,8 +414,6 @@ pub(super) fn resolve_melee_attack(
         attacker_side,
         attempted_defender_response,
         defense_alignment,
-        dodge_geometry,
-        redirected_body_part,
         contact_at_time,
         contact,
         result,
