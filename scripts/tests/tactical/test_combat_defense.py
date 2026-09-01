@@ -1,4 +1,4 @@
-"""Parry/dodge defense tests: loads a pre-built world-dump fixture (one
+"""Dodge defense tests: loads a pre-built world-dump fixture (one
 party-member "template" character facing one enemy bot at melee range - see
 `fixtures/combat_scenario.scn.ron`) in standalone mode (no SpacetimeDB at
 all, see `--world-dump`), connects a client, mocks a real melee attack via
@@ -60,7 +60,7 @@ BOT_LIMB_HEALTH = 1000.0
 # in server combat.rs), so a correctly-paced attack should essentially
 # always clear the check now; the bot's reaction delay
 # (`REACTION_DELAY_SECS`, bot/defense.rs) is likewise tuned to commit just
-# before that same windup elapses, so a rolled dodge/parry is fresh at
+# before that same windup elapses, so a rolled dodge is fresh at
 # impact. Retries remain as insurance against residual scheduling jitter,
 # not as the primary mechanism.
 ATTACK_ATTEMPTS = 20
@@ -161,7 +161,7 @@ def _toughen_bot(server_brp: tactical_brp.BrpClient, bot_entity: int, bot_body_w
     """Raises every limb's health to `BOT_LIMB_HEALTH` and resets
     `TacticalCombatState` to a fresh, non-incapacitated baseline.
 
-    Proving a dodge/parry works reliably needs several retried attacks (see
+    Proving a dodge works reliably needs several retried attacks (see
     `_run_scripted_attack`'s docstring on the reaction-delay timing race),
     and `validate_melee_intent_cheap` rejects every further attempt once the
     target is incapacitated - silently: no further "hit"/"Rejected" log
@@ -431,7 +431,7 @@ def _run_scripted_attack(
 
 def test_bot_takes_no_damage_when_defense_chances_force_a_dodge(tmp_path_factory: pytest.TempPathFactory) -> None:
     outcome = _run_scripted_attack(
-        tmp_path_factory, "combat-dodge", tactical_brp.DefenseChances(parry_chance=0.0, dodge_chance=1.0), retry_while_damaged=True
+        tmp_path_factory, "combat-dodge", tactical_brp.DefenseChances(dodge_chance=1.0), retry_while_damaged=True
     )
     assert outcome.resolved, "attack never reached the server at all - can't tell a dodge from a no-op"
     assert outcome.bot_health_after == outcome.bot_health_before, (
@@ -441,7 +441,7 @@ def test_bot_takes_no_damage_when_defense_chances_force_a_dodge(tmp_path_factory
 
 def test_bot_takes_damage_when_defense_chances_force_no_reaction(tmp_path_factory: pytest.TempPathFactory) -> None:
     outcome = _run_scripted_attack(
-        tmp_path_factory, "combat-no-defense", tactical_brp.DefenseChances(parry_chance=0.0, dodge_chance=0.0), retry_while_damaged=False
+        tmp_path_factory, "combat-no-defense", tactical_brp.DefenseChances(dodge_chance=0.0), retry_while_damaged=False
     )
     assert outcome.bot_health_after < outcome.bot_health_before, (
         f"bot with a forced 0% defense chance should have taken damage: {outcome.bot_health_before} -> {outcome.bot_health_after}"

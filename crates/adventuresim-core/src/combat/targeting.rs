@@ -64,7 +64,7 @@ pub fn melee_attack_value_by_parts(
     );
     let defense = match defender_response {
         DefenderResponse::None => 0.0,
-        DefenderResponse::Parry { .. } => {
+        DefenderResponse::Block | DefenderResponse::Parry { .. } => {
             let block_skill = defender_skills.skill_check_by_parts(
                 Skill::Block,
                 defender_attr,

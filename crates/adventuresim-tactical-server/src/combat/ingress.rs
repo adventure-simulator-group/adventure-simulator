@@ -61,7 +61,6 @@ pub(crate) fn apply_defend_intent(
     else {
         return;
     };
-    let start = animation_tick(&time);
     let accepted = match event.choice {
         DefendRequest::Dodge { direction } if DodgeSpec::quickstep(direction).is_none() => false,
         DefendRequest::Dodge { .. } if skeleton.action_kind() == SkeletonAction::Dodge => true,
@@ -75,16 +74,6 @@ pub(crate) fn apply_defend_intent(
         ),
         DefendRequest::Roll if !accepts_roll_dodge(&skeleton) => return,
         DefendRequest::Roll => true,
-        DefendRequest::Parry => skeleton
-            .begin_block(
-                BlockSpec::default(),
-                start,
-                start
-                    + duration_ticks(CombatDuration::from_secs_f32(
-                        config.presentation.block_seconds,
-                    )),
-            )
-            .is_ok(),
     };
     if !accepted {
         return;
@@ -215,6 +204,7 @@ pub(crate) fn on_melee_attack_started(
         now,
         contact_windup,
         CombatDuration::from_secs_f32(config.realtime_authority.melee.completion_allowance_seconds),
+        event.reported_precision,
     );
     commands.entity(event.attacker).insert(PendingMeleeContact {
         attack_key: start,
@@ -584,43 +574,6 @@ pub(crate) fn melee_body_part_lunge_delay(
     )
 }
 
-pub(super) fn resolve_defender_response(
-    pending: Option<&PendingDefenderResponse>,
-    time: &Time<()>,
-    defender_view: &TacticalPlayerView,
-    config: &DefenseAuthorityConfig,
-) -> DefenderResponse {
-    let Some(pending) = pending else {
-        return DefenderResponse::None;
-    };
-
-    let elapsed = CombatInstant::from_elapsed(time).elapsed_since(pending.set_at);
-    let reflex_window = std::time::Duration::from_secs_f32(config.reflex_window_seconds);
-    if elapsed > reflex_window {
-        return DefenderResponse::None;
-    }
-
-    let input_reflex = (1.0 - elapsed.as_secs_f32() / reflex_window.as_secs_f32()).clamp(0.0, 1.0);
-
-    match pending.choice {
-        DefendRequest::Dodge { .. } => DefenderResponse::Dodge { input_reflex },
-        DefendRequest::Roll => DefenderResponse::Dodge {
-            input_reflex: roll_dodge_reflex(input_reflex, config.roll_dodge_effectiveness),
-        },
-        DefendRequest::Parry => {
-            if defender_view.shield_block_bonus() > 0.0 {
-                DefenderResponse::Parry { input_reflex }
-            } else {
-                DefenderResponse::None
-            }
-        }
-    }
-}
-
-fn roll_dodge_reflex(input_reflex: f32, effectiveness: f32) -> f32 {
-    input_reflex.clamp(0.0, 1.0) * effectiveness
-}
-
 fn accepts_roll_dodge(skeleton: &SkeletonState) -> bool {
     skeleton.body().is_downed()
 }
@@ -632,6 +585,7 @@ fn accepts_roll_dodge(skeleton: &SkeletonState) -> bool {
 )]
 mod roll_tests {
     use super::*;
+    use crate::combat::defense::roll_dodge_reflex;
     use std::time::Duration;
 
     #[derive(Resource, Default)]
@@ -1173,7 +1127,7 @@ mod roll_tests {
     }
 
     #[test]
-    fn clients_and_server_ai_share_authoritative_defense_transitions() {
+    fn clients_and_server_ai_share_authoritative_dodge_transitions() {
         let mut app = App::new();
         app.insert_resource(Time::<()>::default())
             .init_resource::<TacticalCombatConfig>()
@@ -1183,7 +1137,7 @@ mod roll_tests {
             .world_mut()
             .spawn((
                 TacticalCombatState::default(),
-                SkeletonState::default(),
+                SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised),
                 QuickstepPush::default(),
                 CharacterLook::default(),
             ))
@@ -1202,7 +1156,9 @@ mod roll_tests {
             client_id: adventuresim_tactical_netcode::bevy_replicon::prelude::ClientId::Client(
                 player,
             ),
-            message: DefendRequest::Parry,
+            message: DefendRequest::Dodge {
+                direction: Vec2::NEG_X,
+            },
         });
         app.world_mut().trigger(DefendIntent {
             defender: bot,
@@ -1215,7 +1171,7 @@ mod roll_tests {
                 .get::<SkeletonState>(player)
                 .unwrap()
                 .action_kind(),
-            SkeletonAction::Block
+            SkeletonAction::Dodge
         );
         assert_eq!(
             app.world().get::<SkeletonState>(bot).unwrap().action_kind(),
@@ -1232,7 +1188,9 @@ mod roll_tests {
         assert!(matches!(
             app.world().get::<PendingDefenderResponse>(player),
             Some(PendingDefenderResponse {
-                choice: DefendRequest::Parry,
+                choice: DefendRequest::Dodge {
+                    direction: Vec2::NEG_X,
+                },
                 ..
             })
         ));

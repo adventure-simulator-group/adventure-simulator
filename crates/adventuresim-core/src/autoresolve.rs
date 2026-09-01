@@ -207,7 +207,7 @@ pub struct CombatEquipment {
     pub melee_weapon_id: Option<u64>,
     pub ranged_weapon_id: Option<u64>,
     pub ranged_projectile_kind: Option<CombatProjectileKind>,
-    /// Shield instance used for blocks, falling back to the melee weapon used to parry.
+    /// Shield instance used for weapon defense, falling back to the melee weapon.
     pub defense_item_id: Option<u64>,
     pub ammunition: u32,
     pub holding_side: BodySide,
@@ -668,7 +668,7 @@ pub struct BattleLogEntry {
     /// Exact strategic inventory instance used, when the combatant came from
     /// persistent equipment rather than an abstract enemy profile.
     pub weapon_inventory_item_id: Option<u64>,
-    /// Exact shield or parrying weapon contacted on a successful defense.
+    /// Exact shield or weapon contacted on a successful block or parry.
     pub defender_contact_item_id: Option<u64>,
     pub body_part: BodyPart,
     pub outcome: String,
@@ -1496,14 +1496,19 @@ fn autoresolve_optimal_melee_exchange(
     parameters: crate::combat::AutoresolveParameters,
 ) -> (AttackResult, BodyPart) {
     let reflex = autoresolve_melee_input_reflex(attacker, parameters);
+    let block = if defender.equipment.melee_weapon.is_some()
+        || defender.equipment.shield_block_bonus > 0.0
+    {
+        DefenderResponse::Block
+    } else {
+        DefenderResponse::None
+    };
     [
         DefenderResponse::None,
         DefenderResponse::Dodge {
             input_reflex: reflex,
         },
-        DefenderResponse::Parry {
-            input_reflex: reflex,
-        },
+        block,
     ]
     .into_iter()
     .map(|response| {
@@ -1543,14 +1548,19 @@ fn autoresolve_optimal_ranged_exchange(
     part: BodyPart,
     parameters: crate::combat::AutoresolveParameters,
 ) -> AttackResult {
+    let block = if defender.equipment.melee_weapon.is_some()
+        || defender.equipment.shield_block_bonus > 0.0
+    {
+        DefenderResponse::Block
+    } else {
+        DefenderResponse::None
+    };
     [
         DefenderResponse::None,
         DefenderResponse::Dodge {
             input_reflex: parameters.ranged_defense_input_reflex,
         },
-        DefenderResponse::Parry {
-            input_reflex: parameters.ranged_defense_input_reflex,
-        },
+        block,
     ]
     .into_iter()
     .map(|response| ranged_exchange(attacker, defender, precision, 0.0, part, response))
@@ -1870,7 +1880,7 @@ mod tests {
     }
 
     #[test]
-    fn ranged_blocking_requires_a_shield() {
+    fn ranged_blocking_works_with_a_weapon_and_no_shield() {
         let attacker = fighter(1, 4.0, true);
         let defender = fighter(2, 3.0, false);
         let undefended = ranged_exchange(
@@ -1881,36 +1891,36 @@ mod tests {
             BodyPart::Chest,
             DefenderResponse::None,
         );
-        let weapon_parry = ranged_exchange(
+        let weapon_block = ranged_exchange(
             &attacker,
             &defender,
             1.0,
             0.0,
             BodyPart::Chest,
-            DefenderResponse::Parry { input_reflex: 1.0 },
+            DefenderResponse::Block,
         );
-        assert_eq!(
-            health_damage_from_attack(undefended, BodyPart::Chest),
-            health_damage_from_attack(weapon_parry, BodyPart::Chest)
+        assert!(
+            health_damage_from_attack(weapon_block, BodyPart::Chest)
+                < health_damage_from_attack(undefended, BodyPart::Chest)
         );
     }
 
     #[test]
-    fn melee_parry_carries_contact_force_while_dodge_does_not() {
+    fn melee_block_carries_contact_force_while_dodge_does_not() {
         let attacker = fighter(1, 0.1, false);
         let mut defender = fighter(2, 5.0, false);
         defender.equipment.shield_block_bonus = 5.0;
 
-        let (parry, _) = melee_exchange(
+        let (block, _) = melee_exchange(
             &attacker,
             &defender,
             0.65,
             0.0,
             0.5,
-            DefenderResponse::Parry { input_reflex: 1.0 },
+            DefenderResponse::Block,
         );
         assert!(matches!(
-            parry,
+            block,
             AttackResult::ToAttacker {
                 physical_contact: true,
                 contact_force,
@@ -2114,7 +2124,7 @@ mod tests {
     }
 
     #[test]
-    fn successful_parry_records_wear_for_both_contacting_instances() {
+    fn successful_block_records_wear_for_both_contacting_instances() {
         let result = AttackResult::ToAttacker {
             balance_damage: 0.2,
             contact_force: 55.0,

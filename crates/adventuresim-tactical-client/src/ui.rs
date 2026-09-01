@@ -6,8 +6,7 @@ use adventuresim_tactical_core::{
 use adventuresim_tactical_netcode::{
     aeronet::io::connection::{LocalAddr, PeerAddr},
     bevy_replicon::prelude::{ClientState, ClientStats},
-    client::WeaponGuardInputState,
-    client::normalize_server_url,
+    client::{WeaponGuardInputState, normalize_server_url},
     message::{SuccessfulAttackResponse, TacticalOutcome, TacticalOutcomeResponse},
     prelude::*,
 };
@@ -1113,6 +1112,7 @@ fn on_successful_attack_display(
                 AttackResult::ToAttacker { balance_damage, .. } => {
                     let reason = match event.defender_response {
                         DefenderResponse::None => "Missed",
+                        DefenderResponse::Block => "Blocked",
                         DefenderResponse::Dodge { .. } => "Dodged",
                         DefenderResponse::Parry { .. } => "Parried",
                     };

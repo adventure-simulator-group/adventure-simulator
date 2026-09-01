@@ -14,6 +14,7 @@ pub(super) fn resolve_melee_attack(
     q_dimensions: Query<&CharacterDimensions>,
     q_sides: Query<&TacticalCombatSide>,
     q_states: Query<&TacticalCombatState>,
+    q_skeletons: Query<&SkeletonState>,
     mut q_authorities: Query<&mut MeleeAttackAuthority>,
     q_bestiary_categories: Query<&BestiaryCategories>,
     q_pending: Query<&PendingDefenderResponse>,
@@ -150,11 +151,18 @@ pub(super) fn resolve_melee_attack(
     };
     let attacker_has_weapon = super::contact::attacker_has_weapon(&viewer, entity, hand);
 
+    let Ok(defender_skeleton) = q_skeletons.get(attack.target()) else {
+        return;
+    };
     let pending = q_pending.get(attack.target()).ok();
-    let defender_response = resolve_defender_response(
+    let defender_response = resolve_melee_defender_response(
         pending,
         &time,
         &defender_view,
+        defender_skeleton,
+        q_authorities.get(attack.target()).ok(),
+        attack.attacker(),
+        attack.started_at(),
         &config.realtime_authority.defense,
     );
 
@@ -183,8 +191,11 @@ pub(super) fn resolve_melee_attack(
         info!(attack_key, attacker = ?attack.attacker(), target = ?attack.target(), body_part = ?attack.body_part(), outcome = "failed", reason = "ambiguous_striking_side", "melee_attack_resolved");
         return;
     };
-    let defender_parry_slot =
-        defender_parry_slot(defender_response, defender_view.shield_holding_side());
+    let defender_blocking_slot = defender_blocking_slot(
+        defender_response,
+        defender_view.shield_holding_side(),
+        defender_view.weapon_holding_side(),
+    );
     let (impact_recipient, impact_velocity_change, impact_point, impact_normal) =
         authoritative_impact(
             result,
@@ -212,44 +223,19 @@ pub(super) fn resolve_melee_attack(
         body_part: contact.body_part,
         result,
         attacker_weapon_slot,
-        defender_parry_slot,
+        defender_blocking_slot,
         attacker_weapon_contact: attacker_has_weapon,
         impact_recipient,
         impact_velocity_change,
     });
 
-    match result {
-        AttackResult::ToAttacker { balance_damage, .. } => {
-            info!(
-                attack_key,
-                attacker = ?entity,
-                target = ?attack.target(),
-                body_part = ?contact.body_part,
-                outcome = "failed",
-                balance_damage,
-                "melee_attack_resolved"
-            );
-        }
-        AttackResult::ToDefender {
-            cut_damage,
-            blunt_damage,
-            balance_damage,
-            ..
-        } => {
-            info!(
-                attack_key,
-                attacker = ?entity,
-                target = ?attack.target(),
-                body_part = ?contact.body_part,
-                outcome = "connected",
-                total_damage = cut_damage + blunt_damage,
-                cut_damage,
-                blunt_damage,
-                balance_damage,
-                "melee_attack_resolved"
-            );
-        }
-    }
+    log_melee_result(
+        attack_key,
+        entity,
+        attack.target(),
+        contact.body_part,
+        result,
+    );
 
     cmd.server_trigger(ToClients {
         targets: SendTargets::All,
@@ -267,4 +253,41 @@ pub(super) fn resolve_melee_attack(
             impact_effects,
         },
     });
+}
+
+fn log_melee_result(
+    attack_key: u64,
+    attacker: Entity,
+    target: Entity,
+    body_part: BodyPart,
+    result: AttackResult,
+) {
+    match result {
+        AttackResult::ToAttacker { balance_damage, .. } => info!(
+            attack_key,
+            ?attacker,
+            ?target,
+            ?body_part,
+            outcome = "failed",
+            balance_damage,
+            "melee_attack_resolved"
+        ),
+        AttackResult::ToDefender {
+            cut_damage,
+            blunt_damage,
+            balance_damage,
+            ..
+        } => info!(
+            attack_key,
+            ?attacker,
+            ?target,
+            ?body_part,
+            outcome = "connected",
+            total_damage = cut_damage + blunt_damage,
+            cut_damage,
+            blunt_damage,
+            balance_damage,
+            "melee_attack_resolved"
+        ),
+    }
 }

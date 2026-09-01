@@ -4,7 +4,7 @@ use bevy::prelude::*;
 
 use super::{CombatDuration, CombatInstant, ReportedPrecision};
 
-/// Stores the defender's most recent dodge, downed roll, or parry choice along with the
+/// Stores the defender's most recent dodge or downed roll along with the
 /// server timestamp when it was received. Consumed on each attack resolution.
 #[derive(Component)]
 pub(crate) struct PendingDefenderResponse {

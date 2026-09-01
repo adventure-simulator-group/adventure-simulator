@@ -96,7 +96,6 @@ impl CombatantBehaviorPackages {
             CombatantBehaviorPackage::OffensiveCombat,
             CombatantBehaviorPackage::ReactiveDefense {
                 chances: DefenseChances {
-                    parry_chance: defense.parry_chance,
                     dodge_chance: defense.dodge_chance,
                 },
                 requires_facing: true,
@@ -114,13 +113,6 @@ impl CombatantBehaviorPackages {
         Self(vec![
             CombatantBehaviorPackage::RecoverToUpright,
             CombatantBehaviorPackage::RaisedGuard,
-            CombatantBehaviorPackage::ReactiveDefense {
-                chances: DefenseChances {
-                    parry_chance: 1.0,
-                    dodge_chance: 0.0,
-                },
-                requires_facing: false,
-            },
         ])
     }
 
@@ -131,10 +123,7 @@ impl CombatantBehaviorPackages {
             CombatantBehaviorPackage::RaisedGuard,
             CombatantBehaviorPackage::AimAtNearestOpponent,
             CombatantBehaviorPackage::ReactiveDefense {
-                chances: DefenseChances {
-                    parry_chance: 0.0,
-                    dodge_chance: 1.0,
-                },
+                chances: DefenseChances { dodge_chance: 1.0 },
                 requires_facing: true,
             },
         ])
@@ -520,14 +509,8 @@ mod tests {
         assert!(!blocker.contains::<OffensiveCombatAi>());
         assert!(blocker.contains::<RaisedGuardAi>());
         assert!(blocker.contains::<RecoverToUprightAi>());
-        assert!(!blocker.get::<ReactiveDefenseAi>().unwrap().requires_facing);
-        assert_eq!(
-            blocker.get::<DefenseChances>(),
-            Some(&DefenseChances {
-                parry_chance: 1.0,
-                dodge_chance: 0.0,
-            })
-        );
+        assert!(!blocker.contains::<ReactiveDefenseAi>());
+        assert!(!blocker.contains::<DefenseChances>());
 
         let standard = app.world().entity(standard);
         assert!(standard.contains::<OffensiveCombatAi>());
@@ -602,10 +585,7 @@ mod tests {
                 ReactiveDefenseAi {
                     requires_facing: false,
                 },
-                DefenseChances {
-                    parry_chance: 1.0,
-                    dodge_chance: 0.0,
-                },
+                DefenseChances { dodge_chance: 1.0 },
             ))
             .id();
         let start = FromClient {
@@ -630,7 +610,7 @@ mod tests {
     }
 
     #[test]
-    fn completed_bot_reaction_enters_the_shared_block_animation() {
+    fn completed_bot_reaction_enters_the_shared_dodge_animation() {
         let mut app = App::new();
         app.insert_resource(Time::<()>::default())
             .init_resource::<TacticalCombatConfig>()
@@ -653,16 +633,13 @@ mod tests {
                 Transform::from_xyz(0.0, 0.0, 1.0),
                 TacticalCombatSide::Enemy,
                 TacticalCombatState::default(),
-                SkeletonState::default(),
+                SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised),
                 AuthoritativePostureIntent::default(),
                 QuickstepPush::default(),
                 ReactiveDefenseAi {
                     requires_facing: false,
                 },
-                DefenseChances {
-                    parry_chance: 1.0,
-                    dodge_chance: 0.0,
-                },
+                DefenseChances { dodge_chance: 1.0 },
             ))
             .id();
         app.world_mut().trigger(FromClient {
@@ -688,7 +665,7 @@ mod tests {
                 .get::<SkeletonState>(blocker)
                 .unwrap()
                 .action_kind(),
-            SkeletonAction::Block
+            SkeletonAction::Dodge
         );
         assert!(
             app.world()

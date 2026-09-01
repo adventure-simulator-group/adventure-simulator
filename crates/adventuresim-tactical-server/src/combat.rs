@@ -2,6 +2,7 @@ mod authority;
 mod condition;
 mod consequence;
 mod contact;
+mod defense;
 mod ingress;
 mod melee;
 mod protocol;
@@ -40,11 +41,12 @@ use consequence::{apply_melee_attack_result, record_party_ammunition_use};
 use consequence::{
     attacker_weapon_contact_matches, defender_equipment_contact_matches, record_party_injury,
 };
+use defense::{resolve_melee_defender_response, resolve_passive_block};
 pub(crate) use ingress::apply_defend_intent;
 pub(crate) use ingress::{MeleeLungeRequest, melee_body_part_lunge_delay};
 use ingress::{
     authoritative_line_of_sight, on_defender_response_request, on_melee_action_request,
-    on_ranged_action_request, on_ranged_attack_started, resolve_defender_response,
+    on_ranged_action_request, on_ranged_attack_started,
 };
 pub(crate) use ingress::{on_melee_attack_started, resolve_pending_melee_contacts};
 use melee::resolve_melee_attack;
@@ -187,12 +189,14 @@ fn authoritative_impact(
     (recipient, velocity_change, point, normal)
 }
 
-fn defender_parry_slot(
+fn defender_blocking_slot(
     response: DefenderResponse,
     shield_side: Option<BodySide>,
+    weapon_side: Option<BodySide>,
 ) -> Option<EquipSlot> {
-    matches!(response, DefenderResponse::Parry { .. })
-        .then_some(shield_side)
+    response
+        .is_weapon_contact()
+        .then_some(shield_side.or(weapon_side))
         .flatten()
         .and_then(|side| match side {
             BodySide::Left => Some(EquipSlot::HoldingLeft),
@@ -253,7 +257,7 @@ struct ApplyMeleeAttackResult {
     body_part: BodyPart,
     result: AttackResult,
     attacker_weapon_slot: EquipSlot,
-    defender_parry_slot: Option<EquipSlot>,
+    defender_blocking_slot: Option<EquipSlot>,
     attacker_weapon_contact: bool,
     impact_recipient: Entity,
     impact_velocity_change: Vec3,
@@ -770,7 +774,7 @@ mod tests {
     }
 
     #[test]
-    fn contact_provenance_uses_actual_weapon_and_parry_shield() {
+    fn contact_provenance_uses_actual_attacking_and_blocking_items() {
         let attacker = Entity::from_bits(1);
         let defender = Entity::from_bits(2);
         assert!(!attacker_weapon_contact_matches(

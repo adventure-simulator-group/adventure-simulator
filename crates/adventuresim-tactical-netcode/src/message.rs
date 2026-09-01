@@ -2,7 +2,7 @@ use adventuresim_tactical_core::prelude::*;
 use bevy::{ecs::entity::MapEntities, prelude::*};
 use serde::{Deserialize, Serialize};
 
-/// Sent by the client whenever the player dodges, rolls defensively, or parries.
+/// Sent by the client whenever the player dodges or rolls defensively.
 ///
 /// This is a simplified version of [`DefenderResponse`] that omits
 /// `input_reflex` — the server computes reflex from timestamp delta.
@@ -10,7 +10,6 @@ use serde::{Deserialize, Serialize};
 pub enum DefendRequest {
     Dodge { direction: Vec2 },
     Roll,
-    Parry,
 }
 
 /// Requests enrollment of a strategic character in the tactical mission.

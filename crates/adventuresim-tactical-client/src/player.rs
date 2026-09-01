@@ -27,7 +27,6 @@ impl Plugin for PlayerPlugin {
             .register_required_components_with::<Player, _>(|| Visibility::Inherited)
             .add_observer(on_new_player_added_hook)
             .add_observer(on_attack_fired_hook)
-            .add_observer(on_parry_fired)
             .add_systems(
                 Update,
                 ((
@@ -481,10 +480,6 @@ fn on_new_player_added_hook(
                             DeadZone::default(),
                         )),
                     ))
-                ),
-                (
-                    Action::<Parry>::new(),
-                    bindings![KeyCode::KeyG],
                 ),
             ]),
         ));
@@ -1153,19 +1148,6 @@ fn apply_direct_combat_controls(
             cmd.client_trigger(DefendRequest::Roll);
         }
     }
-}
-
-fn on_parry_fired(
-    event: On<Fire<Parry>>,
-    mut cmd: Commands,
-    time: Res<Time>,
-    mut skeletons: Query<&mut SkeletonState>,
-) {
-    if let Ok(mut skeleton) = skeletons.get_mut(event.context) {
-        let start = (time.elapsed_secs_f64() * locomotion_sample_hz() as f64).round() as u64;
-        let _ = skeleton.begin_block(BlockSpec::default(), start, start + 8);
-    }
-    cmd.client_trigger(DefendRequest::Parry);
 }
 
 fn melee_contact_delay_from_input(

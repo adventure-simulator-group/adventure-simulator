@@ -3,6 +3,7 @@ use std::{f32, ops::Mul};
 use serde::{Deserialize, Serialize};
 
 mod config;
+mod defense;
 pub(crate) mod targeting;
 
 pub use config::*;
@@ -88,7 +89,7 @@ const UNARMED_BLUNT_INJURY_SCALE: f32 = 0.2;
 /// a bounded physical consequence of their own momentum rather than the raw
 /// (and unbounded) margin between two skill checks.
 const DODGE_OVEREXTENSION_SCALE: f32 = 0.25;
-const PARRY_REBOUND_SCALE: f32 = 0.5;
+const WEAPON_DEFENSE_REBOUND_SCALE: f32 = 0.5;
 const MAX_AVOIDED_ATTACK_BALANCE_DAMAGE: f32 = 0.5;
 
 fn precision_damage_multiplier(excess_accuracy: f32, lore_cap: f32) -> f32 {
@@ -151,22 +152,14 @@ impl Mul<f32> for AttackResult {
 pub enum DefenderResponse {
     #[default]
     None,
+    Block,
     Parry {
         input_reflex: f32,
+        precision: f32,
     },
     Dodge {
         input_reflex: f32,
     },
-}
-
-impl DefenderResponse {
-    pub fn factor(&self) -> f32 {
-        match self {
-            DefenderResponse::None => 1.0,
-            &DefenderResponse::Parry { input_reflex } => 2.0 * input_reflex,
-            &DefenderResponse::Dodge { input_reflex } => 1.5 * input_reflex,
-        }
-    }
 }
 
 pub fn flanking_from_dir(attacker_dir: (f32, f32), defender_dir: (f32, f32)) -> f32 {
@@ -248,13 +241,13 @@ pub fn resolve_melee_attack_by_parts(
                 parameters,
                 defender_response,
             ),
-            contact_force: if matches!(defender_response, DefenderResponse::Parry { .. }) {
+            contact_force: if defender_response.is_weapon_contact() {
                 attack_force(attacker_attr, attacker_body, attacker_equip, parameters)
                     * accuracy.clamp(0.0, 1.0)
             } else {
                 0.0
             },
-            physical_contact: matches!(defender_response, DefenderResponse::Parry { .. }),
+            physical_contact: defender_response.is_weapon_contact(),
         },
         // Precise attacks that beat whole-body coverage reach the server-authored gap.
         1.0.. if !armor_contact && attacker_equip.weapon_is_precise() => {
@@ -307,11 +300,7 @@ fn avoided_attack_balance_damage(
     parameters: CombatResolutionParameters,
     defender_response: DefenderResponse,
 ) -> f32 {
-    let response_scale = match defender_response {
-        DefenderResponse::None => 0.0,
-        DefenderResponse::Dodge { .. } => DODGE_OVEREXTENSION_SCALE,
-        DefenderResponse::Parry { .. } => PARRY_REBOUND_SCALE,
-    };
+    let response_scale = defender_response.rebound_scale();
     let resistance_per_kg = if attacker_equip.weapon_is_unarmed() {
         UNARMED_STAGGER_RESISTANCE_JOULES_PER_KG
     } else {
@@ -350,13 +339,6 @@ pub fn resolve_ranged_attack_by_parts(
     defender_essentials: &impl PlayerEssentials,
     defender_equip: &impl PlayerEquipment,
 ) -> AttackResult {
-    let defender_response = if matches!(defender_response, DefenderResponse::Parry { .. })
-        && defender_equip.shield_block_bonus() <= 0.0
-    {
-        DefenderResponse::None
-    } else {
-        defender_response
-    };
     let accuracy = attacker_equip
         .weapon_skill_distribution()
         .weighted_check(|skill| {
@@ -387,12 +369,12 @@ pub fn resolve_ranged_attack_by_parts(
             // Missing with a projectile does not physically unbalance the
             // attacker. Keep the common result shape for callers.
             balance_damage: 0.0,
-            contact_force: if matches!(defender_response, DefenderResponse::Parry { .. }) {
+            contact_force: if defender_response.is_weapon_contact() {
                 attacker_equip.weapon_ranged_force_joules() * accuracy.clamp(0.0, 1.0)
             } else {
                 0.0
             },
-            physical_contact: matches!(defender_response, DefenderResponse::Parry { .. }),
+            physical_contact: defender_response.is_weapon_contact(),
         };
     }
 
@@ -433,7 +415,7 @@ fn defense_by_parts(
 ) -> f32 {
     let base = match response {
         DefenderResponse::None => 0.0,
-        DefenderResponse::Parry { .. } => {
+        DefenderResponse::Block | DefenderResponse::Parry { .. } => {
             let block = skills.skill_check_by_parts(
                 Skill::Block,
                 attr,
@@ -706,7 +688,10 @@ mod tests {
             &StubEquipment,
         );
         let parry = defense_by_parts(
-            DefenderResponse::Parry { input_reflex: 1.0 },
+            DefenderResponse::Parry {
+                input_reflex: 1.0,
+                precision: 1.0,
+            },
             &StubSkills,
             &StubAttributes,
             &StubBody,
@@ -715,6 +700,33 @@ mod tests {
         );
         assert_eq!(none, 0.0);
         assert!(parry > 0.0);
+    }
+
+    #[test]
+    fn parry_precision_scales_defense_independently_of_reflex() {
+        let high_precision = defense_by_parts(
+            DefenderResponse::Parry {
+                input_reflex: 0.8,
+                precision: 1.0,
+            },
+            &StubSkills,
+            &StubAttributes,
+            &StubBody,
+            &StubEssentials,
+            &StubEquipment,
+        );
+        let low_precision = defense_by_parts(
+            DefenderResponse::Parry {
+                input_reflex: 0.8,
+                precision: 0.25,
+            },
+            &StubSkills,
+            &StubAttributes,
+            &StubBody,
+            &StubEssentials,
+            &StubEquipment,
+        );
+        assert!((low_precision - high_precision * 0.25).abs() < f32::EPSILON);
     }
 
     #[test]
@@ -980,7 +992,10 @@ mod tests {
             },
             AvoidedMatchup {
                 label: "John punch caught by shield parry",
-                response: DefenderResponse::Parry { input_reflex: 1.0 },
+                response: DefenderResponse::Parry {
+                    input_reflex: 1.0,
+                    precision: 1.0,
+                },
                 defender_equipment: CombatEquipment {
                     shield_block_bonus: 5.0,
                     ..Default::default()

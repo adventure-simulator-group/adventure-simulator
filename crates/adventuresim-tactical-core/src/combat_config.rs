@@ -433,7 +433,6 @@ pub struct AiOffenseConfig {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AiDefenseConfig {
-    pub parry_chance: f64,
     pub dodge_chance: f64,
     pub reaction_delay_min_seconds: f32,
     pub reaction_delay_max_seconds: f32,
@@ -470,7 +469,6 @@ pub struct BodyPartHitboxConfig {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CombatPresentationConfig {
-    pub block_seconds: f32,
     pub dodge_seconds: f32,
     pub body_turn_seconds_per_half_turn: f32,
     pub downed_turn_radians_per_second: f32,
@@ -655,13 +653,9 @@ impl TacticalCombatConfig {
         }
 
         let ai = &self.ai.ordinary;
-        if ![ai.defense.parry_chance, ai.defense.dodge_chance]
-            .into_iter()
-            .all(|chance| chance.is_finite() && (0.0..=1.0).contains(&chance))
-            || ai.defense.parry_chance + ai.defense.dodge_chance > 1.0
-        {
+        if !ai.defense.dodge_chance.is_finite() || !(0.0..=1.0).contains(&ai.defense.dodge_chance) {
             return Err(TacticalCombatConfigError::Validation(
-                "AI defense probabilities must be valid and sum to at most one",
+                "AI dodge probability must be between zero and one",
             ));
         }
         if !ai.defense.reaction_delay_min_seconds.is_finite()
@@ -724,7 +718,6 @@ impl TacticalCombatConfig {
 
         let presentation = &self.presentation;
         if ![
-            presentation.block_seconds,
             presentation.dodge_seconds,
             presentation.body_turn_seconds_per_half_turn,
             presentation.downed_turn_radians_per_second,
@@ -1137,7 +1130,6 @@ impl Default for TacticalCombatConfig {
                         ranged_reach_fraction: 0.5,
                     },
                     defense: AiDefenseConfig {
-                        parry_chance: 0.2,
                         dodge_chance: 0.2,
                         reaction_delay_min_seconds: 0.20,
                         reaction_delay_max_seconds: 0.27,
@@ -1167,7 +1159,6 @@ impl Default for TacticalCombatConfig {
                 ],
             },
             presentation: CombatPresentationConfig {
-                block_seconds: 8.0 / 64.0,
                 dodge_seconds: 20.0 / 64.0,
                 body_turn_seconds_per_half_turn: 0.25,
                 downed_turn_radians_per_second: std::f32::consts::FRAC_PI_2,

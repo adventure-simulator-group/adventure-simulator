@@ -878,12 +878,10 @@ class RecoverToUprightAi(BevyComponent):
 class DefenseChances(BevyComponent):
     """`adventuresim_tactical_server::bot::defense::DefenseChances`"""
     type_path: ClassVar[str] = "adventuresim_tactical_server::bot::defense::DefenseChances"
-    parry_chance: float
     dodge_chance: float
 
     def to_brp(self) -> object:
         return {
-            "parry_chance": self.parry_chance,
             "dodge_chance": self.dodge_chance,
         }
 
@@ -892,7 +890,6 @@ class DefenseChances(BevyComponent):
         data = value
         assert isinstance(data, dict)
         return cls(
-            parry_chance=data["parry_chance"],
             dodge_chance=data["dodge_chance"],
         )
 

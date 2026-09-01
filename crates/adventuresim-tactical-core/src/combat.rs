@@ -166,10 +166,6 @@ pub struct Attack;
 #[action_output(f32)]
 pub struct Dodge;
 
-#[derive(Debug, InputAction, Default)]
-#[action_output(f32)]
-pub struct Parry;
-
 #[cfg(test)]
 mod tests {
     use super::*;
