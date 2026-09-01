@@ -868,10 +868,13 @@ fn spawn_connected_player(
             | PersistedItemKind::Medication
             | PersistedItemKind::Food => {}
             PersistedItemKind::Weapon => {
-                let grip_to_tip_m = adventuresim_core::item_catalog::definition(&item.item.id)
+                let equipment = adventuresim_core::item_catalog::definition(&item.item.id)
                     .and_then(|definition| definition.equipment.as_ref())
-                    .map_or(0.0, |equipment| equipment.physical.grip_to_tip_m);
+                    .expect("validated tactical weapon has equipment metadata");
                 item_cmd.insert(WeaponItem {
+                    striking_material: equipment
+                        .striking_material
+                        .expect("validated weapon has a striking material"),
                     skill_weights: [
                         item.item.weapon_skills.polearm,
                         item.item.weapon_skills.axe,
@@ -892,7 +895,7 @@ fn spawn_connected_player(
                     ),
                     penetration: item.item.penetration,
                     reach: item.item.reach,
-                    grip_to_tip_m,
+                    grip_to_tip_m: equipment.physical.grip_to_tip_m,
                     moment_of_inertia_kg_m2: item.item.moment_of_inertia_kg_m_2,
                     precise: item.item.precise,
                     melee: item.item.melee,
@@ -920,6 +923,10 @@ fn spawn_connected_player(
                 EquipmentBodyPart::Stomach => ArmorSlot::Stomach,
             };
             item_cmd.insert(ArmorItem {
+                material: adventuresim_core::item_catalog::definition(&item.item.id)
+                    .and_then(|definition| definition.equipment.as_ref())
+                    .and_then(|equipment| equipment.material)
+                    .expect("validated armor has a material"),
                 range_of_motion: item.item.range_of_motion,
                 coverage: item.item.coverage,
                 slot,
@@ -2344,6 +2351,8 @@ mod standalone_join_tests {
                     weight: 1.2,
                 },
                 WeaponItem {
+                    striking_material:
+                        adventuresim_core::item_catalog_schema::EquipmentMaterial::RoughSteel,
                     skill_weights: [0.0; 9],
                     accuracy: 1.0,
                     penetration: 1.0,

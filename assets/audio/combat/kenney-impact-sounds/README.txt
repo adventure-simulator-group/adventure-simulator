@@ -1,0 +1,13 @@
+Impact Sounds (1.0)
+Created/distributed by Kenney (www.kenney.nl)
+Creation date: 19-12-2019
+------------------------------
+
+License: (Creative Commons Zero, CC0)
+http://creativecommons.org/publicdomain/zero/1.0/
+
+This content is free to use in personal, educational and commercial projects.
+Support us by crediting Kenney or www.kenney.nl (this is not mandatory)
+------------------------------
+
+Source: https://kenney.nl/assets/impact-sounds

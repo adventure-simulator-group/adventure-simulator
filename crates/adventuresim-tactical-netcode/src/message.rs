@@ -356,6 +356,29 @@ pub struct SuccessfulAttackResponse {
     /// Server-applied change in world-space linear velocity, in metres per
     /// second. Presentation consumes the identical value for secondary motion.
     pub impact_velocity_change: Vec3,
+    /// Canonical impact position in the hit character's local space.
+    pub impact_point: Vec3,
+    /// Canonical outward surface normal in the hit character's local space.
+    pub impact_normal: Vec3,
+    /// Server-authoritative presentation semantics for this contact.
+    pub impact_effects: ImpactEffects,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ImpactEffects {
+    pub metal_sparks: bool,
+    pub blood: bool,
+    pub sound: ImpactSound,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ImpactSound {
+    #[default]
+    None,
+    Metal,
+    CutFlesh,
+    BluntFlesh,
+    NonMetalWeapon,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

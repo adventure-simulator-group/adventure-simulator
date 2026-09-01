@@ -375,6 +375,8 @@ mod tests {
         // Match production's insertion order: the equip hook must see both
         // the owning inventory relationship and the weapon classification.
         world.entity_mut(weapon).insert(WeaponItem {
+            striking_material:
+                adventuresim_core::item_catalog_schema::EquipmentMaterial::RoughSteel,
             skill_weights: [0.0; 9],
             accuracy: 1.0,
             swing_precision: 0.45,
@@ -419,6 +421,8 @@ mod tests {
             .id();
         let weapon = world.spawn(ItemOf(actor)).id();
         world.entity_mut(weapon).insert(WeaponItem {
+            striking_material:
+                adventuresim_core::item_catalog_schema::EquipmentMaterial::RoughSteel,
             skill_weights: [0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0],
             accuracy: 1.0,
             swing_precision: 0.45,

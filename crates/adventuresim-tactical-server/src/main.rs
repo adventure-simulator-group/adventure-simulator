@@ -733,6 +733,8 @@ mod debug_dump_world_tests {
                     weight: 1.2,
                 },
                 WeaponItem {
+                    striking_material:
+                        adventuresim_core::item_catalog_schema::EquipmentMaterial::RoughSteel,
                     skill_weights: [0.0; 9],
                     accuracy: 1.0,
                     penetration: 1.0,

@@ -32,9 +32,12 @@ pub mod inventory_measurement;
 pub mod investigation;
 pub mod investigation_action;
 pub mod item_catalog;
+mod item_catalog_material;
 pub mod item_catalog_schema;
 #[cfg(test)]
 mod item_catalog_validation;
+#[cfg(test)]
+mod item_catalog_validation_material;
 pub mod item_references;
 pub mod knowledge;
 pub mod leadership;

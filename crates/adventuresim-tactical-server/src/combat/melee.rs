@@ -179,35 +179,32 @@ pub(super) fn resolve_melee_attack(
         flanking,
         contact_sample,
     );
-    let attacker_weapon_slot = match attacker_side {
-        BodySide::Left => EquipSlot::HoldingLeft,
-        BodySide::Right => EquipSlot::HoldingRight,
-        BodySide::Both => {
-            info!(attack_key, attacker = ?attack.attacker(), target = ?attack.target(), body_part = ?attack.body_part(), outcome = "failed", reason = "ambiguous_striking_side", "melee_attack_resolved");
-            return;
-        }
+    let Some(attacker_weapon_slot) = weapon_slot_for_side(Some(attacker_side)) else {
+        info!(attack_key, attacker = ?attack.attacker(), target = ?attack.target(), body_part = ?attack.body_part(), outcome = "failed", reason = "ambiguous_striking_side", "melee_attack_resolved");
+        return;
     };
-    let defender_parry_slot = matches!(defender_response, DefenderResponse::Parry { .. })
-        .then(|| defender_view.shield_holding_side())
-        .flatten()
-        .and_then(|side| match side {
-            BodySide::Left => Some(EquipSlot::HoldingLeft),
-            BodySide::Right => Some(EquipSlot::HoldingRight),
-            BodySide::Both => None,
-        });
-    let (hits_attacker, impact_velocity_change) = hit_velocity_change(
+    let defender_parry_slot =
+        defender_parry_slot(defender_response, defender_view.shield_holding_side());
+    let (impact_recipient, impact_velocity_change, impact_point, impact_normal) =
+        authoritative_impact(
+            result,
+            attack.attacker(),
+            attacker_transform.translation,
+            attacker_view.body_weight() + attacker_view.inventory_weight(),
+            attack.target(),
+            defender_transform,
+            defender_view.body_weight() + defender_view.inventory_weight(),
+            contact.body_part,
+            &config,
+        );
+    let impact_effects = authoritative_impact_effects(
+        &viewer.inventory,
+        entity,
+        hand,
+        attack.target(),
+        contact.body_part,
         result,
-        attacker_transform.translation,
-        defender_transform.translation,
-        attacker_view.body_weight() + attacker_view.inventory_weight(),
-        defender_view.body_weight() + defender_view.inventory_weight(),
-        &config.realtime_authority.impact,
     );
-    let impact_recipient = if hits_attacker {
-        attack.attacker()
-    } else {
-        attack.target()
-    };
 
     cmd.trigger(ApplyMeleeAttackResult {
         attacker: attack.attacker(),
@@ -265,6 +262,9 @@ pub(super) fn resolve_melee_attack(
             defender_response,
             impact_recipient,
             impact_velocity_change,
+            impact_point,
+            impact_normal,
+            impact_effects,
         },
     });
 }
