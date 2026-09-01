@@ -219,10 +219,11 @@ fn record_autoresolve_report(
         battle_id: battle_id.to_string(),
         party_id: party_id.to_string(),
         seed: outcome.seed,
-        victor: match outcome.victor {
-            BattleVictor::Allies => "allies",
-            BattleVictor::Enemies => "enemies",
-            BattleVictor::Stalemate => "stalemate",
+        victor: match outcome.resolution {
+            BattleResolution::AlliesVictory => "allies",
+            BattleResolution::EnemiesVictory => "enemies",
+            BattleResolution::MutualIncapacitation => "mutual_incapacitation",
+            BattleResolution::Timeout => "timeout",
         }
         .to_string(),
         rounds: outcome.rounds as u32,

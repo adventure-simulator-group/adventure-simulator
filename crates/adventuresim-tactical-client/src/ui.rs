@@ -22,6 +22,10 @@ use bevy_egui::{
 };
 use bevy_flair::prelude::*;
 
+mod combat_state;
+
+use combat_state::{combat_state_label, incapacitation_wheel_segments};
+
 #[cfg(feature = "debug")]
 use crate::animation::TerrainIkEnabled;
 #[cfg(feature = "debug")]
@@ -116,20 +120,6 @@ const ENEMY_WHEEL_ROOT_FALLBACK_HEIGHT_METRES: f32 = 1.1;
 const INCAPACITATION_WHEEL_RESOLUTION: f32 = 96.0;
 const MIN_VISIBLE_INCAPACITATION_SEGMENT: f32 = 0.005;
 
-fn incapacitation_wheel_segments(sources: TacticalIncapacitationSources) -> [(f32, Color32); 9] {
-    [
-        (sources.pain, Color32::from_rgb(0xd9, 0x73, 0xa2)),
-        (sources.blood_loss, Color32::from_rgb(0xc8, 0x47, 0x47)),
-        (sources.fear, Color32::from_rgb(0x4f, 0x83, 0xcc)),
-        (sources.fatigue, Color32::from_rgb(0x20, 0x20, 0x20)),
-        (sources.hunger, Color32::from_rgb(0xb5, 0x7a, 0x35)),
-        (sources.thirst, Color32::from_rgb(0x3f, 0x9f, 0xa8)),
-        (sources.thermal, Color32::from_rgb(0x7d, 0x8e, 0xe8)),
-        (sources.exhaustion, Color32::from_rgb(0x80, 0x80, 0x80)),
-        (sources.imbalance, Color32::WHITE),
-    ]
-}
-
 fn visible_incapacitation_wheel_amount(raw_amount: f32, remaining: f32) -> Option<f32> {
     let amount = raw_amount.max(0.0).min(remaining);
     (amount >= MIN_VISIBLE_INCAPACITATION_SEGMENT).then_some(amount)
@@ -164,7 +154,11 @@ fn draw_incapacitation_wheel(
     let (entity, state, limbs) = player.into_inner();
     let view = viewer.get(entity)?;
     let will = view.skill_check(Skill::Will, LimbWeights::all_equal());
-    let sources = state.incapacitation_sources(limbs.total_damage(), will);
+    let sources = state.incapacitation_sources(
+        limbs.total_damage(),
+        will,
+        view.raw_single_body_part_attr(SimpleAttribute::Endurance),
+    );
 
     let context = contexts.ctx_mut()?;
     let painter = context.layer_painter(egui::LayerId::new(
@@ -194,7 +188,11 @@ fn draw_incapacitation_wheel(
             continue;
         };
         let will = view.skill_check(Skill::Will, LimbWeights::all_equal());
-        let sources = state.incapacitation_sources(limbs.total_damage(), will);
+        let sources = state.incapacitation_sources(
+            limbs.total_damage(),
+            will,
+            view.raw_single_body_part_attr(SimpleAttribute::Endurance),
+        );
         let head_position = rig
             .and_then(|rig| rig.get(&BoneRole::Head))
             .and_then(|head| bone_transforms.get(*head).ok())
@@ -762,29 +760,15 @@ fn update_game_speed_debug_ui(
     }
 }
 
-fn combat_state_label(state: &TacticalCombatState) -> String {
-    if state.is_incapacitated() {
-        format!(
-            "INCAPACITATED | Blood loss {:.0}% | Exhaustion {:.0}% | Imbalance {:.0}%",
-            state.blood_loss_fraction * 100.0,
-            state.exhaustion * 100.0,
-            state.imbalance * 100.0
-        )
-    } else {
-        format!(
-            "Active | Blood loss {:.0}% | Exhaustion {:.0}% | Imbalance {:.0}%",
-            state.blood_loss_fraction * 100.0,
-            state.exhaustion * 100.0,
-            state.imbalance * 100.0
-        )
-    }
-}
-
 fn update_combat_state_ui(
-    player: Single<&TacticalCombatState, With<ClientPlayer>>,
+    player: Single<(&TacticalCombatState, &TacticalAttributes), With<ClientPlayer>>,
     mut span: Single<&mut TextSpan, With<CombatStateSpan>>,
 ) {
-    span.0 = combat_state_label(&player);
+    let (state, attributes) = player.into_inner();
+    span.0 = combat_state_label(
+        state,
+        oxygen_debt_incapacitation(state.oxygen_debt_joules, attributes.endurance),
+    );
 }
 
 fn tactical_outcome_label(outcome: TacticalOutcome) -> (&'static str, &'static str) {
@@ -931,7 +915,11 @@ fn update_incapacitation_ui(
     let (entity, state, limbs, _player_id) = player.into_inner();
     let view = viewer.get(entity)?;
     let will = view.skill_check(Skill::Will, LimbWeights::all_equal());
-    let sources = state.incapacitation_sources(limbs.total_damage(), will);
+    let sources = state.incapacitation_sources(
+        limbs.total_damage(),
+        will,
+        view.raw_single_body_part_attr(SimpleAttribute::Endurance),
+    );
 
     for (fill, mut node) in &mut bars {
         let value = match fill.0 {
@@ -1112,7 +1100,7 @@ fn on_successful_attack_display(
                 AttackResult::ToAttacker { balance_damage, .. } => {
                     let reason = match event.defender_response {
                         DefenderResponse::None => "Missed",
-                        DefenderResponse::Block => "Blocked",
+                        DefenderResponse::Block { .. } => "Blocked",
                         DefenderResponse::Dodge { .. } => "Dodged",
                         DefenderResponse::Parry { .. } => "Parried",
                     };
@@ -1201,14 +1189,14 @@ mod tests {
             ..default()
         };
         assert_eq!(
-            combat_state_label(&active),
+            combat_state_label(&active, 0.0),
             "Active | Blood loss 25% | Exhaustion 0% | Imbalance 50%"
         );
         let incapacitated = TacticalCombatState {
             incapacitation: 1.0,
             ..active
         };
-        assert!(combat_state_label(&incapacitated).starts_with("INCAPACITATED"));
+        assert!(combat_state_label(&incapacitated, 0.0).starts_with("INCAPACITATED"));
     }
 
     #[test]
@@ -1233,7 +1221,7 @@ mod tests {
             hunger: 0.5,
             thirst: 0.6,
             thermal: 0.7,
-            exhaustion: 0.8,
+            oxygen_debt: 0.8,
             imbalance: 0.9,
         });
 

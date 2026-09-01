@@ -178,24 +178,27 @@ pub(super) fn resolve_ranged_attack(
             body_part,
             &config,
         );
-    let impact_effects = authoritative_impact_effects(
-        &viewer.inventory,
-        shot.attacker(),
-        AttackHand::Main,
-        target,
-        body_part,
-        result,
-    );
+    let impact_effects =
+        authoritative_impact_effects(&viewer.inventory, shot.attacker(), AttackHand::Main, result);
     cmd.trigger(ApplyMeleeAttackResult {
         attacker: shot.attacker(),
         target,
         body_part,
+        anatomical_subregion: anatomical_subregion(body_part, 0.5),
+        surface_coordinate: 0.5,
         result,
+        defender_response,
+        defense_success_probability: None,
+        defense_alignment_sample: None,
+        defense_engagement: None,
         attacker_weapon_slot,
         defender_blocking_slot,
         attacker_weapon_contact: false,
         impact_recipient,
         impact_velocity_change,
+        closest_approach_metres: None,
+        redirected_from: None,
+        contact_at_time: MeleeContactAtTime::intended(0.0),
     });
     cmd.server_trigger(ToClients {
         targets: SendTargets::All,

@@ -6,7 +6,7 @@ type EquipmentContactQuery<'world, 'state> = Query<
     (
         &'static ItemOf,
         &'static EquipSlot,
-        &'static crate::player_projection::TacticalInventoryItemId,
+        &'static TacticalInventoryItemId,
         Option<&'static WeaponItem>,
         Option<&'static ShieldItem>,
         Option<&'static ArmorItem>,
@@ -15,7 +15,8 @@ type EquipmentContactQuery<'world, 'state> = Query<
 
 pub(super) fn apply_melee_attack_result(
     event: On<ApplyMeleeAttackResult>,
-    mut combatants: Query<(&mut Limbs, &mut TacticalCombatState)>,
+    mut commands: Commands,
+    mut combatants: Query<(&mut Limbs, &mut TacticalCombatState, &mut TacticalWounds)>,
     mut velocities: Query<&mut LinearVelocity>,
     metadata: Query<(&TacticalCombatSide, &CharacterId)>,
     mut consequences: ResMut<TacticalConsequenceAccumulator>,
@@ -24,12 +25,13 @@ pub(super) fn apply_melee_attack_result(
     let Ok([attacker, defender]) = combatants.get_many_mut([event.attacker, event.target]) else {
         return;
     };
-    let (_, mut attacker_state) = attacker;
-    let (mut defender_limbs, mut defender_state) = defender;
+    let (_, mut attacker_state, _) = attacker;
+    let (mut defender_limbs, mut defender_state, mut defender_wounds) = defender;
     let applied = apply_transient_attack_result(
         &mut attacker_state,
         &mut defender_limbs,
         &mut defender_state,
+        &mut defender_wounds.0,
         event.result,
         event.body_part,
     );
@@ -50,6 +52,38 @@ pub(super) fn apply_melee_attack_result(
             blunt_damage,
         );
     }
+    record_melee_equipment_contacts(
+        &event,
+        attacker_metadata,
+        defender_metadata,
+        &items,
+        &mut consequences,
+    );
+    commands.trigger(MeleeAttackResolved {
+        attacker: event.attacker,
+        target: event.target,
+        body_part: event.body_part,
+        anatomical_subregion: event.anatomical_subregion,
+        surface_coordinate: event.surface_coordinate,
+        result: event.result,
+        defender_response: event.defender_response,
+        defense_success_probability: event.defense_success_probability,
+        defense_alignment_sample: event.defense_alignment_sample,
+        defense_engagement: event.defense_engagement,
+        closest_approach_metres: event.closest_approach_metres,
+        redirected_from: event.redirected_from,
+        defender_blocking_slot: event.defender_blocking_slot,
+        contact_at_time: event.contact_at_time,
+    });
+}
+
+fn record_melee_equipment_contacts(
+    event: &ApplyMeleeAttackResult,
+    attacker_metadata: Option<(&TacticalCombatSide, &CharacterId)>,
+    defender_metadata: Option<(&TacticalCombatSide, &CharacterId)>,
+    items: &EquipmentContactQuery<'_, '_>,
+    consequences: &mut TacticalConsequenceAccumulator,
+) {
     if attacker_metadata.is_some_and(|(side, _)| *side == TacticalCombatSide::Party) {
         let attacker_id = attacker_metadata.unwrap().1;
         let contact_stress = match event.result {
@@ -70,7 +104,7 @@ pub(super) fn apply_melee_attack_result(
             })
         {
             record_equipment_contact(
-                &mut consequences,
+                consequences,
                 *attacker_id,
                 provenance.0,
                 contact_stress,
@@ -80,46 +114,58 @@ pub(super) fn apply_melee_attack_result(
     }
     if defender_metadata.is_some_and(|(side, _)| *side == TacticalCombatSide::Party) {
         let defender_id = defender_metadata.unwrap().1;
-        let (contact_stress, defender_slot, require_shield, require_armor) = match event.result {
-            AttackResult::ToDefender {
-                contact_force,
-                armor_contact,
-                ..
-            } if armor_contact => (
-                contact_force.max(0.0),
-                Some(EquipSlot::from_armor_body_part(event.body_part)),
-                false,
-                true,
-            ),
-            AttackResult::ToAttacker {
-                contact_force,
-                physical_contact: true,
-                ..
-            } if event.defender_blocking_slot.is_some() => (
-                contact_force.max(0.0),
-                event.defender_blocking_slot,
-                true,
-                false,
-            ),
-            _ => (0.0, None, false, false),
-        };
+        let (contact_stress, defender_slot, armor_item_id, require_shield, require_armor) =
+            match event.result {
+                AttackResult::ToDefender {
+                    contact_force,
+                    armor_impact: Some(impact),
+                    ..
+                } => (
+                    contact_force.max(0.0),
+                    Some(EquipSlot::from_armor_body_part(event.body_part)),
+                    impact.surface.inventory_item_id,
+                    false,
+                    true,
+                ),
+                AttackResult::ToAttacker {
+                    contact_force,
+                    physical_contact: true,
+                    ..
+                } if event.defender_blocking_slot.is_some() => (
+                    contact_force.max(0.0),
+                    event.defender_blocking_slot,
+                    None,
+                    matches!(event.defender_response, DefenderResponse::Block { .. }),
+                    false,
+                ),
+                _ => (0.0, None, None, false, false),
+            };
         if contact_stress > 0.0
             && let Some((_, _, provenance, _, _, _)) = items.iter().find(|row| {
-                let (owner, slot, _, _, shield, armor) = row;
-                defender_equipment_contact_matches(
-                    event.target,
-                    owner.0,
-                    **slot,
-                    defender_slot,
-                    shield.is_some(),
-                    armor.is_some(),
-                    require_shield,
-                    require_armor,
+                let (owner, slot, provenance, _, shield, armor) = row;
+                armor_item_id.map_or_else(
+                    || {
+                        defender_equipment_contact_matches(
+                            event.target,
+                            owner.0,
+                            **slot,
+                            defender_slot,
+                            shield.is_some(),
+                            armor.is_some(),
+                            require_shield,
+                            require_armor,
+                        )
+                    },
+                    |inventory_item_id| {
+                        owner.0 == event.target
+                            && provenance.0 == inventory_item_id
+                            && armor.is_some()
+                    },
                 )
             })
         {
             record_equipment_contact(
-                &mut consequences,
+                consequences,
                 *defender_id,
                 provenance.0,
                 contact_stress,
@@ -153,9 +199,6 @@ pub(super) fn record_party_injury(
             max_single_hit_blunt_damage: blunt_damage,
         });
     }
-    consequence.blood_loss_fraction = (consequence.blood_loss_fraction
-        + blood_loss_from_applied_health_damage(body_part, cut_damage, blunt_damage))
-    .clamp(0.0, 1.0);
 }
 
 pub(super) fn record_party_ammunition_use(
@@ -232,6 +275,7 @@ pub(crate) fn apply_transient_attack_result(
     attacker_state: &mut TacticalCombatState,
     defender_limbs: &mut Limbs,
     defender_state: &mut TacticalCombatState,
+    defender_wounds: &mut Vec<CombatWound>,
     result: AttackResult,
     body_part: BodyPart,
 ) -> Option<(f32, f32)> {
@@ -240,14 +284,22 @@ pub(crate) fn apply_transient_attack_result(
             attacker_state.imbalance += balance_damage.max(0.0);
             None
         }
-        AttackResult::ToDefender { balance_damage, .. } => {
+        AttackResult::ToDefender {
+            balance_damage,
+            blunt_damage,
+            ..
+        } => {
             defender_state.imbalance += balance_damage.max(0.0);
             let damage = health_damage_from_attack(result, body_part);
             let applied = apply_clamped_limb_damage(defender_limbs.health_mut(body_part), damage);
+            defender_state.acute_trauma += acute_trauma_incapacitation(body_part, applied);
             let (applied_cut, applied_blunt) = apportion_attack_health_damage(result, applied);
-            defender_state.blood_loss_fraction = (defender_state.blood_loss_fraction
-                + blood_loss_from_applied_health_damage(body_part, applied_cut, applied_blunt))
-            .clamp(0.0, 1.0);
+            defender_wounds.extend(wounds_from_applied_health_damage(
+                body_part,
+                applied_cut,
+                applied_blunt,
+                blunt_damage,
+            ));
             if applied > 0.0 && applied_cut + applied_blunt > 0.0 {
                 Some((applied_cut, applied_blunt))
             } else {

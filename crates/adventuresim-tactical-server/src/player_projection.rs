@@ -1,6 +1,9 @@
 use std::collections::BTreeMap;
 
-use adventuresim_core::{attribute::PlayerAttributeValues, tactical_fixture::TacticalEnemyFixture};
+use adventuresim_core::{
+    attribute::PlayerAttributeValues, combat::HUMANOID_COLLISION_RADIUS_METRES,
+    tactical_fixture::TacticalEnemyFixture,
+};
 use adventuresim_stdb_client::*;
 use adventuresim_tactical_core::animation::dive_launch_root_rotation;
 use adventuresim_tactical_core::{inventory::ItemProperties, prelude::*};
@@ -30,6 +33,8 @@ use crate::{
     stdb::{SpacetimeDb, SpacetimeDbReady},
 };
 use input::AccumulatedInput;
+mod projection_equipment;
+use projection_equipment::projected_armor;
 
 type PlayerInputStateQuery<'world, 'state> = Query<
     'world,
@@ -281,10 +286,6 @@ const GROUND_POSTURE_TRANSITION_TICKS: u64 = 51;
 const ROLL_POSTURE_TRANSITION_TICKS: u64 = GROUND_POSTURE_TRANSITION_TICKS.div_ceil(2);
 #[cfg(test)]
 const BACKWARD_DIVE_POSTURE_TRANSITION_TICKS: u64 = 32;
-
-/// Durable inventory provenance retained only on the authoritative server.
-#[derive(Component, Debug, Clone, Copy)]
-pub(crate) struct TacticalInventoryItemId(pub u64);
 
 /// Transient mission projection: durable Characters keep their strategic
 /// baseline while tactical combat receives mission difficulty/escalation.
@@ -739,7 +740,7 @@ fn spawn_connected_player(
             starting_thermal: player.strategic_thermal,
             ..default()
         },
-        EquipmentActionState::default(),
+        crate::combat::combat_projection_state(),
     ));
     cmd.entity(entity).insert((
         MeleeAttackAuthority::default(),
@@ -912,29 +913,8 @@ fn spawn_connected_player(
                 });
             }
         }
-        if let Some(part) = item.protected_body_parts.first() {
-            let slot = match part {
-                EquipmentBodyPart::LeftArm => ArmorSlot::Arms(Some(ArmorSide::Left)),
-                EquipmentBodyPart::RightArm => ArmorSlot::Arms(Some(ArmorSide::Right)),
-                EquipmentBodyPart::LeftLeg => ArmorSlot::Legs(Some(ArmorSide::Left)),
-                EquipmentBodyPart::RightLeg => ArmorSlot::Legs(Some(ArmorSide::Right)),
-                EquipmentBodyPart::Head => ArmorSlot::Head,
-                EquipmentBodyPart::Chest => ArmorSlot::Chest,
-                EquipmentBodyPart::Stomach => ArmorSlot::Stomach,
-            };
-            item_cmd.insert(ArmorItem {
-                material: adventuresim_core::item_catalog::definition(&item.item.id)
-                    .and_then(|definition| definition.equipment.as_ref())
-                    .and_then(|equipment| equipment.material)
-                    .expect("validated armor has a material"),
-                range_of_motion: item.item.range_of_motion,
-                coverage: item.item.coverage,
-                slot,
-                resistance: item.item.resistance,
-                padding: item.item.padding,
-                flexibility: item.item.flexibility,
-                covered_parts: tactical_covered_parts(&item.protected_body_parts),
-            });
+        if let Some(armor) = projected_armor(item) {
+            item_cmd.insert(armor);
         }
 
         if item.occupancies.iter().any(|occupancy| {
@@ -2131,7 +2111,7 @@ fn advance_posture_transition_facing(
 }
 
 fn player_collider() -> Collider {
-    Collider::cylinder(0.4, 1.9)
+    Collider::cylinder(HUMANOID_COLLISION_RADIUS_METRES, 1.9)
 }
 
 fn player_spawn_offset(collider: &Collider) -> f32 {

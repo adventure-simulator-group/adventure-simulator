@@ -59,8 +59,9 @@ pub mod prelude {
         ArmorItem, ArmorSide, ArmorSlot, EquipSlot, EquipmentActionState, EquipmentTopology,
         EquipmentTopologyOccupancy, InventoryItems, ItemOf, ItemProperties, ShieldItem,
         TACTICAL_ITEM_LAYER, TACTICAL_TERRAIN_LAYER, TacticalEquipmentAnchor,
-        TacticalEquipmentPhysical, TacticalItemQuantity, TacticalSceneItem, WeaponAppearance,
-        WeaponHolderAppearance, WeaponItem, rebuild_inventory_holding_cache,
+        TacticalEquipmentPhysical, TacticalInventoryItemId, TacticalItemQuantity,
+        TacticalSceneItem, WeaponAppearance, WeaponHolderAppearance, WeaponItem,
+        rebuild_inventory_holding_cache,
     };
     pub use crate::physics::{
         AdventureSimulatorPhysicsSet, BREATH_PER_METRE_PER_SECOND, CharacterMotionSnapshot,

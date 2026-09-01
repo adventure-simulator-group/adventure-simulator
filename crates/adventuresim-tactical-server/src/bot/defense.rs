@@ -75,6 +75,7 @@ pub(super) fn on_attack_started(
     viewer: TacticalPlayerViewer,
     q_bots: DefensiveBotQuery<'_, '_>,
     combat_config: Res<TacticalCombatConfig>,
+    mut random: ResMut<CombatRandom>,
 ) {
     let MeleeActionRequest {
         strike_family,
@@ -119,6 +120,7 @@ pub(super) fn on_attack_started(
                 .unwrap_or(0.3),
         },
         &combat_config.ai.ordinary.defense,
+        &mut random,
     );
 }
 
@@ -133,6 +135,7 @@ pub(super) fn on_targeted_attack_started(
         Option<&DefenseChances>,
     )>,
     combat_config: Res<TacticalCombatConfig>,
+    mut random: ResMut<CombatRandom>,
 ) {
     let Some(target) = event.target else {
         return;
@@ -154,6 +157,7 @@ pub(super) fn on_targeted_attack_started(
                 windup_seconds: event.windup.as_secs_f32(),
             },
             &combat_config.ai.ordinary.defense,
+            &mut random,
         );
     }
 }
@@ -169,6 +173,7 @@ pub(super) fn on_targeted_ranged_attack_started(
         Option<&DefenseChances>,
     )>,
     combat_config: Res<TacticalCombatConfig>,
+    mut random: ResMut<CombatRandom>,
 ) {
     let Some(target) = event.target else {
         return;
@@ -190,6 +195,7 @@ pub(super) fn on_targeted_ranged_attack_started(
                 windup_seconds: event.animation_windup.as_secs_f32(),
             },
             &combat_config.ai.ordinary.defense,
+            &mut random,
         );
     }
 }
@@ -198,6 +204,7 @@ fn try_start_reaction(
     cmd: &mut Commands,
     attempt: BotReactionAttempt<'_>,
     config: &AiDefenseConfig,
+    random: &mut CombatRandom,
 ) {
     let (a2, a1) = attempt.attacker_look.yaw.sin_cos();
     let (d2, d1) = attempt.defender_look.yaw.sin_cos();
@@ -206,7 +213,7 @@ fn try_start_reaction(
     {
         return;
     }
-    let Some(choice) = roll_defend_choice(attempt.chances) else {
+    let Some(choice) = roll_defend_choice(attempt.chances, random) else {
         return;
     };
     let delay = if attempt.chances.dodge_chance >= 1.0 {
@@ -214,7 +221,10 @@ fn try_start_reaction(
         // of even a fast fist windup for the quickstep's launch phase.
         (attempt.windup_seconds - 0.16).clamp(0.02, 0.12)
     } else {
-        rand::random_range(config.reaction_delay_min_seconds..config.reaction_delay_max_seconds)
+        random.range_f32(
+            config.reaction_delay_min_seconds,
+            config.reaction_delay_max_seconds,
+        )
     };
     cmd.entity(attempt.defender).insert(PendingBotReaction {
         timer: Timer::from_seconds(delay, TimerMode::Once),
@@ -222,11 +232,18 @@ fn try_start_reaction(
     });
 }
 
-pub(super) fn roll_defend_choice(chances: DefenseChances) -> Option<DefendRequest> {
-    let roll: f64 = rand::random();
+pub(super) fn roll_defend_choice(
+    chances: DefenseChances,
+    random: &mut CombatRandom,
+) -> Option<DefendRequest> {
+    let roll = random.unit_f64();
     if roll < chances.dodge_chance {
         Some(DefendRequest::Dodge {
-            direction: if rand::random() { Vec2::X } else { Vec2::NEG_X },
+            direction: if random.coin_flip() {
+                Vec2::X
+            } else {
+                Vec2::NEG_X
+            },
         })
     } else {
         None

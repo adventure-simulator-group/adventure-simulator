@@ -332,6 +332,7 @@ where
         hit_precision: f32,
         flanking: f32,
         contact: crate::combat::MeleeContactLocation,
+        contact_at_time: crate::combat::MeleeContactAtTime,
     ) -> AttackResult {
         resolve_melee_attack_by_parts(
             &self.skills,
@@ -346,6 +347,7 @@ where
             self.precision_damage_multiplier_cap(defender_categories),
             flanking,
             contact,
+            contact_at_time,
             defender_response,
             &defender.skills,
             &defender.attributes,
@@ -355,21 +357,15 @@ where
         )
     }
 
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "contact selection names each independent decision input explicitly"
-    )]
     pub fn melee_contact_location(
         &self,
         side: BodySide,
         attack_style: MeleeAttackStyle,
         defender: &Self,
-        defender_response: DefenderResponse,
         hit_precision: f32,
-        flanking: f32,
-        sample: f32,
+        contact_sample: f32,
     ) -> crate::combat::MeleeContactLocation {
-        let attack_value = crate::combat::melee_attack_value_by_parts(
+        let accuracy = crate::combat::melee_attack_accuracy_by_parts(
             &self.skills,
             &self.attributes,
             &self.body,
@@ -378,20 +374,13 @@ where
             side,
             attack_style,
             hit_precision,
-            flanking,
-            defender_response,
-            &defender.skills,
-            &defender.attributes,
-            &defender.body,
-            &defender.essentials,
-            &defender.equipment,
         );
-        crate::combat::melee_contact_location(
-            attack_value,
-            &self.equipment,
-            &defender.equipment,
-            sample,
-        )
+        let gap_targeting = if self.equipment.weapon_is_precise() {
+            (accuracy - 1.0).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        crate::combat::melee_contact_location(&defender.equipment, contact_sample, gap_targeting)
     }
 
     #[expect(

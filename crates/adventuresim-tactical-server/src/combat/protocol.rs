@@ -10,6 +10,7 @@ use super::{CombatDuration, CombatInstant, ReportedPrecision};
 pub(crate) struct PendingDefenderResponse {
     pub(crate) choice: DefendRequest,
     pub(crate) set_at: CombatInstant,
+    pub(crate) origin: Vec3,
 }
 
 /// Authoritative defensive action requested by either an authenticated client
@@ -22,6 +23,16 @@ pub(crate) struct DefendIntent {
     pub(crate) choice: DefendRequest,
 }
 
+/// Result of authoritative validation for a requested defensive action.
+/// Iteration diagnostics observe this seam so an attempted reaction cannot be
+/// mistaken for a defense that actually entered combat state.
+#[derive(Event, Clone, Copy, Debug)]
+pub struct DefendIntentResolved {
+    pub defender: Entity,
+    pub choice: DefendRequest,
+    pub accepted: bool,
+}
+
 /// Both network clients and server-owned AI enter melee through this seam.
 #[derive(Event, Clone, Copy, Debug)]
 pub(crate) struct MeleeAttackIntent {
@@ -29,6 +40,7 @@ pub(crate) struct MeleeAttackIntent {
     pub(crate) target: Entity,
     pub(crate) body_part: BodyPart,
     pub(crate) contact_sample: f32,
+    pub(crate) defense_alignment_sample: f32,
     pub(crate) reported_precision: ReportedPrecision,
     pub(crate) strike_family: StrikeFamily,
     pub(crate) hand: AttackHand,
@@ -50,6 +62,7 @@ pub(crate) struct PendingMeleeContact {
     pub(crate) target: Option<Entity>,
     pub(crate) body_part: Option<BodyPart>,
     pub(crate) contact_sample: f32,
+    pub(crate) defense_alignment_sample: f32,
     pub(crate) resolve_at: CombatInstant,
     pub(crate) reported_precision: ReportedPrecision,
     pub(crate) strike_family: StrikeFamily,

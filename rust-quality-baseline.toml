@@ -615,10 +615,6 @@ path = "crates/adventuresim-tactical-core/src/physics.rs"
 ceiling = 1020
 
 [[files]]
-path = "crates/adventuresim-tactical-core/src/player.rs"
-ceiling = 559
-
-[[files]]
 path = "crates/adventuresim-tactical-core/src/scene_input.rs"
 ceiling = 1225
 
@@ -2518,11 +2514,6 @@ ceiling = 175
 path = "crates/adventuresim-tactical-server/src/bot/offense.rs"
 item = "drive_offensive_combat_ai"
 ceiling = 206
-
-[[functions]]
-path = "crates/adventuresim-tactical-server/src/combat/consequence.rs"
-item = "apply_melee_attack_result"
-ceiling = 115
 
 [[functions]]
 path = "crates/adventuresim-tactical-server/src/combat/ingress.rs"

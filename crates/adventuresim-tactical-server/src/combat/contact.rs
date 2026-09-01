@@ -2,6 +2,7 @@ use super::*;
 
 pub(super) struct InitialMeleeContact {
     pub(super) sample: f32,
+    pub(super) defense_alignment_sample: f32,
     pub(super) body_part: Option<BodyPart>,
     pub(super) weapon_reach: f32,
 }
@@ -10,8 +11,9 @@ pub(super) fn initial_melee_contact(
     viewer: &TacticalPlayerViewer<'_, '_>,
     event: &MeleeAttackStartedIntent,
     strike_family: StrikeFamily,
+    random: &mut crate::bot::CombatRandom,
 ) -> InitialMeleeContact {
-    let sample = rand::random::<f32>();
+    let sample = random.unit_f32();
     let attacker = viewer.get_for_attack(event.attacker, event.hand).ok();
     let weapon_reach = attacker.as_ref().map_or(0.0, |view| view.weapon_reach());
     let body_part = event.target.and_then(|target| {
@@ -24,9 +26,7 @@ pub(super) fn initial_melee_contact(
                     side,
                     strike_family.melee_style(),
                     &defender,
-                    DefenderResponse::None,
                     event.reported_precision.get(),
-                    0.0,
                     sample,
                 )
                 .body_part,
@@ -34,6 +34,7 @@ pub(super) fn initial_melee_contact(
     });
     InitialMeleeContact {
         sample,
+        defense_alignment_sample: random.unit_f32(),
         body_part,
         weapon_reach,
     }
@@ -71,16 +72,26 @@ pub(super) fn resolve_melee_contact(
     reported_precision: ReportedPrecision,
     flanking: f32,
     sample: f32,
+    forced_body_part: Option<BodyPart>,
+    contact_at_time: MeleeContactAtTime,
 ) -> (MeleeContactLocation, AttackResult) {
-    let contact = attacker.melee_contact_location(
+    let mut contact = attacker.melee_contact_location(
         attacker_side,
         attack_style,
         defender,
-        defender_response,
         reported_precision.get(),
-        flanking,
         sample,
     );
+    if let Some(body_part) = forced_body_part {
+        let surface_coordinate = sample.clamp(0.0, 1.0 - f32::EPSILON);
+        let armor_surface = defender.armor_surface(body_part, surface_coordinate);
+        contact = MeleeContactLocation::new(
+            body_part,
+            anatomical_subregion(body_part, surface_coordinate),
+            surface_coordinate,
+            armor_surface,
+        );
+    }
     let result = attacker.resolve_melee_attack(
         parameters,
         attacker_side,
@@ -91,6 +102,7 @@ pub(super) fn resolve_melee_contact(
         reported_precision.get(),
         flanking,
         contact,
+        contact_at_time,
     );
     (contact, result)
 }

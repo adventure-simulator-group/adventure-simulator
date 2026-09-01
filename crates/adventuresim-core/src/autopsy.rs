@@ -426,7 +426,19 @@ mod tests {
             blood_loss_fraction: 0.4,
             cut_damage: 0.2,
             incapacitated: true,
+            yielded: false,
+            incapacitation: 1.0,
+            imbalance: 0.0,
+            acute_trauma: 0.0,
+            pain_incapacitation: 0.0,
+            oxygen_debt_joules: 0.0,
+            local_action_fatigue: 0.0,
+            wound_count: 0,
+            open_wound_count: 0,
+            internal_wound_count: 0,
+            wound_flow_fraction_per_second: 0.0,
             ammunition_used: 0,
+            terminal_cause: None,
         };
         let entry = BattleLogEntry {
             sequence: 3,
@@ -437,6 +449,7 @@ mod tests {
             attack_kind: "melee".into(),
             weapon_inventory_item_id: Some(1234),
             defender_contact_item_id: None,
+            defender_response: "none",
             body_part: BodyPart::Head,
             outcome: "hit".into(),
             health_damage: 0.3,
@@ -444,7 +457,8 @@ mod tests {
             blunt_damage: 0.1,
             projectile_kind: Some(CombatProjectileKind::Arrowhead),
             contact_stress: 42.0,
-            armor_contact: false,
+            armor_impact: None,
+            melee_telemetry: None,
         };
         let body = post_combat_body(&outcome, &[entry]);
         assert_eq!(body.combatant_id, 9);
@@ -465,7 +479,19 @@ mod tests {
             blood_loss_fraction: 0.2,
             cut_damage: 0.0,
             incapacitated: true,
+            yielded: false,
+            incapacitation: 1.0,
+            imbalance: 0.0,
+            acute_trauma: 0.0,
+            pain_incapacitation: 0.0,
+            oxygen_debt_joules: 0.0,
+            local_action_fatigue: 0.0,
+            wound_count: 0,
+            open_wound_count: 0,
+            internal_wound_count: 0,
+            wound_flow_fraction_per_second: 0.0,
             ammunition_used: 0,
+            terminal_cause: None,
         };
         assert!(!is_lethal_body(&casualty));
     }

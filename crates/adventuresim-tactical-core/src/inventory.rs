@@ -1,7 +1,6 @@
 use adventuresim_core::{
     body::{BodyPart, BodySide},
     combat_style::MeleeAttackStyle,
-    inventory_measurement::ItemQuantity,
     item_catalog::{EquipmentChannel, EquipmentLocation},
     item_catalog_schema::EquipmentMaterial,
     prelude::PlayerEquipment,
@@ -20,33 +19,14 @@ use strum::{Display, EnumCount, VariantArray};
 use crate::animation::AttackHand;
 use crate::inventory_armor::fold_armor_layers;
 
+mod armor;
+mod quantity;
+
+pub use armor::*;
+pub use quantity::*;
+
 pub const TACTICAL_TERRAIN_LAYER: LayerMask = LayerMask(1 << 5);
 pub const TACTICAL_ITEM_LAYER: LayerMask = LayerMask(1 << 4);
-
-#[derive(Component, Serialize, Deserialize, Debug, Reflect, PartialEq, Eq, Clone, Copy, Deref)]
-#[serde(transparent)]
-#[reflect(opaque)]
-#[reflect(Component, PartialEq, Clone, Serialize, Deserialize)]
-pub struct TacticalItemQuantity(pub ItemQuantity);
-
-impl Default for TacticalItemQuantity {
-    fn default() -> Self {
-        Self(ItemQuantity::ONE)
-    }
-}
-
-impl TacticalItemQuantity {
-    pub const fn new(value: u32) -> Option<Self> {
-        match ItemQuantity::new(value) {
-            Some(quantity) => Some(Self(quantity)),
-            None => None,
-        }
-    }
-
-    pub const fn get(self) -> u32 {
-        self.0.get()
-    }
-}
 
 #[derive(Component, Serialize, Deserialize, Debug, Reflect, PartialEq, Eq, Clone, MapEntities)]
 #[reflect(Component)]
@@ -86,35 +66,6 @@ impl InventoryItems {
     pub fn holding_shield(&self) -> Option<Entity> {
         self.holding_shield
     }
-}
-
-#[derive(Component, Reflect, Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
-#[reflect(opaque)]
-#[reflect(Component)]
-pub struct ArmorItem {
-    pub material: EquipmentMaterial,
-    pub range_of_motion: f32,
-    pub coverage: f32,
-    pub slot: ArmorSlot,
-    pub resistance: f32,
-    pub padding: f32,
-    pub flexibility: f32,
-    pub covered_parts: [bool; 7],
-}
-
-#[derive(Reflect, Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
-pub enum ArmorSlot {
-    Arms(Option<ArmorSide>),
-    Legs(Option<ArmorSide>),
-    Head,
-    Chest,
-    Stomach,
-}
-
-#[derive(Reflect, Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
-pub enum ArmorSide {
-    Left,
-    Right,
 }
 
 #[derive(Component, Reflect, Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
@@ -321,8 +272,10 @@ pub struct ItemQuery {
     pub item_of: Option<&'static ItemOf>,
     pub slot: Option<&'static EquipSlot>,
     pub armor: Option<&'static ArmorItem>,
+    pub inventory_item_id: Option<&'static TacticalInventoryItemId>,
     pub weapon: Option<&'static WeaponItem>,
     pub shield: Option<&'static ShieldItem>,
+    pub physical: Option<&'static TacticalEquipmentPhysical>,
 }
 
 #[derive(SystemParam)]
@@ -380,6 +333,15 @@ impl InventoryView<'_, '_, '_> {
             .any(|item| item.properties.id == item_id && item.quantity.0.get() > 0)
     }
 
+    pub fn item_at_slot(&self, slot: EquipSlot) -> Option<(&str, Option<u64>)> {
+        self.iter().find_map(|item| {
+            (item.slot == Some(&slot)).then_some((
+                item.properties.id.as_str(),
+                item.inventory_item_id.map(|id| id.0),
+            ))
+        })
+    }
+
     fn striking_item(&self) -> Option<ItemQueryItem<'_, '_>> {
         let slot = match self.attack_hand {
             AttackHand::Main => EquipSlot::HoldingRight,
@@ -416,6 +378,48 @@ impl InventoryView<'_, '_, '_> {
                 .filter(|armor| armor.covered_parts[index] && armor.coverage > f32::EPSILON)
                 .map(|armor| armor.material)
         })
+    }
+
+    pub fn armor_layer_chain(&self, part: BodyPart, sample: f32) -> Vec<ArmorLayerContact> {
+        let index = body_part_index(part);
+        let mut layers = self
+            .iter()
+            .filter_map(|item| {
+                let armor = item
+                    .armor
+                    .filter(|armor| armor.covered_parts[index] && armor.coverage > 0.0)?;
+                Some((item, armor))
+            })
+            .collect::<Vec<_>>();
+        layers.sort_by_key(|(_, armor)| std::cmp::Reverse(armor.layer_order));
+        let selected = layers.iter().position(|(_, armor)| {
+            armor.coverage_spans[index]
+                .expect("covered armor part has authored surface geometry")
+                .contains(sample)
+        });
+        layers
+            .into_iter()
+            .enumerate()
+            .map(|(layer_index, (item, armor))| {
+                let geometry = armor.coverage_geometry[index]
+                    .expect("covered armor part retains authored geometry");
+                ArmorLayerContact {
+                    item_id: item.properties.id.clone(),
+                    inventory_item_id: item.inventory_item_id.map(|id| id.0),
+                    material: armor.material,
+                    geometry,
+                    intersected: geometry.span.contains(sample),
+                    selected: selected == Some(layer_index),
+                    surface: adventuresim_core::equipment::ArmorSurface {
+                        inventory_item_id: item.inventory_item_id.map(|id| id.0),
+                        material: Some(armor.material),
+                        resistance: armor.resistance,
+                        padding: armor.padding,
+                        flexibility: armor.flexibility,
+                    },
+                }
+            })
+            .collect()
     }
 
     fn equipped_shield(&self) -> Option<ItemQueryItem<'_, '_>> {
@@ -538,6 +542,42 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
             .unwrap_or(0.0)
     }
 
+    fn weapon_grip_to_tip(&self) -> f32 {
+        self.equipped_weapon()
+            .and_then(|item| item.physical)
+            .map_or_else(|| self.weapon_reach(), |physical| physical.grip_to_tip_m)
+    }
+
+    fn weapon_total_length(&self) -> f32 {
+        self.equipped_weapon()
+            .and_then(|item| item.physical)
+            .map_or_else(
+                || self.weapon_grip_to_tip(),
+                |physical| physical.dimensions_m.y,
+            )
+    }
+
+    fn weapon_striking_head_length(&self) -> f32 {
+        self.equipped_weapon()
+            .and_then(|item| item.physical)
+            .map_or(0.0, |physical| {
+                physical.dimensions_m.x.max(physical.dimensions_m.z)
+            })
+    }
+
+    fn weapon_body_material(&self) -> Option<EquipmentMaterial> {
+        let item_id = self.equipped_weapon()?.properties.id.as_str();
+        adventuresim_core::item_catalog::definition(item_id)
+            .and_then(|definition| definition.equipment.as_ref())
+            .and_then(|equipment| equipment.material)
+    }
+
+    fn weapon_striking_material(&self) -> Option<EquipmentMaterial> {
+        self.equipped_weapon()
+            .and_then(|item| item.weapon)
+            .map(|weapon| weapon.striking_material)
+    }
+
     fn weapon_windup_secs(&self) -> f32 {
         self.melee_timing_for(self.weapon_preferred_melee_style())
             .preparation_secs
@@ -635,6 +675,17 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
 
     fn armor_coverage(&self, part: BodyPart) -> f32 {
         self.layered_armor_for(part).coverage
+    }
+
+    fn armor_surface(
+        &self,
+        part: BodyPart,
+        sample: f32,
+    ) -> Option<adventuresim_core::equipment::ArmorSurface> {
+        self.armor_layer_chain(part, sample)
+            .into_iter()
+            .find(|layer| layer.selected)
+            .map(|layer| layer.surface)
     }
 }
 
@@ -806,6 +857,9 @@ mod tests {
             padding: 30.0,
             flexibility: 0.8,
             covered_parts: [false, false, false, false, true, false, false],
+            coverage_spans: [None; 7],
+            coverage_geometry: [None; 7],
+            layer_order: 0,
         };
         let outer = ArmorItem {
             material: EquipmentMaterial::PolishedSteel,
@@ -816,6 +870,9 @@ mod tests {
             padding: 10.0,
             flexibility: 0.2,
             covered_parts: [false, false, false, false, true, false, false],
+            coverage_spans: [None; 7],
+            coverage_geometry: [None; 7],
+            layer_order: 0,
         };
         let armor = fold_armor_layers(4, [&inner, &outer]);
         assert_eq!(armor.resistance, 120.0);
@@ -836,6 +893,9 @@ mod tests {
             padding: 3.0,
             flexibility: 0.75,
             covered_parts: [true, true, false, false, false, false, false],
+            coverage_spans: [None; 7],
+            coverage_geometry: [None; 7],
+            layer_order: 0,
         };
         assert_eq!(fold_armor_layers(0, [&attached]).resistance, 12.0);
         assert_eq!(fold_armor_layers(1, [&attached]).resistance, 12.0);

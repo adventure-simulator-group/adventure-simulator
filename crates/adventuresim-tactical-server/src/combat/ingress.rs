@@ -1,5 +1,10 @@
 use super::*;
 
+mod attack_start;
+mod work;
+use attack_start::*;
+use work::*;
+
 #[derive(Clone, Copy)]
 struct EntityMeleeLungeRequest {
     attacker: Entity,
@@ -41,24 +46,40 @@ pub(crate) fn apply_defend_intent(
     event: On<DefendIntent>,
     mut cmd: Commands,
     time: Res<Time<()>>,
-    states: Query<&TacticalCombatState>,
+    mut states: Query<&mut TacticalCombatState>,
     mut skeletons: Query<(
         &mut SkeletonState,
         &mut QuickstepPush,
         &CharacterLook,
         Option<&Transform>,
     )>,
+    viewer: TacticalPlayerViewer,
     config: Res<TacticalCombatConfig>,
 ) {
     let Ok(combat_state) = states.get(event.defender) else {
+        cmd.trigger(DefendIntentResolved {
+            defender: event.defender,
+            choice: event.choice,
+            accepted: false,
+        });
         return;
     };
     if combat_state.is_incapacitated() {
+        cmd.trigger(DefendIntentResolved {
+            defender: event.defender,
+            choice: event.choice,
+            accepted: false,
+        });
         return;
     }
 
     let Ok((mut skeleton, mut quickstep_push, look, transform)) = skeletons.get_mut(event.defender)
     else {
+        cmd.trigger(DefendIntentResolved {
+            defender: event.defender,
+            choice: event.choice,
+            accepted: false,
+        });
         return;
     };
     let accepted = match event.choice {
@@ -72,16 +93,48 @@ pub(crate) fn apply_defend_intent(
             transform.map_or(Vec3::ZERO, |transform| transform.translation),
             &config,
         ),
-        DefendRequest::Roll if !accepts_roll_dodge(&skeleton) => return,
+        DefendRequest::Roll if !accepts_roll_dodge(&skeleton) => false,
         DefendRequest::Roll => true,
     };
     if !accepted {
+        cmd.trigger(DefendIntentResolved {
+            defender: event.defender,
+            choice: event.choice,
+            accepted: false,
+        });
         return;
+    }
+
+    if let Ok(view) = viewer.get(event.defender)
+        && let Ok(mut state) = states.get_mut(event.defender)
+    {
+        let state = &mut *state;
+        let workload = combat_action_workload(
+            CombatActionWork::ExplosiveDodge,
+            config.movement.maneuvers.quickstep_duration_seconds,
+            0.0,
+            0.0,
+            view.inventory_weight(),
+            view.body_weight(),
+            view.raw_single_body_part_attr(SimpleAttribute::Endurance),
+        );
+        apply_combat_workload(
+            &mut state.oxygen_debt_joules,
+            &mut state.local_action_fatigue,
+            workload,
+            view.raw_single_body_part_attr(SimpleAttribute::Endurance),
+        );
     }
 
     cmd.entity(event.defender).insert(PendingDefenderResponse {
         choice: event.choice,
         set_at: CombatInstant::from_elapsed(&time),
+        origin: transform.map_or(Vec3::ZERO, |transform| transform.translation),
+    });
+    cmd.trigger(DefendIntentResolved {
+        defender: event.defender,
+        choice: event.choice,
+        accepted: true,
     });
 }
 
@@ -94,16 +147,26 @@ pub(crate) fn on_melee_attack_started(
     mut commands: Commands,
     mut authorities: Query<&mut MeleeAttackAuthority>,
     mut skeletons: Query<&mut SkeletonState>,
+    mut combat_states: Query<&mut TacticalCombatState>,
     transforms: Query<&Transform>,
     dimensions: Query<&CharacterDimensions>,
     colliders: Query<&Collider>,
     viewer: TacticalPlayerViewer,
     time: Res<Time<()>>,
     config: Res<TacticalCombatConfig>,
+    mut random: ResMut<crate::bot::CombatRandom>,
 ) {
     let Ok(mut skeleton) = skeletons.get_mut(event.attacker) else {
         return;
     };
+    let Ok(attack_view) = viewer.get_for_attack(event.attacker, event.hand) else {
+        return;
+    };
+    if !adventuresim_core::combat::melee_attack_capability(&attack_view, &attack_view)
+        .is_available()
+    {
+        return;
+    }
     let Some(strike_family) = skeleton.available_strike_family(event.strike_family) else {
         return;
     };
@@ -116,21 +179,24 @@ pub(crate) fn on_melee_attack_started(
     let Ok(mut authority) = authorities.get_mut(event.attacker) else {
         return;
     };
-    let (spec, recovery) = viewer
-        .get_for_attack(event.attacker, event.hand)
-        .map(|view| {
-            (
-                configure_attack_curve(spec, &view, &config.presentation.attack_curve),
-                CombatDuration::from_secs_f32(attack_recovery_secs(
-                    &view,
-                    event.strike_family.melee_style(),
-                    spec.continuation,
-                )),
-            )
-        })
-        .unwrap_or((spec, event.windup));
+    let (spec, recovery) = (
+        configure_attack_curve(spec, &attack_view, &config.presentation.attack_curve),
+        CombatDuration::from_secs_f32(attack_recovery_secs(
+            &attack_view,
+            event.strike_family.melee_style(),
+            spec.continuation,
+        )),
+    );
+    let recovery = fatigue_adjusted_attack_recovery(
+        event.attacker,
+        event.hand,
+        recovery,
+        &combat_states,
+        &viewer,
+    );
     let start = animation_tick(&time);
-    let initial_contact = super::contact::initial_melee_contact(&viewer, &event, strike_family);
+    let initial_contact =
+        super::contact::initial_melee_contact(&viewer, &event, strike_family, &mut random);
     let selected_body_part = initial_contact.body_part;
     let weapon_reach = initial_contact.weapon_reach;
     let lunge_delay = event
@@ -161,61 +227,66 @@ pub(crate) fn on_melee_attack_started(
     let (animation_start_tick, contact_tick, recovery_tick) =
         delayed_melee_timing_ticks(sequence_start, event.windup, lunge_delay, recovery);
     let contact_windup = super::contact::windup_duration(contact_tick, start);
+    let scheduled_measure_metres = event
+        .target
+        .zip(selected_body_part)
+        .and_then(|(target, body_part)| {
+            let attacker_transform = transforms.get(event.attacker).ok()?;
+            let attacker_dimensions = dimensions.get(event.attacker).ok()?;
+            let attacker_collider = colliders.get(event.attacker).ok()?;
+            let target_transform = transforms.get(target).ok()?;
+            configured_body_part_surface_distance(
+                melee_attack_origin(
+                    attacker_transform.translation,
+                    attacker_collider,
+                    *attacker_dimensions,
+                ),
+                target_transform,
+                body_part,
+                &config,
+            )
+        })
+        .unwrap_or(weapon_reach);
     if skeleton
         .begin_attack_timed(spec, animation_start_tick, contact_tick, recovery_tick)
         .is_err()
     {
         return;
     }
-    info!(attack_key = start, attacker = ?event.attacker, target = ?event.target, body_part = ?selected_body_part, strike_family = ?event.strike_family, hand = ?event.hand, "melee_attack_started");
-    begin_attack_facing(
-        &mut commands,
+    charge_started_attack_work(
         event.attacker,
-        event.target,
+        event.hand,
+        contact_windup,
+        recovery,
+        &viewer,
+        &mut combat_states,
+    );
+    begin_started_attack_movement(
+        &mut commands,
+        &event,
+        selected_body_part,
+        weapon_reach,
+        start,
+        animation_start_tick,
         contact_tick,
         &transforms,
+        &dimensions,
+        &colliders,
+        &config,
     );
-    if let (Some(target), Some(body_part)) = (event.target, selected_body_part) {
-        begin_melee_lunge(
-            &mut commands,
-            EntityMeleeLungeRequest {
-                attacker: event.attacker,
-                target,
-                body_part,
-                weapon_reach_metres: weapon_reach,
-            },
-            animation_start_tick,
-            &transforms,
-            &dimensions,
-            &colliders,
-            &config,
-        );
-    } else {
-        commands
-            .entity(event.attacker)
-            .remove::<MeleeLungeMovement>();
-        info!(attack_key = start, attacker = ?event.attacker, target = ?event.target, body_part = ?selected_body_part, outcome = "untargeted_no_movement", "melee_lunge_planned");
-    }
-    let now = CombatInstant::from_elapsed(&time);
-    authority.observe(
-        start,
-        event.target,
+    authorize_started_attack(
+        &mut commands,
+        &mut authority,
+        &event,
         selected_body_part,
-        now,
+        initial_contact.sample,
+        initial_contact.defense_alignment_sample,
+        start,
         contact_windup,
-        CombatDuration::from_secs_f32(config.realtime_authority.melee.completion_allowance_seconds),
-        event.reported_precision,
+        scheduled_measure_metres,
+        &time,
+        &config,
     );
-    commands.entity(event.attacker).insert(PendingMeleeContact {
-        attack_key: start,
-        target: event.target,
-        body_part: selected_body_part,
-        contact_sample: initial_contact.sample,
-        resolve_at: now + contact_windup,
-        reported_precision: event.reported_precision,
-        strike_family: event.strike_family,
-        hand: event.hand,
-    });
 }
 
 pub(crate) fn resolve_pending_melee_contacts(
@@ -242,6 +313,7 @@ pub(crate) fn resolve_pending_melee_contacts(
             target,
             body_part,
             contact_sample: contact.contact_sample,
+            defense_alignment_sample: contact.defense_alignment_sample,
             reported_precision: contact.reported_precision,
             strike_family: contact.strike_family,
             hand: contact.hand,
@@ -630,6 +702,7 @@ mod roll_tests {
                 target_side: Some(TacticalCombatSide::Enemy),
                 attacker_incapacitated: Some(false),
                 target_incapacitated: Some(false),
+                attack_capability: MeleeAttackCapability::Available,
                 reported_precision: event.reported_precision,
                 arm_reach: dimensions.arm_reach_metres,
                 weapon_reach: 0.0,
@@ -695,6 +768,7 @@ mod roll_tests {
                     target: Some(target),
                     body_part: Some(BodyPart::Chest),
                     contact_sample: 0.5,
+                    defense_alignment_sample: 0.5,
                     resolve_at,
                     reported_precision: ReportedPrecision::new(1.0).unwrap(),
                     strike_family: StrikeFamily::Thrust,

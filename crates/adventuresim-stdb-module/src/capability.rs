@@ -15,6 +15,9 @@ use crate::{
     character_strategic_condition, inventory_item,
 };
 
+mod armor;
+use armor::*;
+
 #[derive(Clone, Debug, PartialEq)]
 #[table(accessor = character_capability)]
 pub struct CharacterCapability {
@@ -266,29 +269,18 @@ pub(crate) struct StrategicEquipment {
     ammunition: u32,
     shield: Option<Item>,
     shield_inventory_id: Option<u64>,
+    shield_side: Option<BodySide>,
     armor: [adventuresim_core::equipment::LayeredArmor; 7],
+    armor_inventory_item_ids: [Option<u64>; 7],
+    armor_materials: [Option<adventuresim_core::item_catalog::EquipmentMaterial>; 7],
+    armor_coverage_spans: [Option<adventuresim_core::combat::ArmorCoverageSpan>; 7],
     survival_clothing: adventuresim_core::survival::ClothingExposure,
     inventory_weight: f32,
 }
 
 impl StrategicEquipment {
     pub(crate) fn load(ctx: &ReducerContext, character_id: u64) -> Self {
-        let definition = |inventory_id: Option<u64>| {
-            let id = inventory_id?;
-            let inventory = ctx.db.inventory_item().id().find(id)?;
-            let mut item = ctx.db.item().id().find(&inventory.item_id)?;
-            if let Some(condition) = ctx.db.item_condition().inventory_item_id().find(id) {
-                let damage = condition.bins();
-                item.accuracy = effective_weapon_stat(item.accuracy, damage, item.edge_sensitivity);
-                item.penetration =
-                    effective_weapon_stat(item.penetration, damage, item.edge_sensitivity * 0.6);
-                item.block = effective_weapon_stat(item.block, damage, item.handling_sensitivity);
-                item.range_of_motion =
-                    effective_handling(item.range_of_motion, damage, item.handling_sensitivity);
-                item.resistance = effective_weapon_stat(item.resistance, damage, 0.1);
-            }
-            Some(item)
-        };
+        let definition = |inventory_id| effective_item_definition(ctx, inventory_id);
         let normalized_hand = |location| {
             ctx.db
                 .equipment_occupancy()
@@ -317,18 +309,13 @@ impl StrategicEquipment {
                 BodySide::Right
             }
         });
-        let shield = hands
-            .iter()
-            .flatten()
-            .find(|item| item.kind == PersistedItemKind::Shield)
-            .cloned();
-        let shield_inventory_id = hands
-            .iter()
-            .position(|item| {
-                item.as_ref()
-                    .is_some_and(|item| item.kind == PersistedItemKind::Shield)
-            })
-            .and_then(|index| hand_inventory_ids[index]);
+        let shield_index = hands.iter().position(|item| {
+            item.as_ref()
+                .is_some_and(|item| item.kind == PersistedItemKind::Shield)
+        });
+        let shield = shield_index.and_then(|index| hands[index].clone());
+        let shield_inventory_id = shield_index.and_then(|index| hand_inventory_ids[index]);
+        let shield_side = shield_index.map(hand_side);
         let melee_weapon = hands
             .iter()
             .flatten()
@@ -383,59 +370,23 @@ impl StrategicEquipment {
             .map(|inventory| inventory.quantity)
             .sum();
         let mut armor = [adventuresim_core::equipment::LayeredArmor::default(); 7];
+        let mut armor_inventory_item_ids = [None; 7];
+        let mut armor_materials = [None; 7];
+        let mut armor_coverage_spans = [None; 7];
         let mut survival_layers = Vec::new();
         let mut weatherproofing_total = 0_u32;
         let mut peripheral_protection_bps = [0_u16; 4];
         for part in BodyPart::FULL_BODY.iter() {
-            let pieces: Vec<_> = ctx
-                .db
-                .character_equipped_item()
-                .character_id()
-                .filter(character_id)
-                .filter_map(|equipped| {
-                    let inventory = ctx
-                        .db
-                        .inventory_item()
-                        .id()
-                        .find(equipped.inventory_item_id)?;
-                    let item = definition(Some(inventory.id))?;
-                    let placement = item
-                        .equipment_placements
-                        .iter()
-                        .find(|placement| placement.id == equipped.placement_id)?;
-                    if !placement
-                        .protection
-                        .iter()
-                        .any(|target| runtime_body_part(*target) == part)
-                    {
-                        return None;
-                    }
-                    let (channel, order) = ctx
-                        .db
-                        .equipment_occupancy()
-                        .inventory_item_id()
-                        .filter(inventory.id)
-                        .max_by_key(|row| (row.channel.order(), row.order))
-                        .map_or((EquipmentChannel::Containment, 0), |row| {
-                            (row.channel, row.order)
-                        });
-                    Some(adventuresim_core::equipment::WearableProtection {
-                        inventory_item_id: inventory.id,
-                        body_part: part,
-                        channel,
-                        order,
-                        coverage: item.coverage,
-                        resistance: item.resistance,
-                        padding: item.padding,
-                        flexibility: item.flexibility,
-                        range_of_motion: item.range_of_motion,
-                    })
-                })
-                .collect();
+            let pieces = wearable_protection_for_part(ctx, character_id, part);
             survival_layers.extend(pieces.iter().map(|piece| (piece.padding, piece.coverage)));
             if let Some(piece) =
                 adventuresim_core::equipment::outermost_wearable(part, pieces.iter().copied())
             {
+                let part_index = body_part_index(part);
+                armor_inventory_item_ids[part_index] = Some(piece.inventory_item_id);
+                armor_materials[part_index] = armor_material(ctx, piece.inventory_item_id);
+                armor_coverage_spans[part_index] =
+                    armor_coverage_span(ctx, piece.inventory_item_id, part, piece.coverage);
                 let protection = adventuresim_core::survival::weatherproofing_from_outer_layer(
                     piece.resistance,
                     piece.coverage,
@@ -502,7 +453,11 @@ impl StrategicEquipment {
             ammunition,
             shield,
             shield_inventory_id,
+            shield_side,
             armor,
+            armor_inventory_item_ids,
+            armor_materials,
+            armor_coverage_spans,
             survival_clothing: adventuresim_core::survival::ClothingExposure {
                 insulation_bps: adventuresim_core::survival::insulation_from_layers(
                     survival_layers,
@@ -548,11 +503,15 @@ impl StrategicEquipment {
         for part in BodyPart::FULL_BODY.iter() {
             let item = self.armor_for(part);
             armor[body_part_index(part)] = CombatArmor {
+                inventory_item_id: self.armor_inventory_item_ids[body_part_index(part)],
+                material: self.armor_materials[body_part_index(part)],
                 resistance: item.resistance,
                 padding: item.padding,
                 flexibility: item.flexibility,
                 range_of_motion: item.range_of_motion,
                 coverage: item.coverage,
+                coverage_span: self.armor_coverage_spans[body_part_index(part)],
+                coverage_geometry: None,
             };
         }
         CombatEquipment {
@@ -574,6 +533,7 @@ impl StrategicEquipment {
             melee_holding_side: self.melee_weapon_side.unwrap_or(BodySide::Right),
             ranged_holding_side: self.ranged_weapon_side.unwrap_or(BodySide::Right),
             shield_block_bonus: self.shield.as_ref().map_or(0.0, |item| item.block),
+            shield_side: self.shield_side,
             armor,
             inventory_weight: self.inventory_weight,
         }
@@ -614,6 +574,7 @@ fn combat_weapon(item: &Item) -> CombatWeapon {
         stab_precision: item.stab_precision,
         preferred_melee_style: item.preferred_melee_style,
         weight: item.weight,
+        moment_of_inertia_kg_m2: item.moment_of_inertia_kg_m2,
         penetration: item.penetration,
         melee_reach: if item.melee { item.reach } else { 0.0 },
         ranged_range: if item.ranged { item.reach } else { 0.0 },

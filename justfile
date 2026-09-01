@@ -517,6 +517,11 @@ tactical-client:
 tactical-brp-smoke-test server_brp_port="15702" client_brp_port="15703":
     @{{ python_bin }} scripts/tactical_brp.py smoke-test --server-brp-port {{ server_brp_port }} --client-brp-port {{ client_brp_port }}
 
+# Run accelerated deterministic in-process tactical-server NPC duels and
+# seeded strategic autoresolve comparisons without network or wall-clock pacing.
+melee-combat-iteration output="target/melee-combat-iteration" tactical_seeds="32" autoresolve_seeds="1000":
+    @cargo run --release --package adventuresim-tactical-server --features iteration --bin melee-combat-iteration -- --output {{ quote(output) }} --tactical-seeds {{ tactical_seeds }} --autoresolve-seeds {{ autoresolve_seeds }}
+
 # Regenerates scripts/adventuresim_brp_lib.py: every BRP-queryable
 # (`ReflectComponent`/`ReflectResource`) type linked into the tactical
 # server/client, discovered dynamically from the real type registry (see

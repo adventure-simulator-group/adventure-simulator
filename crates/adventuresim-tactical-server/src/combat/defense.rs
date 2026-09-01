@@ -43,7 +43,7 @@ fn passive_block_response(
     has_blocking_item: bool,
 ) -> DefenderResponse {
     if guard == WeaponGuardState::Raised && action == SkeletonAction::None && has_blocking_item {
-        DefenderResponse::Block
+        DefenderResponse::Block { effectiveness: 1.0 }
     } else {
         DefenderResponse::None
     }
@@ -58,7 +58,9 @@ pub(super) fn resolve_melee_defender_response(
     time: &Time<()>,
     defender_view: &TacticalPlayerView,
     defender_skeleton: &SkeletonState,
-    defender_attack: Option<&MeleeAttackAuthority>,
+    defender_attack: Option<&mut MeleeAttackAuthority>,
+    defender_incapacitation: f32,
+    defender_fatigue_performance: f32,
     attacker: Entity,
     incoming_started_at: CombatInstant,
     config: &DefenseAuthorityConfig,
@@ -70,18 +72,40 @@ pub(super) fn resolve_melee_defender_response(
         !defender_view.weapon_is_unarmed() || defender_view.shield_block_bonus() > 0.0;
     if can_intercept
         && defender_skeleton.action_kind() == SkeletonAction::Attack
-        && let Some((input_reflex, precision)) = defender_attack.and_then(|authority| {
-            authority.reciprocal_parry(
-                attacker,
-                incoming_started_at,
-                CombatDuration::from_secs_f32(config.reflex_window_seconds),
-            )
-        })
+        && let Some(authority) = defender_attack
+        && let Some(opportunity) = authority.reciprocal_attack_opportunity(
+            attacker,
+            incoming_started_at,
+            CombatInstant::from_elapsed(time),
+            CombatDuration::from_secs_f32(config.reflex_window_seconds),
+        )
     {
-        return DefenderResponse::Parry {
-            input_reflex,
-            precision: precision.get(),
-        };
+        if defender_view.shield_block_bonus() <= 0.0 {
+            let handling = effective_weapon_handling_skill(defender_view);
+            let instinct = defender_view.raw_single_body_part_attr(SimpleAttribute::Instinct);
+            let committed = choose_committed_threat_response(CommittedThreatFacts {
+                own_contact_after_incoming_seconds: opportunity.own_contact_after_incoming_seconds,
+                own_windup_seconds: opportunity.own_windup_seconds,
+                expected_intercept_engagement: (opportunity.input_reflex
+                    * ((handling + instinct) / 10.0).clamp(0.0, 1.0)
+                    * defender_fatigue_performance)
+                    .clamp(0.0, 1.0),
+                incapacitation: defender_incapacitation,
+                weapon_moment_of_inertia_kg_m2: defender_view.weapon_moment_of_inertia(),
+                weapon_recovery_seconds: defender_view.weapon_recovery_secs(),
+                consecutive_intercepts: opportunity.consecutive_intercepts,
+                decision_sample: opportunity.decision_sample,
+            });
+            if committed.choice == CommittedThreatChoice::FinishTrade {
+                authority.preserve_attack_for_trade();
+                return DefenderResponse::None;
+            }
+        }
+        return reciprocal_intercept_response(
+            opportunity.input_reflex,
+            opportunity.precision.get(),
+            defender_view.shield_block_bonus(),
+        );
     }
     resolve_passive_block(pending, time, defender_view, defender_skeleton, config)
 }
@@ -98,7 +122,7 @@ mod tests {
     fn raised_item_blocks_only_during_neutral_action_state() {
         assert_eq!(
             passive_block_response(WeaponGuardState::Raised, SkeletonAction::None, true),
-            DefenderResponse::Block
+            DefenderResponse::Block { effectiveness: 1.0 }
         );
         for (guard, action, has_blocking_item) in [
             (WeaponGuardState::Lowered, SkeletonAction::None, true),
@@ -111,5 +135,17 @@ mod tests {
                 DefenderResponse::None
             );
         }
+    }
+
+    #[test]
+    fn offhand_shield_is_preferred_over_committed_sword_for_reciprocal_intercept() {
+        assert!(matches!(
+            reciprocal_intercept_response(0.8, 0.9, 1.5),
+            DefenderResponse::Block { effectiveness } if effectiveness > 0.65
+        ));
+        assert!(matches!(
+            reciprocal_intercept_response(0.8, 0.9, 0.0),
+            DefenderResponse::Parry { .. }
+        ));
     }
 }

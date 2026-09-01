@@ -152,13 +152,17 @@ pub(crate) fn check_terminal_combat_outcome(
     conn: Option<Res<SpacetimeDb>>,
     consequences: Res<TacticalConsequenceAccumulator>,
     mut state: ResMut<MissionState>,
-    enemies: Query<&TacticalCombatState, (With<MissionEnemy>, With<Player>)>,
+    enemies: Query<
+        (&TacticalCombatState, Option<&crate::bot::CombatantYielded>),
+        (With<MissionEnemy>, With<Player>),
+    >,
     combatants: Query<
         (
             Entity,
             &TacticalCombatSide,
             &TacticalCombatState,
             &CharacterId,
+            Option<&crate::bot::CombatantYielded>,
         ),
         With<Player>,
     >,
@@ -172,7 +176,7 @@ pub(crate) fn check_terminal_combat_outcome(
     }
     let mut loaded_party = 0;
     let mut incapacitated_party = 0;
-    for (entity, side, combat_state, player_id) in &combatants {
+    for (entity, side, combat_state, player_id, yielded) in &combatants {
         if *side == TacticalCombatSide::Party {
             if state.observe_loaded_party_member(*player_id) == AdmissionResult::RejectedAfterSeal {
                 error!(
@@ -183,7 +187,7 @@ pub(crate) fn check_terminal_combat_outcome(
                 continue;
             }
             loaded_party += 1;
-            incapacitated_party += u32::from(combat_state.is_incapacitated());
+            incapacitated_party += u32::from(combat_state.is_incapacitated() || yielded.is_some());
         }
     }
     let has_loading_player = !loading_players.is_empty();
@@ -217,7 +221,7 @@ pub(crate) fn check_terminal_combat_outcome(
         loaded_enemies: enemies.iter().count() as u32,
         incapacitated_enemies: enemies
             .iter()
-            .filter(|combat_state| combat_state.is_incapacitated())
+            .filter(|(combat_state, yielded)| combat_state.is_incapacitated() || yielded.is_some())
             .count() as u32,
         loaded_party,
         incapacitated_party,

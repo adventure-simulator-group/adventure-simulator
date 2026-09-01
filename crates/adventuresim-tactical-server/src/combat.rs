@@ -10,7 +10,13 @@ mod ragdoll;
 mod ranged;
 
 use adventuresim_core::{
-    inventory_measurement::ItemQuantity as CoreItemQuantity, item_references::ARROW_ID,
+    combat::{
+        CommittedThreatChoice, CommittedThreatFacts, MeleeAttackCapability, MeleeContactAtTime,
+        MeleeContactAtTimeFacts, choose_committed_threat_response, reciprocal_intercept_response,
+        resolve_melee_contact_at_time, resolve_weapon_defense_alignment, shield_aligned_response,
+    },
+    inventory_measurement::ItemQuantity as CoreItemQuantity,
+    item_references::ARROW_ID,
 };
 use adventuresim_tactical_core::inventory::InventoryViewer;
 pub(crate) use adventuresim_tactical_core::player::TacticalCombatSide;
@@ -51,8 +57,8 @@ use ingress::{
 pub(crate) use ingress::{on_melee_attack_started, resolve_pending_melee_contacts};
 use melee::resolve_melee_attack;
 pub(crate) use protocol::{
-    DefendIntent, MeleeAttackIntent, MeleeAttackStartedIntent, PendingDefenderResponse,
-    PendingMeleeContact, RangedAttackIntent, RangedAttackStartedIntent,
+    DefendIntent, DefendIntentResolved, MeleeAttackIntent, MeleeAttackStartedIntent,
+    PendingDefenderResponse, PendingMeleeContact, RangedAttackIntent, RangedAttackStartedIntent,
 };
 use ragdoll::update_authoritative_ragdoll_lifecycle;
 use ranged::resolve_ranged_attack;
@@ -109,18 +115,12 @@ fn authoritative_impact_effects(
     inventory: &InventoryViewer<'_, '_>,
     attacker: Entity,
     attack_hand: AttackHand,
-    target: Entity,
-    body_part: BodyPart,
     result: AttackResult,
 ) -> ImpactEffects {
     let striking_material = inventory
         .get_for_attack(attacker, attack_hand)
         .striking_material();
     let metal_weapon = striking_material.is_some_and(|material| material.is_metal());
-    let metal_armor = inventory
-        .get(target)
-        .armor_materials_for(body_part)
-        .any(|material| material.is_metal());
     let sound = match result {
         AttackResult::ToAttacker {
             physical_contact: false,
@@ -129,9 +129,16 @@ fn authoritative_impact_effects(
         AttackResult::ToAttacker { .. } if metal_weapon => ImpactSound::Metal,
         AttackResult::ToAttacker { .. } => ImpactSound::NonMetalWeapon,
         AttackResult::ToDefender {
-            armor_contact: true,
+            armor_impact: Some(impact),
             ..
-        } if metal_weapon && metal_armor => ImpactSound::Metal,
+        } if metal_weapon
+            && impact
+                .surface
+                .material
+                .is_some_and(|material| material.is_metal()) =>
+        {
+            ImpactSound::Metal
+        }
         AttackResult::ToDefender { .. } if striking_material.is_some() && !metal_weapon => {
             ImpactSound::NonMetalWeapon
         }
@@ -141,20 +148,14 @@ fn authoritative_impact_effects(
         AttackResult::ToDefender { .. } => ImpactSound::BluntFlesh,
     };
     ImpactEffects {
-        metal_sparks: matches!(
-            result,
-            AttackResult::ToDefender {
-                armor_contact: true,
-                ..
-            }
-        ) && inventory
-            .get_for_attack(attacker, attack_hand)
-            .striking_material()
-            .is_some_and(|material| material.is_metal())
-            && inventory
-                .get(target)
-                .armor_materials_for(body_part)
-                .any(|material| material.is_metal()),
+        metal_sparks: metal_weapon
+            && matches!(
+                result,
+                AttackResult::ToDefender {
+                    armor_impact: Some(impact),
+                    ..
+                } if impact.surface.material.is_some_and(|material| material.is_metal())
+            ),
         blood: matches!(result, AttackResult::ToDefender { cut_damage, .. } if cut_damage > f32::EPSILON),
         sound,
     }
@@ -194,15 +195,16 @@ fn defender_blocking_slot(
     shield_side: Option<BodySide>,
     weapon_side: Option<BodySide>,
 ) -> Option<EquipSlot> {
-    response
-        .is_weapon_contact()
-        .then_some(shield_side.or(weapon_side))
-        .flatten()
-        .and_then(|side| match side {
-            BodySide::Left => Some(EquipSlot::HoldingLeft),
-            BodySide::Right => Some(EquipSlot::HoldingRight),
-            BodySide::Both => None,
-        })
+    let side = match response {
+        DefenderResponse::Block { .. } => shield_side.or(weapon_side),
+        DefenderResponse::Parry { .. } => weapon_side,
+        DefenderResponse::None | DefenderResponse::Dodge { .. } => None,
+    };
+    side.and_then(|side| match side {
+        BodySide::Left => Some(EquipSlot::HoldingLeft),
+        BodySide::Right => Some(EquipSlot::HoldingRight),
+        BodySide::Both => None,
+    })
 }
 
 fn weapon_slot_for_side(side: Option<BodySide>) -> Option<EquipSlot> {
@@ -246,21 +248,137 @@ pub(crate) struct TacticalConsequenceAccumulator {
     pub equipment_contacts: Vec<AccumulatedEquipmentContact>,
 }
 
+/// Server-only persistent wound state. It remains transient tactical state
+/// and is deliberately not part of the strategic database projection.
+#[derive(Component, Clone, Debug, Default)]
+pub(crate) struct TacticalWounds(pub(crate) Vec<CombatWound>);
+
+pub(crate) fn combat_projection_state() -> (TacticalWounds, EquipmentActionState) {
+    (TacticalWounds::default(), EquipmentActionState::default())
+}
+
 fn remaining_ammo_after_shot(quantity: CoreItemQuantity) -> Option<CoreItemQuantity> {
     CoreItemQuantity::new(quantity.get() - 1)
 }
 
 #[derive(Event, Clone, Copy, Debug)]
-struct ApplyMeleeAttackResult {
-    attacker: Entity,
-    target: Entity,
-    body_part: BodyPart,
-    result: AttackResult,
-    attacker_weapon_slot: EquipSlot,
-    defender_blocking_slot: Option<EquipSlot>,
-    attacker_weapon_contact: bool,
-    impact_recipient: Entity,
-    impact_velocity_change: Vec3,
+pub(crate) struct ApplyMeleeAttackResult {
+    pub(crate) attacker: Entity,
+    pub(crate) target: Entity,
+    pub(crate) body_part: BodyPart,
+    pub(crate) anatomical_subregion: AnatomicalSubregion,
+    pub(crate) surface_coordinate: f32,
+    pub(crate) result: AttackResult,
+    pub(crate) defender_response: DefenderResponse,
+    pub(crate) defense_success_probability: Option<f32>,
+    pub(crate) defense_alignment_sample: Option<f32>,
+    pub(crate) defense_engagement: Option<f32>,
+    pub(crate) attacker_weapon_slot: EquipSlot,
+    pub(crate) defender_blocking_slot: Option<EquipSlot>,
+    pub(crate) attacker_weapon_contact: bool,
+    pub(crate) impact_recipient: Entity,
+    pub(crate) impact_velocity_change: Vec3,
+    pub(crate) closest_approach_metres: Option<f32>,
+    pub(crate) redirected_from: Option<BodyPart>,
+    pub(crate) contact_at_time: MeleeContactAtTime,
+}
+
+/// Post-consequence observation seam for diagnostics and deterministic
+/// headless iteration. It is emitted only after authoritative transient state
+/// has consumed the resolved contact.
+#[derive(Event, Clone, Copy, Debug)]
+pub struct MeleeAttackResolved {
+    pub attacker: Entity,
+    pub target: Entity,
+    pub body_part: BodyPart,
+    pub anatomical_subregion: AnatomicalSubregion,
+    pub surface_coordinate: f32,
+    pub result: AttackResult,
+    pub defender_response: DefenderResponse,
+    pub defense_success_probability: Option<f32>,
+    pub defense_alignment_sample: Option<f32>,
+    pub defense_engagement: Option<f32>,
+    pub closest_approach_metres: Option<f32>,
+    pub redirected_from: Option<BodyPart>,
+    pub defender_blocking_slot: Option<EquipSlot>,
+    pub contact_at_time: MeleeContactAtTime,
+}
+
+#[derive(Event, Clone, Copy, Debug)]
+pub(crate) struct MeleeAttackCommittedToDefense {
+    pub(crate) defender: Entity,
+    pub(crate) incoming_attacker: Entity,
+    pub(crate) canceled_attack_key: u64,
+    pub(crate) response: DefenderResponse,
+    pub(crate) engagement: f32,
+}
+
+#[derive(Event, Clone, Copy, Debug)]
+pub(crate) struct MeleeAttackTransformedByDefense {
+    pub(crate) defender: Entity,
+    pub(crate) incoming_attacker: Entity,
+    pub(crate) attack_key: u64,
+    pub(crate) retained_power: f32,
+    pub(crate) response: DefenderResponse,
+    pub(crate) engagement: f32,
+}
+
+#[cfg(feature = "iteration")]
+fn trace_defend_intent_resolution(event: On<DefendIntentResolved>) {
+    trace!(
+        defender = ?event.defender,
+        choice = ?event.choice,
+        accepted = event.accepted,
+        "defend_intent_resolved"
+    );
+}
+
+#[cfg(feature = "iteration")]
+fn trace_melee_attack_resolution(event: On<MeleeAttackResolved>) {
+    trace!(
+        attacker = ?event.attacker,
+        target = ?event.target,
+        body_part = ?event.body_part,
+        anatomical_subregion = ?event.anatomical_subregion,
+        result = ?event.result,
+        defender_response = ?event.defender_response,
+        closest_approach_metres = ?event.closest_approach_metres,
+        redirected_from = ?event.redirected_from,
+        defender_blocking_slot = ?event.defender_blocking_slot,
+        scheduled_measure_metres = event.contact_at_time.scheduled_measure_metres,
+        actual_measure_metres = event.contact_at_time.actual_measure_metres,
+        contact_classification = ?event.contact_at_time.classification,
+        lever_arm_metres = event.contact_at_time.lever_arm_metres,
+        contact_energy_fraction = event.contact_at_time.energy_fraction,
+        invalidation_cause = ?event.contact_at_time.invalidation_cause,
+        contact_material = ?event.contact_at_time.contact_material,
+        "melee_attack_resolved"
+    );
+}
+
+#[cfg(feature = "iteration")]
+fn trace_attack_committed_to_defense(event: On<MeleeAttackCommittedToDefense>) {
+    trace!(
+        defender = ?event.defender,
+        incoming_attacker = ?event.incoming_attacker,
+        canceled_attack_key = event.canceled_attack_key,
+        response = ?event.response,
+        engagement = event.engagement,
+        "melee_attack_committed_to_defense"
+    );
+}
+
+#[cfg(feature = "iteration")]
+fn trace_attack_transformed_by_defense(event: On<MeleeAttackTransformedByDefense>) {
+    trace!(
+        defender = ?event.defender,
+        incoming_attacker = ?event.incoming_attacker,
+        attack_key = event.attack_key,
+        retained_power = event.retained_power,
+        response = ?event.response,
+        engagement = event.engagement,
+        "melee_attack_transformed_by_defense"
+    );
 }
 
 /// Contact energy describes the local collision, not whole-body kinetic
@@ -364,6 +482,7 @@ enum MeleeIntentRejection {
     MissingCombatState,
     FriendlyTarget,
     Incapacitated,
+    DisabledWeaponArm,
     Unarmed,
     OutOfRange,
     Windup,
@@ -378,6 +497,7 @@ struct MeleeIntentFacts {
     target_side: Option<TacticalCombatSide>,
     attacker_incapacitated: Option<bool>,
     target_incapacitated: Option<bool>,
+    attack_capability: MeleeAttackCapability,
     reported_precision: ReportedPrecision,
     arm_reach: f32,
     weapon_reach: f32,
@@ -408,6 +528,7 @@ impl Plugin for CombatPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<TacticalConsequenceAccumulator>()
             .init_resource::<TacticalCombatConfig>()
+            .init_resource::<crate::bot::CombatRandom>()
             .add_observer(on_melee_action_request)
             .add_observer(on_ranged_action_request)
             .add_observer(on_ranged_attack_started)
@@ -428,6 +549,11 @@ impl Plugin for CombatPlugin {
                     resolve_pending_melee_contacts.after(CombatSet::Condition),
                 ),
             );
+        #[cfg(feature = "iteration")]
+        app.add_observer(trace_defend_intent_resolution)
+            .add_observer(trace_melee_attack_resolution)
+            .add_observer(trace_attack_committed_to_defense)
+            .add_observer(trace_attack_transformed_by_defense);
     }
 }
 
@@ -448,6 +574,7 @@ mod tests {
             target_side: Some(TacticalCombatSide::Enemy),
             attacker_incapacitated: Some(false),
             target_incapacitated: Some(false),
+            attack_capability: MeleeAttackCapability::Available,
             reported_precision: ReportedPrecision::new(1.0).unwrap(),
             arm_reach: 0.55,
             weapon_reach: 0.8,
@@ -549,6 +676,15 @@ mod tests {
                     ..valid
                 },
                 MeleeIntentRejection::Incapacitated,
+            ),
+            (
+                MeleeIntentFacts {
+                    attack_capability: MeleeAttackCapability::DisabledWeaponArm {
+                        arm: BodyPart::RightArm,
+                    },
+                    ..valid
+                },
+                MeleeIntentRejection::DisabledWeaponArm,
             ),
             (
                 MeleeIntentFacts {
@@ -721,21 +857,28 @@ mod tests {
             chest: 0.2,
             ..default()
         };
+        let mut wounds = Vec::new();
         let applied = apply_transient_attack_result(
             &mut attacker,
             &mut limbs,
             &mut defender,
+            &mut wounds,
             AttackResult::ToDefender {
                 cut_damage: 100.0,
                 blunt_damage: 0.0,
                 balance_damage: 0.4,
                 contact_force: 100.0,
-                armor_contact: false,
+                armor_impact: None,
             },
             BodyPart::Chest,
         );
         assert_eq!(applied, Some((0.2, 0.0)), "receipt excludes raw overkill");
         assert_eq!(limbs.chest, 0.0);
+        assert_eq!(defender.blood_loss_fraction, 0.0);
+        assert_eq!(wounds.len(), 1);
+        assert_eq!(wounds[0].kind, CombatWoundKind::Open);
+        defender.blood_loss_fraction =
+            advance_combat_bleeding(defender.blood_loss_fraction, &wounds, 60.0);
         assert!((defender.blood_loss_fraction - 0.1).abs() < 0.0001);
         assert!((defender.imbalance - 0.4).abs() < 0.0001);
 
@@ -743,6 +886,7 @@ mod tests {
             &mut attacker,
             &mut limbs,
             &mut defender,
+            &mut wounds,
             AttackResult::ToAttacker {
                 balance_damage: 0.25,
                 contact_force: 0.0,
@@ -770,7 +914,7 @@ mod tests {
         assert!((consequence.injuries[0].cut_damage - 0.3).abs() < 0.0001);
         assert!((consequence.injuries[0].blunt_damage - 0.2).abs() < 0.0001);
         assert!((consequence.injuries[0].max_single_hit_blunt_damage - 0.002).abs() < 0.0001);
-        assert!((consequence.blood_loss_fraction - 0.1515).abs() < 0.0001);
+        assert_eq!(consequence.blood_loss_fraction, 0.0);
     }
 
     #[test]
@@ -872,7 +1016,7 @@ mod tests {
     }
 
     #[test]
-    fn jog_holds_exhaustion_sprint_adds_it_and_rest_recovers_it() {
+    fn jog_holds_oxygen_debt_sprint_adds_it_and_rest_recovers_it() {
         let mut app = App::new();
         app.insert_resource(Time::<()>::default())
             .add_systems(Update, update_tactical_combat_state);
@@ -889,7 +1033,8 @@ mod tests {
                     ..default()
                 }),
                 TacticalCombatState {
-                    exhaustion: 0.25,
+                    oxygen_debt_joules: 20_000.0,
+                    local_action_fatigue: 0.25,
                     ..default()
                 },
                 input::AccumulatedInput { ..default() },
@@ -904,13 +1049,13 @@ mod tests {
             .resource_mut::<Time<()>>()
             .advance_by(Duration::from_secs(1));
         app.update();
-        let jog_exhaustion = app
+        let jog_oxygen_debt = app
             .world()
             .entity(actor)
             .get::<TacticalCombatState>()
             .unwrap()
-            .exhaustion;
-        assert!((jog_exhaustion - 0.25).abs() < f32::EPSILON);
+            .oxygen_debt_joules;
+        assert!((jog_oxygen_debt - 20_000.0).abs() < f32::EPSILON);
 
         *app.world_mut()
             .entity_mut(actor)
@@ -920,13 +1065,13 @@ mod tests {
             .resource_mut::<Time<()>>()
             .advance_by(Duration::from_secs(1));
         app.update();
-        let sprint_exhaustion = app
+        let sprint_oxygen_debt = app
             .world()
             .entity(actor)
             .get::<TacticalCombatState>()
             .unwrap()
-            .exhaustion;
-        assert!(sprint_exhaustion > jog_exhaustion);
+            .oxygen_debt_joules;
+        assert!(sprint_oxygen_debt > jog_oxygen_debt);
 
         app.world_mut()
             .entity_mut(actor)
@@ -937,13 +1082,13 @@ mod tests {
             .resource_mut::<Time<()>>()
             .advance_by(Duration::from_secs(1));
         app.update();
-        let resting_exhaustion = app
+        let resting_oxygen_debt = app
             .world()
             .entity(actor)
             .get::<TacticalCombatState>()
             .unwrap()
-            .exhaustion;
-        assert!(resting_exhaustion < sprint_exhaustion);
+            .oxygen_debt_joules;
+        assert!(resting_oxygen_debt < sprint_oxygen_debt);
     }
 
     #[test]
@@ -953,7 +1098,7 @@ mod tests {
             blunt_damage: 1.0,
             balance_damage: 0.0,
             contact_force: 140.0,
-            armor_contact: false,
+            armor_impact: None,
         };
         let (hits_attacker, velocity_change) = hit_velocity_change(
             result,
@@ -990,7 +1135,7 @@ mod tests {
             blunt_damage: 0.1,
             balance_damage: 0.4,
             contact_force: 49.4667,
-            armor_contact: false,
+            armor_impact: None,
         };
         let (_, velocity_change) = hit_velocity_change(
             result,
