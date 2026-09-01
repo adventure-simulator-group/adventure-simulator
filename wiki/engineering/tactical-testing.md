@@ -34,10 +34,11 @@ just melee-combat-iteration \
 The root `summary.json` compares tactical and autoresolve win rates, timeouts,
 throughput, and causal counts. `acceptance-audit.json` rejects broken invariants
 such as lost simultaneous contacts, ghost contacts from canceled attacks,
-impossible movement, energy creation, or a polearm retaining full head energy
-inside its striking band. Each matchup directory contains every tactical and
-autoresolve trace as newline-delimited JSON, representative pretty-printed
-traces, its aggregate summary, and a `reviewer-packet.json`.
+impossible movement, energy creation, disagreement with the shared hit
+equation, or a polearm retaining full head energy inside its striking band.
+Each matchup directory contains every tactical and autoresolve trace as
+newline-delimited JSON, representative pretty-printed traces, its aggregate
+summary, and a `reviewer-packet.json`.
 
 The reviewer packet explains the physically based balance goal, the practical
 zero-to-five attribute and skill scale, and each combatant's ordinary equipment

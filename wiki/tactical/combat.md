@@ -63,9 +63,10 @@ the nearest opposing combatant, breaking exact distance ties by stable Bevy
 entity identity. It faces that target and moves through the normal character
 controller. Short weapons close to their useful measure. A long weapon instead
 seeks the center of its authored striking head: its wielder advances when the
-enemy is beyond that measure and retreats when the enemy gets inside it. The AI
-adds a short initiative delay and cadence variation before entering the same
-server-owned windup and recovery used by other attacks.
+enemy is beyond that measure and retreats when the enemy gets inside it,
+including during the committed windup. The AI adds a short initiative delay
+and cadence variation before entering the same server-owned windup and recovery
+used by other attacks.
 
 For a parametric weapon, that measure is not a second, hand-entered description
 of the model. The recipe that builds the mesh also determines the individual
@@ -162,24 +163,32 @@ role.
    offhand shield can preserve that attack at reduced power. A combatant already
    committed to a strike may instead finish the trade when interception would
    discard too much work or arrive too late.
-3. A dodge is actual displacement, not a second evasion score. Leg agility,
-   fatigue, total mass, reaction time, the attacker's remaining tracking, weapon
-   reach, and committed arc determine whether the intended line misses, catches
-   another body part, or still reaches its original target.
-4. Weapon and shield contacts resolve a continuous alignment from attack and
-   defense skill, available reaction time, leverage, fatigue, and a seeded
-   alignment error. Poor alignment can turn an attempted defense into a weak
-   bind or a complete failure. Flanking reduces the defense available against
-   attacks outside the defender's forward attention.
-5. Revalidate the committed weapon path at contact time. A target outside reach
-   or inside the weapon's path is missed. Closing on a polearm can turn its head
-   strike into a wooden haft or butt contact; closing on a sword shortens its
-   lever arm. Rotational contact energy falls with the square of that lever-arm
-   fraction, so neither case preserves full tip energy at clinch distance.
-6. Resolve the surviving attack margin as directness. A marginal hit is a
-   glancing blow; a square hit transfers the available energy. Surplus precision
-   can place the contact in a gap between authored armor regions, but never
-   changes a material surface into an uncovered one after the fact.
+3. Resolve a dodge through the same opposed attack equation. The attacker
+   contributes weapon skill and precision. The defender contributes Dodge
+   skill, reaction timing, working legs, fatigue, carried load, and awareness of
+   the attack's direction. An earlier reaction is stronger, while an exhausted,
+   burdened, injured, or flanked defender is easier to hit.
+4. A quickstep remains real, finite-force movement. It costs exertion and can
+   carry the defender outside absolute reach before contact, but its measured
+   displacement does not become a second hit-or-miss oracle. The equation's
+   answer owns the outcome whenever the target remains in reach.
+5. Weapon and shield responses resolve through the same attack margin together
+   with available reaction time, leverage, fatigue, and a seeded alignment
+   error. Poor alignment can turn an attempted defense into a weak bind or a
+   complete failure. Flanking reduces the defense available against attacks
+   outside the defender's forward attention.
+6. At contact time, revalidate only absolute arm-and-weapon reach and blocked
+   line of sight before using the equation's result. Distance from the weapon's
+   preferred measure continuously reduces accuracy; it does not create an
+   automatic miss inside reach. A close polearm hit can become a wooden haft or
+   butt contact, while a close sword hit uses a shorter lever arm. Rotational
+   contact energy falls with the square of that lever-arm fraction, so neither
+   case preserves full tip energy at clinch distance.
+7. Resolve a nonnegative attack margin as directness. A marginal hit is a
+   glancing blow; a square hit transfers the available energy. A negative margin
+   misses the defender or is caught by the chosen defense. Surplus precision can
+   place the contact in a gap between authored armor regions, but never changes
+   a material surface into an uncovered one after the fact.
 
 ### Ranged attacks
 
