@@ -108,17 +108,14 @@ pub fn melee_attack_value_by_parts(
             let shield_bonus = defender_equip.shield_block_bonus();
             5.0 * (1.0 - (-(shield_bonus + block_skill) / 2.0).exp())
         }
-        DefenderResponse::Dodge { .. } => {
-            let dodge_skill = defender_skills.skill_check_by_parts(
-                Skill::Dodge,
-                defender_attr,
-                defender_body,
-                defender_essentials,
-                defender_equip,
-                LimbWeights::both_legs(),
-            );
-            dodge_skill
-        }
+        DefenderResponse::Dodge { .. } => defender_skills.skill_check_by_parts(
+            Skill::Dodge,
+            defender_attr,
+            defender_body,
+            defender_essentials,
+            defender_equip,
+            LimbWeights::both_legs(),
+        ),
     } * defender_response.factor()
         * (1.0 - flanking).clamp(0.0, 1.0);
     accuracy - defense

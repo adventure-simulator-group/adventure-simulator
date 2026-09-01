@@ -345,17 +345,14 @@ fn defense_by_parts(
             );
             5.0 * (1.0 - (-(equip.shield_block_bonus() + block) / 2.0).exp())
         }
-        DefenderResponse::Dodge { .. } => {
-            let dodge = skills.skill_check_by_parts(
-                Skill::Dodge,
-                attr,
-                body,
-                essentials,
-                equip,
-                LimbWeights::both_legs(),
-            );
-            dodge
-        }
+        DefenderResponse::Dodge { .. } => skills.skill_check_by_parts(
+            Skill::Dodge,
+            attr,
+            body,
+            essentials,
+            equip,
+            LimbWeights::both_legs(),
+        ),
     };
     base * response.factor()
 }
