@@ -9,6 +9,21 @@ const ENCLOSURE_THICKNESS_METRES: f32 = 0.16;
 pub struct RoofSurfaceTriangle {
     pub positions: [Vec3; 3],
     pub normal: Vec3,
+    pub surface: RoofSurface,
+}
+
+/// Architectural side of a tessellated roof solid.
+///
+/// Exact-detail rendering uses this semantic boundary to give the weather skin
+/// and its closed perimeter the authored roof covering while routing the
+/// room-facing slope to interior boarding. Shell LODs deliberately retain a
+/// single material batch and may ignore this classification.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RoofSurface {
+    Weather,
+    Interior,
+    Boundary,
+    Enclosure,
 }
 
 pub fn tessellate_roof_face(face: &RoofFace) -> Vec<RoofSurfaceTriangle> {
@@ -49,10 +64,12 @@ pub fn tessellate_roof_face(face: &RoofFace) -> Vec<RoofSurfaceTriangle> {
         triangles.push(RoofSurfaceTriangle {
             positions: top,
             normal,
+            surface: RoofSurface::Weather,
         });
         triangles.push(RoofSurfaceTriangle {
             positions: [top[2] + offset, top[1] + offset, top[0] + offset],
             normal: -normal,
+            surface: RoofSurface::Interior,
         });
     }
     append_boundary_sides(&mut triangles, &top_edges, offset);
@@ -67,7 +84,7 @@ pub fn tessellate_roof_enclosure(face: &RoofEnclosureFace) -> Vec<RoofSurfaceTri
         .cross(face.polygon[2] - face.polygon[0])
         .normalize_or_zero();
     let offset = -normal * ENCLOSURE_THICKNESS_METRES;
-    let mut triangles = triangulate_fan(&face.polygon, normal);
+    let mut triangles = triangulate_fan(&face.polygon, normal, RoofSurface::Enclosure);
     triangles.extend(triangulate_fan(
         &face
             .polygon
@@ -76,6 +93,7 @@ pub fn tessellate_roof_enclosure(face: &RoofEnclosureFace) -> Vec<RoofSurfaceTri
             .map(|point| *point + offset)
             .collect::<Vec<_>>(),
         -normal,
+        RoofSurface::Enclosure,
     ));
     for index in 0..face.polygon.len() {
         let next = (index + 1) % face.polygon.len();
@@ -87,6 +105,7 @@ pub fn tessellate_roof_enclosure(face: &RoofEnclosureFace) -> Vec<RoofSurfaceTri
                 face.polygon[next] + offset,
                 face.polygon[next],
             ],
+            RoofSurface::Enclosure,
         );
     }
     triangles
@@ -108,12 +127,20 @@ fn append_boundary_sides(
             })
             .count();
         if uses == 0 {
-            append_quad(triangles, [start, start + offset, end + offset, end]);
+            append_quad(
+                triangles,
+                [start, start + offset, end + offset, end],
+                RoofSurface::Boundary,
+            );
         }
     }
 }
 
-fn append_quad(triangles: &mut Vec<RoofSurfaceTriangle>, positions: [Vec3; 4]) {
+fn append_quad(
+    triangles: &mut Vec<RoofSurfaceTriangle>,
+    positions: [Vec3; 4],
+    surface: RoofSurface,
+) {
     let normal = (positions[1] - positions[0])
         .cross(positions[2] - positions[0])
         .normalize_or_zero();
@@ -121,20 +148,30 @@ fn append_quad(triangles: &mut Vec<RoofSurfaceTriangle>, positions: [Vec3; 4]) {
         RoofSurfaceTriangle {
             positions: [positions[0], positions[1], positions[2]],
             normal,
+            surface,
         },
         RoofSurfaceTriangle {
             positions: [positions[0], positions[2], positions[3]],
             normal,
+            surface,
         },
     ]);
 }
 
-fn triangulate_fan(polygon: &[Vec3], normal: Vec3) -> Vec<RoofSurfaceTriangle> {
+fn triangulate_fan(
+    polygon: &[Vec3],
+    normal: Vec3,
+    surface: RoofSurface,
+) -> Vec<RoofSurfaceTriangle> {
     (1..polygon.len().saturating_sub(1))
         .map(|index| {
             let mut positions = [polygon[0], polygon[index], polygon[index + 1]];
             orient_triangle(&mut positions, normal);
-            RoofSurfaceTriangle { positions, normal }
+            RoofSurfaceTriangle {
+                positions,
+                normal,
+                surface,
+            }
         })
         .collect()
 }
@@ -279,6 +316,29 @@ mod tests {
         };
 
         let triangles = tessellate_roof_face(&face);
+        assert!(
+            triangles
+                .iter()
+                .any(|triangle| triangle.surface == RoofSurface::Weather)
+        );
+        assert!(
+            triangles
+                .iter()
+                .any(|triangle| triangle.surface == RoofSurface::Interior)
+        );
+        assert!(
+            triangles
+                .iter()
+                .any(|triangle| triangle.surface == RoofSurface::Boundary)
+        );
+        assert!(triangles.iter().all(|triangle| {
+            match triangle.surface {
+                RoofSurface::Weather => triangle.normal.dot(Vec3::Y) > 0.99,
+                RoofSurface::Interior => triangle.normal.dot(-Vec3::Y) > 0.99,
+                RoofSurface::Boundary => triangle.normal.y.abs() < 0.01,
+                RoofSurface::Enclosure => false,
+            }
+        }));
         let top_area = triangles
             .iter()
             .filter(|triangle| triangle.normal.dot(Vec3::Y) > 0.99)

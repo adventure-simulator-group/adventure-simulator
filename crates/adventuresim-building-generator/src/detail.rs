@@ -10,8 +10,8 @@ use bevy::math::{Quat, Vec2, Vec3};
 
 use crate::{
     BuildingLodMaterial, BuildingPlan, LodMesh, ResolvedSolid, ResolvedSolidShape, RoofMaterial,
-    SolidRole, WallMaterialClass, WallStyle, compile_operable_doors, compile_operable_windows,
-    compile_window_bars, tessellate_roof_enclosure, tessellate_roof_face,
+    RoofSurface, SolidRole, WallMaterialClass, WallStyle, compile_operable_doors,
+    compile_operable_windows, compile_window_bars, tessellate_roof_enclosure, tessellate_roof_face,
 };
 
 /// Physical metres represented by one unit in exact-detail mesh UV space.
@@ -168,6 +168,11 @@ fn material_for_solid_body(
     solid: &ResolvedSolid,
     wall_material: Option<WallMaterialClass>,
 ) -> BuildingLodMaterial {
+    let infill_material = wall_material.unwrap_or(match plan.wall_style {
+        WallStyle::Brick => WallMaterialClass::CivilianMasonry,
+        WallStyle::Stone => WallMaterialClass::FortifiedMasonry,
+        WallStyle::TimberFrame | WallStyle::Plaster => WallMaterialClass::TimberInfill,
+    });
     match solid.role {
         SolidRole::EdgeGuard
         | SolidRole::FrameMember
@@ -208,11 +213,12 @@ fn material_for_solid_body(
         | SolidRole::DefenseRoof
         | SolidRole::RoofEdgeTreatment
         | SolidRole::RoofGutter => BuildingLodMaterial::Roof(RoofMaterial::ClayTile),
-        SolidRole::FrameInfill => BuildingLodMaterial::Wall(match plan.wall_style {
-            WallStyle::Brick => WallMaterialClass::CivilianMasonry,
-            WallStyle::Stone => WallMaterialClass::FortifiedMasonry,
-            WallStyle::TimberFrame | WallStyle::Plaster => WallMaterialClass::TimberInfill,
-        }),
+        SolidRole::FrameInfill => BuildingLodMaterial::Wall(infill_material),
+        SolidRole::OpeningJamb | SolidRole::OpeningHead
+            if wall_material == Some(WallMaterialClass::InternalTimber) =>
+        {
+            BuildingLodMaterial::Timber
+        }
         SolidRole::WallHost
         | SolidRole::OpeningJamb
         | SolidRole::OpeningSill
@@ -228,8 +234,8 @@ fn material_for_solid_body(
 fn append_roofs(detail: &mut BuildingDetail, plan: &BuildingPlan) {
     for roof in &plan.roof_assemblies {
         for face in &roof.faces {
-            let mesh = detail.mesh_mut(BuildingLodMaterial::Roof(face.material));
             for triangle in tessellate_roof_face(face) {
+                let mesh = detail.mesh_mut(roof_surface_material(face.material, triangle.surface));
                 mesh.push_triangle(
                     triangle.positions,
                     triangle.normal,
@@ -240,8 +246,9 @@ fn append_roofs(detail: &mut BuildingDetail, plan: &BuildingPlan) {
             }
         }
         for enclosure in &roof.enclosure_faces {
-            let mesh = detail.mesh_mut(BuildingLodMaterial::Roof(enclosure.material));
             for triangle in tessellate_roof_enclosure(enclosure) {
+                let mesh =
+                    detail.mesh_mut(roof_surface_material(enclosure.material, triangle.surface));
                 mesh.push_triangle(
                     triangle.positions,
                     triangle.normal,
@@ -250,6 +257,15 @@ fn append_roofs(detail: &mut BuildingDetail, plan: &BuildingPlan) {
                     }),
                 );
             }
+        }
+    }
+}
+
+fn roof_surface_material(exterior: RoofMaterial, surface: RoofSurface) -> BuildingLodMaterial {
+    match surface {
+        RoofSurface::Interior => BuildingLodMaterial::InteriorTimber,
+        RoofSurface::Weather | RoofSurface::Boundary | RoofSurface::Enclosure => {
+            BuildingLodMaterial::Roof(exterior)
         }
     }
 }
@@ -415,11 +431,17 @@ fn interior_face_material(
 }
 
 fn wall_surface_uv(wall: &crate::WallAssembly, point: Vec3) -> Vec2 {
-    let horizontal = Vec2::new(point.x, point.z) - wall.frame.origin;
-    Vec2::new(
-        horizontal.dot(wall.frame.tangent),
-        point.y - wall.base_elevation_metres,
-    ) / BUILDING_DETAIL_UV_METRES_PER_UNIT
+    let tangent = canonical_wall_texture_tangent(wall.frame.tangent);
+    Vec2::new(Vec2::new(point.x, point.z).dot(tangent), point.y)
+        / BUILDING_DETAIL_UV_METRES_PER_UNIT
+}
+
+fn canonical_wall_texture_tangent(tangent: Vec2) -> Vec2 {
+    if tangent.x < -f32::EPSILON || (tangent.x.abs() <= f32::EPSILON && tangent.y < 0.0) {
+        -tangent
+    } else {
+        tangent
+    }
 }
 
 type PanelEdgeKey = ([i64; 3], [i64; 3]);
@@ -523,7 +545,7 @@ fn append_timber_panel(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{BuildingArchetype, BuildingProgram, generate};
+    use crate::{BuildingArchetype, BuildingProgram, CELL_SIZE_METRES, Direction, generate};
 
     #[derive(Clone, Copy)]
     struct AuditTriangle {
@@ -662,6 +684,190 @@ mod tests {
                 .iter()
                 .any(|mesh| mesh.material == BuildingLodMaterial::Floor)
         );
+    }
+
+    #[test]
+    fn settlement_internal_timber_partitions_are_framed_connected_and_ceiling_clipped() {
+        let archetypes = [
+            BuildingArchetype::TownHouse,
+            BuildingArchetype::HallHouse,
+            BuildingArchetype::FachwerkCottage,
+            BuildingArchetype::FachwerkMerchantHouse,
+        ];
+        for archetype in archetypes {
+            for seed in [42_u64, 47, 101] {
+                let plan = generate(&BuildingProgram::fixture(archetype, seed)).unwrap();
+                for wall in plan
+                    .wall_assemblies
+                    .iter()
+                    .filter(|wall| wall.material == WallMaterialClass::InternalTimber)
+                {
+                    let solids = wall
+                        .host_solids
+                        .iter()
+                        .map(|id| {
+                            plan.resolved_geometry
+                                .solids
+                                .iter()
+                                .find(|solid| solid.id == *id)
+                                .expect("partition host solid is resolved")
+                        })
+                        .collect::<Vec<_>>();
+                    assert!(
+                        solids.iter().all(|solid| solid.role != SolidRole::WallHost),
+                        "{archetype:?} retained a featureless InternalTimber wall host"
+                    );
+                    assert!(
+                        solids.iter().any(|solid| matches!(
+                            solid.role,
+                            SolidRole::FrameSill
+                                | SolidRole::FramePost
+                                | SolidRole::FramePlate
+                                | SolidRole::FrameRail
+                                | SolidRole::OpeningJamb
+                                | SolidRole::OpeningHead
+                        )),
+                        "{archetype:?} partition has no semantic timber frame"
+                    );
+                    let wall_top = wall.base_elevation_metres + wall.height_metres;
+                    let maximum_solid_top = solids
+                        .iter()
+                        .map(|solid| solid.centre.y + solid.size.y * 0.5)
+                        .fold(f32::NEG_INFINITY, f32::max);
+                    assert!(
+                        (maximum_solid_top - wall_top).abs() <= 0.001,
+                        "{archetype:?} partition top {maximum_solid_top} steps away from ceiling {wall_top}"
+                    );
+
+                    if wall.opening_ids.is_empty() {
+                        assert!(
+                            solids
+                                .iter()
+                                .any(|solid| solid.role == SolidRole::FrameInfill),
+                            "{archetype:?} closed partition has no plaster/daub infill"
+                        );
+                        assert!(
+                            solids
+                                .iter()
+                                .filter(|solid| { solid.role == SolidRole::FrameInfill })
+                                .all(|solid| {
+                                    let depth = if wall.frame.tangent.x.abs() > 0.5 {
+                                        solid.size.z
+                                    } else {
+                                        solid.size.x
+                                    };
+                                    depth < wall.thickness_metres
+                                })
+                        );
+                    } else {
+                        for opening in plan
+                            .opening_assemblies
+                            .iter()
+                            .filter(|opening| opening.host_wall == wall.id)
+                        {
+                            for id in [
+                                opening.jamb_solids[0],
+                                opening.jamb_solids[1],
+                                opening.head_solid,
+                            ] {
+                                let solid = plan
+                                    .resolved_geometry
+                                    .solids
+                                    .iter()
+                                    .find(|solid| solid.id == id)
+                                    .unwrap();
+                                assert_eq!(
+                                    material_for_solid(&plan, solid),
+                                    BuildingLodMaterial::Timber
+                                );
+                            }
+                        }
+                    }
+
+                    let crate::WallSourceId::StoreyWall {
+                        storey_level,
+                        wall_index,
+                    } = wall.source
+                    else {
+                        panic!("settlement partition uses a storey-wall source")
+                    };
+                    let storey = &plan.storeys[usize::from(storey_level)];
+                    let source = storey.walls[wall_index];
+                    let tangent = if source.is_horizontal() {
+                        Vec2::X
+                    } else {
+                        Vec2::Y
+                    };
+                    for sign in [-1.0_f32, 1.0] {
+                        let endpoint = source.centre() + tangent * sign * CELL_SIZE_METRES * 0.5;
+                        let has_post = plan.resolved_geometry.solids.iter().any(|solid| {
+                            solid.role == SolidRole::FramePost
+                                && Vec2::new(solid.centre.x, solid.centre.z).distance(endpoint)
+                                    <= 0.001
+                        });
+                        let has_perpendicular_or_exterior = storey.walls.iter().any(|other| {
+                            let other_tangent = if other.is_horizontal() {
+                                Vec2::X
+                            } else {
+                                Vec2::Y
+                            };
+                            let delta = endpoint - other.centre();
+                            let outward = match other.direction {
+                                Direction::North => Vec2::Y,
+                                Direction::East => Vec2::X,
+                                Direction::South => -Vec2::Y,
+                                Direction::West => -Vec2::X,
+                            };
+                            let on_wall = delta.dot(outward).abs() <= 0.001
+                                && delta.dot(other_tangent).abs() <= CELL_SIZE_METRES * 0.5 + 0.001;
+                            on_wall
+                                && (other.exterior()
+                                    || other.is_horizontal() != source.is_horizontal())
+                        });
+                        let has_opening_jamb = plan.opening_assemblies.iter().any(|opening| {
+                            let delta = endpoint - opening.frame.origin;
+                            delta.dot(opening.frame.outward).abs() <= 0.001
+                                && delta.dot(opening.frame.tangent).abs()
+                                    <= CELL_SIZE_METRES * 0.5 + 0.001
+                        });
+                        assert!(
+                            has_post || has_perpendicular_or_exterior || has_opening_jamb,
+                            "{archetype:?} partition endpoint {endpoint:?} has no structural termination"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn exact_roof_routes_only_room_facing_slopes_to_interior_timber() {
+        let plan = generate(&BuildingProgram::fixture(
+            BuildingArchetype::FachwerkMerchantHouse,
+            42,
+        ))
+        .unwrap();
+        let mut inward_triangles = 0;
+        for face in plan
+            .roof_assemblies
+            .iter()
+            .flat_map(|roof| roof.faces.iter())
+        {
+            for triangle in tessellate_roof_face(face) {
+                let material = roof_surface_material(face.material, triangle.surface);
+                match triangle.surface {
+                    RoofSurface::Interior => {
+                        assert_eq!(material, BuildingLodMaterial::InteriorTimber);
+                        inward_triangles += 1;
+                    }
+                    RoofSurface::Weather | RoofSurface::Boundary => {
+                        assert_eq!(material, BuildingLodMaterial::Roof(face.material));
+                    }
+                    RoofSurface::Enclosure => unreachable!("weather faces are not enclosures"),
+                }
+            }
+        }
+        assert!(inward_triangles > 0);
     }
 
     #[test]
@@ -823,6 +1029,61 @@ mod tests {
                 "interior plaster vertex lost its wall-local UV pairing: {vertex:?}"
             );
         }
+    }
+
+    #[test]
+    fn coplanar_wall_assemblies_share_plaster_tile_phase_at_edges() {
+        let plan = generate(&BuildingProgram::fixture(
+            BuildingArchetype::FachwerkMerchantHouse,
+            42,
+        ))
+        .unwrap();
+        let walls = plan
+            .wall_assemblies
+            .iter()
+            .filter(|wall| wall.material == WallMaterialClass::TimberInfill)
+            .collect::<Vec<_>>();
+        let mut shared_edges = 0;
+        for (index, left) in walls.iter().enumerate() {
+            for right in &walls[index + 1..] {
+                if left.frame.outward.dot(right.frame.outward).abs() < 0.999
+                    || (left.base_elevation_metres - right.base_elevation_metres).abs() > 0.001
+                {
+                    continue;
+                }
+                let left_ends = [
+                    left.frame.origin - left.frame.tangent * left.length_metres * 0.5,
+                    left.frame.origin + left.frame.tangent * left.length_metres * 0.5,
+                ];
+                let right_ends = [
+                    right.frame.origin - right.frame.tangent * right.length_metres * 0.5,
+                    right.frame.origin + right.frame.tangent * right.length_metres * 0.5,
+                ];
+                let Some(shared) = left_ends.into_iter().find(|left_end| {
+                    right_ends
+                        .iter()
+                        .any(|right_end| left_end.distance(*right_end) < 0.001)
+                }) else {
+                    continue;
+                };
+                let point = Vec3::new(shared.x, left.base_elevation_metres + 1.37, shared.y);
+                let left_uv = wall_surface_uv(left, point);
+                let right_uv = wall_surface_uv(right, point);
+                let left_phase = left_uv.map(|component| component.rem_euclid(1.0));
+                let right_phase = right_uv.map(|component| component.rem_euclid(1.0));
+                assert!(
+                    left_phase.abs_diff_eq(right_phase, 0.000_01),
+                    "walls {:?} and {:?} disagree at {point:?}: {left_phase:?} vs {right_phase:?}",
+                    left.id,
+                    right.id
+                );
+                shared_edges += 1;
+            }
+        }
+        assert!(
+            shared_edges >= 4,
+            "only {shared_edges} coplanar shared edges found"
+        );
     }
 
     #[test]

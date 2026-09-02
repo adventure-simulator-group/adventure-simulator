@@ -26,7 +26,9 @@ fn timber_member_audit_polygon(
     let end = project(member.end);
     let axis = (end - start).normalize_or_zero();
     let normal = Vec2::new(-axis.y, axis.x);
-    let half = member.section_metres.max_element() * 0.5;
+    let half = (member.section_metres.max_element() * 0.5
+        - crate::TIMBER_INFILL_EDGE_UNDERLAP_METRES)
+        .max(0.0);
     timber_audit_polygon([
         start - normal * half,
         end - normal * half,
@@ -47,9 +49,11 @@ fn timber_panel_audit_polygon(
     else {
         return None;
     };
+    let expected_depth =
+        (wall.thickness_metres - crate::TIMBER_INFILL_FINISH_SETBACK_METRES).max(0.04);
     if outward.dot(wall.frame.outward) < 0.999
         || depth_metres <= 0.02
-        || depth_metres >= wall.thickness_metres - 0.02
+        || (depth_metres - expected_depth).abs() > 0.002
     {
         return None;
     }

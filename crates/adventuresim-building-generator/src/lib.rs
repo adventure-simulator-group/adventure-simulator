@@ -30,5 +30,7 @@ pub use lod::{
     LodVertex, compile_building_lod,
 };
 pub use model::*;
-pub use roof_tessellation::{RoofSurfaceTriangle, tessellate_roof_enclosure, tessellate_roof_face};
+pub use roof_tessellation::{
+    RoofSurface, RoofSurfaceTriangle, tessellate_roof_enclosure, tessellate_roof_face,
+};
 pub use windows::{WindowBarSpec, WindowSpec, compile_operable_windows, compile_window_bars};

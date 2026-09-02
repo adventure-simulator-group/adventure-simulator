@@ -257,13 +257,13 @@ fn audit_resolved_geometry(plan: &BuildingPlan, issues: &mut Vec<AuditIssue>) {
                                     | SolidRole::FrameFloor
                                     | SolidRole::FrameGableMember
                                     | SolidRole::FrameDormerTrimmer,
-                                SolidRole::WallHost
+                                SolidRole::WallHost | SolidRole::FrameInfill
                                     | SolidRole::OpeningJamb
                                     | SolidRole::OpeningSill
                                     | SolidRole::OpeningHead
                                     | SolidRole::OpeningSpandrel
                             ) | (
-                                SolidRole::WallHost
+                                SolidRole::WallHost | SolidRole::FrameInfill
                                     | SolidRole::OpeningJamb
                                     | SolidRole::OpeningSill
                                     | SolidRole::OpeningHead

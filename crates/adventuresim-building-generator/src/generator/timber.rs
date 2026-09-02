@@ -588,21 +588,6 @@ fn timber_program_kind(archetype: BuildingArchetype) -> Option<crate::TimberFram
     })
 }
 
-fn timber_member_wall_polygon(
-    member: &crate::TimberFrameMember,
-    wall: &crate::WallAssembly,
-) -> Polygon<f32> {
-    let project = |point: Vec3| {
-        Vec2::new(
-            (Vec2::new(point.x, point.z) - wall.frame.origin).dot(wall.frame.tangent),
-            point.y - wall.base_elevation_metres,
-        )
-    };
-    let start = project(member.start);
-    let end = project(member.end);
-    timber_member_end_face_polygon(start, end, member.section_metres.max_element() * 0.5)
-}
-
 #[cfg(test)]
 mod wall_infill_tests {
     use super::*;
@@ -616,6 +601,58 @@ mod wall_infill_tests {
         assert_eq!(coordinates[1], Coord { x: 3.0, y: 1.75 });
         assert_eq!(coordinates[2], Coord { x: 3.0, y: 2.25 });
         assert_eq!(coordinates[3], Coord { x: 1.0, y: 2.25 });
+    }
+
+    #[test]
+    fn infill_cut_leaves_positive_projected_underlap_beneath_timber() {
+        for section in [Vec2::splat(0.13), Vec2::splat(0.15)] {
+            let half_timber = section.max_element() * 0.5;
+            let half_cut = timber_infill_cut_half_width(section);
+            assert!(half_cut < half_timber);
+            assert!((half_timber - half_cut - 0.006).abs() < f32::EPSILON);
+        }
+    }
+
+    #[test]
+    fn generated_infill_finish_is_millimetres_behind_the_timber_plane() {
+        let plan = generate(&BuildingProgram::fixture(
+            BuildingArchetype::FachwerkMerchantHouse,
+            42,
+        ))
+        .unwrap();
+        let mut checked = 0;
+        for wall in plan
+            .wall_assemblies
+            .iter()
+            .filter(|wall| wall.material == crate::WallMaterialClass::TimberInfill)
+        {
+            for solid in plan.resolved_geometry.solids.iter().filter(|solid| {
+                wall.host_solids.contains(&solid.id)
+                    && matches!(solid.shape, crate::ResolvedSolidShape::TimberPanelPrism { .. })
+            }) {
+                let crate::ResolvedSolidShape::TimberPanelPrism {
+                    vertices,
+                    outward,
+                    depth_metres,
+                } = solid.shape
+                else {
+                    unreachable!();
+                };
+                let outer_wall_plane =
+                    wall.frame.origin.dot(outward) + wall.thickness_metres * 0.5;
+                let panel_face =
+                    Vec2::new(vertices[0].x, vertices[0].z).dot(outward) + depth_metres * 0.5;
+                let setback = outer_wall_plane - panel_face;
+                assert!(
+                    (0.005..=0.012).contains(&setback),
+                    "wall {:?} infill setback is {setback} m",
+                    wall.id
+                );
+                assert!(depth_metres >= 0.04 && solid.size.min_element() > 0.0);
+                checked += 1;
+            }
+        }
+        assert!(checked > 20, "expected facade infill panels, got {checked}");
     }
 }
 
@@ -1770,7 +1807,7 @@ fn resolve_timber_frame_assembly(
             residual = residual.difference(&timber_member_wall_polygon(member, wall));
         }
 
-        let panel_depth = (wall.thickness_metres - section.y).max(0.04);
+        let panel_depth = timber_infill_panel_depth(wall);
         // Stage 3 opening-bearing solids retain the structural wall depth, but
         // their exposed face is recessed from the Fachwerk plane. Their exact
         // overlap with the opening's jamb/header members is a typed composite
@@ -1808,7 +1845,7 @@ fn resolve_timber_frame_assembly(
             let contact = ResolvedItemId(
                 (4_u64 << 60) | (u64::from(wall.owner.0) << 32) | 0x0f00_0000 | index as u64,
             );
-            let mid_plane = wall.frame.origin - wall.frame.outward * (section.y * 0.5);
+            let mid_plane = timber_infill_mid_plane(wall);
             let vertices = triangle.map(|point| {
                 let plan = mid_plane + wall.frame.tangent * point.x;
                 Vec3::new(plan.x, wall.base_elevation_metres + point.y, plan.y)

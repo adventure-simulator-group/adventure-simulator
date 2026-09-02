@@ -271,11 +271,47 @@ fn building_mesh(batch: &LodMesh, local_origin: Vec3) -> Mesh {
 
 #[cfg(test)]
 mod tests {
+    use adventuresim_building_generator::LodVertex;
+
     use super::*;
 
     #[test]
     fn shell_lod_has_no_artificial_distance_cutoff() {
         let visibility = building_lod_visibility(BuildingRenderLevel::Lod2);
         assert_eq!(visibility.end_margin, f32::MAX..f32::MAX);
+    }
+
+    #[test]
+    fn interior_plaster_mesh_carries_tangent_space_for_its_bound_normal_map() {
+        let batch = LodMesh {
+            material: BuildingLodMaterial::InteriorPlaster,
+            vertices: vec![
+                LodVertex {
+                    position: Vec3::ZERO,
+                    normal: Vec3::Z,
+                    uv: Vec2::ZERO,
+                },
+                LodVertex {
+                    position: Vec3::X,
+                    normal: Vec3::Z,
+                    uv: Vec2::X,
+                },
+                LodVertex {
+                    position: Vec3::X + Vec3::Y,
+                    normal: Vec3::Z,
+                    uv: Vec2::ONE,
+                },
+                LodVertex {
+                    position: Vec3::Y,
+                    normal: Vec3::Z,
+                    uv: Vec2::Y,
+                },
+            ],
+            indices: vec![0, 1, 2, 0, 2, 3],
+        };
+
+        let mesh = building_mesh(&batch, Vec3::ZERO);
+
+        assert!(mesh.attribute(Mesh::ATTRIBUTE_TANGENT).is_some());
     }
 }
