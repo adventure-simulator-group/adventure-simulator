@@ -3,8 +3,9 @@ use super::*;
 pub const LIME_PLASTER_TEXTURE_SIZE: u32 = 1024;
 pub const LIME_PLASTER_TILE_METRES: f32 = 1.0;
 pub const LIME_PLASTER_HEIGHT_RANGE_METRES: f32 = 0.004;
+pub const LIME_PLASTER_REFERENCE_SRGB: [f32; 3] = [0.745, 0.710, 0.630];
 
-const PLASTER_BASE: Vec3 = Vec3::new(0.745, 0.710, 0.630);
+const PLASTER_BASE: Vec3 = Vec3::from_array(LIME_PLASTER_REFERENCE_SRGB);
 const PLASTER_WARM: Vec3 = Vec3::new(0.790, 0.744, 0.646);
 const PLASTER_COOL: Vec3 = Vec3::new(0.690, 0.676, 0.622);
 
@@ -91,11 +92,12 @@ fn slope_adjusted_roughness(base: f32, physical_slope: f32) -> f32 {
 
 pub(super) fn lime_plaster_sample(u: f32, v: f32) -> LimePlasterSample {
     let broad = periodic_noise(u, v, 4, 0x9c31);
-    let trowel = periodic_noise(u, v, 11, 0x537b);
+    let trowel = periodic_noise(u, v, 17, 0x537b);
     let sand = periodic_noise(u, v, 73, 0xa8d5);
-    let mineral = periodic_noise(u, v, 6, 0x2f49);
+    let fine_aggregate = periodic_noise(u, v, 181, 0xb74d);
+    let mineral = periodic_noise(u, v, 13, 0x2f49);
     let sweep_phase = u * 2.0 + v + periodic_noise(u, v, 3, 0xd731) * 0.22;
-    let sweep = (core::f32::consts::TAU * sweep_phase).sin() * 0.055;
+    let sweep = (core::f32::consts::TAU * sweep_phase).sin() * 0.070;
 
     let (aggregate_distance, aggregate_identity) = cellular_feature(u, v, 128, 0x63af, 0.82);
     let aggregate_radius = 0.10 + aggregate_identity * 0.10;
@@ -110,21 +112,37 @@ pub(super) fn lime_plaster_sample(u: f32, v: f32) -> LimePlasterSample {
     let pinhole_radius = 0.035 + pinhole_identity * 0.050;
     let pinhole = 1.0 - smoothstep(pinhole_radius, pinhole_radius + 0.040, pinhole_distance);
 
-    let height = (broad * 0.37 + trowel * 0.21 + sweep + sand * 0.045 + aggregate * 0.11
+    let micro_variation = oblique_micro_variation(u, v);
+    let height = (broad * 0.18
+        + trowel * 0.27
+        + sweep
+        + sand * 0.075
+        + fine_aggregate * 0.055
+        + micro_variation * 0.070
+        + aggregate * 0.12
         - pinhole * 0.42)
         .clamp(-1.0, 1.0);
-    let mineral_mix = ((mineral + 1.0) * 0.5 * 6.0).round() / 6.0;
-    let warm_mix = smoothstep(-0.65, 0.75, broad * 0.7 + mineral * 0.3);
+    let mineral_mix = ((mineral + 1.0) * 0.5 * 8.0).round() / 8.0;
+    let grain_mix = ((fine_aggregate + 1.0) * 0.5 * 12.0).round() / 12.0;
+    let warm_mix = smoothstep(-0.65, 0.75, broad * 0.22 + mineral * 0.78);
     let mut albedo = PLASTER_COOL
         .lerp(PLASTER_WARM, warm_mix)
-        .lerp(PLASTER_BASE, 0.44);
-    albedo *= 0.965 + mineral_mix * 0.055 + aggregate * 0.025;
+        .lerp(PLASTER_BASE, 0.56);
+    albedo *= 0.965
+        + mineral_mix * 0.040
+        + grain_mix * 0.035
+        + trowel * 0.012
+        + micro_variation * 0.010
+        + aggregate * 0.025;
     albedo *= 1.0 - pinhole * 0.17;
 
     let cavity = (pinhole * 0.15 + (-height).max(0.0) * 0.035).clamp(0.0, 0.22);
     let ao = (1.0 - cavity).clamp(0.76, 1.0);
-    let micro_variation = oblique_micro_variation(u, v);
-    let roughness = (0.805 + (micro_variation + 1.0) * 0.018 + aggregate * 0.050 + pinhole * 0.035
+    let roughness = (0.805
+        + (micro_variation + 1.0) * 0.018
+        + aggregate * 0.050
+        + pinhole * 0.035
+        + fine_aggregate.max(0.0) * 0.018
         - trowel.max(0.0) * 0.018)
         .clamp(0.74, 0.94);
     LimePlasterSample {
@@ -247,6 +265,25 @@ mod tests {
         assert!((15..=260).contains(&pinholes), "pinhole texels: {pinholes}");
         assert!(minimum < -0.35, "minimum height: {minimum}");
         assert!(maximum > 0.25, "maximum height: {maximum}");
+    }
+
+    #[test]
+    fn fine_aggregate_remains_visible_below_a_centimetre() {
+        let mut total_difference = 0.0;
+        let samples = 256;
+        let offset = 0.004 / LIME_PLASTER_TILE_METRES;
+        for index in 0..samples {
+            let u = (index as f32 * 0.618_034).fract();
+            let v = (index as f32 * 0.414_214).fract();
+            let first = lime_plaster_sample(u, v).albedo;
+            let adjacent = lime_plaster_sample(u + offset, v).albedo;
+            total_difference += first.distance(adjacent);
+        }
+        let mean_difference = total_difference / samples as f32;
+        assert!(
+            mean_difference > 0.004,
+            "four-millimetre albedo difference: {mean_difference}"
+        );
     }
 
     #[test]

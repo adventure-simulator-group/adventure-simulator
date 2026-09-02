@@ -275,6 +275,8 @@ fn lod_material(
         BuildingLodMaterial::Roof(_) => &textures.roof,
         BuildingLodMaterial::FachwerkBaked => &textures.plaster,
         BuildingLodMaterial::Timber | BuildingLodMaterial::Floor => &textures.roof,
+        BuildingLodMaterial::InteriorTimber => &textures.roof,
+        BuildingLodMaterial::InteriorPlaster => &textures.plaster,
         BuildingLodMaterial::Iron | BuildingLodMaterial::Glass => &textures.details,
         BuildingLodMaterial::FacadeDetails => &textures.details,
         BuildingLodMaterial::CrownMask => &textures.crown_mask,

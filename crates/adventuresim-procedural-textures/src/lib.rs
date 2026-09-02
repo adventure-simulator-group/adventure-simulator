@@ -338,8 +338,8 @@ pub use lead_sheet::{
     generate_lead_sheet_textures,
 };
 pub use lime_plaster::{
-    LIME_PLASTER_HEIGHT_RANGE_METRES, LIME_PLASTER_TEXTURE_SIZE, LIME_PLASTER_TILE_METRES,
-    generate_lime_plaster_textures,
+    LIME_PLASTER_HEIGHT_RANGE_METRES, LIME_PLASTER_REFERENCE_SRGB, LIME_PLASTER_TEXTURE_SIZE,
+    LIME_PLASTER_TILE_METRES, generate_lime_plaster_textures,
 };
 pub use plank_floor::{
     PLANK_FLOOR_HEIGHT_RANGE_METRES, PLANK_FLOOR_TEXTURE_SIZE, PLANK_FLOOR_TILE_METRES,

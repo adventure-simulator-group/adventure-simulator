@@ -1,11 +1,17 @@
-use adventuresim_building_generator::{BuildingLodMaterial, RoofMaterial, WallMaterialClass};
+use adventuresim_building_generator::{
+    BUILDING_DETAIL_UV_METRES_PER_UNIT, BuildingLodMaterial, RoofMaterial, WallMaterialClass,
+};
 use adventuresim_procedural_textures::building::{
-    BuildingSurfacePalette, FacadeFinish, brick_texture, checker_texture, facade_atlas,
-    fachwerk_baked_texture,
+    BuildingSurfacePalette, FacadeFinish, facade_atlas, fachwerk_baked_texture,
 };
 use adventuresim_procedural_textures::{
-    CRENELLATION_ALPHA_CUTOFF, ProceduralTextureAssets, WINDOW_GLASS_MATERIAL_CONTRACT,
+    CLAY_ROOF_TILE_TILE_METRES, CRENELLATION_ALPHA_CUTOFF, DRESSED_STONE_TILE_METRES,
+    HANDMADE_BRICK_TILE_METRES, HEWN_OAK_TILE_METRES, IRONWORK_TILE_METRES, LEAD_SHEET_TILE_METRES,
+    LIME_PLASTER_REFERENCE_SRGB, LIME_PLASTER_TILE_METRES, PLANK_FLOOR_TILE_METRES,
+    ProceduralTextureAssets, SLATE_ROOF_TILE_METRES, SurfaceTextureSet, TIMBER_SHINGLE_TILE_METRES,
+    WINDOW_GLASS_MATERIAL_CONTRACT,
 };
+use bevy::math::{Affine2, Vec2};
 use bevy::render::render_resource::Face;
 use fabelgeist_determinism::splitmix64;
 
@@ -118,8 +124,11 @@ pub(crate) struct TacticalBuildingMaterials {
     brick: Handle<StandardMaterial>,
     stone: Handle<StandardMaterial>,
     slate: Handle<StandardMaterial>,
+    lead: Handle<StandardMaterial>,
     timber_roof: Handle<StandardMaterial>,
     iron: Handle<StandardMaterial>,
+    interior_timber: Handle<StandardMaterial>,
+    interior_plaster: Handle<StandardMaterial>,
     floor: Handle<StandardMaterial>,
     glass: Handle<StandardMaterial>,
     details: Handle<StandardMaterial>,
@@ -142,16 +151,21 @@ impl TacticalBuildingMaterials {
                 palette.infill.clone()
             }
             BuildingLodMaterial::Wall(WallMaterialClass::CivilianMasonry) => self.brick.clone(),
-            BuildingLodMaterial::Wall(WallMaterialClass::InternalTimber) => palette.timber.clone(),
+            BuildingLodMaterial::Wall(
+                WallMaterialClass::InternalTimber | WallMaterialClass::InternalMasonry,
+            ) => self.interior_plaster.clone(),
             BuildingLodMaterial::Wall(_) | BuildingLodMaterial::CrownMasonry => self.stone.clone(),
             BuildingLodMaterial::Roof(RoofMaterial::ClayTile) => palette.tile.clone(),
-            BuildingLodMaterial::Roof(RoofMaterial::Slate | RoofMaterial::Lead) => {
-                self.slate.clone()
-            }
-            BuildingLodMaterial::Roof(_) => self.timber_roof.clone(),
+            BuildingLodMaterial::Roof(RoofMaterial::Slate) => self.slate.clone(),
+            BuildingLodMaterial::Roof(RoofMaterial::Lead) => self.lead.clone(),
+            BuildingLodMaterial::Roof(RoofMaterial::TimberShingle) => self.timber_roof.clone(),
+            BuildingLodMaterial::Roof(RoofMaterial::TimberInfill) => palette.timber.clone(),
+            BuildingLodMaterial::Roof(RoofMaterial::MasonryInfill) => self.stone.clone(),
             BuildingLodMaterial::FachwerkBaked => palette.fachwerk_baked.clone(),
             BuildingLodMaterial::Timber => palette.timber.clone(),
+            BuildingLodMaterial::InteriorTimber => self.interior_timber.clone(),
             BuildingLodMaterial::Iron => self.iron.clone(),
+            BuildingLodMaterial::InteriorPlaster => self.interior_plaster.clone(),
             BuildingLodMaterial::Floor => self.floor.clone(),
             BuildingLodMaterial::Glass => self.glass.clone(),
             BuildingLodMaterial::FacadeDetails => self.details.clone(),
@@ -171,41 +185,77 @@ pub(in crate::presentation) fn setup_tactical_building_materials(
         .map(|appearance| {
             let spec = appearance.spec();
             let infill = if spec.finish == FacadeFinish::BrickInfill {
-                images.add(brick_texture(spec.infill))
+                materials.add(palette_surface_material(
+                    &procedural_textures.handmade_brick,
+                    HANDMADE_BRICK_TILE_METRES,
+                    spec.infill,
+                    [0.49, 0.235, 0.155],
+                ))
             } else {
-                images.add(checker_texture(spec.infill[0], spec.infill[1]))
+                materials.add(plaster_surface_material(
+                    &procedural_textures.lime_plaster,
+                    spec.infill,
+                ))
             };
-            let timber = images.add(checker_texture(spec.timber[0], spec.timber[1]));
-            let tile = images.add(checker_texture(spec.tile[0], spec.tile[1]));
             let fachwerk = images.add(fachwerk_baked_texture(spec));
             AppearanceMaterials {
                 finish: spec.finish,
-                infill: materials.add(opaque_material(infill)),
-                timber: materials.add(opaque_material(timber)),
-                tile: materials.add(opaque_material(tile)),
+                infill,
+                timber: materials.add(palette_surface_material(
+                    &procedural_textures.hewn_oak,
+                    HEWN_OAK_TILE_METRES,
+                    spec.timber,
+                    [0.30, 0.18, 0.10],
+                )),
+                tile: materials.add(palette_surface_material(
+                    &procedural_textures.clay_roof_tile,
+                    CLAY_ROOF_TILE_TILE_METRES,
+                    spec.tile,
+                    [0.40, 0.18, 0.12],
+                )),
                 fachwerk_baked: materials.add(opaque_material(fachwerk)),
             }
         })
         .collect();
-    let brick = images.add(brick_texture([[137, 63, 43, 255], [102, 43, 31, 255]]));
-    let stone = images.add(checker_texture([121, 122, 111, 255], [88, 91, 84, 255]));
-    let slate = images.add(checker_texture([61, 67, 73, 255], [40, 45, 51, 255]));
-    let timber_roof = images.add(checker_texture([91, 57, 31, 255], [61, 38, 24, 255]));
-    let floor = images.add(checker_texture([109, 94, 72, 255], [83, 72, 57, 255]));
     let details = images.add(facade_atlas());
     commands.insert_resource(TacticalBuildingMaterials {
         appearances,
-        brick: materials.add(opaque_material(brick)),
-        stone: materials.add(opaque_material(stone.clone())),
-        slate: materials.add(opaque_material(slate)),
-        timber_roof: materials.add(opaque_material(timber_roof)),
-        iron: materials.add(StandardMaterial {
-            base_color: Color::srgb(0.055, 0.06, 0.065),
-            perceptual_roughness: 0.42,
-            metallic: 0.78,
-            ..default()
-        }),
-        floor: materials.add(opaque_material(floor)),
+        brick: materials.add(surface_material(
+            &procedural_textures.handmade_brick,
+            HANDMADE_BRICK_TILE_METRES,
+        )),
+        stone: materials.add(surface_material(
+            &procedural_textures.dressed_stone,
+            DRESSED_STONE_TILE_METRES,
+        )),
+        slate: materials.add(surface_material(
+            &procedural_textures.slate_roof,
+            SLATE_ROOF_TILE_METRES,
+        )),
+        lead: materials.add(surface_material(
+            &procedural_textures.lead_sheet,
+            LEAD_SHEET_TILE_METRES,
+        )),
+        timber_roof: materials.add(surface_material(
+            &procedural_textures.timber_shingle,
+            TIMBER_SHINGLE_TILE_METRES,
+        )),
+        iron: materials.add(surface_material(
+            &procedural_textures.ironwork,
+            IRONWORK_TILE_METRES,
+        )),
+        interior_timber: materials.add(surface_material(
+            &procedural_textures.hewn_oak,
+            HEWN_OAK_TILE_METRES,
+        )),
+        interior_plaster: materials.add(surface_material(
+            &procedural_textures.lime_plaster,
+            LIME_PLASTER_TILE_METRES,
+        )),
+        floor: materials.add(surface_material(
+            &procedural_textures.plank_floor,
+            PLANK_FLOOR_TILE_METRES,
+        )),
         glass: materials.add(standard_window_glass_material(&procedural_textures)),
         details: materials.add(StandardMaterial {
             base_color_texture: Some(details),
@@ -264,6 +314,71 @@ fn opaque_material(texture: Handle<Image>) -> StandardMaterial {
     }
 }
 
+fn surface_material(textures: &SurfaceTextureSet, tile_metres: f32) -> StandardMaterial {
+    surface_material_with_tint(textures, tile_metres, Color::WHITE)
+}
+
+fn surface_material_with_tint(
+    textures: &SurfaceTextureSet,
+    tile_metres: f32,
+    tint: Color,
+) -> StandardMaterial {
+    StandardMaterial {
+        base_color: tint,
+        base_color_texture: Some(textures.albedo.clone()),
+        normal_map_texture: Some(textures.normal_gl.clone()),
+        metallic_roughness_texture: Some(textures.arm.clone()),
+        occlusion_texture: Some(textures.arm.clone()),
+        perceptual_roughness: 1.0,
+        metallic: 1.0,
+        uv_transform: Affine2::from_scale(Vec2::splat(
+            BUILDING_DETAIL_UV_METRES_PER_UNIT / tile_metres,
+        )),
+        cull_mode: Some(Face::Back),
+        ..default()
+    }
+}
+
+fn plaster_surface_material(
+    textures: &SurfaceTextureSet,
+    palette: [[u8; 4]; 2],
+) -> StandardMaterial {
+    palette_surface_material(
+        textures,
+        LIME_PLASTER_TILE_METRES,
+        palette,
+        LIME_PLASTER_REFERENCE_SRGB,
+    )
+}
+
+fn palette_surface_material(
+    textures: &SurfaceTextureSet,
+    tile_metres: f32,
+    palette: [[u8; 4]; 2],
+    reference_srgb: [f32; 3],
+) -> StandardMaterial {
+    let target_srgb = Vec3::from_array([
+        (palette[0][0] as f32 + palette[1][0] as f32) / (2.0 * 255.0),
+        (palette[0][1] as f32 + palette[1][1] as f32) / (2.0 * 255.0),
+        (palette[0][2] as f32 + palette[1][2] as f32) / (2.0 * 255.0),
+    ]);
+    let srgb_to_linear = |value: f32| {
+        if value <= 0.04045 {
+            value / 12.92
+        } else {
+            ((value + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    let target_linear = target_srgb.map(srgb_to_linear);
+    let reference_linear = Vec3::from_array(reference_srgb).map(srgb_to_linear);
+    let tint = target_linear / reference_linear;
+    surface_material_with_tint(
+        textures,
+        tile_metres,
+        Color::linear_rgb(tint.x, tint.y, tint.z),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -301,6 +416,54 @@ mod tests {
             AlphaMode::Mask(CRENELLATION_ALPHA_CUTOFF)
         );
         assert_eq!(material.cull_mode, None);
+    }
+
+    #[test]
+    fn interior_surface_material_uses_the_complete_recipe_and_physical_tile_scale() {
+        let mut images = Assets::default();
+        let textures = adventuresim_procedural_textures::generate_procedural_textures(&mut images);
+        let material = surface_material(&textures.lime_plaster, LIME_PLASTER_TILE_METRES);
+
+        assert_eq!(
+            material.base_color_texture,
+            Some(textures.lime_plaster.albedo.clone())
+        );
+        assert_eq!(
+            material.normal_map_texture,
+            Some(textures.lime_plaster.normal_gl.clone())
+        );
+        assert_eq!(
+            material.occlusion_texture,
+            Some(textures.lime_plaster.arm.clone())
+        );
+        assert_eq!(
+            material.metallic_roughness_texture,
+            Some(textures.lime_plaster.arm.clone())
+        );
+        assert_eq!(material.uv_transform, Affine2::from_scale(Vec2::splat(2.0)));
+    }
+
+    #[test]
+    fn plaster_facades_use_the_same_high_resolution_surface_recipe() {
+        let mut images = Assets::default();
+        let textures = adventuresim_procedural_textures::generate_procedural_textures(&mut images);
+        let palette = BuildingAppearance::NaturalOak.spec().infill;
+        let material = plaster_surface_material(&textures.lime_plaster, palette);
+
+        assert_eq!(
+            material.base_color_texture,
+            Some(textures.lime_plaster.albedo.clone())
+        );
+        assert_eq!(
+            material.normal_map_texture,
+            Some(textures.lime_plaster.normal_gl.clone())
+        );
+        assert_eq!(
+            material.metallic_roughness_texture,
+            Some(textures.lime_plaster.arm.clone())
+        );
+        assert_eq!(material.uv_transform, Affine2::from_scale(Vec2::splat(2.0)));
+        assert_ne!(material.base_color, Color::WHITE);
     }
 
     #[test]

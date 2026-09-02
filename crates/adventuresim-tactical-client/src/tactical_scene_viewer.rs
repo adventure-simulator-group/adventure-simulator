@@ -28,6 +28,7 @@ use serde::Serialize;
 
 mod buildings;
 mod capture_state;
+mod interior_capture;
 mod manifest;
 mod terrain_setup;
 mod triangle_census;
@@ -54,7 +55,8 @@ use triangle_census::{
 use view_specs::TREE_BILLBOARD_TRANSITION_SCALES;
 use view_specs::{
     ANIMATION_PLAY_VIEWS, BEECH_LEAF_MOTION_VIEWS, CAPTURE_VIEWS, CapturePose, CaptureViewSpec,
-    DetailRequirement, ENVIRONMENT_REVIEW_VIEWS, TREE_COLD_TRAVERSAL_VIEWS, TreeLightingModeId,
+    DetailRequirement, ENVIRONMENT_REVIEW_VIEWS, INTERIOR_REVIEW_VIEWS, TREE_COLD_TRAVERSAL_VIEWS,
+    TreeLightingModeId,
 };
 
 use crate::camera::CameraRigConfig;
@@ -84,6 +86,7 @@ const SQUARE_METRES_PER_SQUARE_KILOMETRE: f64 = 1_000_000.0;
 const STANDING_EYE_HEIGHT_METRES: f32 = 1.65;
 const CAPTURE_PROFILE_VERSION: u16 = 20;
 const BEECH_LEAF_MOTION_PROFILE: &str = "beech-leaf-motion";
+const INTERIOR_REVIEW_PROFILE: &str = "interior-review";
 const CAMERA_VERSION: u16 = 13;
 const CAPTURE_CLOCK_PHASE_SECONDS: f32 = 2.0;
 
@@ -1076,6 +1079,7 @@ fn selected_capture_views(
     let profile_views = match profile {
         "semantic" => CAPTURE_VIEWS.as_slice(),
         "environment-review" => ENVIRONMENT_REVIEW_VIEWS.as_slice(),
+        INTERIOR_REVIEW_PROFILE => INTERIOR_REVIEW_VIEWS.as_slice(),
         "animation-play" => ANIMATION_PLAY_VIEWS.as_slice(),
         "tree-cold-traversal" => TREE_COLD_TRAVERSAL_VIEWS.as_slice(),
         BEECH_LEAF_MOTION_PROFILE => BEECH_LEAF_MOTION_VIEWS.as_slice(),
@@ -1689,6 +1693,7 @@ fn setup_scene(
     let mut rock_focus = None;
     let mut tree_focus_entity = None;
 
+    let building_interior_cameras = interior_capture::capture_cameras(&buildings);
     spawn_tactical_buildings(&mut commands, buildings);
 
     for obstacle in obstacles {
@@ -2037,6 +2042,7 @@ fn setup_scene(
         ground_eye_position,
         ground_eye_target,
         animation_play_focus,
+        building_interior_cameras,
         settle_frames,
         tree_review_azimuth_degrees,
         profile,
@@ -3794,6 +3800,13 @@ fn camera_for_view(pose: CapturePose, state: &SceneCaptureState) -> (Transform, 
         CapturePose::AnimationPlayObstruction { .. } => unreachable!(
             "obstruction views require the live spatial query used by the production camera"
         ),
+        CapturePose::BuildingInterior { camera } => {
+            let camera = state
+                .building_interior_cameras
+                .get(usize::from(camera))
+                .unwrap_or_else(|| panic!("building interior camera {camera} is unavailable"));
+            (camera.position, camera.target, Vec3::Y)
+        }
         CapturePose::TreeColdTraversal { distance } => tree_cold_traversal_camera(state, distance),
         CapturePose::TreeReview => state.tree_focus.map_or(
             (state.ground_eye_position, state.ground_eye_target, Vec3::Y),
