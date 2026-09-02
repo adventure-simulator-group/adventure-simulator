@@ -79,6 +79,9 @@ fn record_movement_event(
                 .unwrap_or_default()
                 .abs(),
         );
+    let speed_limit = event
+        .movement_speed_limit_metres_per_second
+        .expect("autoresolve movement records its authored speed limit");
     combatant.movement_elapsed_seconds += f64::from(elapsed);
     combatant.movement_segments += 1;
     combatant.movement_absolute_displacement_metres += f64::from(displacement);
@@ -89,7 +92,7 @@ fn record_movement_event(
         .maximum_movement_segment_seconds
         .max(f64::from(elapsed));
     combatant.movement_displacement_limit_failures +=
-        u64::from(displacement > velocity * elapsed + 1.0e-5);
+        u64::from(displacement > speed_limit * elapsed + 1.0e-5);
     let distance_delta = event
         .engagement_distance_before_metres
         .zip(event.engagement_distance_after_metres)

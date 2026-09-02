@@ -46,13 +46,6 @@ fn resolve_joint_melee_window(
     parameters: crate::combat::AutoresolveParameters,
 ) {
     let window_end_seconds = window_start_seconds + window_seconds;
-    reschedule_joint_contacts_at_reach_entry(
-        allies,
-        enemies,
-        window_start_seconds,
-        window_seconds,
-        parameters,
-    );
     let allies_first = allies
         .first()
         .zip(enemies.first())
@@ -283,29 +276,6 @@ fn schedule_both_sides(
     schedule_side_melee_attacks_in_window(
         second, first, at_seconds, 0.0, random, recorder, parameters,
     );
-}
-
-fn reschedule_joint_contacts_at_reach_entry(
-    allies: &mut [Combatant],
-    enemies: &mut [Combatant],
-    interval_start_seconds: f32,
-    elapsed_seconds: f32,
-    parameters: crate::combat::AutoresolveParameters,
-) {
-    for index in 0..allies.len().min(enemies.len()) {
-        let (first, second) = if allies[index].id <= enemies[index].id {
-            (&mut allies[index], &mut enemies[index])
-        } else {
-            (&mut enemies[index], &mut allies[index])
-        };
-        reschedule_pair_contacts_at_reach_entry(
-            first,
-            second,
-            interval_start_seconds,
-            elapsed_seconds,
-            parameters,
-        );
-    }
 }
 
 fn advance_joint_melee_movement(

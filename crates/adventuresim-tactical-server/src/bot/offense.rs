@@ -149,20 +149,16 @@ fn drive_pursuit_phase(
         input.0 = None;
         controller.phase = OffensiveCombatPhase::GuardingCommittedThreat;
     } else if facts.weapon_is_melee
-        && below_preferred_long_weapon_measure(
-            facts.weapon_reach,
-            facts.preferred_melee_measure,
-            distance,
-            config.long_weapon_measure_threshold_metres,
-        )
-    {
-        input.0 = Some(-Vec2::Y);
-    } else if facts.weapon_is_melee
         && facts.melee_attack_available
         && facts.dimensions.arm_reach_metres > 0.0
         && facts.melee_lunge_delay.is_some()
     {
-        input.0 = None;
+        input.0 = long_weapon_windup_movement(
+            facts.weapon_reach,
+            facts.preferred_melee_measure,
+            distance,
+            config.long_weapon_measure_threshold_metres,
+        );
         let Some(strike_family) = skeleton.available_strike_family(facts.strike_family) else {
             return;
         };
@@ -195,6 +191,15 @@ fn drive_pursuit_phase(
             combatant: entity,
             decision: BotContinuationDecision::Withdraw,
         });
+    } else if facts.weapon_is_melee
+        && below_preferred_long_weapon_measure(
+            facts.weapon_reach,
+            facts.preferred_melee_measure,
+            distance,
+            config.long_weapon_measure_threshold_metres,
+        )
+    {
+        input.0 = Some(-Vec2::Y);
     } else {
         input.0 = Some(Vec2::Y);
     }

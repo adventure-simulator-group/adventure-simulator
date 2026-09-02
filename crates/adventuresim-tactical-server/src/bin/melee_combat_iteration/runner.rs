@@ -256,6 +256,12 @@ fn record_autoresolve_timeline(
     outcome: &adventuresim_core::autoresolve::BattleOutcome,
     john_id: u64,
 ) {
+    let scheduled_contact_ticks = outcome
+        .timeline
+        .iter()
+        .filter(|event| event.kind == MeleeTimelineKind::AttackStarted)
+        .filter_map(|event| Some((event.attack_id?, event.attack_contact_tick?)))
+        .collect::<BTreeMap<_, _>>();
     for event in &outcome.timeline {
         let Some(id) = event.combatant_id else {
             continue;
@@ -265,6 +271,15 @@ fn record_autoresolve_timeline(
         } else {
             &mut causal.opponent
         };
+        if event.kind == MeleeTimelineKind::Contact
+            && event.attack_id.and_then(|attack_id| {
+                scheduled_contact_ticks
+                    .get(&attack_id)
+                    .map(|scheduled| event.tick < *scheduled)
+            }) == Some(true)
+        {
+            combatant.premature_contact_events += 1;
+        }
         causal::record_timeline_event(combatant, event);
     }
     if let Some(first) = outcome

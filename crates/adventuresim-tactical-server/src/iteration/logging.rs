@@ -63,7 +63,8 @@ pub enum TacticalDefenseImplement {
 pub struct TacticalIncapacitationLog {
     pub pain: f32,
     pub acute_trauma: f32,
-    pub blood_loss: f32,
+    pub blood_loss_fraction: f32,
+    pub blood_loss_incapacitation: f32,
     pub imbalance: f32,
     pub oxygen_debt_joules: f32,
     pub oxygen_debt_incapacitation: f32,
@@ -370,7 +371,8 @@ fn incapacitation_log(
     TacticalIncapacitationLog {
         pain: sources.pain,
         acute_trauma: state.acute_trauma,
-        blood_loss: sources.blood_loss,
+        blood_loss_fraction: state.blood_loss_fraction,
+        blood_loss_incapacitation: sources.blood_loss,
         imbalance: sources.imbalance,
         oxygen_debt_joules: state.oxygen_debt_joules,
         oxygen_debt_incapacitation: sources.oxygen_debt,
@@ -392,7 +394,16 @@ pub(super) fn record_condition_changes(
             for (cause, before, after) in [
                 ("pain", previous.pain, current.pain),
                 ("acute_trauma", previous.acute_trauma, current.acute_trauma),
-                ("blood_loss", previous.blood_loss, current.blood_loss),
+                (
+                    "blood_loss_fraction",
+                    previous.blood_loss_fraction,
+                    current.blood_loss_fraction,
+                ),
+                (
+                    "blood_loss_incapacitation",
+                    previous.blood_loss_incapacitation,
+                    current.blood_loss_incapacitation,
+                ),
                 ("imbalance", previous.imbalance, current.imbalance),
                 (
                     "oxygen_debt_joules",

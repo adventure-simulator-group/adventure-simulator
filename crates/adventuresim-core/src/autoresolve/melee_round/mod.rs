@@ -436,21 +436,6 @@ fn prepare_melee_exchange(
 mod tests {
     use super::*;
 
-    fn committed_fighter(id: u64, reach: f32, distance: f32) -> Combatant {
-        let mut fighter = Combatant::new(id);
-        fighter.equipment.melee_weapon = Some(CombatWeapon {
-            melee: true,
-            melee_reach: reach,
-            ..CombatWeapon::default()
-        });
-        fighter.equipment.weapon = fighter.equipment.melee_weapon;
-        fighter.melee_attack_started_at_seconds = Some(0.0);
-        fighter.melee_attack_contact_at_seconds = Some(1.0);
-        fighter.melee_engagement_distance_metres = distance;
-        fighter.melee_separation_velocity_metres_per_second = -1.0;
-        fighter
-    }
-
     #[test]
     fn exact_reach_boundary_is_attackable_but_outside_measure_closes() {
         let parameters = crate::combat::EMBEDDED_AUTORESOLVE_PARAMETERS;
@@ -526,6 +511,12 @@ mod tests {
             movement_intent(&polearm, preferred, parameters),
             MovementIntent::Hold
         );
+
+        let opponent = Combatant::new(1);
+        assert!(
+            mobility::maximum_melee_pair_surface_separation(&opponent, &polearm, parameters)
+                >= reach - 1.0e-5
+        );
     }
 
     #[test]
@@ -540,65 +531,5 @@ mod tests {
     fn attack_start_waits_for_later_of_measure_and_recovery() {
         assert_eq!(available_attack_start(0.0, 0.5, 0.6, 0.4), None);
         assert_eq!(available_attack_start(0.5, 1.0, 0.6, 0.8), Some(0.8));
-    }
-
-    #[test]
-    fn reach_entry_finds_first_crossing_without_tunneling() {
-        let parameters = crate::combat::EMBEDDED_AUTORESOLVE_PARAMETERS;
-        let reach = 1.25 + HUMANOID_REFERENCE_ARM_REACH_METRES;
-        let first = committed_fighter(1, 1.25, reach + 0.02);
-        let mut second = Combatant::new(2);
-        second.melee_engagement_distance_metres = reach + 0.02;
-        second.melee_separation_velocity_metres_per_second = -1.0;
-        let crossing = reach_entry_seconds(&first, &second, true, 0.5, parameters)
-            .expect("mutual closure should enter sword reach");
-        let (before, _, _) =
-            preview_melee_pair_movement(&first, &second, (crossing - 0.000_1).max(0.0), parameters);
-        let (at, _, _) = preview_melee_pair_movement(&first, &second, crossing, parameters);
-        assert!(before.distance_after_metres > reach);
-        assert!(at.distance_after_metres <= reach + 1.0e-5);
-    }
-
-    #[test]
-    fn reach_entry_is_dt_invariant_and_side_symmetric() {
-        let parameters = crate::combat::EMBEDDED_AUTORESOLVE_PARAMETERS;
-        let reach = 1.25 + HUMANOID_REFERENCE_ARM_REACH_METRES;
-        let first = committed_fighter(1, 1.25, reach + 0.02);
-        let mut second = Combatant::new(2);
-        second.melee_engagement_distance_metres = reach + 0.02;
-        second.melee_separation_velocity_metres_per_second = -1.0;
-        let short = reach_entry_seconds(&first, &second, true, 0.3, parameters)
-            .expect("crossing occurs in the shorter interval");
-        let long = reach_entry_seconds(&first, &second, true, 0.6, parameters)
-            .expect("crossing occurs in the longer interval");
-        let swapped = reach_entry_seconds(&second, &first, false, 0.6, parameters)
-            .expect("actor identity swap preserves the same physical crossing");
-        assert!((short - long).abs() < 1.0e-5);
-        assert!((long - swapped).abs() < 1.0e-5);
-    }
-
-    #[test]
-    fn retreating_path_does_not_fabricate_a_reach_entry() {
-        let parameters = crate::combat::EMBEDDED_AUTORESOLVE_PARAMETERS;
-        let mut first = committed_fighter(1, 1.25, 1.5);
-        let mut second = Combatant::new(2);
-        second.melee_engagement_distance_metres = 1.5;
-        first.melee_separation_velocity_metres_per_second = 2.0;
-        second.melee_separation_velocity_metres_per_second = 2.0;
-        assert_eq!(
-            reach_entry_seconds(&first, &second, true, 0.01, parameters),
-            None
-        );
-    }
-
-    #[test]
-    fn simultaneous_equal_reach_entries_have_the_same_contact_time() {
-        let parameters = crate::combat::EMBEDDED_AUTORESOLVE_PARAMETERS;
-        let distance = 1.25 + HUMANOID_REFERENCE_ARM_REACH_METRES + 0.02;
-        let first = committed_fighter(1, 1.25, distance);
-        let second = committed_fighter(2, 1.25, distance);
-        let first_entry = reach_entry_seconds(&first, &second, true, 0.5, parameters).unwrap();
-        let second_entry = reach_entry_seconds(&first, &second, false, 0.5, parameters).unwrap();
-        assert!((first_entry - second_entry).abs() < 1.0e-6);
     }
 }

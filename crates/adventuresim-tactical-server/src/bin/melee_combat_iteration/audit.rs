@@ -23,6 +23,10 @@ pub(super) fn build_acceptance_audit(
             .autoresolve_timeline
             .canceled_attack_ids_that_contacted
             .is_empty(),
+        autoresolve_contacts_respect_scheduled_windup: summaries.iter().all(|summary| {
+            summary.autoresolve_causal.john.premature_contact_events == 0
+                && summary.autoresolve_causal.opponent.premature_contact_events == 0
+        }),
         autoresolve_movement_elapsed_matches_distance_delta: movement_elapsed_matches_distance(
             summaries,
         ),
