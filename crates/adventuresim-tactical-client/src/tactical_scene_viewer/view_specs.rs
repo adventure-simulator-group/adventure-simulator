@@ -28,6 +28,9 @@ pub(super) enum CapturePose {
     BuildingInterior {
         camera: u8,
     },
+    CityExterior {
+        camera: u8,
+    },
     TreeColdTraversal {
         distance: f32,
     },
@@ -115,6 +118,7 @@ pub(super) struct CaptureViewSpec {
     pub debris_target: bool,
     pub temporal_motion: bool,
     pub verify_settled_readbacks: bool,
+    pub plaster_grazing_light: bool,
 }
 
 impl CaptureViewSpec {
@@ -151,6 +155,7 @@ impl CaptureViewSpec {
             debris_target: false,
             temporal_motion: false,
             verify_settled_readbacks: false,
+            plaster_grazing_light: false,
         }
     }
     pub const fn overlay(mut self) -> Self {
@@ -231,6 +236,10 @@ impl CaptureViewSpec {
     }
     pub const fn settled_readback_pair(mut self) -> Self {
         self.verify_settled_readbacks = true;
+        self
+    }
+    pub const fn plaster_grazing_light(mut self) -> Self {
+        self.plaster_grazing_light = true;
         self
     }
 }
@@ -643,7 +652,9 @@ pub(super) const CAPTURE_VIEWS: [CaptureViewSpec; 40] = [
 
 mod environment;
 pub(super) use environment::ENVIRONMENT_REVIEW_VIEWS;
+mod city;
 mod interiors;
+pub(super) use city::CITY_REVIEW_VIEWS;
 pub(super) use interiors::INTERIOR_REVIEW_VIEWS;
 
 pub(super) const ANIMATION_PLAY_VIEWS: [CaptureViewSpec; 23] = [

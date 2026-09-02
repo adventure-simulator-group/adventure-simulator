@@ -1,5 +1,10 @@
 use super::*;
 
+/// Visible plaster finish offset from the exposed timber face.
+pub(crate) const TIMBER_INFILL_FINISH_SETBACK_METRES: f32 = 0.008;
+/// Facade-space overlap of plaster beneath timber and opening trim.
+pub(crate) const TIMBER_INFILL_EDGE_UNDERLAP_METRES: f32 = 0.006;
+
 #[derive(
     Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize,
 )]

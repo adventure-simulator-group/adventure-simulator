@@ -28,6 +28,7 @@ use serde::Serialize;
 
 mod buildings;
 mod capture_state;
+mod city_capture;
 mod interior_capture;
 mod manifest;
 mod terrain_setup;
@@ -54,9 +55,9 @@ use triangle_census::{
 #[cfg(test)]
 use view_specs::TREE_BILLBOARD_TRANSITION_SCALES;
 use view_specs::{
-    ANIMATION_PLAY_VIEWS, BEECH_LEAF_MOTION_VIEWS, CAPTURE_VIEWS, CapturePose, CaptureViewSpec,
-    DetailRequirement, ENVIRONMENT_REVIEW_VIEWS, INTERIOR_REVIEW_VIEWS, TREE_COLD_TRAVERSAL_VIEWS,
-    TreeLightingModeId,
+    ANIMATION_PLAY_VIEWS, BEECH_LEAF_MOTION_VIEWS, CAPTURE_VIEWS, CITY_REVIEW_VIEWS, CapturePose,
+    CaptureViewSpec, DetailRequirement, ENVIRONMENT_REVIEW_VIEWS, INTERIOR_REVIEW_VIEWS,
+    TREE_COLD_TRAVERSAL_VIEWS, TreeLightingModeId,
 };
 
 use crate::camera::CameraRigConfig;
@@ -84,11 +85,13 @@ const PERFORMANCE_TARGET_FPS: f64 = 60.0;
 const PERFORMANCE_FRAME_BUDGET_MS: f64 = 1_000.0 / PERFORMANCE_TARGET_FPS;
 const SQUARE_METRES_PER_SQUARE_KILOMETRE: f64 = 1_000_000.0;
 const STANDING_EYE_HEIGHT_METRES: f32 = 1.65;
-const CAPTURE_PROFILE_VERSION: u16 = 20;
+const CAPTURE_PROFILE_VERSION: u16 = 23;
 const BEECH_LEAF_MOTION_PROFILE: &str = "beech-leaf-motion";
 const INTERIOR_REVIEW_PROFILE: &str = "interior-review";
-const CAMERA_VERSION: u16 = 13;
+const CITY_REVIEW_PROFILE: &str = "city-review";
+const CAMERA_VERSION: u16 = 16;
 const CAPTURE_CLOCK_PHASE_SECONDS: f32 = 2.0;
+const PLASTER_GRAZING_REVIEW_LUMENS: f32 = 50_000.0;
 
 #[derive(Resource)]
 struct SceneSetup(Option<SceneSetupData>);
@@ -112,6 +115,9 @@ struct SceneSetupData {
 
 #[derive(Component)]
 struct CaptureOverlay;
+
+#[derive(Component)]
+struct PlasterGrazingReviewLight;
 
 #[derive(SystemParam)]
 #[expect(
@@ -162,6 +168,17 @@ struct LightingObservationParams<'w, 's> {
             Without<SceneObstacle>,
             Without<Camera3d>,
             Without<TacticalGameplayCamera>,
+        ),
+    >,
+    plaster_grazing_lights: Query<
+        'w,
+        's,
+        (&'static mut Transform, &'static mut PointLight),
+        (
+            With<PlasterGrazingReviewLight>,
+            Without<Camera3d>,
+            Without<TacticalGameplayCamera>,
+            Without<TreeReviewBackdrop>,
         ),
     >,
 }
@@ -1080,6 +1097,7 @@ fn selected_capture_views(
         "semantic" => CAPTURE_VIEWS.as_slice(),
         "environment-review" => ENVIRONMENT_REVIEW_VIEWS.as_slice(),
         INTERIOR_REVIEW_PROFILE => INTERIOR_REVIEW_VIEWS.as_slice(),
+        CITY_REVIEW_PROFILE => CITY_REVIEW_VIEWS.as_slice(),
         "animation-play" => ANIMATION_PLAY_VIEWS.as_slice(),
         "tree-cold-traversal" => TREE_COLD_TRAVERSAL_VIEWS.as_slice(),
         BEECH_LEAF_MOTION_PROFILE => BEECH_LEAF_MOTION_VIEWS.as_slice(),
@@ -1694,7 +1712,21 @@ fn setup_scene(
     let mut tree_focus_entity = None;
 
     let building_interior_cameras = interior_capture::capture_cameras(&buildings);
+    let city_exterior_cameras = city_capture::capture_cameras(&buildings, &input.distant_buildings);
     spawn_tactical_buildings(&mut commands, buildings);
+    commands.spawn((
+        Name::new("Neutral plaster grazing review light"),
+        PlasterGrazingReviewLight,
+        PointLight {
+            color: Color::srgb(1.0, 0.99, 0.96),
+            intensity: 0.0,
+            range: 9.0,
+            radius: 0.08,
+            shadow_maps_enabled: false,
+            ..default()
+        },
+        Transform::IDENTITY,
+    ));
 
     for obstacle in obstacles {
         let (grid_x, grid_z, kind, collider, y_offset, overlay_shape, overlay_color) =
@@ -2043,6 +2075,7 @@ fn setup_scene(
         ground_eye_target,
         animation_play_focus,
         building_interior_cameras,
+        city_exterior_cameras,
         settle_frames,
         tree_review_azimuth_degrees,
         profile,
@@ -3445,6 +3478,23 @@ fn capture_views(
         };
         *camera.1 = transform;
         *camera.2 = GlobalTransform::from(transform);
+        for (mut light_transform, mut light) in &mut lighting.plaster_grazing_lights {
+            light.intensity = if view.plaster_grazing_light {
+                let CapturePose::BuildingInterior {
+                    camera: camera_index,
+                } = view.pose
+                else {
+                    panic!("plaster raking light requires a building-interior camera");
+                };
+                let review = state.building_interior_cameras[usize::from(camera_index)]
+                    .plaster_raking_light
+                    .expect("plaster proof camera carries its wall-local light frame");
+                light_transform.translation = review.position;
+                PLASTER_GRAZING_REVIEW_LUMENS
+            } else {
+                0.0
+            };
+        }
         if let Projection::Perspective(projection) = &mut *camera.3 {
             projection.fov = view.fov_degrees.to_radians();
         }
@@ -3805,6 +3855,13 @@ fn camera_for_view(pose: CapturePose, state: &SceneCaptureState) -> (Transform, 
                 .building_interior_cameras
                 .get(usize::from(camera))
                 .unwrap_or_else(|| panic!("building interior camera {camera} is unavailable"));
+            (camera.position, camera.target, Vec3::Y)
+        }
+        CapturePose::CityExterior { camera } => {
+            let camera = state
+                .city_exterior_cameras
+                .get(usize::from(camera))
+                .unwrap_or_else(|| panic!("city exterior camera {camera} is unavailable"));
             (camera.position, camera.target, Vec3::Y)
         }
         CapturePose::TreeColdTraversal { distance } => tree_cold_traversal_camera(state, distance),
