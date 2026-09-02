@@ -734,10 +734,11 @@ fn spawn_connected_player(
         attributes,
         stats,
         TacticalCombatState {
-            starting_incapacitation,
+            starting_incapacitation: (starting_incapacitation - player.strategic_fatigue).max(0.0),
             starting_blood_fraction,
             starting_fear: player.strategic_fear,
-            starting_fatigue: player.strategic_fatigue,
+            fatigue: player.strategic_fatigue,
+            incapacitation: player.strategic_incapacitation,
             starting_hunger: player.strategic_hunger,
             starting_thirst: player.strategic_thirst,
             starting_thermal: player.strategic_thermal,

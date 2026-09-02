@@ -289,12 +289,9 @@ fn record_tactical_attacker(
     attacker.contacts_dealt += u64::from(event.contact_energy_joules > 0.0);
     attacker.contact_energy_samples += 1;
     attacker.mean_contact_energy_joules += f64::from(event.contact_energy_joules);
-    attacker.maximum_oxygen_debt_joules = attacker
-        .maximum_oxygen_debt_joules
-        .max(event.attacker_incapacitation.oxygen_debt_joules);
-    attacker.maximum_local_action_fatigue = attacker
-        .maximum_local_action_fatigue
-        .max(event.attacker_incapacitation.local_action_fatigue);
+    attacker.maximum_fatigue = attacker
+        .maximum_fatigue
+        .max(event.attacker_incapacitation.fatigue);
 }
 
 fn record_tactical_defender(
@@ -308,12 +305,9 @@ fn record_tactical_defender(
         &mut summary.john
     };
     defender.attacks_received += 1;
-    defender.maximum_oxygen_debt_joules = defender
-        .maximum_oxygen_debt_joules
-        .max(event.defender_incapacitation.oxygen_debt_joules);
-    defender.maximum_local_action_fatigue = defender
-        .maximum_local_action_fatigue
-        .max(event.defender_incapacitation.local_action_fatigue);
+    defender.maximum_fatigue = defender
+        .maximum_fatigue
+        .max(event.defender_incapacitation.fatigue);
     *defender
         .anatomical_subregions_received
         .entry(event.anatomical_subregion.clone())
@@ -385,14 +379,10 @@ fn record_tactical_totals(
     summary.maximum_contact_separation_metres = summary
         .maximum_contact_separation_metres
         .max(event.center_separation_metres);
-    summary.maximum_oxygen_debt_joules = summary
-        .maximum_oxygen_debt_joules
-        .max(event.attacker_incapacitation.oxygen_debt_joules)
-        .max(event.defender_incapacitation.oxygen_debt_joules);
-    summary.maximum_local_action_fatigue = summary
-        .maximum_local_action_fatigue
-        .max(event.attacker_incapacitation.local_action_fatigue)
-        .max(event.defender_incapacitation.local_action_fatigue);
+    summary.maximum_fatigue = summary
+        .maximum_fatigue
+        .max(event.attacker_incapacitation.fatigue)
+        .max(event.defender_incapacitation.fatigue);
     record_dodge_totals(summary, event);
     record_defense_totals(summary, event);
     record_armor_totals(summary, event);

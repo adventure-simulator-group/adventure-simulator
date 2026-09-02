@@ -1,6 +1,18 @@
-schema_version: 5
+schema_version: 6
 
 resolution:
+  fatigue:
+    mechanical_efficiency: 0.25
+    capacity_joules_per_endurance: 16000.0
+    recovery_watts_per_endurance: 55.0
+    aerobic_watts_per_endurance: 70.0
+    carry_watts_per_kg: 2.0
+    minimum_endurance: 0.5
+    minimum_action_seconds: 0.1
+    maximum_action_seconds: 0.35
+    attack_travel_metres: 3.0
+    defense_travel_metres: 1.5
+    dodge_speed_metres_per_second: 3.5
   armed_attack_energy_transfer: 0.4
   stagger_resistance_joules_per_kg: 4.0
 

@@ -723,6 +723,7 @@ pub(crate) fn load_combatant(
         .character_id()
         .find(character_id)
         .ok_or("Character condition not found")?;
+    let fatigue = fatigue_incapacitation(stats.fatigue_by_parts(&attributes, &limbs));
     let equipment = StrategicEquipment::load(ctx, character_id);
     let combat_equipment = equipment.combat_equipment();
     let (starting_incapacitation, starting_blood_fraction) = derive_combat_starting_condition(
@@ -734,6 +735,7 @@ pub(crate) fn load_combatant(
     );
 
     Ok(Combatant::from_strategic_state(CombatantStrategicState {
+        fatigue,
         id: character_id,
         attributes: attributes.into(),
         body: CombatBody {

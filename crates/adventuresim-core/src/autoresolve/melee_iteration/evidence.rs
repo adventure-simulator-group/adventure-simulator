@@ -106,9 +106,7 @@ pub struct FatigueCadenceEvidence {
     pub completed_attacks: u32,
     pub completed_weapon_defenses: u32,
     pub completed_explosive_dodges: u32,
-    pub oxygen_debt_joules: f32,
-    pub local_action_fatigue: f32,
-    pub medical_incapacitation: f32,
+    pub fatigue: f32,
     pub fresh_recovery_seconds: f32,
     pub fatigued_recovery_seconds: f32,
 }
@@ -320,7 +318,7 @@ fn fatigue_cadence_evidence(build: &MeleeIterationBuild) -> Result<FatigueCadenc
             inertia,
             build.combatant.equipment.inventory_weight,
             build.combatant.body.weight_kg,
-            endurance,
+            EMBEDDED_COMBAT_RESOLUTION_PARAMETERS.fatigue,
         )
     };
     let attack = workload(
@@ -336,30 +334,26 @@ fn fatigue_cadence_evidence(build: &MeleeIterationBuild) -> Result<FatigueCadenc
         weapon.moment_of_inertia_kg_m2,
     );
     let dodge = workload(CombatActionWork::ExplosiveDodge, 0.5, 0.0, 0.0);
-    let mut oxygen_debt_joules = 0.0;
-    let mut local_action_fatigue = 0.0;
+    let mut fatigue = 0.0;
     for workload in std::iter::repeat_n(attack, ATTACKS as usize)
         .chain(std::iter::repeat_n(defense, WEAPON_DEFENSES as usize))
         .chain(std::iter::repeat_n(dodge, DODGES as usize))
     {
         apply_combat_workload(
-            &mut oxygen_debt_joules,
-            &mut local_action_fatigue,
+            &mut fatigue,
             workload,
             endurance,
+            EMBEDDED_COMBAT_RESOLUTION_PARAMETERS.fatigue,
         );
     }
-    let performance =
-        combat_fatigue_performance(oxygen_debt_joules, local_action_fatigue, endurance);
+    let performance = combat_fatigue_performance(fatigue);
     let fresh_recovery_seconds = weapon.attack_interval_seconds;
     Ok(FatigueCadenceEvidence {
         combatant: build.name,
         completed_attacks: ATTACKS,
         completed_weapon_defenses: WEAPON_DEFENSES,
         completed_explosive_dodges: DODGES,
-        oxygen_debt_joules,
-        local_action_fatigue,
-        medical_incapacitation: oxygen_debt_incapacitation(oxygen_debt_joules, endurance),
+        fatigue,
         fresh_recovery_seconds,
         fatigued_recovery_seconds: fatigue_adjusted_recovery_seconds(
             fresh_recovery_seconds,

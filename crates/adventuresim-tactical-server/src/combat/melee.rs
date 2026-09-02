@@ -331,13 +331,9 @@ pub(super) fn resolve_melee_attack(
         return;
     };
     let attacker_has_weapon = super::contact::attacker_has_weapon(&viewer, entity, hand);
-    let attacker_performance = q_states.get(attack.attacker()).map_or(1.0, |state| {
-        combat_fatigue_performance(
-            state.oxygen_debt_joules,
-            state.local_action_fatigue,
-            attacker_view.raw_single_body_part_attr(SimpleAttribute::Endurance),
-        )
-    });
+    let attacker_performance = q_states
+        .get(attack.attacker())
+        .map_or(1.0, |state| combat_fatigue_performance(state.fatigue));
 
     let Some(attempted_defender_response) = resolve_active_defense(
         &attack,

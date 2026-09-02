@@ -123,11 +123,7 @@ fn weapon_facts(
             let recovery = fatigue_adjusted_recovery_seconds(
                 attack_recovery_secs(&view, view.weapon_preferred_melee_style(), false)
                     .max(config.cooldown_seconds),
-                combat_fatigue_performance(
-                    state.oxygen_debt_joules,
-                    state.local_action_fatigue,
-                    view.raw_single_body_part_attr(SimpleAttribute::Endurance),
-                ),
+                combat_fatigue_performance(state.fatigue),
             );
             (
                 reach,

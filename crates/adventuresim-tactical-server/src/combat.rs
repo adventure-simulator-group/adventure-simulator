@@ -922,6 +922,7 @@ mod tests {
     fn imbalance_only_incapacitation_recovers_and_removes_marker() {
         let mut app = App::new();
         app.insert_resource(Time::<()>::default())
+            .init_resource::<TacticalCombatConfig>()
             .add_systems(Update, update_tactical_combat_state);
         let actor = app
             .world_mut()
@@ -968,9 +969,10 @@ mod tests {
     }
 
     #[test]
-    fn jog_holds_oxygen_debt_sprint_adds_it_and_rest_recovers_it() {
+    fn jog_holds_fatigue_sprint_adds_it_and_rest_recovers_it() {
         let mut app = App::new();
         app.insert_resource(Time::<()>::default())
+            .init_resource::<TacticalCombatConfig>()
             .add_systems(Update, update_tactical_combat_state);
         let endurance = 3.0;
         let jog_speed = tactical_jog_speed(endurance);
@@ -985,8 +987,7 @@ mod tests {
                     ..default()
                 }),
                 TacticalCombatState {
-                    oxygen_debt_joules: 20_000.0,
-                    local_action_fatigue: 0.25,
+                    fatigue: 0.25,
                     ..default()
                 },
                 input::AccumulatedInput { ..default() },
@@ -1001,13 +1002,13 @@ mod tests {
             .resource_mut::<Time<()>>()
             .advance_by(Duration::from_secs(1));
         app.update();
-        let jog_oxygen_debt = app
+        let jog_fatigue = app
             .world()
             .entity(actor)
             .get::<TacticalCombatState>()
             .unwrap()
-            .oxygen_debt_joules;
-        assert!((jog_oxygen_debt - 20_000.0).abs() < f32::EPSILON);
+            .fatigue;
+        assert!((jog_fatigue - 0.25).abs() < f32::EPSILON);
 
         *app.world_mut()
             .entity_mut(actor)
@@ -1017,13 +1018,13 @@ mod tests {
             .resource_mut::<Time<()>>()
             .advance_by(Duration::from_secs(1));
         app.update();
-        let sprint_oxygen_debt = app
+        let sprint_fatigue = app
             .world()
             .entity(actor)
             .get::<TacticalCombatState>()
             .unwrap()
-            .oxygen_debt_joules;
-        assert!(sprint_oxygen_debt > jog_oxygen_debt);
+            .fatigue;
+        assert!(sprint_fatigue > jog_fatigue);
 
         app.world_mut()
             .entity_mut(actor)
@@ -1034,13 +1035,13 @@ mod tests {
             .resource_mut::<Time<()>>()
             .advance_by(Duration::from_secs(1));
         app.update();
-        let resting_oxygen_debt = app
+        let resting_fatigue = app
             .world()
             .entity(actor)
             .get::<TacticalCombatState>()
             .unwrap()
-            .oxygen_debt_joules;
-        assert!(resting_oxygen_debt < sprint_oxygen_debt);
+            .fatigue;
+        assert!(resting_fatigue < sprint_fatigue);
     }
 
     #[test]

@@ -20,7 +20,7 @@ pub use runtime::{
     runtime_animation_config, runtime_combat_presentation_config, runtime_melee_authority_config,
 };
 
-pub const TACTICAL_COMBAT_CONFIG_SCHEMA_VERSION: u16 = 5;
+pub const TACTICAL_COMBAT_CONFIG_SCHEMA_VERSION: u16 = 6;
 
 #[derive(Clone, Debug, PartialEq, Resource, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

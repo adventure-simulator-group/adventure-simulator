@@ -66,9 +66,7 @@ pub struct TacticalIncapacitationLog {
     pub blood_loss_fraction: f32,
     pub blood_loss_incapacitation: f32,
     pub imbalance: f32,
-    pub oxygen_debt_joules: f32,
-    pub oxygen_debt_incapacitation: f32,
-    pub local_action_fatigue: f32,
+    pub fatigue: f32,
     pub total: f32,
 }
 
@@ -366,7 +364,6 @@ fn incapacitation_log(
     let sources = state.incapacitation_sources(
         limbs.total_damage(),
         view.skill_check(Skill::Will, LimbWeights::all_equal()),
-        view.raw_single_body_part_attr(SimpleAttribute::Endurance),
     );
     TacticalIncapacitationLog {
         pain: sources.pain,
@@ -374,9 +371,7 @@ fn incapacitation_log(
         blood_loss_fraction: state.blood_loss_fraction,
         blood_loss_incapacitation: sources.blood_loss,
         imbalance: sources.imbalance,
-        oxygen_debt_joules: state.oxygen_debt_joules,
-        oxygen_debt_incapacitation: sources.oxygen_debt,
-        local_action_fatigue: state.local_action_fatigue,
+        fatigue: state.fatigue,
         total: state.incapacitation,
     }
 }
@@ -405,21 +400,7 @@ pub(super) fn record_condition_changes(
                     current.blood_loss_incapacitation,
                 ),
                 ("imbalance", previous.imbalance, current.imbalance),
-                (
-                    "oxygen_debt_joules",
-                    previous.oxygen_debt_joules,
-                    current.oxygen_debt_joules,
-                ),
-                (
-                    "oxygen_debt_incapacitation",
-                    previous.oxygen_debt_incapacitation,
-                    current.oxygen_debt_incapacitation,
-                ),
-                (
-                    "local_action_fatigue",
-                    previous.local_action_fatigue,
-                    current.local_action_fatigue,
-                ),
+                ("fatigue", previous.fatigue, current.fatigue),
                 ("total", previous.total, current.total),
             ] {
                 if (after - before).abs() > 1.0e-6 {

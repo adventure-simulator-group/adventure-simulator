@@ -100,8 +100,7 @@ struct TacticalCausalSummary {
     energy_partition_failures: u64,
     minimum_contact_separation_metres: f32,
     maximum_contact_separation_metres: f32,
-    maximum_oxygen_debt_joules: f32,
-    maximum_local_action_fatigue: f32,
+    maximum_fatigue: f32,
     john: TacticalCombatantCausal,
     opponent: TacticalCombatantCausal,
 }
@@ -136,8 +135,7 @@ struct TacticalCombatantCausal {
     mean_attack_start_interval_seconds: f64,
     contact_energy_samples: u64,
     mean_contact_energy_joules: f64,
-    maximum_oxygen_debt_joules: f32,
-    maximum_local_action_fatigue: f32,
+    maximum_fatigue: f32,
 }
 
 impl TacticalCausalSummary {
@@ -189,8 +187,7 @@ struct AutoresolveCausalSummary {
     final_open_wound_count: u64,
     final_internal_wound_count: u64,
     final_wound_flow_fraction_per_second: f64,
-    final_oxygen_debt_joules: f64,
-    final_local_action_fatigue: f64,
+    final_fatigue: f64,
     final_acute_trauma: f64,
     final_imbalance: f64,
     john_yields: u64,
@@ -250,8 +247,7 @@ struct AutoresolveCombatantCausal {
     final_pain_incapacitation: f64,
     final_blood_loss_fraction: f64,
     final_acute_trauma: f64,
-    final_oxygen_debt_joules: f64,
-    final_local_action_fatigue: f64,
+    final_fatigue: f64,
     final_imbalance: f64,
     final_open_wounds: u64,
     final_internal_wounds: u64,
@@ -265,8 +261,7 @@ impl AutoresolveCombatantCausal {
         self.final_pain_incapacitation += f64::from(outcome.pain_incapacitation);
         self.final_blood_loss_fraction += f64::from(outcome.blood_loss_fraction);
         self.final_acute_trauma += f64::from(outcome.acute_trauma);
-        self.final_oxygen_debt_joules += f64::from(outcome.oxygen_debt_joules);
-        self.final_local_action_fatigue += f64::from(outcome.local_action_fatigue);
+        self.final_fatigue += f64::from(outcome.fatigue);
         self.final_imbalance += f64::from(outcome.imbalance);
         self.final_open_wounds += outcome.open_wound_count as u64;
         self.final_internal_wounds += outcome.internal_wound_count as u64;
