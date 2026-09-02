@@ -68,6 +68,12 @@ including during the committed windup. The AI adds a short initiative delay
 and cadence variation before entering the same server-owned windup and recovery
 used by other attacks.
 
+Preferred measure guides footwork; it does not forbid a reachable attack. A
+polearm wielder under close pressure can attack while retreating rather than
+wait indefinitely for the enemy to give the head room. Contact still uses the
+actual distance when the attack is ready, so that choice can produce a weaker
+haft strike. If the weapon is unusable, the AI withdraws or yields instead.
+
 For a parametric weapon, that measure is not a second, hand-entered description
 of the model. The recipe that builds the mesh also determines the individual
 weapon's mass, length, grip-to-tip distance, striking-head span, balance, and
@@ -321,11 +327,17 @@ fn update_pain_factor(character):
 ### Blood loss (red)
 
 Penetrating tissue damage creates wounds rather than depositing an arbitrary
-quantity of lost blood. Open wounds have an external flow rate; internal wounds
-represent blunt or contained trauma and do not use that external flow. The
-simulation integrates the open flows over elapsed time against the combatant's
-blood volume. Thus the same cut becomes progressively more dangerous until it is
-treated, and simultaneous wounds add their flows.
+quantity of lost blood. Open wounds represent external bleeding; internal
+wounds represent bleeding within the body. Both carry flow rates, which the
+simulation adds over elapsed time as fractions of the combatant's blood volume.
+Thus an untreated wound becomes progressively more dangerous, and simultaneous
+wounds add their flows.
+
+Blood volume lost is not the same quantity as incapacitation from blood loss.
+The current model maps a loss of 30% of normal blood volume to one full unit of
+incapacitation. Diagnostic traces record the raw lost fraction and its derived
+incapacitation separately; the larger second value does not mean blood is
+leaving the body faster than the wound's flow rate.
 ### [Fear](../shared/morale.md) (blue)
 Morale only starts affecting incapacitation when it goes below 0, at which point
 each negative point of morale becomes fear, translating to 1% incapacitation.
@@ -441,6 +453,21 @@ on an elapsed-time timeline. Ground drive, traction, body and equipment mass,
 leg strength, guarded speed, and minimum body separation bound movement. A
 weapon's cadence schedules its next attack rather than merely penalizing the
 defender's reflex.
+
+Initial pair separation and its upper movement limit use the larger of the
+formation spacing and either combatant's effective arm-and-weapon reach. A
+halberd therefore has room to establish its head instead of being confined to
+the spacing of a shorter weapon. Moving into reach does not complete an attack
+early: its committed windup must finish before contact, and the distance at
+that scheduled time determines the available leverage and material contact.
+
+Technique selection under pressure remains incomplete. The autoresolver can
+commit a distal-head swing even when the opponent's closure will bring them
+inside the head's useful measure before contact. Preserving the windup makes
+that a weaker haft strike; it does not make the choice sensible. Predictive
+selection of stop-thrusts or shortened-grip techniques is follow-up work, not
+implemented behavior. Passing the mechanical audits does not establish that
+tactical combat and autoresolve have comparable outcomes.
 
 Contacts that share a tick resolve as one simultaneous batch, so the first
 processed combatant cannot erase a legitimate trade. A committed combatant can

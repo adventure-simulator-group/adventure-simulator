@@ -34,11 +34,27 @@ just melee-combat-iteration \
 The root `summary.json` compares tactical and autoresolve win rates, timeouts,
 throughput, and causal counts. `acceptance-audit.json` rejects broken invariants
 such as lost simultaneous contacts, ghost contacts from canceled attacks,
-impossible movement, energy creation, disagreement with the shared hit
-equation, or a polearm retaining full head energy inside its striking band.
+contacts before their committed windups finish, impossible movement, energy
+creation, disagreement with the shared hit equation, or a polearm retaining
+full head energy when the opponent is too close for its striking head.
 Each matchup directory contains every tactical and autoresolve trace as
 newline-delimited JSON, representative pretty-printed traces, its aggregate
 summary, and a `reviewer-packet.json`.
+
+The windup audit compares each contact with the contact tick recorded when
+that attack began. Entering reach during movement must not rewrite that
+commitment. Movement traces also record the authored speed limit for each
+segment. The distance check uses that limit and elapsed time, not the larger
+endpoint velocity: reaching a separation boundary can stop a fighter after
+they have already moved during the segment.
+
+Tactical condition traces distinguish `blood_loss_fraction`, the cumulative
+fraction of blood volume lost, from `blood_loss_incapacitation`, its derived
+disabling effect. Wound events record `blood_fraction_per_second`. Compare
+those rates with changes in the raw fraction when checking integration; do not
+compare them with the incapacitation contribution. A production-duel regression
+checks that each raw increment equals the active wound flows multiplied by the
+fixed timestep.
 
 The reviewer packet explains the physically based balance goal, the practical
 zero-to-five attribute and skill scale, and each combatant's ordinary equipment
@@ -47,6 +63,13 @@ coverage percentages or outcome probabilities. Give that packet and its linked
 evidence to an independent reviewer before deciding whether an implausible
 outcome warrants a mechanic change. A tactical/autoresolve win-rate difference
 is diagnostic evidence, not by itself proof that either side is correct.
+
+Treat a green audit as a prerequisite for review, not as a balance verdict.
+Current polearm and hammer matchups still show substantial tactical/autoresolve
+disagreement. In particular, a polearm can start a swing from useful measure
+but contact with its haft after the opponent closes during the windup. The
+review must distinguish correct accounting for that contact from poor attack
+selection; changing damage to compensate would obscure the original cause.
 
 ## Bevy Remote Protocol (BRP)
 
