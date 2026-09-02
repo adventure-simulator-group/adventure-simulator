@@ -113,13 +113,12 @@ pub(crate) fn apply_defend_intent(
             0.0,
             view.inventory_weight(),
             view.body_weight(),
-            view.raw_single_body_part_attr(SimpleAttribute::Endurance),
+            config.resolution.fatigue,
         );
-        apply_combat_workload(
-            &mut state.oxygen_debt_joules,
-            &mut state.local_action_fatigue,
+        state.charge_work(
             workload,
             view.raw_single_body_part_attr(SimpleAttribute::Endurance),
+            config.resolution.fatigue,
         );
     }
 
@@ -183,13 +182,7 @@ pub(crate) fn on_melee_attack_started(
             spec.continuation,
         )),
     );
-    let recovery = fatigue_adjusted_attack_recovery(
-        event.attacker,
-        event.hand,
-        recovery,
-        &combat_states,
-        &viewer,
-    );
+    let recovery = fatigue_adjusted_attack_recovery(event.attacker, recovery, &combat_states);
     let start = animation_tick(&time);
     let initial_contact =
         super::contact::initial_melee_contact(&viewer, &event, strike_family, &mut random);
@@ -225,6 +218,7 @@ pub(crate) fn on_melee_attack_started(
         recovery,
         &viewer,
         &mut combat_states,
+        &config,
     );
     begin_started_attack_movement(
         &mut commands,

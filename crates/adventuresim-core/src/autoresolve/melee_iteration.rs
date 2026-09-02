@@ -787,7 +787,8 @@ mod tests {
                 .iter()
                 .all(|entry| entry.capability == "disabled_weapon_arm" && !entry.attack_available)
         );
-        assert_eq!(evidence.fatigue_cadence.medical_incapacitation, 0.0);
+        assert!(evidence.fatigue_cadence.fatigue > 0.0);
+        assert!(evidence.fatigue_cadence.fatigue < 1.0);
         assert!(
             evidence.fatigue_cadence.fatigued_recovery_seconds
                 > evidence.fatigue_cadence.fresh_recovery_seconds

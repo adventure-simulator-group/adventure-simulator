@@ -154,11 +154,7 @@ fn draw_incapacitation_wheel(
     let (entity, state, limbs) = player.into_inner();
     let view = viewer.get(entity)?;
     let will = view.skill_check(Skill::Will, LimbWeights::all_equal());
-    let sources = state.incapacitation_sources(
-        limbs.total_damage(),
-        will,
-        view.raw_single_body_part_attr(SimpleAttribute::Endurance),
-    );
+    let sources = state.incapacitation_sources(limbs.total_damage(), will);
 
     let context = contexts.ctx_mut()?;
     let painter = context.layer_painter(egui::LayerId::new(
@@ -188,11 +184,7 @@ fn draw_incapacitation_wheel(
             continue;
         };
         let will = view.skill_check(Skill::Will, LimbWeights::all_equal());
-        let sources = state.incapacitation_sources(
-            limbs.total_damage(),
-            will,
-            view.raw_single_body_part_attr(SimpleAttribute::Endurance),
-        );
+        let sources = state.incapacitation_sources(limbs.total_damage(), will);
         let head_position = rig
             .and_then(|rig| rig.get(&BoneRole::Head))
             .and_then(|head| bone_transforms.get(*head).ok())
@@ -761,14 +753,10 @@ fn update_game_speed_debug_ui(
 }
 
 fn update_combat_state_ui(
-    player: Single<(&TacticalCombatState, &TacticalAttributes), With<ClientPlayer>>,
+    player: Single<&TacticalCombatState, With<ClientPlayer>>,
     mut span: Single<&mut TextSpan, With<CombatStateSpan>>,
 ) {
-    let (state, attributes) = player.into_inner();
-    span.0 = combat_state_label(
-        state,
-        oxygen_debt_incapacitation(state.oxygen_debt_joules, attributes.endurance),
-    );
+    span.0 = combat_state_label(player.into_inner());
 }
 
 fn tactical_outcome_label(outcome: TacticalOutcome) -> (&'static str, &'static str) {
@@ -915,11 +903,7 @@ fn update_incapacitation_ui(
     let (entity, state, limbs, _player_id) = player.into_inner();
     let view = viewer.get(entity)?;
     let will = view.skill_check(Skill::Will, LimbWeights::all_equal());
-    let sources = state.incapacitation_sources(
-        limbs.total_damage(),
-        will,
-        view.raw_single_body_part_attr(SimpleAttribute::Endurance),
-    );
+    let sources = state.incapacitation_sources(limbs.total_damage(), will);
 
     for (fill, mut node) in &mut bars {
         let value = match fill.0 {
@@ -1185,18 +1169,19 @@ mod tests {
     fn combat_label_surfaces_live_and_incapacitated_state() {
         let active = TacticalCombatState {
             blood_loss_fraction: 0.25,
+            fatigue: 0.2,
             imbalance: 0.5,
             ..default()
         };
         assert_eq!(
-            combat_state_label(&active, 0.0),
-            "Active | Blood loss 25% | Exhaustion 0% | Imbalance 50%"
+            combat_state_label(&active),
+            "Active | Blood loss 25% | Fatigue 20% | Imbalance 50%"
         );
         let incapacitated = TacticalCombatState {
             incapacitation: 1.0,
             ..active
         };
-        assert!(combat_state_label(&incapacitated, 0.0).starts_with("INCAPACITATED"));
+        assert!(combat_state_label(&incapacitated).starts_with("INCAPACITATED"));
     }
 
     #[test]
@@ -1215,24 +1200,24 @@ mod tests {
     fn incapacitation_wheel_uses_strategic_order_then_white_imbalance() {
         let segments = incapacitation_wheel_segments(TacticalIncapacitationSources {
             pain: 0.1,
+            acute_trauma: 0.05,
             blood_loss: 0.2,
             fear: 0.3,
             fatigue: 0.4,
             hunger: 0.5,
             thirst: 0.6,
             thermal: 0.7,
-            oxygen_debt: 0.8,
             imbalance: 0.9,
         });
 
         assert_eq!(
             segments.map(|(amount, _)| amount),
-            [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+            [0.15, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.9]
         );
         assert_eq!(segments[0].1, Color32::from_rgb(0xd9, 0x73, 0xa2));
         assert_eq!(segments[1].1, Color32::from_rgb(0xc8, 0x47, 0x47));
-        assert_eq!(segments[7].1, Color32::from_rgb(0x80, 0x80, 0x80));
-        assert_eq!(segments[8].1, Color32::WHITE);
+        assert_eq!(segments[3].1, Color32::from_rgb(0x20, 0x20, 0x20));
+        assert_eq!(segments[7].1, Color32::WHITE);
     }
 
     #[test]

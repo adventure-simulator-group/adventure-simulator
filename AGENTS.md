@@ -17,6 +17,15 @@
   SpacetimeDB schema. After changing that schema, run `just generate-db-client`
   rather than editing bindings by hand.
 
+## Combat legibility
+
+- Every gameplay-relevant combat factor must be legible to the player or highly
+  intuitive from the situation. Combat impairment belongs in the incapacitation
+  wheel; do not add hidden parallel penalties or fatigue pools.
+- Fatigue is one general value, displayed in black on the incapacitation wheel.
+  Weapon work, defenses, dodges, and strenuous movement all contribute to it.
+  Do not introduce per-muscle fatigue or a separate oxygen-debt impairment.
+
 ## Documentation and interface assets
 
 - `README.md` provides repository orientation; `wiki/index.md` owns the game

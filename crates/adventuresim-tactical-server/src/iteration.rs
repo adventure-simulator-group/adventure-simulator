@@ -200,6 +200,8 @@ fn spawn_combatant(
             },
             TacticalCombatState {
                 starting_incapacitation: source.starting_incapacitation,
+                fatigue: source.fatigue,
+                incapacitation: source.incapacitation(),
                 starting_blood_fraction: source.starting_blood_fraction,
                 ..default()
             },
@@ -314,7 +316,7 @@ mod tests {
             outcome
                 .condition_events
                 .iter()
-                .any(|event| { event.cause == "oxygen_debt_joules" && event.delta > 0.0 })
+                .any(|event| { event.cause == "fatigue" && event.delta > 0.0 })
         );
         assert!(!outcome.wound_events.is_empty());
         assert!(
@@ -427,9 +429,7 @@ mod tests {
                 || event.tick >= next_start
         }));
         assert!(outcome.condition_events.iter().any(|event| {
-            event.combatant == canceled.combatant
-                && event.cause == "local_action_fatigue"
-                && event.delta > 0.0
+            event.combatant == canceled.combatant && event.cause == "fatigue" && event.delta > 0.0
         }));
     }
 

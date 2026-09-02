@@ -14,9 +14,14 @@ type CombatStateQuery<'world, 'state> = Query<
     ),
 >;
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Bevy injects the authoritative configuration and independent combat queries"
+)]
 pub(crate) fn update_tactical_combat_state(
     mut cmd: Commands,
     time: Res<Time<()>>,
+    config: Res<TacticalCombatConfig>,
     viewer: TacticalPlayerViewer,
     limbs: Query<&Limbs>,
     metadata: Query<(&TacticalCombatSide, &CharacterId)>,
@@ -27,46 +32,15 @@ pub(crate) fn update_tactical_combat_state(
         let Ok(view) = viewer.get(entity) else {
             continue;
         };
-        let endurance = view.raw_single_body_part_attr(SimpleAttribute::Endurance);
-        let movement = movement_intent.as_deref().and_then(|intent| intent.0);
-        let active_action = skeleton.is_some_and(|skeleton| {
-            matches!(
-                skeleton.action_kind(),
-                SkeletonAction::Attack | SkeletonAction::Dodge | SkeletonAction::Block
-            )
-        });
-        let moving = movement.is_some_and(|movement| movement.length_squared() > f32::EPSILON);
-        let burden = view.body_weight() + view.inventory_weight();
-        let sprint_speed = tactical_sprint_speed(
-            view.raw_limb_attr(LimbAttribute::Strength, BodyPart::LeftLeg),
-            view.raw_limb_attr(LimbAttribute::Strength, BodyPart::RightLeg),
-            view.body_part_health(BodyPart::LeftLeg),
-            view.body_part_health(BodyPart::RightLeg),
-            burden,
-        );
-        let jog_speed = tactical_jog_speed(endurance);
-        let effort_speed = tactical_movement_speed_for_pace(
-            movement,
+        update_fatigue(
+            &view,
+            &mut state,
+            movement_intent.as_deref().and_then(|intent| intent.0),
             pace.copied().unwrap_or_default(),
-            skeleton.map_or(WeaponGuardState::Lowered, SkeletonState::weapon_guard),
-            jog_speed,
-            sprint_speed,
+            skeleton,
+            time.delta_secs(),
+            config.resolution.fatigue,
         );
-        state.oxygen_debt_joules += combat_movement_oxygen_debt_watts(
-            effort_speed,
-            jog_speed,
-            view.inventory_weight(),
-            endurance,
-        ) * time.delta_secs();
-        if !active_action && !moving {
-            let state = &mut *state;
-            recover_combat_fatigue(
-                &mut state.oxygen_debt_joules,
-                &mut state.local_action_fatigue,
-                time.delta_secs(),
-                endurance,
-            );
-        }
         state.blood_loss_fraction = advance_combat_bleeding(
             state.blood_loss_fraction,
             wounds.map_or(&[], |wounds| wounds.0.as_slice()),
@@ -94,7 +68,7 @@ pub(crate) fn update_tactical_combat_state(
             will,
             state.imbalance,
         ) + state.acute_trauma
-            + oxygen_debt_incapacitation(state.oxygen_debt_joules, endurance);
+            + state.fatigue;
         if state.is_incapacitated() {
             if let Some(input) = input.as_deref_mut() {
                 input.last_movement = None;
@@ -105,5 +79,53 @@ pub(crate) fn update_tactical_combat_state(
             }
             cmd.entity(entity).remove::<PendingDefenderResponse>();
         }
+    }
+}
+
+fn update_fatigue(
+    view: &TacticalPlayerView<'_, '_, '_>,
+    state: &mut TacticalCombatState,
+    movement: Option<Vec2>,
+    pace: MovementPace,
+    skeleton: Option<&SkeletonState>,
+    elapsed_seconds: f32,
+    parameters: CombatFatigueParameters,
+) {
+    let endurance = view.raw_single_body_part_attr(SimpleAttribute::Endurance);
+    let active_action = skeleton.is_some_and(|skeleton| {
+        matches!(
+            skeleton.action_kind(),
+            SkeletonAction::Attack | SkeletonAction::Dodge | SkeletonAction::Block
+        )
+    });
+    let moving = movement.is_some_and(|movement| movement.length_squared() > f32::EPSILON);
+    let burden = view.body_weight() + view.inventory_weight();
+    let sprint_speed = tactical_sprint_speed(
+        view.raw_limb_attr(LimbAttribute::Strength, BodyPart::LeftLeg),
+        view.raw_limb_attr(LimbAttribute::Strength, BodyPart::RightLeg),
+        view.body_part_health(BodyPart::LeftLeg),
+        view.body_part_health(BodyPart::RightLeg),
+        burden,
+    );
+    let jog_speed = tactical_jog_speed(endurance);
+    let effort_speed = tactical_movement_speed_for_pace(
+        movement,
+        pace,
+        skeleton.map_or(WeaponGuardState::Lowered, SkeletonState::weapon_guard),
+        jog_speed,
+        sprint_speed,
+    );
+    state.fatigue = (state.fatigue
+        + combat_movement_fatigue_per_second(
+            effort_speed,
+            jog_speed,
+            view.inventory_weight(),
+            endurance,
+            parameters,
+        ) * elapsed_seconds)
+        .clamp(0.0, 1.0);
+    if !active_action && !moving {
+        let state = &mut *state;
+        recover_combat_fatigue(&mut state.fatigue, elapsed_seconds, endurance, parameters);
     }
 }

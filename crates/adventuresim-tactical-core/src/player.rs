@@ -137,6 +137,16 @@ impl Default for Stats {
 }
 
 impl PlayerEssentials for Stats {
+    // Combat applies the live wheel fatigue at the attack/defense boundary.
+    // Strategic calorie history must not impose a second, invisible penalty.
+    fn fatigue_penalty_by_parts(
+        &self,
+        _attr: &impl PlayerAttributes,
+        _body: &impl PlayerBody,
+    ) -> f32 {
+        1.0
+    }
+
     fn calories_used_today(&self) -> f32 {
         self.calories_used
     }
@@ -604,28 +614,26 @@ mod tactical_combat_state_tests {
     #[test]
     fn wheel_sources_preserve_strategic_breakdown_and_recompute_live_values() {
         let state = TacticalCombatState {
-            starting_incapacitation: 0.35,
+            starting_incapacitation: 0.3,
             starting_blood_fraction: 0.85,
             starting_fear: 0.1,
-            starting_fatigue: 0.05,
+            fatigue: 0.45,
             starting_hunger: 0.08,
             starting_thirst: 0.07,
             starting_thermal: 0.05,
             blood_loss_fraction: 0.15,
-            oxygen_debt_joules: 120_000.0,
             imbalance: 0.2,
             ..default()
         };
 
-        let sources = state.incapacitation_sources(0.0, 4.0, 3.0);
+        let sources = state.incapacitation_sources(0.0, 4.0);
         assert_eq!(sources.pain, 0.0);
         assert!((sources.blood_loss - 1.0).abs() < 0.0001);
         assert_eq!(sources.fear, 0.1);
-        assert_eq!(sources.fatigue, 0.05);
+        assert_eq!(sources.fatigue, 0.45);
         assert_eq!(sources.hunger, 0.08);
         assert_eq!(sources.thirst, 0.07);
         assert_eq!(sources.thermal, 0.05);
-        assert!(sources.oxygen_debt > 0.0);
         assert_eq!(sources.imbalance, 0.2);
         assert!((sources.total() - 1.95).abs() < 0.0001);
         assert!(
@@ -638,7 +646,7 @@ mod tactical_combat_state_tests {
                     4.0,
                     state.imbalance,
                 )
-                - sources.oxygen_debt)
+                - sources.fatigue)
                 .abs()
                 < 0.0001
         );

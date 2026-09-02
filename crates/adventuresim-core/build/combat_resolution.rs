@@ -2,6 +2,10 @@ use std::{env, fs, path::Path};
 
 use serde::Deserialize;
 
+#[path = "../src/combat/fatigue_config.rs"]
+mod fatigue_config;
+use fatigue_config::CombatFatigueParameters;
+
 #[derive(Deserialize)]
 struct CombatBuildConfig {
     resolution: ResolutionValues,
@@ -55,6 +59,7 @@ struct AiOffenseValues {
 
 #[derive(Deserialize)]
 struct ResolutionValues {
+    fatigue: CombatFatigueParameters,
     armed_attack_energy_transfer: f64,
     stagger_resistance_joules_per_kg: f64,
 }
@@ -89,11 +94,12 @@ pub fn compile(root: &Path) {
     values.validate(&path);
     let resolution = values.resolution;
     let autoresolve = values.autoresolve;
+    let fatigue = format!("{:?}", resolution.fatigue);
     fs::write(
         Path::new(&env::var("OUT_DIR").unwrap()).join("combat_resolution_config.rs"),
         format!(
             "pub const EMBEDDED_COMBAT_RESOLUTION_PARAMETERS: CombatResolutionParameters = \
-             CombatResolutionParameters {{ armed_attack_energy_transfer: {:?}_f32, \
+             CombatResolutionParameters {{ fatigue: {fatigue}, armed_attack_energy_transfer: {:?}_f32, \
              stagger_resistance_joules_per_kg: {:?}_f32 }};\n\
              pub const EMBEDDED_AUTORESOLVE_PARAMETERS: AutoresolveParameters = \
              AutoresolveParameters {{ combat_round_seconds: {:?}_f32, formation_spacing_metres: \
@@ -159,6 +165,10 @@ pub fn compile(root: &Path) {
 
 impl CombatBuildConfig {
     fn validate(&self, path: &Path) {
+        self.resolution
+            .fatigue
+            .validate()
+            .expect("invalid authored fatigue configuration");
         assert!(
             self.resolution.armed_attack_energy_transfer.is_finite()
                 && (0.0..=1.0).contains(&self.resolution.armed_attack_energy_transfer)

@@ -20,7 +20,7 @@ pub(super) fn resolve_active_defense(
 ) -> Option<DefenderResponse> {
     let defender_skeleton = q_skeletons.get(attack.target()).ok()?;
     let pending = q_pending.get(attack.target()).ok();
-    let (incapacitation, performance) = defender_condition(attack, defender_view, q_states);
+    let (incapacitation, performance) = defender_condition(attack, q_states);
     let response = {
         let mut authority = q_authorities.get_mut(attack.target()).ok();
         resolve_melee_defender_response(
@@ -52,17 +52,12 @@ pub(super) fn resolve_active_defense(
 
 fn defender_condition(
     attack: &AuthorizedMeleeAttack,
-    defender: &TacticalPlayerView<'_, '_, '_>,
     states: &Query<&mut TacticalCombatState>,
 ) -> (f32, f32) {
     states.get(attack.target()).map_or((0.0, 1.0), |state| {
         (
             state.incapacitation,
-            combat_fatigue_performance(
-                state.oxygen_debt_joules,
-                state.local_action_fatigue,
-                defender.raw_single_body_part_attr(SimpleAttribute::Endurance),
-            ),
+            combat_fatigue_performance(state.fatigue),
         )
     })
 }
@@ -92,14 +87,9 @@ fn charge_defense_work(
         defender.weapon_moment_of_inertia(),
         defender.inventory_weight(),
         defender.body_weight(),
-        endurance,
+        config.resolution.fatigue,
     );
-    apply_combat_workload(
-        &mut state.oxygen_debt_joules,
-        &mut state.local_action_fatigue,
-        workload,
-        endurance,
-    );
+    state.charge_work(workload, endurance, config.resolution.fatigue);
 }
 
 #[expect(

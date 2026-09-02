@@ -158,8 +158,7 @@ fn record_final_totals(
         causal.final_internal_wound_count += combatant.internal_wound_count as u64;
         causal.final_wound_flow_fraction_per_second +=
             f64::from(combatant.wound_flow_fraction_per_second);
-        causal.final_oxygen_debt_joules += f64::from(combatant.oxygen_debt_joules);
-        causal.final_local_action_fatigue += f64::from(combatant.local_action_fatigue);
+        causal.final_fatigue += f64::from(combatant.fatigue);
         causal.final_acute_trauma += f64::from(combatant.acute_trauma);
         causal.final_imbalance += f64::from(combatant.imbalance);
     }

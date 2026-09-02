@@ -191,7 +191,7 @@ mod tests {
             for style in [MeleeAttackStyle::Swing, MeleeAttackStyle::Stab] {
                 set_style(&mut attacker, style);
                 for fatigue in [0.0, 0.55] {
-                    attacker.local_action_fatigue = fatigue;
+                    attacker.fatigue = fatigue;
                     let performance = attacker.fatigue_performance();
                     for dodge_hours in [0.0, 2_000.0] {
                         for inventory_weight in [5.0, 45.0] {

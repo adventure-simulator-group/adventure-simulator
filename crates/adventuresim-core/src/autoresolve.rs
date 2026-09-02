@@ -85,6 +85,16 @@ pub struct CombatEssentials {
 }
 
 impl PlayerEssentials for CombatEssentials {
+    // Combat applies the live wheel fatigue at the attack/defense boundary.
+    // Strategic calorie history must not impose a second, invisible penalty.
+    fn fatigue_penalty_by_parts(
+        &self,
+        _attr: &impl PlayerAttributes,
+        _body: &impl PlayerBody,
+    ) -> f32 {
+        1.0
+    }
+
     fn calories_used_today(&self) -> f32 {
         self.calories_used_today
     }
@@ -184,10 +194,8 @@ pub struct Combatant {
     pub blood_loss_fraction: f32,
     #[doc(hidden)]
     pub wounds: Vec<CombatWound>,
-    #[doc(hidden)]
-    pub oxygen_debt_joules: f32,
-    #[doc(hidden)]
-    pub local_action_fatigue: f32,
+    /// General fatigue: the same incapacitation fraction shown in black tactically.
+    pub fatigue: f32,
     #[doc(hidden)]
     pub acute_trauma: f32,
     #[doc(hidden)]
@@ -243,6 +251,8 @@ pub struct CombatantStrategicState {
     pub skills: CombatSkills,
     pub starting_incapacitation: f32,
     pub starting_blood_fraction: f32,
+    /// General fatigue already included in strategic incapacitation.
+    pub fatigue: f32,
 }
 
 impl Combatant {
@@ -263,8 +273,7 @@ impl Combatant {
             imbalance: 0.0,
             blood_loss_fraction: 0.0,
             wounds: Vec::new(),
-            oxygen_debt_joules: 0.0,
-            local_action_fatigue: 0.0,
+            fatigue: 0.0,
             acute_trauma: 0.0,
             active_work_seconds: 0.0,
             melee_attack_power_multiplier: 1.0,
@@ -293,7 +302,9 @@ impl Combatant {
         combatant.essentials = state.essentials;
         combatant.equipment = state.equipment;
         combatant.skills = state.skills;
-        combatant.starting_incapacitation = state.starting_incapacitation;
+        combatant.starting_incapacitation =
+            (state.starting_incapacitation - state.fatigue).max(0.0);
+        combatant.fatigue = state.fatigue.clamp(0.0, 1.0);
         combatant.starting_blood_fraction = state.starting_blood_fraction;
         combatant.initial_ammunition = initial_ammunition;
         combatant
@@ -334,7 +345,7 @@ impl Combatant {
             will,
             self.imbalance,
         ) + self.acute_trauma
-            + oxygen_debt_incapacitation(self.oxygen_debt_joules, self.attributes.endurance)
+            + self.fatigue
     }
 
     pub fn is_incapacitated(&self) -> bool {
@@ -355,12 +366,12 @@ impl Combatant {
             advance_combat_bleeding(self.blood_loss_fraction, &self.wounds, elapsed_seconds);
         let recovery_seconds = (elapsed_seconds - self.active_work_seconds).max(0.0);
         recover_combat_fatigue(
-            &mut self.oxygen_debt_joules,
-            &mut self.local_action_fatigue,
+            &mut self.fatigue,
             recovery_seconds,
             self.attributes.endurance,
+            EMBEDDED_COMBAT_RESOLUTION_PARAMETERS.fatigue,
         );
-        self.active_work_seconds = 0.0;
+        self.active_work_seconds = (self.active_work_seconds - elapsed_seconds).max(0.0);
     }
 
     fn charge_action_work(&mut self, work: CombatActionWork, duration_seconds: f32) {
@@ -372,23 +383,19 @@ impl Combatant {
             weapon.moment_of_inertia_kg_m2,
             self.equipment.inventory_weight,
             self.body.weight_kg,
-            self.attributes.endurance,
+            EMBEDDED_COMBAT_RESOLUTION_PARAMETERS.fatigue,
         );
         apply_combat_workload(
-            &mut self.oxygen_debt_joules,
-            &mut self.local_action_fatigue,
+            &mut self.fatigue,
             workload,
             self.attributes.endurance,
+            EMBEDDED_COMBAT_RESOLUTION_PARAMETERS.fatigue,
         );
         self.active_work_seconds = self.active_work_seconds.max(duration_seconds);
     }
 
     fn fatigue_performance(&self) -> f32 {
-        combat_fatigue_performance(
-            self.oxygen_debt_joules,
-            self.local_action_fatigue,
-            self.attributes.endurance,
-        )
+        combat_fatigue_performance(self.fatigue)
     }
 
     fn can_attack_ranged(&self) -> bool {
@@ -410,9 +417,7 @@ impl Combatant {
         let encumbrance = self
             .equipment
             .encumbrance_penalty_by_parts(&self.attributes, &self.body);
-        let fatigue = self
-            .essentials
-            .fatigue_penalty_by_parts(&self.attributes, &self.body);
+        let fatigue = self.fatigue_performance();
         ((1.0 + leg_agility) * armor * encumbrance * fatigue).max(minimum_speed)
     }
 }
@@ -444,8 +449,7 @@ pub struct CombatantOutcome {
     pub imbalance: f32,
     pub acute_trauma: f32,
     pub pain_incapacitation: f32,
-    pub oxygen_debt_joules: f32,
-    pub local_action_fatigue: f32,
+    pub fatigue: f32,
     pub wound_count: usize,
     pub open_wound_count: usize,
     pub internal_wound_count: usize,
@@ -461,7 +465,7 @@ pub enum CombatTerminalCause {
     Pain,
     BloodLoss,
     AcuteTrauma,
-    OxygenDebt,
+    Fatigue,
     Imbalance,
 }
 
@@ -1559,8 +1563,7 @@ fn outcome(combatant: Combatant) -> CombatantOutcome {
         (combatant.starting_blood_fraction - combatant.blood_loss_fraction).clamp(0.0, 1.0),
         1.0,
     );
-    let oxygen_debt_incapacitation =
-        oxygen_debt_incapacitation(combatant.oxygen_debt_joules, combatant.attributes.endurance);
+
     let terminal_cause = if combatant.yielded {
         Some(CombatTerminalCause::YieldedUnableToContinue)
     } else if incapacitated {
@@ -1572,7 +1575,7 @@ fn outcome(combatant: Combatant) -> CombatantOutcome {
             (pain_incapacitation, CombatTerminalCause::Pain),
             (blood_loss_incapacitation, CombatTerminalCause::BloodLoss),
             (combatant.acute_trauma, CombatTerminalCause::AcuteTrauma),
-            (oxygen_debt_incapacitation, CombatTerminalCause::OxygenDebt),
+            (combatant.fatigue, CombatTerminalCause::Fatigue),
             (combatant.imbalance, CombatTerminalCause::Imbalance),
         ]
         .into_iter()
@@ -1592,8 +1595,7 @@ fn outcome(combatant: Combatant) -> CombatantOutcome {
         imbalance: combatant.imbalance,
         acute_trauma: combatant.acute_trauma,
         pain_incapacitation,
-        oxygen_debt_joules: combatant.oxygen_debt_joules,
-        local_action_fatigue: combatant.local_action_fatigue,
+        fatigue: combatant.fatigue,
         wound_count: combatant.wounds.len(),
         open_wound_count,
         internal_wound_count,
@@ -1628,6 +1630,21 @@ mod tests {
     }
 
     #[test]
+    fn fatigue_recovery_preserves_active_work_across_time_slices() {
+        let mut whole = fighter(1, 3.0, false);
+        whole.fatigue = 0.5;
+        whole.active_work_seconds = 1.0;
+        let mut sliced = whole.clone();
+        whole.advance_condition(1.5);
+        for _ in 0..3 {
+            sliced.advance_condition(0.5);
+        }
+        assert!((whole.fatigue - sliced.fatigue).abs() < f32::EPSILON);
+        assert!(whole.fatigue < 0.5);
+        assert_eq!(whole.incapacitation(), whole.fatigue);
+    }
+
+    #[test]
     fn strategic_state_constructs_a_fresh_combatant_without_exposing_duel_state() {
         let equipment = CombatEquipment {
             ammunition: 7,
@@ -1644,12 +1661,14 @@ mod tests {
             equipment,
             skills: CombatSkills::default(),
             starting_incapacitation: 0.2,
+            fatigue: 0.1,
             starting_blood_fraction: 0.85,
         });
 
         assert_eq!(combatant.id, 42);
         assert_eq!(combatant.attributes.endurance, 3.5);
-        assert_eq!(combatant.starting_incapacitation, 0.2);
+        assert_eq!(combatant.starting_incapacitation, 0.1);
+        assert_eq!(combatant.fatigue, 0.1);
         assert_eq!(combatant.starting_blood_fraction, 0.85);
         assert_eq!(combatant.initial_ammunition, 7);
         assert_eq!(combatant.melee_engagement_target, None);
@@ -2807,7 +2826,7 @@ mod tests {
     #[test]
     fn committed_parry_discards_prepared_strike_and_costs_work() {
         let mut defender = fighter(2, 3.0, false);
-        let fatigue_before = defender.local_action_fatigue;
+        let fatigue_before = defender.fatigue;
         let commitment = commit_defensive_action(
             &mut defender,
             DefenderResponse::Parry {
@@ -2829,7 +2848,7 @@ mod tests {
             commitment.kind,
             MeleeDefenseCommitmentKind::CanceledSameWeapon
         );
-        assert!(defender.local_action_fatigue > fatigue_before);
+        assert!(defender.fatigue > fatigue_before);
     }
 
     #[test]
