@@ -152,13 +152,15 @@ fn establish_engagement(
 ) -> (u64, u64, f32) {
     let attacker_id = attackers[index].id;
     let target_id = defenders[target].id;
+    let initial_separation =
+        maximum_melee_pair_surface_separation(&attackers[index], &defenders[target], parameters);
     if attackers[index].melee_engagement_target != Some(target_id) {
         attackers[index].melee_engagement_target = Some(target_id);
-        attackers[index].melee_engagement_distance_metres = parameters.formation_spacing_metres;
+        attackers[index].melee_engagement_distance_metres = initial_separation;
     }
     if defenders[target].melee_engagement_target != Some(attacker_id) {
         defenders[target].melee_engagement_target = Some(attacker_id);
-        defenders[target].melee_engagement_distance_metres = parameters.formation_spacing_metres;
+        defenders[target].melee_engagement_distance_metres = initial_separation;
     }
     let distance = attackers[index]
         .melee_engagement_distance_metres

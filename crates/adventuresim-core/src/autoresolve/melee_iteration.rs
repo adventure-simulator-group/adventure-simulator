@@ -614,6 +614,38 @@ mod tests {
     }
 
     #[test]
+    fn entering_reach_does_not_complete_a_committed_windup_early() {
+        let (john, opponents) = melee_iteration_roster().unwrap();
+        let hammer_brute = opponents
+            .iter()
+            .find(|build| build.key == "hammer_brute")
+            .unwrap();
+        let outcome = resolve_battle(
+            vec![john.combatant],
+            vec![hammer_brute.combatant.clone()],
+            1,
+            BattleOpening::Normal,
+        );
+        let scheduled_contacts = outcome
+            .timeline
+            .iter()
+            .filter(|event| event.kind == MeleeTimelineKind::AttackStarted)
+            .map(|event| (event.attack_id.unwrap(), event.attack_contact_tick.unwrap()))
+            .collect::<std::collections::HashMap<_, _>>();
+        for contact in outcome
+            .timeline
+            .iter()
+            .filter(|event| event.kind == MeleeTimelineKind::Contact)
+        {
+            let scheduled_tick = scheduled_contacts[&contact.attack_id.unwrap()];
+            assert!(
+                contact.tick >= scheduled_tick,
+                "movement into reach cannot manufacture the remaining windup: {contact:?}"
+            );
+        }
+    }
+
+    #[test]
     fn polearm_contact_uses_only_movement_elapsed_before_contact() {
         let (john, opponents) = melee_iteration_roster().unwrap();
         let veteran = opponents
@@ -634,17 +666,8 @@ mod tests {
             let elapsed = movement.movement_elapsed_seconds.unwrap();
             assert!(elapsed <= 1.0 / 64.0 + 1.0e-6);
             let displacement = movement.movement_displacement_metres.unwrap().abs();
-            let velocity = movement
-                .movement_velocity_before_metres_per_second
-                .unwrap()
-                .abs()
-                .max(
-                    movement
-                        .movement_velocity_after_metres_per_second
-                        .unwrap()
-                        .abs(),
-                );
-            assert!(displacement <= velocity * elapsed + 1.0e-6);
+            let speed_limit = movement.movement_speed_limit_metres_per_second.unwrap();
+            assert!(displacement <= speed_limit * elapsed + 1.0e-6);
         }
         let first_contact = outcome
             .timeline

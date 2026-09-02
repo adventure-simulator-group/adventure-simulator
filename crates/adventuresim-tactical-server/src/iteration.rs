@@ -321,8 +321,31 @@ mod tests {
             outcome
                 .condition_events
                 .iter()
-                .any(|event| { event.cause == "blood_loss" && event.delta > 0.0 })
+                .any(|event| { event.cause == "blood_loss_fraction" && event.delta > 0.0 })
         );
+        assert!(
+            outcome
+                .condition_events
+                .iter()
+                .any(|event| { event.cause == "blood_loss_incapacitation" && event.delta > 0.0 })
+        );
+        for event in outcome
+            .condition_events
+            .iter()
+            .filter(|event| event.cause == "blood_loss_fraction" && event.delta > 0.0)
+        {
+            let active_wound_flow = outcome
+                .wound_events
+                .iter()
+                .filter(|wound| wound.combatant == event.combatant && wound.tick < event.tick)
+                .map(|wound| wound.blood_fraction_per_second)
+                .sum::<f32>();
+            let expected_delta = active_wound_flow * TACTICAL_TICK_SECONDS;
+            assert!(
+                (event.delta - expected_delta).abs() < 1.0e-6,
+                "raw blood loss must integrate the active wound flow: {event:?}"
+            );
+        }
         assert!(outcome.decision_events.iter().any(|event| {
             event.decision == TacticalDecision::Attack
                 && event.tick > 0
@@ -453,6 +476,11 @@ mod tests {
         let outcomes = (1..=8)
             .map(|seed| resolve_tactical_server_melee_duel(&john, veteran, seed))
             .collect::<Vec<_>>();
+        assert!(
+            outcomes
+                .iter()
+                .all(|outcome| { !matches!(outcome.resolution, TacticalDuelResolution::Timeout) })
+        );
         let preferred_measures = outcomes
             .iter()
             .flat_map(|outcome| &outcome.decision_events)
@@ -484,6 +512,16 @@ mod tests {
                         && event.contact_material == Some(EquipmentMaterial::RoughSteel)
                         && event.contact_energy_fraction <= 1.0
                 })
+        );
+        assert!(
+            outcomes
+                .iter()
+                .flat_map(|outcome| &outcome.events)
+                .any(|event| {
+                    event.attacker == veteran.name
+                        && event.contact_classification == MeleeContactClassification::Haft
+                }),
+            "a pressured polearm user should attack while retreating instead of waiting forever for ideal head measure"
         );
     }
 

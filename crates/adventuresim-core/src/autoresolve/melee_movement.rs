@@ -19,6 +19,7 @@ impl MovementIntent {
 pub(super) struct AxisMotion {
     pub velocity_before_metres_per_second: f32,
     pub velocity_after_metres_per_second: f32,
+    pub speed_limit_metres_per_second: f32,
     pub displacement_metres: f32,
 }
 
@@ -61,6 +62,7 @@ fn integrate_axis(
     AxisMotion {
         velocity_before_metres_per_second: before,
         velocity_after_metres_per_second: after,
+        speed_limit_metres_per_second: maximum_speed,
         displacement_metres: accelerating_displacement + constant_displacement,
     }
 }

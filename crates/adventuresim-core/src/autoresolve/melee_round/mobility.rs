@@ -34,6 +34,17 @@ pub(super) fn movement_intent(
     }
 }
 
+pub(super) fn maximum_melee_pair_surface_separation(
+    first: &Combatant,
+    second: &Combatant,
+    parameters: crate::combat::AutoresolveParameters,
+) -> f32 {
+    parameters
+        .formation_spacing_metres
+        .max(melee_effective_reach(first))
+        .max(melee_effective_reach(second))
+}
+
 pub(in crate::autoresolve) fn preview_melee_pair_movement(
     first: &Combatant,
     second: &Combatant,
@@ -70,6 +81,8 @@ pub(in crate::autoresolve) fn preview_melee_pair_movement(
             parameters.traction_coefficient,
         )
     };
+    let maximum_surface_separation =
+        maximum_melee_pair_surface_separation(first, second, parameters);
     let mut movement = integrate_opposed_movement(
         surface + HUMANOID_MELEE_MINIMUM_CENTER_SEPARATION_METRES,
         first.melee_separation_velocity_metres_per_second,
@@ -82,7 +95,7 @@ pub(in crate::autoresolve) fn preview_melee_pair_movement(
         acceleration(second),
         elapsed,
         HUMANOID_MELEE_MINIMUM_CENTER_SEPARATION_METRES,
-        parameters.formation_spacing_metres + HUMANOID_MELEE_MINIMUM_CENTER_SEPARATION_METRES,
+        maximum_surface_separation + HUMANOID_MELEE_MINIMUM_CENTER_SEPARATION_METRES,
     );
     movement.distance_before_metres = (movement.distance_before_metres
         - HUMANOID_MELEE_MINIMUM_CENTER_SEPARATION_METRES)
@@ -90,79 +103,6 @@ pub(in crate::autoresolve) fn preview_melee_pair_movement(
     movement.distance_after_metres =
         (movement.distance_after_metres - HUMANOID_MELEE_MINIMUM_CENTER_SEPARATION_METRES).max(0.0);
     (movement, first_intent, second_intent)
-}
-
-pub(in crate::autoresolve) fn reach_entry_seconds(
-    first: &Combatant,
-    second: &Combatant,
-    first_attacks: bool,
-    elapsed: f32,
-    parameters: crate::combat::AutoresolveParameters,
-) -> Option<f32> {
-    let attacker = if first_attacks { first } else { second };
-    attacker.melee_attack_started_at_seconds?;
-    let reach = melee_effective_reach(attacker);
-    if first
-        .melee_engagement_distance_metres
-        .min(second.melee_engagement_distance_metres)
-        <= reach
-    {
-        return None;
-    }
-    if preview_melee_pair_movement(first, second, elapsed, parameters)
-        .0
-        .distance_after_metres
-        > reach
-    {
-        return None;
-    }
-    let (mut lower, mut upper) = (0.0, elapsed);
-    for _ in 0..24 {
-        let middle = (lower + upper) * 0.5;
-        if preview_melee_pair_movement(first, second, middle, parameters)
-            .0
-            .distance_after_metres
-            <= reach
-        {
-            upper = middle;
-        } else {
-            lower = middle;
-        }
-    }
-    Some(upper)
-}
-
-pub(in crate::autoresolve) fn reschedule_pair_contacts_at_reach_entry(
-    first: &mut Combatant,
-    second: &mut Combatant,
-    start: f32,
-    elapsed: f32,
-    parameters: crate::combat::AutoresolveParameters,
-) {
-    if elapsed <= 0.0 {
-        return;
-    }
-    let first_entry = reach_entry_seconds(first, second, true, elapsed, parameters);
-    let second_entry = reach_entry_seconds(first, second, false, elapsed, parameters);
-    let end = start + elapsed;
-    if let Some(entry) = first_entry {
-        let contact = start + entry;
-        if first
-            .melee_attack_contact_at_seconds
-            .is_some_and(|nominal| contact < nominal && contact <= end)
-        {
-            first.melee_attack_contact_at_seconds = Some(contact);
-        }
-    }
-    if let Some(entry) = second_entry {
-        let contact = start + entry;
-        if second
-            .melee_attack_contact_at_seconds
-            .is_some_and(|nominal| contact < nominal && contact <= end)
-        {
-            second.melee_attack_contact_at_seconds = Some(contact);
-        }
-    }
 }
 
 pub(in crate::autoresolve) fn preferred_melee_measure(
@@ -222,6 +162,7 @@ fn record_movement(
     event.movement_displacement_metres = Some(axis.displacement_metres);
     event.movement_velocity_before_metres_per_second = Some(axis.velocity_before_metres_per_second);
     event.movement_velocity_after_metres_per_second = Some(axis.velocity_after_metres_per_second);
+    event.movement_speed_limit_metres_per_second = Some(axis.speed_limit_metres_per_second);
     event.readiness_before_seconds = Some(combatant.melee_recovery_until_seconds);
     event.readiness_after_seconds = event.readiness_before_seconds;
     event.phase_before = Some(phase);
@@ -243,10 +184,11 @@ pub(in crate::autoresolve) fn advance_melee_pair_movement(
     if first.melee_engagement_target != Some(second.id)
         || second.melee_engagement_target != Some(first.id)
     {
+        let initial_separation = maximum_melee_pair_surface_separation(first, second, parameters);
         first.melee_engagement_target = Some(second.id);
         second.melee_engagement_target = Some(first.id);
-        first.melee_engagement_distance_metres = parameters.formation_spacing_metres;
-        second.melee_engagement_distance_metres = parameters.formation_spacing_metres;
+        first.melee_engagement_distance_metres = initial_separation;
+        second.melee_engagement_distance_metres = initial_separation;
         first.melee_separation_velocity_metres_per_second = 0.0;
         second.melee_separation_velocity_metres_per_second = 0.0;
     }
