@@ -19,7 +19,10 @@ pub use audit::{AuditIssue, MeshAuditReport, audit_plan, audit_triangle_mesh};
 pub use collision::{
     BuildingCollision, CollisionBounds, CollisionCuboid, compile_building_collision,
 };
-pub use detail::{BuildingDetail, compile_building_detail, compile_static_building_detail};
+pub use detail::{
+    BUILDING_DETAIL_UV_METRES_PER_UNIT, BuildingDetail, compile_building_detail,
+    compile_static_building_detail,
+};
 pub use doors::{DoorSpec, compile_operable_doors};
 pub use generator::{GenerationError, edit_document, generate, generate_document, set_roof_pitch};
 pub use lod::{

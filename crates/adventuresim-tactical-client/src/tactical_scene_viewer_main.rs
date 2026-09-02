@@ -38,6 +38,8 @@ enum CaptureProfile {
     Semantic,
     /// Compact environment-art review suite; intended for matrix review.
     EnvironmentReview,
+    /// Eye-height views inside each civilian city-building archetype.
+    InteriorReview,
     /// Production third-person camera sweep on the unmodified animation scene.
     AnimationPlay,
     /// Cold first approach, retreat, and warm second approach across tree LODs.
@@ -138,6 +140,7 @@ fn main() {
         match args.profile {
             CaptureProfile::Semantic => "semantic",
             CaptureProfile::EnvironmentReview => "environment-review",
+            CaptureProfile::InteriorReview => "interior-review",
             CaptureProfile::AnimationPlay => "animation-play",
             CaptureProfile::TreeColdTraversal => "tree-cold-traversal",
             CaptureProfile::BeechLeafMotion => "beech-leaf-motion",

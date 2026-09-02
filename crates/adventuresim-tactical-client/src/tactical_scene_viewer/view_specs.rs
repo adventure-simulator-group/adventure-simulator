@@ -25,6 +25,9 @@ pub(super) enum CapturePose {
     AnimationPlayObstruction {
         yaw_degrees: f32,
     },
+    BuildingInterior {
+        camera: u8,
+    },
     TreeColdTraversal {
         distance: f32,
     },
@@ -640,6 +643,8 @@ pub(super) const CAPTURE_VIEWS: [CaptureViewSpec; 40] = [
 
 mod environment;
 pub(super) use environment::ENVIRONMENT_REVIEW_VIEWS;
+mod interiors;
+pub(super) use interiors::INTERIOR_REVIEW_VIEWS;
 
 pub(super) const ANIMATION_PLAY_VIEWS: [CaptureViewSpec; 23] = [
     v!(

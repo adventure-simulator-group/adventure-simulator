@@ -251,6 +251,21 @@ fn building_mesh(batch: &LodMesh, local_origin: Vec3) -> Mesh {
             .collect::<Vec<_>>(),
     );
     mesh.insert_indices(Indices::U32(batch.indices.clone()));
+    if matches!(
+        batch.material,
+        BuildingLodMaterial::Wall(_)
+            | BuildingLodMaterial::CrownMasonry
+            | BuildingLodMaterial::Roof(_)
+            | BuildingLodMaterial::Timber
+            | BuildingLodMaterial::InteriorTimber
+            | BuildingLodMaterial::Iron
+            | BuildingLodMaterial::InteriorPlaster
+            | BuildingLodMaterial::Floor
+            | BuildingLodMaterial::Glass
+    ) {
+        mesh.generate_tangents()
+            .expect("interior building UVs must support tangent-space normal maps");
+    }
     mesh
 }
 

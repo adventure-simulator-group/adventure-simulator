@@ -9,6 +9,12 @@ use super::{
 };
 use crate::presentation::TreeLeafRepresentation;
 
+#[derive(Clone, Copy, Debug)]
+pub(super) struct InteriorCaptureCamera {
+    pub(super) position: Vec3,
+    pub(super) target: Vec3,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum CaptureReadback {
     Prime,
@@ -88,6 +94,7 @@ pub(super) struct SceneCaptureState {
     pub(super) ground_eye_position: Vec3,
     pub(super) ground_eye_target: Vec3,
     pub(super) animation_play_focus: Vec3,
+    pub(super) building_interior_cameras: Vec<InteriorCaptureCamera>,
     pub(super) settle_frames: u32,
     pub(super) tree_review_azimuth_degrees: f32,
     pub(super) profile: String,
