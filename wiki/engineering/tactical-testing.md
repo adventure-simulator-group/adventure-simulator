@@ -6,6 +6,21 @@ the interactive workflows in [Development workflow](developing.md) -
 `tactical-play`, `tactical-isolated`, `tactical`/`client` - which remain the
 right tool for anything a human needs to watch happen.
 
+## Fatigue visibility checks
+
+The melee iteration traces report one `fatigue` fraction, matching the black
+incapacitation-wheel segment. Attack, defense, and dodge work must increase
+that visible value; there are no separate local-muscle or oxygen-debt trace
+fields. Recovery may reduce the same value, including fatigue brought into
+combat.
+
+Regression tests check that charging an action updates fatigue and
+authoritative incapacitation together, that heavier work costs more, and that
+calorie history cannot impose a second hidden combat penalty. Client tests
+check the single black segment. Run the core and tactical library tests, then
+use `just melee-combat-iteration` for seeded server/autoresolver comparisons.
+A passing fatigue check does not establish overall combat balance.
+
 ## Bevy Remote Protocol (BRP)
 
 Both `adventuresim-tactical-server` and `adventuresim-tactical-client` can

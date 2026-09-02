@@ -81,9 +81,11 @@ client-reported precision remains trusted rather than reconstructed.
 Accepted contacts clamp damage against the targeted limb's remaining health
 and accumulate blood loss and imbalance. Incapacitation is the shared
 autoresolve sum of projected strategic starting condition, pain, blood loss,
-and temporary imbalance. Tactical enrollment carries authoritative body weight,
-blood volume, and strategic condition inputs; pain and blood are recomputed in
-combat instead of double-counted. Balance skill recovers imbalance continuously.
+general fatigue, acute trauma, and temporary imbalance. Tactical enrollment
+carries authoritative body weight, blood volume, and strategic condition
+inputs. Pain and blood are recomputed in combat, and fatigue is initialized
+from its strategic contribution, without counting any of them twice.
+Balance skill recovers imbalance continuously.
 An actor over the threshold stops moving, attacking, defending, and being
 selected by offensive AI; an imbalance-only incapacitation can recover and
 return the actor to combat. Limb and live combat-state replication provide
@@ -215,6 +217,13 @@ maintains a bounded standoff distance while arrows remain, and returns to its
 melee pursuit/attack cadence when it cannot make a ranged attack.
 
 ## Incapacitation
+
+Combat effects must be legible to the player, or intuitive from what is
+happening. A heavy weapon taking longer to swing is intuitive; a hidden muscle
+fatigue meter quietly weakening the same swing is not. The incapacitation
+wheel is our common language for effects that make a combatant less effective.
+New combat mechanics must preserve that legibility.
+
 A character's incapacitation represents the sum of all disabling effects on them
 and corresponds to the state of their animation. When above half, they are
 "staggered" and each additional 1% of incapacitation causes a 2% penalty to
@@ -227,9 +236,10 @@ extends as an arc clockwise. Each factor that contributes to incapacitation has
 a different color to differentiate them.
 
 The tactical client draws this wheel with EGUI around the center reticle. It
-preserves the strategic fear, fatigue, hunger, thirst, and temperature source
-breakdown captured at mission enrollment, then combines those segments with
-live recomputed pain and blood loss plus transient white imbalance. The arc
+preserves the strategic fear, hunger, thirst, and temperature source breakdown
+captured at mission enrollment, then combines those segments with live pain,
+blood loss, general fatigue, and transient white imbalance. Fatigue begins at
+its strategic value and continues changing during the fight. The arc
 clamps at one revolution, and the reticle remains visible inside it.
 
 The strategic character panel uses the same colors for its segmented
@@ -271,38 +281,11 @@ fn balance_damage(attacker, defender, attack_directness):
 	resistance = combat_config.resolution.stagger_resistance_joules_per_kg * defender.mass_kg
 	defender.imbalance += imparted_joules / resistance
 ```
-### Exhaustion (grey)
-Exhaustion represents how out of breath your character is. Most actions will not
-actually exhaust faster than it recuperates, but climbing, sprinting, and
-fighting with heavy weapons, shield, and armor can. In tactical combat it is
-transient, server-authoritative grey incapacitation. The movement contribution
-is based on server-authoritative locomotion intent, not measured physics
-velocity: full jogging contributes exactly zero, walking or partial input
-recovers exhaustion, and sprinting adds it. External impulses therefore cannot
-create breath exhaustion, while poison, climbing, combat, and other future
-sources remain free to add independent rates. Tactical breath changes use a 5x
-response scale so exertion and recovery resolve quickly enough to matter during
-a fight without changing any movement-speed thresholds. Wheel segments below
-0.5% are hidden as subpixel display noise without changing state.
-```rs
-const BREATH_PER_METERS_PER_SECOND = 0.0034
-const TACTICAL_BREATH_RESPONSE_SCALE = 5.0
-
-# Sustainable jog speed is 1.8m/s at endurance 1, 2.1m/s at endurance 2,
-# and the elite-marathon average of 5.83m/s at endurance 5. Between those
-# anchors, most of the extraordinary performance is reserved for high endurance.
-fn sustainable_jog_speed(endurance):
-	if endurance <= 1:
-		t = clamp(endurance, 0, 1)
-		return lerp(1.4, 1.8, t * t * (3 - 2 * t))
-	t = (clamp(endurance, 1, 5) - 1) / 4
-	return 1.8 + 4.03 * pow(t, 1.873873)
- 
-fn update_stamina(player):
-	breath_delta = (character.velocity - sustainable_jog_speed(character.endurance)) * BREATH_PER_METERS_PER_SECOND
-	player.breath_damage += dt * breath_delta * TACTICAL_BREATH_RESPONSE_SCALE
-```
 ### Pain (pink)
+
+The pink segment includes acute injury trauma as well as pain, so both
+contributions to incapacitation remain visible.
+
 [Injuries](../shared/health.md) are a source of constant pain. Pain is divided by will.
 
 $$
@@ -323,10 +306,29 @@ eventually incapacitate you.
 Morale only starts affecting incapacitation when it goes below 0, at which point
 each negative point of morale becomes fear, translating to 1% incapacitation.
 ### [Fatigue](../shared/energy.md) (black)
-This does not significantly accumulate in the course of combat, but is more a
-function of marching all day or going too long without sleeping. This probably
-has a threshold after which it starts applying nonlinearly ~halfway through the
-day.
+
+There is one kind of combat fatigue. Being out of breath, repeatedly swinging
+a weapon, and carrying tiredness into a fight all contribute to the same black
+segment. There is no separate muscle-fatigue meter or grey exhaustion segment.
+
+The current implementation charges attacks, weapon defenses, and explosive
+dodges according to their estimated physical work. Heavier weapons and loads
+cost more; greater endurance reduces the fatigue gained from that work.
+Strenuous tactical movement also adds fatigue, using movement intent rather
+than an actor's velocity after being shoved. Sustainable unloaded jogging
+holds fatigue steady. Stationary rest without an active attack, block, or
+dodge reduces it.
+
+Fatigue contributes directly to total incapacitation. Its performance effect
+is visible from the first increment: a black segment filling 20% of the wheel
+means 20% less fatigue-adjusted attack and defense performance. Recovery
+between attacks lengthens as that remaining performance falls. The combat
+resolver does not also apply a separate calorie-history fatigue penalty.
+
+The server and autoresolver share the work-to-fatigue equations. Their tuning
+is authored under `resolution.fatigue` in `content/tactical/combat.yaml`.
+Tactical fatigue remains transient server state; this change does not add
+per-tick strategic database writes.
 
 ## Penetrating
 Each piece of armor has a "resistance" and "padding", both are in terms of
