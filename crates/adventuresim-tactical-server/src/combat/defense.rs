@@ -86,7 +86,7 @@ pub(super) fn resolve_melee_defender_response(
     defender_skeleton: &SkeletonState,
     defender_attack: Option<&mut MeleeAttackAuthority>,
     defender_incapacitation: f32,
-    defender_fatigue_performance: f32,
+    defender_incapacitation_performance: f32,
     attacker: Entity,
     incoming_started_at: CombatInstant,
     config: &DefenseAuthorityConfig,
@@ -114,7 +114,7 @@ pub(super) fn resolve_melee_defender_response(
                 own_windup_seconds: opportunity.own_windup_seconds,
                 expected_intercept_engagement: (opportunity.input_reflex
                     * ((handling + instinct) / 10.0).clamp(0.0, 1.0)
-                    * defender_fatigue_performance)
+                    * defender_incapacitation_performance)
                     .clamp(0.0, 1.0),
                 incapacitation: defender_incapacitation,
                 weapon_moment_of_inertia_kg_m2: defender_view.weapon_moment_of_inertia(),

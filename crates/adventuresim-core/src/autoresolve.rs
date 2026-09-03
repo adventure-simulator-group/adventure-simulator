@@ -5,6 +5,8 @@ use adventuresim_world_schema::{BestiaryCategory, BestiaryHours};
 use fabelgeist_determinism::SplitMix64;
 use serde::Serialize;
 
+#[cfg(test)]
+mod incapacitation_tests;
 mod joint_melee;
 mod melee_defense;
 mod melee_exchange;
@@ -85,12 +87,12 @@ pub struct CombatEssentials {
 }
 
 impl PlayerEssentials for CombatEssentials {
-    // Combat applies the live wheel fatigue at the attack/defense boundary.
-    // Strategic calorie history must not impose a second, invisible penalty.
-    fn fatigue_penalty_by_parts(
+    // Fatigue and burden are already part of live combat incapacitation.
+    fn physical_skill_condition_by_parts(
         &self,
         _attr: &impl PlayerAttributes,
         _body: &impl PlayerBody,
+        _equipment: &impl PlayerEquipment,
     ) -> f32 {
         1.0
     }
@@ -346,6 +348,7 @@ impl Combatant {
             self.imbalance,
         ) + self.acute_trauma
             + self.fatigue
+            + combat_encumbrance_incapacitation(&self.attributes, &self.body, &self.equipment)
     }
 
     pub fn is_incapacitated(&self) -> bool {
@@ -394,8 +397,8 @@ impl Combatant {
         self.active_work_seconds = self.active_work_seconds.max(duration_seconds);
     }
 
-    fn fatigue_performance(&self) -> f32 {
-        combat_fatigue_performance(self.fatigue)
+    fn incapacitation_performance(&self) -> f32 {
+        combat_incapacitation_performance(self.incapacitation())
     }
 
     fn can_attack_ranged(&self) -> bool {
@@ -414,11 +417,12 @@ impl Combatant {
             LimbWeights::both_legs(),
         );
         let armor = self.equipment.armor_penalty(BodyPart::LOWER_BODY);
+        // Physical load still affects locomotion; fatigue and total
+        // incapacitation do not add a separate movement-speed multiplier.
         let encumbrance = self
             .equipment
             .encumbrance_penalty_by_parts(&self.attributes, &self.body);
-        let fatigue = self.fatigue_performance();
-        ((1.0 + leg_agility) * armor * encumbrance * fatigue).max(minimum_speed)
+        ((1.0 + leg_agility) * armor * encumbrance).max(minimum_speed)
     }
 }
 
@@ -450,6 +454,7 @@ pub struct CombatantOutcome {
     pub acute_trauma: f32,
     pub pain_incapacitation: f32,
     pub fatigue: f32,
+    pub encumbrance: f32,
     pub wound_count: usize,
     pub open_wound_count: usize,
     pub internal_wound_count: usize,
@@ -466,6 +471,7 @@ pub enum CombatTerminalCause {
     BloodLoss,
     AcuteTrauma,
     Fatigue,
+    Encumbrance,
     Imbalance,
 }
 
@@ -579,7 +585,7 @@ pub struct MeleeContactTelemetry {
     pub defender_attack_commitment: &'static str,
     pub defender_retained_attack_power: Option<f32>,
     pub attack_power_multiplier: f32,
-    pub attacker_fatigue_performance: f32,
+    pub attacker_incapacitation_performance: f32,
     pub attack_interval_seconds: f32,
 }
 
@@ -1473,8 +1479,8 @@ fn ranged_exchange(
         crate::combat::EMBEDDED_COMBAT_RESOLUTION_PARAMETERS,
         &defender.view_with_equipment(&defender.equipment),
         &defender.bestiary_categories,
-        response,
-        precision,
+        response.scaled_for_performance(defender.incapacitation_performance()),
+        precision * attacker.incapacitation_performance(),
         flanking,
         part,
     )
@@ -1564,6 +1570,11 @@ fn outcome(combatant: Combatant) -> CombatantOutcome {
         1.0,
     );
 
+    let encumbrance = combat_encumbrance_incapacitation(
+        &combatant.attributes,
+        &combatant.body,
+        &combatant.equipment,
+    );
     let terminal_cause = if combatant.yielded {
         Some(CombatTerminalCause::YieldedUnableToContinue)
     } else if incapacitated {
@@ -1576,6 +1587,7 @@ fn outcome(combatant: Combatant) -> CombatantOutcome {
             (blood_loss_incapacitation, CombatTerminalCause::BloodLoss),
             (combatant.acute_trauma, CombatTerminalCause::AcuteTrauma),
             (combatant.fatigue, CombatTerminalCause::Fatigue),
+            (encumbrance, CombatTerminalCause::Encumbrance),
             (combatant.imbalance, CombatTerminalCause::Imbalance),
         ]
         .into_iter()
@@ -1596,6 +1608,7 @@ fn outcome(combatant: Combatant) -> CombatantOutcome {
         acute_trauma: combatant.acute_trauma,
         pain_incapacitation,
         fatigue: combatant.fatigue,
+        encumbrance,
         wound_count: combatant.wounds.len(),
         open_wound_count,
         internal_wound_count,
@@ -1641,7 +1654,9 @@ mod tests {
         }
         assert!((whole.fatigue - sliced.fatigue).abs() < f32::EPSILON);
         assert!(whole.fatigue < 0.5);
-        assert_eq!(whole.incapacitation(), whole.fatigue);
+        let burden =
+            combat_encumbrance_incapacitation(&whole.attributes, &whole.body, &whole.equipment);
+        assert_eq!(whole.incapacitation(), whole.fatigue + burden);
     }
 
     #[test]
@@ -2205,7 +2220,7 @@ mod tests {
         let mut buckler_expert = expert.clone();
         buckler_expert.equipment.shield_block_bonus = 1.5;
         let attack_equipment = attacker.equipment.for_melee();
-        let attack_value = |defender: &Combatant, response| {
+        let attack_value = |defender: &Combatant, response: DefenderResponse| {
             melee_attack_value_by_parts(
                 &attacker.skills,
                 &attacker.attributes,
@@ -2214,9 +2229,9 @@ mod tests {
                 &attack_equipment,
                 attacker.equipment.melee_holding_side,
                 attack_equipment.weapon_preferred_melee_style(),
-                1.0,
+                attacker.incapacitation_performance(),
                 0.0,
-                response,
+                response.scaled_for_performance(defender.incapacitation_performance()),
                 &defender.skills,
                 &defender.attributes,
                 &defender.body,
@@ -2251,7 +2266,17 @@ mod tests {
         assert!(fresh_weapon < fatigued_weapon);
         assert!(fresh_weapon < novice_weapon);
         assert!(favorable_parry < unfavorable_parry);
-        assert!(fresh_buckler < 0.0 && novice_weapon > 0.0);
+        // Interception is probabilistic: total impairment may move this fixture
+        // across zero without reversing the expert shield advantage.
+        let alignment_chance = |margin| {
+            resolve_weapon_defense_alignment(
+                DefenderResponse::Block { effectiveness: 1.0 },
+                margin,
+                0.5,
+            )
+            .success_probability
+        };
+        assert!(alignment_chance(fresh_buckler) > alignment_chance(novice_weapon));
     }
 
     #[test]

@@ -57,7 +57,7 @@ fn defender_condition(
     states.get(attack.target()).map_or((0.0, 1.0), |state| {
         (
             state.incapacitation,
-            combat_fatigue_performance(state.fatigue),
+            combat_incapacitation_performance(state.incapacitation),
         )
     })
 }

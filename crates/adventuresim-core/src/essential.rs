@@ -1,4 +1,7 @@
-use crate::{attribute::PlayerAttributes, body::PlayerBody, prelude::SimpleAttribute};
+use crate::{
+    attribute::PlayerAttributes, body::PlayerBody, equipment::PlayerEquipment,
+    prelude::SimpleAttribute,
+};
 
 const CALORIES_PER_ENDURANCE: f32 = 1000.0;
 const FATIGUE_EXPONENT: i32 = 5;
@@ -12,6 +15,18 @@ pub trait PlayerEssentials {
     fn fatigue_by_parts(&self, attr: &impl PlayerAttributes, body: &impl PlayerBody) -> f32 {
         self.calories_used_today()
             / (attr.attr_by_parts(SimpleAttribute::Endurance, body) * CALORIES_PER_ENDURANCE)
+    }
+
+    /// Strategic skills account for daily fatigue and burden here. Combat instead
+    /// applies their contribution through live incapacitation at resolution.
+    fn physical_skill_condition_by_parts(
+        &self,
+        attr: &impl PlayerAttributes,
+        body: &impl PlayerBody,
+        equipment: &impl PlayerEquipment,
+    ) -> f32 {
+        self.fatigue_penalty_by_parts(attr, body)
+            * equipment.encumbrance_penalty_by_parts(attr, body)
     }
 
     fn fatigue_penalty_by_parts(

@@ -67,6 +67,7 @@ pub struct TacticalIncapacitationLog {
     pub blood_loss_incapacitation: f32,
     pub imbalance: f32,
     pub fatigue: f32,
+    pub encumbrance: f32,
     pub total: f32,
 }
 
@@ -372,6 +373,7 @@ fn incapacitation_log(
         blood_loss_incapacitation: sources.blood_loss,
         imbalance: sources.imbalance,
         fatigue: state.fatigue,
+        encumbrance: state.encumbrance,
         total: state.incapacitation,
     }
 }
@@ -401,6 +403,7 @@ pub(super) fn record_condition_changes(
                 ),
                 ("imbalance", previous.imbalance, current.imbalance),
                 ("fatigue", previous.fatigue, current.fatigue),
+                ("encumbrance", previous.encumbrance, current.encumbrance),
                 ("total", previous.total, current.total),
             ] {
                 if (after - before).abs() > 1.0e-6 {

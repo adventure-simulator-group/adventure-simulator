@@ -19,6 +19,10 @@ pub struct TacticalCombatState {
     pub fatigue: f32,
     pub imbalance: f32,
     pub incapacitation: f32,
+    /// Burden contribution, shown as translucent grey.
+    pub encumbrance: f32,
+    /// Presentation-only increase over the configured forecast horizon.
+    pub projected_increase: TacticalIncapacitationSources,
 }
 
 impl Default for TacticalCombatState {
@@ -35,6 +39,8 @@ impl Default for TacticalCombatState {
             fatigue: 0.0,
             imbalance: 0.0,
             incapacitation: 0.0,
+            encumbrance: 0.0,
+            projected_increase: TacticalIncapacitationSources::default(),
         }
     }
 }
@@ -72,6 +78,7 @@ impl TacticalCombatState {
             thirst: self.starting_thirst.max(0.0),
             thermal: self.starting_thermal.max(0.0),
             imbalance: self.imbalance.max(0.0),
+            encumbrance: self.encumbrance.max(0.0),
         }
     }
 
@@ -93,7 +100,7 @@ impl TacticalCombatState {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Reflect, Serialize, Deserialize)]
 pub struct TacticalIncapacitationSources {
     pub pain: f32,
     pub acute_trauma: f32,
@@ -104,6 +111,7 @@ pub struct TacticalIncapacitationSources {
     pub thirst: f32,
     pub thermal: f32,
     pub imbalance: f32,
+    pub encumbrance: f32,
 }
 
 impl TacticalIncapacitationSources {
@@ -117,6 +125,7 @@ impl TacticalIncapacitationSources {
             + self.thirst
             + self.thermal
             + self.imbalance
+            + self.encumbrance
     }
 }
 
@@ -147,8 +156,8 @@ mod tests {
         assert!(sources.fatigue > 0.2);
         assert!((sources.total() - state.incapacitation).abs() < f32::EPSILON);
         assert_eq!(
-            combat_fatigue_performance(state.fatigue),
-            1.0 - sources.fatigue
+            combat_incapacitation_performance(state.incapacitation),
+            1.0 - sources.total()
         );
         state.charge_work(
             CombatActionWorkload {

@@ -137,12 +137,12 @@ impl Default for Stats {
 }
 
 impl PlayerEssentials for Stats {
-    // Combat applies the live wheel fatigue at the attack/defense boundary.
-    // Strategic calorie history must not impose a second, invisible penalty.
-    fn fatigue_penalty_by_parts(
+    // Fatigue and burden are already part of live combat incapacitation.
+    fn physical_skill_condition_by_parts(
         &self,
         _attr: &impl PlayerAttributes,
         _body: &impl PlayerBody,
+        _equipment: &impl PlayerEquipment,
     ) -> f32 {
         1.0
     }

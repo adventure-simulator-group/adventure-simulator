@@ -1,6 +1,6 @@
 use super::*;
 
-pub(super) fn fatigue_adjusted_attack_recovery(
+pub(super) fn incapacitation_adjusted_attack_recovery(
     attacker: Entity,
     recovery: CombatDuration,
     combat_states: &Query<&mut TacticalCombatState>,
@@ -8,8 +8,8 @@ pub(super) fn fatigue_adjusted_attack_recovery(
     let Ok(state) = combat_states.get(attacker) else {
         return recovery;
     };
-    let performance = combat_fatigue_performance(state.fatigue);
-    CombatDuration::from_secs_f32(fatigue_adjusted_recovery_seconds(
+    let performance = combat_incapacitation_performance(state.incapacitation);
+    CombatDuration::from_secs_f32(incapacitation_adjusted_recovery_seconds(
         recovery.as_secs_f32(),
         performance,
     ))

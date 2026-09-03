@@ -120,10 +120,10 @@ fn weapon_facts(
                 view.weapon_body_material(),
                 view.weapon_striking_material(),
             );
-            let recovery = fatigue_adjusted_recovery_seconds(
+            let recovery = incapacitation_adjusted_recovery_seconds(
                 attack_recovery_secs(&view, view.weapon_preferred_melee_style(), false)
                     .max(config.cooldown_seconds),
-                combat_fatigue_performance(state.fatigue),
+                combat_incapacitation_performance(state.incapacitation),
             );
             (
                 reach,

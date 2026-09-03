@@ -25,6 +25,14 @@
 - Fatigue is one general value, displayed in black on the incapacitation wheel.
   Weapon work, defenses, dodges, and strenuous movement all contribute to it.
   Do not introduce per-muscle fatigue or a separate oxygen-debt impairment.
+- Combat performance depends on total incapacitation, not fatigue directly.
+  Encumbrance contributes once through incapacitation, shown in translucent
+  grey. Neither fatigue nor total incapacitation adds a movement-speed penalty
+  before incapacitation; physical mass and limb effects remain separate.
+- Yellow wheel extensions indicate projected increases, never current impairment
+  or an additional gameplay penalty. Preserve the wheel's 100% display cutoff.
+- Limb-specific injury penalties remain intentional pending a separate design
+  decision.
 
 ## Documentation and interface assets
 

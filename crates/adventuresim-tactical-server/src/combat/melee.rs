@@ -331,9 +331,9 @@ pub(super) fn resolve_melee_attack(
         return;
     };
     let attacker_has_weapon = super::contact::attacker_has_weapon(&viewer, entity, hand);
-    let attacker_performance = q_states
-        .get(attack.attacker())
-        .map_or(1.0, |state| combat_fatigue_performance(state.fatigue));
+    let attacker_performance = q_states.get(attack.attacker()).map_or(1.0, |state| {
+        combat_incapacitation_performance(state.incapacitation)
+    });
 
     let Some(attempted_defender_response) = resolve_active_defense(
         &attack,
@@ -361,15 +361,15 @@ pub(super) fn resolve_melee_attack(
         .get(attack.target())
         .unwrap_or(&fallback_categories);
 
-    let fatigued_precision =
+    let impaired_precision =
         ReportedPrecision::new(attack.reported_precision().get() * attacker_performance)
-            .expect("fatigue preserves finite bounded precision");
+            .expect("incapacitation preserves finite bounded precision");
     let defense_alignment = weapon_defense_alignment(
         &attacker_view,
         &defender_view,
         attacker_side,
         attack_style,
-        fatigued_precision,
+        impaired_precision,
         flanking,
         attempted_defender_response,
         defense_alignment_sample,
@@ -394,7 +394,7 @@ pub(super) fn resolve_melee_attack(
         attacker_side,
         attack_style,
         effective_defender_response,
-        fatigued_precision,
+        impaired_precision,
         flanking,
         contact_sample,
         contact_at_time,

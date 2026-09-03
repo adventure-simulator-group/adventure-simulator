@@ -201,6 +201,11 @@ fn spawn_combatant(
             TacticalCombatState {
                 starting_incapacitation: source.starting_incapacitation,
                 fatigue: source.fatigue,
+                encumbrance: combat_encumbrance_incapacitation(
+                    &source.attributes,
+                    &source.body,
+                    &source.equipment,
+                ),
                 incapacitation: source.incapacitation(),
                 starting_blood_fraction: source.starting_blood_fraction,
                 ..default()
@@ -303,7 +308,8 @@ mod tests {
                 ) && event.decision == TacticalDecision::Dodge
             })
             .count();
-        assert!(attempted > 0);
+        // Whether this particular duel calls for a dodge is a gameplay choice;
+        // the separate seeded coverage test below requires real attempts.
         assert_eq!(attempted, validated);
         assert!(
             outcome
@@ -355,6 +361,34 @@ mod tests {
                     .center_separation_metres
                     .is_some_and(|distance| distance < outcome.initial_center_separation_metres)
         }));
+    }
+
+    #[test]
+    fn production_dodge_observers_cover_a_seeded_melee_sample() {
+        let (john, opponents) = melee_iteration_roster().unwrap();
+        let mut total_attempts = 0;
+        for seed in 0..4 {
+            let outcome = resolve_tactical_server_melee_duel(&john, &opponents[0], seed);
+            let count = |status| {
+                outcome
+                    .decision_events
+                    .iter()
+                    .filter(|event| {
+                        event.decision == TacticalDecision::Dodge && event.status == status
+                    })
+                    .count()
+            };
+            let attempted = count(TacticalDecisionStatus::Attempted);
+            assert_eq!(
+                attempted,
+                count(TacticalDecisionStatus::Accepted) + count(TacticalDecisionStatus::Rejected)
+            );
+            total_attempts += attempted;
+        }
+        assert!(
+            total_attempts > 0,
+            "the sample must exercise actual dodge observers"
+        );
     }
 
     #[test]

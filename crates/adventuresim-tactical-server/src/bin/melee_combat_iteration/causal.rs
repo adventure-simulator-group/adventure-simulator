@@ -31,12 +31,13 @@ pub(super) fn record_autoresolve_telemetry(
     attacker.attack_samples += 1;
     attacker.mean_attack_interval_seconds += f64::from(telemetry.attack_interval_seconds);
     attacker.mean_attack_power_multiplier += f64::from(telemetry.attack_power_multiplier);
-    let performance = f64::from(telemetry.attacker_fatigue_performance);
+    let performance = f64::from(telemetry.attacker_incapacitation_performance);
     if attacker.attack_samples == 1 {
-        attacker.minimum_attack_fatigue_performance = performance;
+        attacker.minimum_attack_incapacitation_performance = performance;
     } else {
-        attacker.minimum_attack_fatigue_performance =
-            attacker.minimum_attack_fatigue_performance.min(performance);
+        attacker.minimum_attack_incapacitation_performance = attacker
+            .minimum_attack_incapacitation_performance
+            .min(performance);
     }
 }
 

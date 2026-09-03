@@ -1,5 +1,7 @@
 use super::*;
 
+mod outcome;
+
 #[expect(
     clippy::too_many_arguments,
     reason = "this domain boundary names each independent input explicitly"
@@ -146,12 +148,19 @@ pub(super) fn resolve_ranged_attack(
     let defender_categories = q_bestiary_categories
         .get(target)
         .unwrap_or(&fallback_categories);
+    let attacker_performance = q_states.get(attacker).map_or(1.0, |state| {
+        combat_incapacitation_performance(state.incapacitation)
+    });
+    let defender_response =
+        defender_response.scaled_for_performance(q_states.get(target).map_or(1.0, |state| {
+            combat_incapacitation_performance(state.incapacitation)
+        }));
     let result = attacker_view.resolve_ranged_attack(
         config.resolution,
         &defender_view,
         &defender_categories.0,
         defender_response,
-        shot.reported_precision().get(),
+        shot.reported_precision().get() * attacker_performance,
         flanking,
         body_part,
     );
@@ -178,27 +187,12 @@ pub(super) fn resolve_ranged_attack(
         );
     let impact_effects =
         authoritative_impact_effects(&viewer.inventory, shot.attacker(), AttackHand::Main, result);
-    cmd.trigger(ApplyMeleeAttackResult {
-        attacker: shot.attacker(),
+    outcome::publish(
+        &mut cmd,
         target,
-        body_part,
-        anatomical_subregion: anatomical_subregion(body_part, 0.5),
-        surface_coordinate: 0.5,
-        result,
-        defender_response,
-        defense_success_probability: None,
-        defense_alignment_sample: None,
-        defense_engagement: None,
         attacker_weapon_slot,
         defender_blocking_slot,
-        attacker_weapon_contact: false,
-        impact_recipient,
-        impact_velocity_change,
-        contact_at_time: MeleeContactAtTime::intended(0.0),
-    });
-    cmd.server_trigger(ToClients {
-        targets: SendTargets::All,
-        message: SuccessfulAttackResponse {
+        SuccessfulAttackResponse {
             attacker: shot.attacker(),
             hit: vec![target],
             body_part,
@@ -211,7 +205,7 @@ pub(super) fn resolve_ranged_attack(
             impact_normal,
             impact_effects,
         },
-    });
+    );
 }
 
 fn ranged_flanking(attacker_yaw: f32, target_yaw: f32) -> f32 {

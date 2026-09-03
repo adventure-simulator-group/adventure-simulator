@@ -140,7 +140,7 @@ fn attack_interval(attacker: &Combatant, parameters: crate::combat::AutoresolveP
         })
         .max(parameters.minimum_attack_interval_seconds)
         + attacker.melee_interval_jitter_seconds)
-        / attacker.fatigue_performance()
+        / attacker.incapacitation_performance()
 }
 
 fn establish_engagement(

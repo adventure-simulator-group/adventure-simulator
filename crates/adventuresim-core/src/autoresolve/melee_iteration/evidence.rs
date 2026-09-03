@@ -346,8 +346,13 @@ fn fatigue_cadence_evidence(build: &MeleeIterationBuild) -> Result<FatigueCadenc
             EMBEDDED_COMBAT_RESOLUTION_PARAMETERS.fatigue,
         );
     }
-    let performance = combat_fatigue_performance(fatigue);
-    let fresh_recovery_seconds = weapon.attack_interval_seconds;
+    let mut worked = build.combatant.clone();
+    worked.fatigue = fatigue;
+    let performance = worked.incapacitation_performance();
+    let fresh_recovery_seconds = incapacitation_adjusted_recovery_seconds(
+        weapon.attack_interval_seconds,
+        build.combatant.incapacitation_performance(),
+    );
     Ok(FatigueCadenceEvidence {
         combatant: build.name,
         completed_attacks: ATTACKS,
@@ -355,8 +360,8 @@ fn fatigue_cadence_evidence(build: &MeleeIterationBuild) -> Result<FatigueCadenc
         completed_explosive_dodges: DODGES,
         fatigue,
         fresh_recovery_seconds,
-        fatigued_recovery_seconds: fatigue_adjusted_recovery_seconds(
-            fresh_recovery_seconds,
+        fatigued_recovery_seconds: incapacitation_adjusted_recovery_seconds(
+            weapon.attack_interval_seconds,
             performance,
         ),
     })

@@ -9,6 +9,7 @@ mod contact_geometry;
 mod defense;
 mod fatigue;
 mod fatigue_config;
+mod incapacitation;
 mod melee_resolution;
 pub(crate) mod targeting;
 mod wounds;
@@ -32,6 +33,7 @@ pub use defense::{
 };
 pub use fatigue::*;
 pub use fatigue_config::CombatFatigueParameters;
+pub use incapacitation::*;
 pub use melee_resolution::resolve_melee_attack_by_parts;
 pub use targeting::{
     AnatomicalSubregion, MeleeContactLocation, anatomical_subregion,

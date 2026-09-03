@@ -182,7 +182,8 @@ pub(crate) fn on_melee_attack_started(
             spec.continuation,
         )),
     );
-    let recovery = fatigue_adjusted_attack_recovery(event.attacker, recovery, &combat_states);
+    let recovery =
+        incapacitation_adjusted_attack_recovery(event.attacker, recovery, &combat_states);
     let start = animation_tick(&time);
     let initial_contact =
         super::contact::initial_melee_contact(&viewer, &event, strike_family, &mut random);

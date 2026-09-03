@@ -14,13 +14,15 @@ use crate::physics::{
 };
 
 mod ai_offense;
+mod incapacitation_forecast;
+pub use incapacitation_forecast::IncapacitationForecastConfig;
 mod runtime;
 pub use ai_offense::AiOffenseConfig;
 pub use runtime::{
     runtime_animation_config, runtime_combat_presentation_config, runtime_melee_authority_config,
 };
 
-pub const TACTICAL_COMBAT_CONFIG_SCHEMA_VERSION: u16 = 6;
+pub const TACTICAL_COMBAT_CONFIG_SCHEMA_VERSION: u16 = 7;
 
 #[derive(Clone, Debug, PartialEq, Resource, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -458,6 +460,7 @@ pub struct BodyPartHitboxConfig {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CombatPresentationConfig {
+    pub incapacitation_forecast: IncapacitationForecastConfig,
     pub dodge_seconds: f32,
     pub body_turn_seconds_per_half_turn: f32,
     pub downed_turn_radians_per_second: f32,
@@ -507,6 +510,7 @@ fn validate_schema_version(schema_version: u16) -> Result<(), TacticalCombatConf
 impl TacticalCombatConfig {
     pub fn validate(&self) -> Result<(), TacticalCombatConfigError> {
         validate_schema_version(self.schema_version)?;
+        self.presentation.incapacitation_forecast.validate()?;
         let finite_nonnegative = |value: f32| value.is_finite() && value >= 0.0;
         self.resolution.validate()?;
         self.autoresolve.validate()?;
@@ -1138,6 +1142,7 @@ impl Default for TacticalCombatConfig {
                 ],
             },
             presentation: CombatPresentationConfig {
+                incapacitation_forecast: IncapacitationForecastConfig::default(),
                 dodge_seconds: 20.0 / 64.0,
                 body_turn_seconds_per_half_turn: 0.25,
                 downed_turn_radians_per_second: std::f32::consts::FRAC_PI_2,
