@@ -6,7 +6,7 @@ the interactive workflows in [Development workflow](developing.md) -
 `tactical-play`, `tactical-isolated`, `tactical`/`client` - which remain the
 right tool for anything a human needs to watch happen.
 
-## Fatigue visibility checks
+## Incapacitation visibility checks
 
 The melee iteration traces report one `fatigue` fraction, matching the black
 incapacitation-wheel segment. Attack, defense, and dodge work must increase
@@ -16,10 +16,22 @@ combat.
 
 Regression tests check that charging an action updates fatigue and
 authoritative incapacitation together, that heavier work costs more, and that
-calorie history cannot impose a second hidden combat penalty. Client tests
-check the single black segment. Run the core and tactical library tests, then
+neither calorie history nor encumbrance imposes a second hidden combat-skill
+penalty. Equal total incapacitation must produce equal condition-based combat
+performance even when its sources differ. Autoresolve movement speed must not
+change with fatigue alone.
+
+The tactical traces include encumbrance separately. Client tests check its
+translucent-grey segment, black fatigue, and yellow forecasts for every source.
+Forecasts use only unfilled wheel space and never count toward incapacitation.
+The server projects known wound flow immediately and smooths other source
+changes over recent simulation time, not wall-clock performance. The forecast
+horizon and trend response are authored under
+`presentation.incapacitation_forecast` in `content/tactical/combat.yaml`.
+
+Run the core and tactical library tests and the client binary's UI tests, then
 use `just melee-combat-iteration` for seeded server/autoresolver comparisons.
-A passing fatigue check does not establish overall combat balance.
+Passing these checks does not establish overall combat balance.
 
 ## Bevy Remote Protocol (BRP)
 
@@ -159,7 +171,8 @@ than assume the naive translation:
     class to work with, but `to_brp()` returns the bare `int`, not `{"value":
     ...}`.
 - `Option<T>` is `None` or a bare `T`, not `{"Some": ...}`.
-- A small set of `glam` types (`Vec2`/`Vec3`/`Vec3A`/`Vec4`/`Quat`/`IVec*`/
+- A small set of `glam` types
+  (`Vec2`/`Vec3`/`Vec3A`/`Vec4`/`Quat`/`IVec*`/
   `UVec*`) have a custom `Serialize` impl the reflected shape can't see at
   all - hardcoded to their known `list[float]`/`list[int]` wire shape rather
   than resolved generically.

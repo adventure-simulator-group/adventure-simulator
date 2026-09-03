@@ -123,7 +123,9 @@ morale commit transactionally; invalid receipts remain retryable.
 ### Skill check algorithm
 Broadly speaking, the flow goes like this:
 1. Calculate accuracy based on:
-	1. The attacker's weighted weapon [skill check](../shared/stats.md#skills). Each weapon distributes its check across Polearm, Axe, Bludgeon, Sword, Knife, Bow, Crossbow, Firearm, and Throw; hybrid tags are normalized.
+	1. The attacker's weighted weapon [skill check](../shared/stats.md#skills).
+    Each weapon distributes its check across Polearm, Axe, Bludgeon, Sword,
+    Knife, Bow, Crossbow, Firearm, and Throw; hybrid tags are normalized.
 		1. pass in LimbWeights configured for whatever limb(s) they are attacking with
 		2. If they are two handing, 0.75 for main and 0.25 for off-hand
 	2. Multiply by weapon term (small knife: 2.0, long hammer: 0.5)
@@ -138,10 +140,14 @@ weapons retain their single accuracy term. Damage type is not a recruitment
 role.
 2. calculate `dodge_defense`:
 	1. Calculate `armor_dodge_term` from their armor.
-		1. This isn't actually the weight of the armor; it's based on articulations on joints.
-		2. Full-plate gives 0.6, full-body chainmail is 0.8, and unobstructed joints is 1.0.
-	2. Calculate [encumbrance_term](../shared/encumbrance.md) from total weight versus leg-strength
-	3. Multiply a dodge [skill_check](../shared/stats.md#skills) by `armor_dodge_term` and `encumbrance_term`
+		1. This isn't actually the weight of the armor; it's based on articulations on
+     joints.
+		2. Full-plate gives 0.6, full-body chainmail is 0.8, and unobstructed joints
+     is 1.0.
+	2. Multiply a dodge [skill_check](../shared/stats.md#skills) by
+    `armor_dodge_term` and the remaining performance after total incapacitation.
+    [Encumbrance](../shared/encumbrance.md) is already part of that total;
+    do not multiply it into defense again.
 		1. LimbWeights should be something like 0.4 for each leg and 0.1 for each arm
 3. calculate `block_defense`:
    
@@ -168,8 +174,11 @@ $$
    		defense = block_defense
    ```
 5. Modify defense by flanking penalty
-	1. a is the angle that the attacker is facing and b is the angle that the defender is facing
-	2. In layman's terms, you have zero defense if someone attacks from behind, full defense if they attack from in front, but the modifier starts at 1 below 45 degrees and is 0 at 135 degrees, rather than at 0 and 180
+	1. a is the angle that the attacker is facing and b is the angle that the
+    defender is facing
+	2. In layman's terms, you have zero defense if someone attacks from behind,
+    full defense if they attack from in front, but the modifier starts at 1
+    below 45 degrees and is 0 at 135 degrees, rather than at 0 and 180
  	3.
 	
 $$
@@ -179,14 +188,21 @@ D_{\text{final}} =D_{\text{base}}
 $$
 
 6. Attack value is accuracy - defense
-7. If attack is less than 0, miss and apply surplus defense as unbalance penalty to attacker
+7. If attack is less than 0, miss and apply surplus defense as unbalance penalty
+   to attacker
 8. If attack is between 0 and 1, multiply attack force by attack
 	1. 0.1 barely grazes the opponent, 1 is square-on, 0.5 is a glancing blow
-9. If attack is *above* 1 and the attacker's weapon is precise, attacker now attempts to bypass armor with surplus attack.
-	1. An armor's "coverage" is subtracted from the surplus attack to obtain the "critical attack"
-	2. If critical attack is greater than 0, attack bypasses armor completely and its final damage is multiplied by this number
-	3. Though not necessarily relevant for the MVP, critical attacks are relevant even when targets are unarmored because this allows the damage multiplier to exceed 1.0, allowing for instantaneous stealth one-hit-kills.
-	4. If a critical hit cannot be made, then attack just stays at 1.0 for a direct hit
+9. If attack is *above* 1 and the attacker's weapon is precise, attacker now
+   attempts to bypass armor with surplus attack.
+	1. An armor's "coverage" is subtracted from the surplus attack to obtain the
+    "critical attack"
+	2. If critical attack is greater than 0, attack bypasses armor completely and
+    its final damage is multiplied by this number
+	3. Though not necessarily relevant for the MVP, critical attacks are relevant
+    even when targets are unarmored because this allows the damage multiplier to
+    exceed 1.0, allowing for instantaneous stealth one-hit-kills.
+	4. If a critical hit cannot be made, then attack just stays at 1.0 for a direct
+    hit
 
 ### Ranged attacks
 
@@ -224,12 +240,14 @@ fatigue meter quietly weakening the same swing is not. The incapacitation
 wheel is our common language for effects that make a combatant less effective.
 New combat mechanics must preserve that legibility.
 
-A character's incapacitation represents the sum of all disabling effects on them
-and corresponds to the state of their animation. When above half, they are
-"staggered" and each additional 1% of incapacitation causes a 2% penalty to
-movement and attribute checks, and when above 100% they are completely
-incapacitated (which also causes knockdown). Most negative effects that a
-character has can affect their incapacitation, past a certain threshold. Your
+A character's incapacitation is the sum of their disabling conditions. Combat
+performance falls with that total: 30% incapacitation leaves 70% performance,
+regardless of whether the contribution came from fatigue, blood loss, or
+burden. This affects attack precision, melee force, defense, and recovery
+between melee attacks. Above half, the status reads "staggered"; at 100%, the
+character is incapacitated and knocked down. Neither fatigue nor total
+incapacitation imposes an extra movement-speed penalty before that point.
+Physical mass, armor, and limb injuries retain their own effects. Your
 incapacitation is displayed as a wheel in the center of the screen. If it is at
 0%, the wheel is invisible, and as it increases it starts from 12 o'clock and
 extends as an arc clockwise. Each factor that contributes to incapacitation has
@@ -238,9 +256,22 @@ a different color to differentiate them.
 The tactical client draws this wheel with EGUI around the center reticle. It
 preserves the strategic fear, hunger, thirst, and temperature source breakdown
 captured at mission enrollment, then combines those segments with live pain,
-blood loss, general fatigue, and transient white imbalance. Fatigue begins at
-its strategic value and continues changing during the fight. The arc
-clamps at one revolution, and the reticle remains visible inside it.
+blood loss, general fatigue, translucent-grey encumbrance, and transient white
+imbalance. Fatigue begins at its strategic value and continues changing during
+the fight. The arc clamps at one revolution, even when incapacitation exceeds
+100%, and the reticle remains visible inside it.
+
+Yellow extensions show how much each source would grow over the next two
+seconds at its recent rate. Ongoing bleeding uses the known wound flow, so the
+warning appears before much blood has been lost. Other changes use a smoothed
+recent trend: the extension after a sudden injury fades if no further injury
+occurs. These are forecasts, not extra incapacitation. Yellow uses only the
+space left after current impairment; it cannot conceal an existing source.
+
+The tactical side panel no longer repeats the incapacitation meter or lists
+skill-training hours. The central wheel and the wheels above enemies remain
+available. Limb-health readouts remain too: their separate effects on strength
+and skill performance are intentionally unchanged.
 
 The strategic character panel uses the same colors for its segmented
 incapacitation meter, source meters, and source icons. Hunger and thirst share
@@ -319,16 +350,26 @@ than an actor's velocity after being shoved. Sustainable unloaded jogging
 holds fatigue steady. Stationary rest without an active attack, block, or
 dodge reduces it.
 
-Fatigue contributes directly to total incapacitation. Its performance effect
-is visible from the first increment: a black segment filling 20% of the wheel
-means 20% less fatigue-adjusted attack and defense performance. Recovery
-between attacks lengthens as that remaining performance falls. The combat
-resolver does not also apply a separate calorie-history fatigue penalty.
+Fatigue contributes to total incapacitation; it does not separately weaken an
+attack. A black segment filling 20% of the wheel and another source filling
+10% together leave 70% combat performance. Recovery between melee attacks
+lengthens as that remaining performance falls. The combat resolver does not
+also apply a separate calorie-history fatigue penalty, and autoresolve does
+not slow movement because of fatigue.
 
 The server and autoresolver share the work-to-fatigue equations. Their tuning
 is authored under `resolution.fatigue` in `content/tactical/combat.yaml`.
 Tactical fatigue remains transient server state; this change does not add
 per-tick strategic database writes.
+
+### Encumbrance (translucent grey)
+
+Body weight and carried equipment consume part of the character's carrying
+capacity. In combat, that burden fills a translucent-grey portion of the
+incapacitation wheel, distinct from black fatigue. It contributes once to the
+total instead of applying a second, hidden penalty to physical skill checks.
+Changing equipment or sustaining a leg injury can change this contribution,
+because carrying capacity still depends on usable leg strength.
 
 ## Penetrating
 Each piece of armor has a "resistance" and "padding", both are in terms of
@@ -348,7 +389,7 @@ Penetration coefficient examples:
 - Maces: 0.5
 - Swords/axes/musket ball: 1.0
 - Broadhead arrows or spear: 2.0
-- Mail breaker, rapier, or bodkin arrows: 4.0 
+- Mail breaker, rapier, or bodkin arrows: 4.0
 
 Any edged or pointed energy that penetrates is then applied as cut damage.
 
@@ -367,10 +408,14 @@ extra damage against flesh.
 
 Calibration:
 - 80kg male's forearm is about 1.2kg
-- A 20j direct hit dagger stab against an unarmored forearm should do just enough damage to incapacitate
-- The point of having more powerful attacks is not to do more damage to flesh, but to get past armor
-- A knight in full-plate still should be vulnerable to a mail breaker or bodkin arrow in the gaps between plates which are guarded only by chainmail
-- A 20j stab from a mail breaker should just barely be able to penetrate chainmail and damage flesh
+- A 20j direct hit dagger stab against an unarmored forearm should do just
+  enough damage to incapacitate
+- The point of having more powerful attacks is not to do more damage to flesh,
+  but to get past armor
+- A knight in full-plate still should be vulnerable to a mail breaker or bodkin
+  arrow in the gaps between plates which are guarded only by chainmail
+- A 20j stab from a mail breaker should just barely be able to penetrate
+  chainmail and damage flesh
 ### Blunt
 
 > Halbe: We may want to distinguish between bruising and bone fracturing, perhaps by picking an arbitrary amount of blunt damage energy after which it starts to fracture the bone.
