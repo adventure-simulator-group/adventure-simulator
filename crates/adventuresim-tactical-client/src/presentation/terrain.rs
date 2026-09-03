@@ -184,17 +184,7 @@ pub(in crate::presentation) fn on_game_scene_added(
 )]
 pub(in crate::presentation) fn present_pending_terrain(
     mut commands: Commands,
-    query: Query<
-        (
-            Entity,
-            &SceneId,
-            &SceneTerrain,
-            &SceneEnvironment,
-            Option<&SceneGround>,
-            Option<&FaultScarpRecipe>,
-        ),
-        With<PendingTerrainPresentation>,
-    >,
+    query: volumetric::PendingScenes,
     presentations: Query<
         (
             &ScenePresentationOf,
@@ -221,8 +211,8 @@ pub(in crate::presentation) fn present_pending_terrain(
     mut startup: Option<ResMut<crate::presentation::ClientStartupTiming>>,
 ) {
     let mut prepared_first_terrain = false;
-    for (entity, id, terrain, environment, ground, fault_scarp) in &query {
-        let transition_collar = fault_scarp.map(|recipe| recipe.transition_collar());
+    for (entity, id, terrain, environment, ground, landform) in &query {
+        let transition_collar = landform.map(|recipe| recipe.transition_collar());
         let presented = if let (
             Some((_, handle)),
             Some((_, detail_handle, mut patch, mesh_handle, mut triangle_count)),
@@ -271,7 +261,7 @@ pub(in crate::presentation) fn present_pending_terrain(
                 id,
                 terrain,
                 material,
-                fault_scarp,
+                landform,
                 transition_collar,
             );
             let centre = Vec2::ZERO;
@@ -310,7 +300,11 @@ pub(in crate::presentation) fn present_pending_terrain(
 pub(in crate::presentation) fn update_terrain_detail_patch(
     camera: Single<&GlobalTransform, With<TacticalGameplayCamera>>,
     active: Res<ActiveTacticalScene>,
-    scenes: Query<(&SceneTerrain, &SceneEnvironment, Option<&FaultScarpRecipe>)>,
+    scenes: Query<(
+        &SceneTerrain,
+        &SceneEnvironment,
+        Option<&TerrainLandformRecipe>,
+    )>,
     mut patches: Query<(
         &ScenePresentationOf,
         &mut TerrainDetailPatch,
@@ -331,7 +325,7 @@ pub(in crate::presentation) fn update_terrain_detail_patch(
         {
             continue;
         }
-        let Ok((terrain, environment, fault_scarp)) = scenes.get(source.0) else {
+        let Ok((terrain, environment, landform)) = scenes.get(source.0) else {
             continue;
         };
         let Some(mut mesh) = meshes.get_mut(&mesh_handle.0) else {
@@ -342,7 +336,7 @@ pub(in crate::presentation) fn update_terrain_detail_patch(
             environment,
             &vista,
             desired_centre,
-            fault_scarp.map(|recipe| recipe.transition_collar()),
+            landform.map(|recipe| recipe.transition_collar()),
         );
         triangle_count.0 = mesh_triangle_count(&replacement);
         *mesh = replacement;

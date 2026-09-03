@@ -1,6 +1,6 @@
 use adventuresim_tactical_core::prelude::{
-    FaultScarpRecipe, GroundCover, GroundSubstrate, GroundSurface, SceneEnvironment, SceneGround,
-    SceneId, SceneTerrain, TerrainTransitionCollar,
+    GroundCover, GroundSubstrate, GroundSurface, SceneEnvironment, SceneGround, SceneId,
+    SceneTerrain, TerrainLandformRecipe, TerrainTransitionCollar,
 };
 use bevy::prelude::*;
 
@@ -15,7 +15,7 @@ pub(super) type GroundScatterSceneQuery<'w, 's> = Query<
         &'static SceneTerrain,
         &'static SceneGround,
         &'static SceneEnvironment,
-        Option<&'static FaultScarpRecipe>,
+        Option<&'static TerrainLandformRecipe>,
     ),
     Without<GroundScatterPresented>,
 >;
@@ -30,7 +30,7 @@ pub(super) type InstancedGrassSceneQuery<'w, 's> = Query<
         &'static SceneTerrain,
         &'static SceneGround,
         &'static SceneEnvironment,
-        Option<&'static FaultScarpRecipe>,
+        Option<&'static TerrainLandformRecipe>,
     ),
     Without<super::instanced_grass::InstancedGrassPresented>,
 >;

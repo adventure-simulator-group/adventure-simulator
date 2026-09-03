@@ -10,15 +10,16 @@ pub(super) fn fixture() -> Fixture {
         weather: clear(),
         vista: VistaKind::Ordinary,
         buildings: BuildingFixture::Empty,
-        fault_scarp: Some(FaultScarpRecipe {
+        landform: Some(TerrainLandformRecipe {
+            kind: TerrainLandformKind::FaultScarp,
             seed: 47_114,
             origin_cm: [0, 0],
             tangent_permyriad: [10_000, 0],
-            throw_cm: 800,
+            relief_cm: 800,
             half_length_cm: 4_500,
             half_width_cm: 1_800,
             collar_cm: 400,
-            lod: FaultScarpLod::Detail,
+            lod: TerrainLandformLod::Detail,
         }),
     }
 }

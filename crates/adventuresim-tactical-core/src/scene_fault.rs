@@ -1,11 +1,11 @@
 use crate::{
     scene::SceneTerrain,
     scene_input::{SceneInputError, TerrainSampleGrid},
-    volumetric_terrain::{FaultScarpRecipe, SceneTerrainPatch, fault_scarp_patch},
+    volumetric_terrain::{SceneTerrainPatch, TerrainLandformRecipe, terrain_landform_patch},
 };
 
 pub(crate) fn validate(
-    recipe: Option<FaultScarpRecipe>,
+    recipe: Option<TerrainLandformRecipe>,
     playable: &TerrainSampleGrid,
 ) -> Result<(), SceneInputError> {
     let Some(recipe) = recipe else {
@@ -24,11 +24,11 @@ pub(crate) fn validate(
 }
 
 pub(crate) fn generate(
-    recipe: Option<FaultScarpRecipe>,
+    recipe: Option<TerrainLandformRecipe>,
     terrain: &SceneTerrain,
 ) -> Result<Option<SceneTerrainPatch>, SceneInputError> {
     recipe
-        .map(|recipe| fault_scarp_patch(terrain, recipe))
+        .map(|recipe| terrain_landform_patch(terrain, recipe))
         .transpose()
         .map_err(|reason| SceneInputError::Validation(reason.into()))
 }

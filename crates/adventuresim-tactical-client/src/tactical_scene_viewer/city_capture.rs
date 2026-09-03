@@ -9,7 +9,11 @@ const STREET_REVIEW_DISTANCE_METRES: f32 = 17.0;
 pub(super) fn capture_cameras(
     buildings: &[GeneratedBuilding],
     distant_buildings: &[DistantBuildingPlacement],
+    profile: &str,
 ) -> Vec<BuildingReviewCamera> {
+    if profile != super::CITY_REVIEW_PROFILE {
+        return Vec::new();
+    }
     let focus = buildings
         .iter()
         .min_by(|left, right| {
@@ -176,7 +180,11 @@ mod tests {
             orientation: BuildingOrientation::IDENTITY,
         }];
 
-        let cameras = capture_cameras(&buildings, &distant);
+        let cameras = capture_cameras(
+            &buildings,
+            &distant,
+            crate::tactical_scene_viewer::CITY_REVIEW_PROFILE,
+        );
 
         assert_eq!(cameras.len(), 7);
         assert!(cameras.iter().all(|camera| {

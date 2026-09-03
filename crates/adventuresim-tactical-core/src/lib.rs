@@ -9,6 +9,7 @@ pub mod city_layout;
 pub mod combat;
 pub mod combat_config;
 pub mod doors;
+mod erosional_terrain;
 pub mod inventory;
 mod inventory_armor;
 mod marching_tetrahedra;
@@ -110,7 +111,8 @@ pub mod prelude {
     };
     pub use crate::terrain_transition::TerrainTransitionCollar;
     pub use crate::volumetric_terrain::{
-        FaultScarpLod, FaultScarpRecipe, SceneTerrainPatch, fault_scarp_patch,
+        SceneTerrainPatch, TerrainLandformKind, TerrainLandformLod, TerrainLandformRecipe,
+        terrain_landform_patch,
     };
     pub use adventuresim_core::item_catalog;
     pub use adventuresim_core::item_catalog::{EquipmentChannel, EquipmentLocation};

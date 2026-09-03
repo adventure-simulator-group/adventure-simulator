@@ -1,4 +1,9 @@
 //! Bounded implicit terrain patches and deterministic marching tetrahedra.
+//!
+//! The server selects a compact, immutable landform recipe. Server collision
+//! and client presentation extract the same field after heightfield repair;
+//! no terrain simulation or mesh persistence runs during tactical ticks.
+//! The heightfield remains authoritative outside the transition collar.
 
 use bevy::{
     math::{FloatExt, Vec2, Vec3, Vec3Swizzles},
@@ -11,87 +16,8 @@ use serde::{Deserialize, Serialize};
 use crate::marching_tetrahedra::marching_tetrahedra;
 use crate::{scene::SceneTerrain, terrain_transition::TerrainTransitionCollar};
 
-#[derive(Component, Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[component(immutable)]
-#[serde(deny_unknown_fields)]
-pub struct FaultScarpRecipe {
-    pub seed: u64,
-    pub origin_cm: [i32; 2],
-    /// Unit tangent encoded in ten-thousandths.
-    pub tangent_permyriad: [i16; 2],
-    pub throw_cm: u16,
-    pub half_length_cm: u16,
-    pub half_width_cm: u16,
-    pub collar_cm: u16,
-    pub lod: FaultScarpLod,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum FaultScarpLod {
-    Detail,
-    Fringe,
-}
-
-impl FaultScarpLod {
-    const fn voxel_cm(self) -> u16 {
-        match self {
-            Self::Detail => 50,
-            Self::Fringe => 100,
-        }
-    }
-}
-
-impl FaultScarpRecipe {
-    pub fn validate(self, terrain: &SceneTerrain) -> Result<(), &'static str> {
-        let tangent = Vec2::new(
-            f32::from(self.tangent_permyriad[0]),
-            f32::from(self.tangent_permyriad[1]),
-        ) / 10_000.0;
-        if !(0.98..=1.02).contains(&tangent.length()) {
-            return Err("fault scarp tangent is not normalized");
-        }
-        if !(100..=2_000).contains(&self.throw_cm)
-            || !(400..=5_000).contains(&self.half_length_cm)
-            || !(300..=2_000).contains(&self.half_width_cm)
-            || self.collar_cm < 100
-            || self.collar_cm * 2 >= self.half_width_cm
-        {
-            return Err("fault scarp dimensions are outside their bounds");
-        }
-        let origin = Vec2::new(self.origin_cm[0] as f32, self.origin_cm[1] as f32) / 100.0;
-        let half = Vec2::new(terrain.width(), terrain.depth()) * 0.5;
-        let half_length = f32::from(self.half_length_cm) / 100.0;
-        let half_width = f32::from(self.half_width_cm) / 100.0 + SCARP_RUPTURE_WANDER_METRES;
-        let normal = Vec2::new(-tangent.y, tangent.x);
-        let extent = tangent.abs() * half_length + normal.abs() * half_width;
-        if origin.x.abs() > half.x + extent.x || origin.y.abs() > half.y + extent.y {
-            return Err("fault scarp does not overlap the playable terrain");
-        }
-        Ok(())
-    }
-
-    pub fn transition_collar(self) -> TerrainTransitionCollar {
-        let origin = Vec2::new(self.origin_cm[0] as f32, self.origin_cm[1] as f32) / 100.0;
-        let tangent = Vec2::new(
-            f32::from(self.tangent_permyriad[0]),
-            f32::from(self.tangent_permyriad[1]),
-        ) / 10_000.0;
-        let half_length = f32::from(self.half_length_cm) / 100.0;
-        let half_width = f32::from(self.half_width_cm) / 100.0;
-        TerrainTransitionCollar::irregular_ellipse(
-            origin,
-            tangent,
-            half_length,
-            half_width,
-            f32::from(self.collar_cm) / 100.0,
-            self.seed,
-            SCARP_RUPTURE_WANDER_METRES,
-            SCARP_WIDTH_VARIATION_BPS,
-        )
-        .expect("validated fault-scarp dimensions produce a transition collar")
-    }
-}
+mod recipe;
+pub use recipe::{TerrainLandformKind, TerrainLandformLod, TerrainLandformRecipe};
 
 #[derive(Component, Clone, Debug, PartialEq, Reflect, Serialize, Deserialize)]
 #[reflect(Component)]
@@ -140,11 +66,14 @@ impl SceneTerrainPatch {
     }
 }
 
-pub fn fault_scarp_patch(
+pub fn terrain_landform_patch(
     terrain: &SceneTerrain,
-    recipe: FaultScarpRecipe,
+    recipe: TerrainLandformRecipe,
 ) -> Result<SceneTerrainPatch, &'static str> {
     recipe.validate(terrain)?;
+    if recipe.kind != TerrainLandformKind::FaultScarp {
+        return crate::erosional_terrain::patch(terrain, recipe);
+    }
     let spacing = f32::from(recipe.lod.voxel_cm()) / 100.0;
     let origin = Vec2::new(recipe.origin_cm[0] as f32, recipe.origin_cm[1] as f32) / 100.0;
     let radius = f32::from(recipe.half_length_cm.max(recipe.half_width_cm)) / 100.0
@@ -155,7 +84,7 @@ pub fn fault_scarp_patch(
     // leaves a thin rectangular opening at the fault tips.
     let radius = (radius / spacing).ceil() * spacing + spacing;
     let side = ((radius * 2.0 / spacing).round() as usize).saturating_add(1);
-    let throw = f32::from(recipe.throw_cm) / 100.0;
+    let throw = f32::from(recipe.relief_cm) / 100.0;
     let surface =
         simulate_fault_scarp(terrain, recipe, side, spacing, origin - Vec2::splat(radius))?;
     let (minimum, maximum) = surface.height_range(terrain)?;
@@ -241,13 +170,13 @@ impl SimulatedScarpSurface {
 
 fn simulate_fault_scarp(
     terrain: &SceneTerrain,
-    recipe: FaultScarpRecipe,
+    recipe: TerrainLandformRecipe,
     side: usize,
     spacing: f32,
     minimum: Vec2,
 ) -> Result<SimulatedScarpSurface, &'static str> {
     let collar = recipe.transition_collar();
-    let throw = f32::from(recipe.throw_cm) / 100.0;
+    let throw = f32::from(recipe.relief_cm) / 100.0;
     // Keep both displaced blocks clear of the original heightfield.  A zero
     // offset on either side makes the replacement isosurface coincide with
     // the removed heightfield and can leave an unmeshed ownership hole.  The
@@ -311,7 +240,7 @@ fn erode_surface(
     offsets: &mut [f32],
     masks: &[f32],
     base_heights: &[f32],
-    recipe: FaultScarpRecipe,
+    recipe: TerrainLandformRecipe,
     collar: TerrainTransitionCollar,
     side: usize,
     spacing: f32,
@@ -448,22 +377,23 @@ mod tests {
     #[test]
     fn fault_scarp_is_deterministic_and_has_a_vertical_face() {
         let terrain = SceneTerrain::new(40, 40, 1.0, |_| 0.0);
-        let recipe = FaultScarpRecipe {
+        let recipe = TerrainLandformRecipe {
+            kind: TerrainLandformKind::FaultScarp,
             seed: 17,
             origin_cm: [0, 0],
             tangent_permyriad: [10_000, 0],
-            throw_cm: 600,
+            relief_cm: 600,
             half_length_cm: 1_000,
             half_width_cm: 800,
             collar_cm: 200,
-            lod: FaultScarpLod::Detail,
+            lod: TerrainLandformLod::Detail,
         };
         let generate_with_threads = |threads| {
             rayon::ThreadPoolBuilder::new()
                 .num_threads(threads)
                 .build()
                 .unwrap()
-                .install(|| fault_scarp_patch(&terrain, recipe).unwrap())
+                .install(|| terrain_landform_patch(&terrain, recipe).unwrap())
         };
         let first = generate_with_threads(1);
         let second = generate_with_threads(4);
@@ -513,18 +443,19 @@ mod tests {
     #[test]
     fn fringe_lod_keeps_the_full_feature_across_the_playable_edge() {
         let terrain = SceneTerrain::new(100, 100, 1.0, |_| 0.0);
-        let recipe = FaultScarpRecipe {
+        let recipe = TerrainLandformRecipe {
+            kind: TerrainLandformKind::FaultScarp,
             seed: 29,
             origin_cm: [0, 6_000],
             tangent_permyriad: [10_000, 0],
-            throw_cm: 800,
+            relief_cm: 800,
             half_length_cm: 4_500,
             half_width_cm: 1_800,
             collar_cm: 400,
-            lod: FaultScarpLod::Fringe,
+            lod: TerrainLandformLod::Fringe,
         };
 
-        let patch = fault_scarp_patch(&terrain, recipe).unwrap();
+        let patch = terrain_landform_patch(&terrain, recipe).unwrap();
 
         assert!(patch.positions.iter().any(|position| position[2] <= 50.0));
         assert!(patch.positions.iter().any(|position| position[2] > 50.0));
@@ -534,15 +465,16 @@ mod tests {
     #[test]
     fn collar_matches_the_heightfield_exactly() {
         let terrain = SceneTerrain::new(40, 40, 1.0, |point| point.x * 0.02);
-        let recipe = FaultScarpRecipe {
+        let recipe = TerrainLandformRecipe {
+            kind: TerrainLandformKind::FaultScarp,
             seed: 17,
             origin_cm: [0, 0],
             tangent_permyriad: [10_000, 0],
-            throw_cm: 600,
+            relief_cm: 600,
             half_length_cm: 1_000,
             half_width_cm: 800,
             collar_cm: 200,
-            lod: FaultScarpLod::Detail,
+            lod: TerrainLandformLod::Detail,
         };
         let spacing = f32::from(recipe.lod.voxel_cm()) / 100.0;
         let radius = f32::from(recipe.half_length_cm.max(recipe.half_width_cm)) / 100.0;

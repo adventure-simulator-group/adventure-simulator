@@ -832,7 +832,7 @@ fn setup_stdb_callbacks(conn: Res<SpacetimeDb>) {
 fn on_scene_terrain_added(
     event: On<Add, SceneTerrain>,
     mut commands: Commands,
-    query: Query<(&SceneTerrain, Option<&FaultScarpRecipe>)>,
+    query: Query<(&SceneTerrain, Option<&TerrainLandformRecipe>)>,
 ) -> Result {
     let (terrain, recipe) = query.get(event.entity)?;
     let collider = terrain_collision::collider(terrain, recipe)?;
@@ -939,7 +939,7 @@ fn on_server_started(
             ground,
             environment,
             terrain_patch.as_ref(),
-            input.fault_scarp,
+            input.landform,
         );
     }
     scene_setup::spawn_world_bounds(&mut commands, scene_width, scene_depth);

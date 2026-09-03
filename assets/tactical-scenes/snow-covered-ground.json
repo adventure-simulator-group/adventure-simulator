@@ -1,6 +1,6 @@
 {
-  "schema_version": 8,
-  "generation_version": 24,
+  "schema_version": 9,
+  "generation_version": 25,
   "seed": 47107,
   "scene_key": "snowfield",
   "source": {
@@ -831,7 +831,7 @@
       }
     ]
   },
-  "fault_scarp": null,
+  "landform": null,
   "streets": [],
   "yards": [],
   "buildings": [],

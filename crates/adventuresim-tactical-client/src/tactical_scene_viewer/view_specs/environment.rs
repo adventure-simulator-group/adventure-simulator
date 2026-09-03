@@ -1,6 +1,6 @@
 use super::*;
 
-pub(in crate::tactical_scene_viewer) const ENVIRONMENT_REVIEW_VIEWS: [CaptureViewSpec; 14] = [
+pub(in crate::tactical_scene_viewer) const ENVIRONMENT_REVIEW_VIEWS: [CaptureViewSpec; 15] = [
     v!(
         "warmup",
         "Render-pipeline warmup",
@@ -79,6 +79,14 @@ pub(in crate::tactical_scene_viewer) const ENVIRONMENT_REVIEW_VIEWS: [CaptureVie
     )
     .suppress_grass()
     .detail(DetailRequirement::GrassSuppressed),
+    v!(
+        "landform-underside",
+        "Landform underside and contact",
+        CapturePose::LandformUnderside,
+        55.0,
+        1000
+    )
+    .suppress_grass(),
     v!(
         "grass-seam-detail",
         "Grass macro-patch seam and density detail",

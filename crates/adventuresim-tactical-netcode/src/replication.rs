@@ -61,7 +61,7 @@ impl Plugin for AdventureSimulatorReplicationPlugin {
             .replicate::<SceneGround>()
             .replicate::<SceneEnvironment>()
             .replicate::<SceneObstacle>()
-            .replicate_once::<FaultScarpRecipe>()
+            .replicate_once::<TerrainLandformRecipe>()
             .replicate_with(RuleFns::new(
                 serialize_scene_building,
                 deserialize_scene_building,

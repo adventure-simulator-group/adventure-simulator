@@ -5,6 +5,10 @@ use rayon::prelude::*;
 
 use crate::{terrain_transition::TerrainTransitionCollar, volumetric_terrain::SceneTerrainPatch};
 
+// Fields are in metres. Snap sub-millimetre roundoff to the shared lattice
+// endpoint instead of producing several almost-coincident edge vertices.
+const FIELD_ZERO_TOLERANCE_METRES: f32 = 0.00001;
+
 const CUBE: [[usize; 3]; 8] = [
     [0, 0, 0],
     [1, 0, 0],
@@ -54,6 +58,11 @@ fn sample_field(
                 yz / dimensions[1],
             ]);
             let value = field(position);
+            let value = if value.abs() <= FIELD_ZERO_TOLERANCE_METRES {
+                0.0
+            } else {
+                value
+            };
             (position.is_finite() && value.is_finite())
                 .then_some((position, value))
                 .ok_or("fault patch field is not finite")
@@ -144,7 +153,17 @@ fn vertex_on_edge(
     edge_vertices: &mut HashMap<(usize, usize), u32>,
     mesh_positions: &mut Vec<Vec3>,
 ) -> Result<u32, &'static str> {
-    let key = if a < b { (a, b) } else { (b, a) };
+    // Several tetrahedra can reach the same zero-valued lattice vertex along
+    // different edges. Give that endpoint one identity to preserve topology.
+    let key = if values[a] == 0.0 {
+        (a, a)
+    } else if values[b] == 0.0 {
+        (b, b)
+    } else if a < b {
+        (a, b)
+    } else {
+        (b, a)
+    };
     if let Some(&index) = edge_vertices.get(&key) {
         return Ok(index);
     }
@@ -205,7 +224,9 @@ fn orient_triangle(
     let mut triangle = [source[0], source[1], source[2]];
     let [a, b, c] = triangle.map(|index| positions[index as usize]);
     let mut normal = (b - a).cross(c - a);
-    if normal.length_squared() < 1e-10 {
+    // Tiny triangles close a valid surface near lattice corners. Dropping
+    // them on an arbitrary area threshold opens cracks around carved roofs.
+    if normal.length_squared() == 0.0 {
         return None;
     }
     let centre = (a + b + c) / 3.0;

@@ -8,6 +8,8 @@ use fabelgeist_determinism::splitmix64;
 
 #[path = "generate_scene_fixtures/fault.rs"]
 mod fault;
+#[path = "generate_scene_fixtures/geological.rs"]
+mod geological;
 
 const DEFAULT_TEST_MINUTE: u64 = 339_840 + 10 * 60;
 const MASSIVE_CITY_RESIDENT_POPULATION: u32 = 40_000;
@@ -24,7 +26,7 @@ struct Fixture {
     environment: fn(f32, f32) -> EnvironmentalSample,
     weather: WeatherSnapshot,
     vista: VistaKind,
-    fault_scarp: Option<FaultScarpRecipe>,
+    landform: Option<TerrainLandformRecipe>,
     buildings: BuildingFixture,
 }
 
@@ -67,7 +69,7 @@ fn main() {
     }
 }
 
-fn fixtures() -> [Fixture; 15] {
+fn fixtures() -> [Fixture; 16] {
     [
         Fixture {
             buildings: BuildingFixture::Cottage,
@@ -93,6 +95,7 @@ fn fixtures() -> [Fixture; 15] {
             clear(),
         ),
         fault::fixture(),
+        geological::sandstone(),
         fixture(
             "dense-woodland",
             "woodland",
@@ -206,7 +209,7 @@ const fn fixture(
         environment,
         weather,
         vista: VistaKind::Ordinary,
-        fault_scarp: None,
+        landform: None,
         buildings: BuildingFixture::Empty,
     }
 }
@@ -231,7 +234,7 @@ fn build_fixture(fixture: Fixture) -> TacticalSceneInput {
         lunar_phase_minute: fixture.weather.interval_start_minute,
         absolute_elevation_metres: 42,
         playable: grid(9, 9, 12.5, fixture.terrain, fixture.environment),
-        fault_scarp: fixture.fault_scarp,
+        landform: fixture.landform,
         streets,
         yards,
         buildings,

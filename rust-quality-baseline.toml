@@ -644,7 +644,7 @@ ceiling = 646
 
 [[files]]
 path = "crates/adventuresim-tactical-client/src/presentation/terrain.rs"
-ceiling = 687
+ceiling = 681
 
 [[files]]
 path = "crates/adventuresim-tactical-client/src/presentation/vista.rs"
@@ -748,7 +748,7 @@ ceiling = 760
 
 [[files]]
 path = "crates/adventuresim-world-import/src/sources/geology.rs"
-ceiling = 765
+ceiling = 557
 
 [[files]]
 path = "crates/adventuresim-world-import/src/sources/hydrology.rs"
@@ -784,7 +784,7 @@ ceiling = 568
 
 [[files]]
 path = "crates/adventuresim-world-schema/src/lib.rs"
-ceiling = 4268
+ceiling = 4109
 
 [[files]]
 path = "crates/fabelgeist-animation/src/animation/retarget/retargeter.rs"
@@ -2722,7 +2722,7 @@ ceiling = 101
 [[functions]]
 path = "crates/adventuresim-tactical-client/src/presentation/terrain.rs"
 item = "present_pending_terrain"
-ceiling = 126
+ceiling = 116
 
 [[functions]]
 path = "crates/adventuresim-tactical-client/src/presentation/vista.rs"
@@ -2933,11 +2933,6 @@ ceiling = 126
 path = "crates/adventuresim-world-import/src/sources/environment_synthesis.rs"
 item = "synthesize"
 ceiling = 158
-
-[[functions]]
-path = "crates/adventuresim-world-import/src/sources/geology.rs"
-item = "GeologyMap::open"
-ceiling = 152
 
 [[functions]]
 path = "crates/adventuresim-world-import/src/sources/geology.rs"

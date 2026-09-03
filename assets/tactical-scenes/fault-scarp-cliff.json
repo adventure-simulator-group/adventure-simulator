@@ -1,6 +1,6 @@
 {
-  "schema_version": 8,
-  "generation_version": 24,
+  "schema_version": 9,
+  "generation_version": 25,
   "seed": 47114,
   "scene_key": "fault-scarp",
   "source": {
@@ -831,7 +831,8 @@
       }
     ]
   },
-  "fault_scarp": {
+  "landform": {
+    "kind": "fault_scarp",
     "seed": 47114,
     "origin_cm": [
       0,
@@ -841,7 +842,7 @@
       10000,
       0
     ],
-    "throw_cm": 800,
+    "relief_cm": 800,
     "half_length_cm": 4500,
     "half_width_cm": 1800,
     "collar_cm": 400,
