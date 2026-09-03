@@ -5,6 +5,7 @@ use super::*;
 pub enum TerrainLandformKind {
     FaultScarp,
     SandstoneAlcove,
+    CarbonateDissolution,
 }
 
 #[derive(Component, Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]

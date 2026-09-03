@@ -69,7 +69,7 @@ fn main() {
     }
 }
 
-fn fixtures() -> [Fixture; 16] {
+fn fixtures() -> [Fixture; 17] {
     [
         Fixture {
             buildings: BuildingFixture::Cottage,
@@ -96,6 +96,7 @@ fn fixtures() -> [Fixture; 16] {
         ),
         fault::fixture(),
         geological::sandstone(),
+        geological::carbonate(),
         fixture(
             "dense-woodland",
             "woodland",

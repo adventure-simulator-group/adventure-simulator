@@ -100,6 +100,9 @@ fn kind_for_lithology(lithology: SurfaceLithology) -> Option<TerrainLandformKind
         SurfaceLithology::Sedimentary(SedimentaryRock::Sandstone) => {
             Some(TerrainLandformKind::SandstoneAlcove)
         }
+        SurfaceLithology::Sedimentary(SedimentaryRock::Limestone | SedimentaryRock::Dolostone) => {
+            Some(TerrainLandformKind::CarbonateDissolution)
+        }
         _ => None,
     }
 }
@@ -221,6 +224,30 @@ mod tests {
         assert_eq!(Some(recipe), select(&features, center, &grid, 42));
         assert!(recipe.origin_cm[1].abs() > 2100);
         assert!(recipe.tangent_permyriad[0] > 9900);
+    }
+
+    #[test]
+    fn mapped_competent_carbonates_select_dissolution_but_marl_does_not() {
+        let (center, grid, mut features) = context();
+        for rock in [
+            SedimentaryRock::Limestone,
+            SedimentaryRock::Dolostone,
+            SedimentaryRock::Marl,
+        ] {
+            let TerrainFeature::MappedGeology(window) = &mut features[0] else {
+                unreachable!()
+            };
+            window.lithology = SurfaceLithology::Sedimentary(rock);
+            let selected = select(&features, center, &grid, 42);
+            if rock == SedimentaryRock::Marl {
+                assert!(selected.is_none());
+            } else {
+                assert_eq!(
+                    selected.unwrap().kind,
+                    TerrainLandformKind::CarbonateDissolution
+                );
+            }
+        }
     }
 
     #[test]

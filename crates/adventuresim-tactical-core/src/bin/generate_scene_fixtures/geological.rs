@@ -1,18 +1,34 @@
 use super::*;
 
 pub(super) fn sandstone() -> Fixture {
+    fixture(
+        "sandstone-alcove",
+        TerrainLandformKind::SandstoneAlcove,
+        47_115,
+    )
+}
+
+pub(super) fn carbonate() -> Fixture {
+    fixture(
+        "carbonate-dissolution",
+        TerrainLandformKind::CarbonateDissolution,
+        47_116,
+    )
+}
+
+fn fixture(name: &'static str, kind: TerrainLandformKind, seed: u64) -> Fixture {
     Fixture {
-        name: "sandstone-alcove",
-        scene_key: "sandstone-alcove",
-        seed: 47_115,
+        name,
+        scene_key: name,
+        seed,
         terrain: |_, z| -z * 0.45,
         environment: rocky_open,
         weather: clear(),
         vista: VistaKind::Ordinary,
         buildings: BuildingFixture::Empty,
         landform: Some(TerrainLandformRecipe {
-            kind: TerrainLandformKind::SandstoneAlcove,
-            seed: 47_115,
+            kind,
+            seed,
             origin_cm: [0, 0],
             tangent_permyriad: [10_000, 0],
             relief_cm: 600,

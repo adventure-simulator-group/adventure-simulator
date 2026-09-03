@@ -90,7 +90,7 @@ const CAPTURE_PROFILE_VERSION: u16 = 24;
 const BEECH_LEAF_MOTION_PROFILE: &str = "beech-leaf-motion";
 const INTERIOR_REVIEW_PROFILE: &str = "interior-review";
 const CITY_REVIEW_PROFILE: &str = "city-review";
-const CAMERA_VERSION: u16 = 17;
+const CAMERA_VERSION: u16 = 18;
 const CAPTURE_CLOCK_PHASE_SECONDS: f32 = 2.0;
 const PLASTER_GRAZING_REVIEW_LUMENS: f32 = 50_000.0;
 

@@ -76,8 +76,8 @@ impl CapturePose {
                 Vec3::Y,
             )),
             Self::LandformUnderside => Some((
-                Vec3::new(1.0, -3.0, 7.0),
-                Vec3::new(0.0, -2.0, -1.0),
+                Vec3::new(1.0, -1.5, 7.0),
+                Vec3::new(0.0, -1.5, -1.0),
                 Vec3::Y,
             )),
             _ => None,

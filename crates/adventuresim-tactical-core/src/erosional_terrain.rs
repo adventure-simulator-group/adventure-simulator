@@ -6,8 +6,10 @@ use bevy::math::{FloatExt, Vec2, Vec3, Vec3Swizzles};
 use crate::{
     marching_tetrahedra::marching_tetrahedra,
     scene::SceneTerrain,
-    volumetric_terrain::{SceneTerrainPatch, TerrainLandformRecipe},
+    volumetric_terrain::{SceneTerrainPatch, TerrainLandformKind, TerrainLandformRecipe},
 };
+
+mod carbonate;
 
 const SAMPLE_MARGIN_CELLS: f32 = 2.0;
 const MAX_GRID_SIDE: usize = 195;
@@ -17,6 +19,7 @@ const SANDSTONE_ROOF_FRACTION: f32 = 0.3;
 const TALUS_RELIEF_FRACTION: f32 = 0.18;
 const TALUS_CENTRE_METRES: f32 = 3.0;
 const TALUS_HALF_WIDTH_METRES: f32 = 4.0;
+const CARBONATE_RESIDUAL_RELIEF_FRACTION: f32 = 0.05;
 
 pub(crate) fn patch(
     terrain: &SceneTerrain,
@@ -95,10 +98,20 @@ fn field(terrain: &SceneTerrain, recipe: TerrainLandformRecipe, point: Vec3) -> 
         * std::f32::consts::PI)
         .sin()
         .max(0.0);
-    let front = -SANDSTONE_RECESS_METRES.min(relief * 0.35) * recess;
+    let (front, debris_fraction) = match recipe.kind {
+        TerrainLandformKind::SandstoneAlcove => (
+            -SANDSTONE_RECESS_METRES.min(relief * 0.35) * recess,
+            TALUS_RELIEF_FRACTION,
+        ),
+        TerrainLandformKind::CarbonateDissolution => (
+            carbonate::front(local.x, depth_fraction, relief, recipe.seed),
+            CARBONATE_RESIDUAL_RELIEF_FRACTION,
+        ),
+        TerrainLandformKind::FaultScarp => unreachable!("faults use the displacement field"),
+    };
     let talus = (1.0 - ((local.y - TALUS_CENTRE_METRES) / TALUS_HALF_WIDTH_METRES).abs()).max(0.0)
         * relief
-        * TALUS_RELIEF_FRACTION;
+        * debris_fraction;
     let floor = foot + talus;
     let cut = (local.y - front).min(point.y - floor);
     base.lerp(base.max(cut), weight)
@@ -182,18 +195,75 @@ mod tests {
 
     #[test]
     fn sandstone_mesh_is_deterministic_and_has_no_interior_boundary_edges() {
+        assert_sound_mesh(TerrainLandformKind::SandstoneAlcove);
+    }
+
+    #[test]
+    fn carbonate_mesh_is_deterministic_and_has_no_interior_boundary_edges() {
+        assert_sound_mesh(TerrainLandformKind::CarbonateDissolution);
+    }
+
+    #[test]
+    fn carbonate_has_separate_open_hollows_with_solid_bridges() {
+        let terrain = SceneTerrain::new(60, 60, 1.0, |p| -(p.y - 30.0) * 0.4);
+        let recipe = TerrainLandformRecipe {
+            kind: TerrainLandformKind::CarbonateDissolution,
+            ..recipe()
+        };
+        let max_crossings = |x| {
+            (0..80)
+                .map(|step| {
+                    let z = -3.0 + step as f32 * 0.075;
+                    let signs: Vec<_> = (0..160)
+                        .map(|layer| {
+                            field(
+                                &terrain,
+                                recipe,
+                                Vec3::new(x, -6.0 + layer as f32 * 0.05, z),
+                            ) > 0.0
+                        })
+                        .collect();
+                    signs.windows(2).filter(|pair| pair[0] != pair[1]).count()
+                })
+                .max()
+                .unwrap()
+        };
+        for x in [-6.0, -0.5, 5.5] {
+            assert!(max_crossings(x) >= 3, "missing overhung hollow at {x}");
+        }
+        assert_eq!(max_crossings(2.15), 1, "rock bridge must remain solid");
+    }
+
+    #[test]
+    fn fault_mesh_retains_consistent_winding_at_both_resolutions() {
+        assert_sound_mesh(TerrainLandformKind::FaultScarp);
+    }
+
+    fn assert_sound_mesh(kind: TerrainLandformKind) {
+        for lod in [TerrainLandformLod::Detail, TerrainLandformLod::Fringe] {
+            assert_sound_mesh_lod(kind, lod);
+        }
+    }
+
+    fn assert_sound_mesh_lod(kind: TerrainLandformKind, lod: TerrainLandformLod) {
         let terrain = SceneTerrain::new(60, 60, 1.0, |p| -(p.y - 30.0) * 0.4 + (p.x - 30.0) * 0.03);
-        let recipe = recipe();
+        let recipe = TerrainLandformRecipe {
+            kind,
+            lod,
+            ..recipe()
+        };
         let generate = |threads| {
             rayon::ThreadPoolBuilder::new()
                 .num_threads(threads)
                 .build()
                 .unwrap()
-                .install(|| patch(&terrain, recipe).unwrap())
+                .install(|| {
+                    crate::volumetric_terrain::terrain_landform_patch(&terrain, recipe).unwrap()
+                })
         };
         let mesh = generate(1);
         assert_eq!(mesh, generate(4));
-        let mut edges = HashMap::<(u32, u32), usize>::new();
+        let mut edges = HashMap::<(u32, u32), (usize, i32)>::new();
         for triangle in mesh.indices.as_chunks::<3>().0 {
             let [a, b, c] = triangle.map(|i| Vec3::from_array(mesh.positions[i as usize]));
             assert!(a.is_finite() && b.is_finite() && c.is_finite());
@@ -203,14 +273,22 @@ mod tests {
                 (triangle[1], triangle[2]),
                 (triangle[2], triangle[0]),
             ] {
-                *edges.entry((a.min(b), a.max(b))).or_default() += 1;
+                let entry = edges.entry((a.min(b), a.max(b))).or_default();
+                entry.0 += 1;
+                entry.1 += if a < b { 1 } else { -1 };
             }
         }
-        for ((a, b), count) in edges {
+        for ((a, b), (count, direction_sum)) in edges {
             let midpoint = (Vec3::from_array(mesh.positions[a as usize])
                 + Vec3::from_array(mesh.positions[b as usize]))
                 * 0.5;
             assert!(count <= 2);
+            if count == 2 {
+                assert_eq!(
+                    direction_sum, 0,
+                    "adjacent faces must wind opposite ways on their shared edge"
+                );
+            }
             if recipe.transition_collar().contains(midpoint.xz()) {
                 assert_eq!(
                     count, 2,
@@ -219,7 +297,9 @@ mod tests {
                 );
             }
         }
-        assert!(mesh.normals.iter().any(|normal| normal[1] < -0.2));
+        if kind != TerrainLandformKind::FaultScarp {
+            assert!(mesh.normals.iter().any(|normal| normal[1] < -0.2));
+        }
         assert!(mesh.triangle_count() < 150000);
     }
 }

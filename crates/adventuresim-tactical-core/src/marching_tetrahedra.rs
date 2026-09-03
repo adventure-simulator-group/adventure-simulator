@@ -36,7 +36,7 @@ pub(crate) fn marching_tetrahedra(
 ) -> Result<SceneTerrainPatch, &'static str> {
     let (positions, values) = sample_field(dimensions, &position_at, &field)?;
     let (mesh_positions, indices) = extract_surface(dimensions, &positions, &values)?;
-    orient_surface(mesh_positions, indices, field, transition_collar)
+    build_surface(mesh_positions, indices, transition_collar)
 }
 
 fn sample_field(
@@ -119,6 +119,7 @@ fn emit_tetrahedron(
         .copied()
         .filter(|&index| values[index] > 0.0)
         .collect::<Vec<_>>();
+    let first_triangle = indices.len();
     let mut vertex = |a, b| vertex_on_edge(a, b, positions, values, edge_vertices, mesh_positions);
     match (inside.len(), outside.len()) {
         (1, 3) => {
@@ -141,6 +142,20 @@ fn emit_tetrahedron(
             indices.extend([ac, bc, ad, ad, bc, bd]);
         }
         _ => {}
+    }
+    if let (Some(&solid), Some(&empty)) = (inside.first(), outside.first()) {
+        // The extracted surface is linear within this tetrahedron. Its normal
+        // must face from the solid sample toward the empty sample. A gradient
+        // of the original nonlinear field at a triangle centre can face the
+        // other way at a cusp, breaking winding across shared edges.
+        let outward = positions[empty].as_dvec3() - positions[solid].as_dvec3();
+        for triangle in indices[first_triangle..].as_chunks_mut::<3>().0 {
+            let [a, b, c] = [triangle[0], triangle[1], triangle[2]]
+                .map(|index| mesh_positions[index as usize].as_dvec3());
+            if (b - a).cross(c - a).dot(outward) < 0.0 {
+                triangle.swap(1, 2);
+            }
+        }
     }
     Ok(())
 }
@@ -181,15 +196,14 @@ fn vertex_on_edge(
     Ok(index)
 }
 
-fn orient_surface(
+fn build_surface(
     mesh_positions: Vec<Vec3>,
     indices: Vec<u32>,
-    field: impl Fn(Vec3) -> f32 + Sync,
     transition_collar: TerrainTransitionCollar,
 ) -> Result<SceneTerrainPatch, &'static str> {
     let oriented = indices
         .par_chunks_exact(3)
-        .map(|source| orient_triangle(source, &mesh_positions, &field))
+        .map(|source| triangle_normal(source, &mesh_positions))
         .collect::<Vec<_>>();
     let mut normals = vec![Vec3::ZERO; mesh_positions.len()];
     let mut oriented_indices = Vec::with_capacity(indices.len());
@@ -216,29 +230,14 @@ fn orient_surface(
     })
 }
 
-fn orient_triangle(
-    source: &[u32],
-    positions: &[Vec3],
-    field: &(impl Fn(Vec3) -> f32 + Sync),
-) -> Option<([u32; 3], Vec3)> {
-    let mut triangle = [source[0], source[1], source[2]];
+fn triangle_normal(source: &[u32], positions: &[Vec3]) -> Option<([u32; 3], Vec3)> {
+    let triangle = [source[0], source[1], source[2]];
     let [a, b, c] = triangle.map(|index| positions[index as usize]);
-    let mut normal = (b - a).cross(c - a);
+    let normal = (b - a).cross(c - a);
     // Tiny triangles close a valid surface near lattice corners. Dropping
     // them on an arbitrary area threshold opens cracks around carved roofs.
     if normal.length_squared() == 0.0 {
         return None;
-    }
-    let centre = (a + b + c) / 3.0;
-    let epsilon = 0.02;
-    let gradient = Vec3::new(
-        field(centre + Vec3::X * epsilon) - field(centre - Vec3::X * epsilon),
-        field(centre + Vec3::Y * epsilon) - field(centre - Vec3::Y * epsilon),
-        field(centre + Vec3::Z * epsilon) - field(centre - Vec3::Z * epsilon),
-    );
-    if normal.dot(gradient) < 0.0 {
-        triangle.swap(1, 2);
-        normal = -normal;
     }
     Some((triangle, normal))
 }
