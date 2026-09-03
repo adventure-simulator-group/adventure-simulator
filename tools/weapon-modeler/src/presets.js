@@ -29,12 +29,12 @@ const socket = (length = 0.2, radius = 0.034) =>
   });
 const langets = (length = 0.42, spacing = 0.023) => [
   mounted("box", "left langet", [-spacing, -length * 0.72, 0], {
-    size: [0.013, length, 0.008],
+    size: [0.003, length, 0.013],
     fitShaftSide: true,
     material: "darkSteel",
   }),
   mounted("box", "right langet", [spacing, -length * 0.72, 0], {
-    size: [0.013, length, 0.008],
+    size: [0.003, length, 0.013],
     fitShaftSide: true,
     material: "darkSteel",
   }),
@@ -210,8 +210,8 @@ const sword = ({ id, name, family, description, pommel: p, grip: g, guards, blad
           {
             label: "Blade length",
             path: `components.${bi}.length`,
-            min: 0.28,
-            max: 1.55,
+            min: Number((Math.ceil(b.length * 0.7 * 100) / 100).toFixed(2)),
+            max: Number((Math.floor(b.length * 1.3 * 100) / 100).toFixed(2)),
             step: 0.01,
             unit: "m",
           },
@@ -246,8 +246,8 @@ const sword = ({ id, name, family, description, pommel: p, grip: g, guards, blad
                 {
                   label: "Section depth",
                   path: `components.${bi}.thickness`,
-                  min: 0.006,
-                  max: 0.022,
+                  min: 0.004,
+                  max: 0.018,
                   step: 0.001,
                   unit: "m",
                 },
@@ -263,8 +263,8 @@ const sword = ({ id, name, family, description, pommel: p, grip: g, guards, blad
           {
             label: "Grip length",
             path: "components.1.length",
-            min: 0.09,
-            max: 0.48,
+            min: g.length > 0.25 ? 0.20 : 0.09,
+            max: g.length > 0.25 ? 0.48 : Math.max(Number((Math.ceil(g.length * 1.3 / 0.005) * 0.005).toFixed(3)), 0.18),
             step: 0.005,
             unit: "m",
           },
@@ -910,7 +910,7 @@ export const PRESETS = [
     ]),
     grip: ovalGrip(0.12, 0.3, 0.033, 0.024),
     guards: [cross(0.425, 0.31, 0.018)],
-    blade: sectionBlade(0.425, 1.02, 0.065, 0.012, "fullered"),
+    blade: sectionBlade(0.425, 1.02, 0.058, 0.008, "fullered"),
   }),
   sword({
     id: "zweihander",
@@ -951,7 +951,7 @@ export const PRESETS = [
         bar: 0.0065,
       },
     ],
-    blade: sectionBlade(0.205, 0.66, 0.07, 0.011, "fullered", { taper: 0.5 }),
+    blade: sectionBlade(0.205, 0.68, 0.06, 0.008, "fullered", { taper: 0.5 }),
     guardControl: { label: "Figure-eight span", min: 0.12, max: 0.17 },
   }),
   sword({
@@ -1319,8 +1319,11 @@ for (const [id, index] of [
     toe: 0,
     heel: 0,
     beardDrop: Number(Math.max(0.04, head.beard * 0.45).toFixed(2)),
+    thickness: id === "halberd-1540" ? 0.008 : 0.012,
+    upperCusp: id === "halberd-1540" ? 0.08 : 0,
+    lowerCusp: id === "halberd-1540" ? 0.05 : 0,
   });
-  addControls(id, [c("Axe height", `components.${index}.height`, id === "pollaxe" ? 0.14 : 0.16, id === "halberd-1540" ? 0.33 : 0.26, 0.01, "m"), c("Axe plate thickness", `components.${index}.thickness`, 0.014, 0.032, 0.001, "m"), c("Eye / root width", `components.${index}.rootWidth`, 0.018, 0.042, 0.001, "m"), c("Edge flare", `components.${index}.flare`, -0.08, 0.08, 0.01), c("Toe rise", `components.${index}.toe`, -0.04, 0.06, 0.01), c("Heel drop", `components.${index}.heel`, -0.02, 0.08, 0.01), c("Beard drop ratio", `components.${index}.beardDrop`, 0.04, 0.3, 0.01), c("Upper shoulder blend", `components.${index}.upperShoulder`, 0.35, 0.46, 0.01), c("Lower shoulder blend", `components.${index}.lowerShoulder`, 0.18, 0.32, 0.01), c("Axe side", `components.${index}.side`, -1, 1, 2)]);
+  addControls(id, [c("Axe height", `components.${index}.height`, id === "pollaxe" ? 0.14 : 0.16, id === "halberd-1540" ? 0.33 : 0.26, 0.01, "m"), c("Axe root thickness", `components.${index}.thickness`, 0.006, 0.018, 0.001, "m"), c("Eye / root width", `components.${index}.rootWidth`, 0.018, 0.042, 0.001, "m"), c("Edge flare", `components.${index}.flare`, -0.08, 0.08, 0.01), c("Toe rise", `components.${index}.toe`, -0.04, 0.06, 0.01), c("Heel drop", `components.${index}.heel`, -0.02, 0.08, 0.01), c("Beard drop ratio", `components.${index}.beardDrop`, 0.04, 0.3, 0.01), c("Upper shoulder blend", `components.${index}.upperShoulder`, 0.35, 0.46, 0.01), c("Lower shoulder blend", `components.${index}.lowerShoulder`, 0.18, 0.32, 0.01), c("Axe side", `components.${index}.side`, -1, 1, 2), c("Upper shoulder cusp", `components.${index}.upperCusp`, 0, 0.16, 0.01), c("Lower shoulder cusp", `components.${index}.lowerCusp`, 0, 0.12, 0.01)]);
 }
 
 for (const [id, index] of [
@@ -1336,8 +1339,9 @@ for (const [id, index] of [
     rootWidth: Number((head.width * 0.4).toFixed(3)),
     bellyPosition: head.shoulder,
     acuteness: 1,
+    thickness: Math.min(head.thickness, 0.014),
   });
-  addControls(id, [c("Spear maximum width", `components.${index}.width`, minimumWidth, head.width + 0.035, 0.001, "m"), c("Spear root width", `components.${index}.rootWidth`, 0.01, Math.floor(minimumWidth * 750) / 1000, 0.001, "m"), c("Spear belly position", `components.${index}.bellyPosition`, 0.08, 0.46, 0.01), c("Point acuteness", `components.${index}.acuteness`, 0.55, 2.05, 0.05), c("Spear section depth", `components.${index}.thickness`, 0.012, 0.03, 0.001, "m")]);
+  addControls(id, [c("Spear maximum width", `components.${index}.width`, minimumWidth, head.width + 0.035, 0.001, "m"), c("Spear root width", `components.${index}.rootWidth`, 0.01, Math.floor(minimumWidth * 750) / 1000, 0.001, "m"), c("Spear belly position", `components.${index}.bellyPosition`, 0.08, 0.46, 0.01), c("Point acuteness", `components.${index}.acuteness`, 0.55, 2.05, 0.05), c("Spear section depth", `components.${index}.thickness`, 0.006, 0.022, 0.001, "m")]);
 }
 
 for (const [id, index] of [
@@ -1422,7 +1426,7 @@ for (const id of ["halberd-1540", "lucerne-hammer", "pollaxe", "kriegsspiess", "
         paths: langetIndices.map((index) => `components.${index}.size.1`),
       },
       {
-        ...c("Langet width", `components.${langetIndices[0]}.size.0`, 0.008, 0.02, 0.001, "m"),
+        ...c("Langet thickness", `components.${langetIndices[0]}.size.0`, 0.002, 0.006, 0.001, "m"),
         paths: langetIndices.map((index) => `components.${index}.size.0`),
       },
     ]);
@@ -1495,7 +1499,8 @@ messer.definition.components[nagelIndex + 1] = {
   rotation: [90, 0, 0],
 };
 
-PRESETS.find((preset) => preset.id === "katzbalger").definition.components[0].thickness = 0.014;
+PRESETS.find((preset) => preset.id === "katzbalger").definition.components[0].thickness = 0.018;
+PRESETS.find((preset) => preset.id === "katzbalger").definition.components[1].length = 0.115;
 const reiterPoll = PRESETS.find((preset) => preset.id === "reiter-war-hammer").definition.components[1];
 reiterPoll.crown = 0.06;
 reiterPoll.neck = 0.026;
@@ -1525,7 +1530,7 @@ const commonShield = (values) => ({
   strapWidth: 0.035,
   strapThickness: 0.004,
   material: "wood",
-  rimMaterial: "darkSteel",
+  rimMaterial: "darkLeather",
   bossMaterial: "steel",
   gripMaterial: "wood",
   strapMaterial: "darkLeather",
@@ -1539,13 +1544,13 @@ const roundShieldPreset = (id, name, values) => ({
   definition: { components: [{ kind: "roundShield", id: "shield", label: name, attach: { to: "weapon.root", at: "center" }, ...commonShield(values) }] },
   controls: [
     shieldControl("Radius", "radius", 0.18, 0.42, 0.01, "m"),
-    shieldControl("Body thickness", "thickness", 0.008, 0.028, 0.002, "m"),
+    shieldControl("Body thickness", "thickness", id === "buckler" ? 0.002 : 0.008, id === "buckler" ? 0.006 : 0.028, id === "buckler" ? 0.001 : 0.002, "m"),
     shieldControl("Radial resolution", "radialSegments", 12, 64, 4),
     shieldControl("Concentric resolution", "rings", 3, 16, 1),
     shieldControl("Outer curvature", "outerCurve", 0, 0.055, 0.005, "m"),
     shieldControl("Center curvature", "centerCurve", 0, 0.05, 0.005, "m"),
     shieldControl("Center radius", "centerRadius", 0.05, 0.14, 0.01, "m"),
-    shieldControl("Rim radius", "rimRadius", 0, 0.012, 0.001, "m"),
+    shieldControl("Rim radius", "rimRadius", 0, id === "buckler" ? 0.006 : 0.012, 0.001, "m"),
     shieldControl("Boss radius", "bossRadius", 0.04, 0.14, 0.005, "m"),
     shieldControl("Boss height", "bossHeight", 0, 0.07, 0.005, "m"),
     shieldControl("Fitting angle", "fittingAngle", 0, 90, 5, "deg"),
@@ -1567,7 +1572,7 @@ const shapedShieldPreset = (id, name, values) => ({
   controls: [
     shieldControl("Width", "width", 0.42, 0.78, 0.01, "m"),
     shieldControl("Body height", "height", 0.48, 1.15, 0.01, "m"),
-    shieldControl("Body thickness", "thickness", 0.008, 0.028, 0.002, "m"),
+    shieldControl("Body thickness", "thickness", id === "buckler" ? 0.002 : 0.008, id === "buckler" ? 0.006 : 0.028, id === "buckler" ? 0.001 : 0.002, "m"),
     shieldControl("Outline resolution", "edgeSegments", 6, 32, 2),
     shieldControl("Top depth", "topDepth", 0, 0.18, 0.01, "m"),
     shieldControl("Top roundness", "topRoundness", 0, 1, 0.05),
@@ -1579,7 +1584,7 @@ const shapedShieldPreset = (id, name, values) => ({
     shieldControl("Center bump depth", "centerCurve", 0, 0.06, 0.005, "m"),
     shieldControl("Center bump width", "centerWidth", 0.08, 0.40, 0.01, "m"),
     shieldControl("Center bump height", "centerHeight", 0.15, 1.00, 0.05, "m"),
-    shieldControl("Rim radius", "rimRadius", 0, 0.012, 0.001, "m"),
+    shieldControl("Rim radius", "rimRadius", 0, id === "buckler" ? 0.006 : 0.012, 0.001, "m"),
     shieldControl("Boss radius", "bossRadius", 0.04, 0.14, 0.005, "m"),
     shieldControl("Boss height", "bossHeight", 0, 0.07, 0.005, "m"),
     shieldControl("Fitting angle", "fittingAngle", 0, 90, 5, "deg"),
@@ -1594,14 +1599,45 @@ const shapedShieldPreset = (id, name, values) => ({
 });
 
 PRESETS.push(
-  roundShieldPreset("buckler", "Buckler", { radius: 0.18, thickness: 0.008, rings: 10, radialSegments: 40, outerCurve: 0.005, centerCurve: 0.01, centerRadius: 0.08, rimRadius: 0.006, bossRadius: 0.085, bossHeight: 0.045, fittingMode: "grip", fittingAngle: 90, mirrored: false, gripLength: 0.13, fittingSpacing: 0.12, material: "steel" }),
+  roundShieldPreset("buckler", "Buckler", { radius: 0.18, thickness: 0.002, rings: 10, radialSegments: 40, outerCurve: 0.005, centerCurve: 0.01, centerRadius: 0.08, rimRadius: 0.003, rimMaterial: "steel", bossRadius: 0.085, bossHeight: 0.045, fittingMode: "grip", fittingAngle: 90, mirrored: false, gripLength: 0.13, fittingSpacing: 0.12, material: "steel" }),
   roundShieldPreset("targe", "Targe", { radius: 0.25, rings: 10, radialSegments: 40, outerCurve: 0.02, centerCurve: 0.015, centerRadius: 0.11, rimRadius: 0.008, bossRadius: 0.065, bossHeight: 0.025 }),
   roundShieldPreset("round-shield", "Round shield", { radius: 0.31, thickness: 0.018, rings: 12, radialSegments: 48, outerCurve: 0.03, centerCurve: 0.015, centerRadius: 0.13, rimRadius: 0.009, bossRadius: 0.09, bossHeight: 0.035, fittingSpacing: 0.18 }),
   shapedShieldPreset("heater-shield", "Heater shield", { width: 0.48, height: 0.50, edgeSegments: 16, topShape: "flat", bottomShape: "point", topDepth: 0, bottomDepth: 0.15, topRoundness: 0.25, bottomRoundness: 0.2, sideTaper: 0.1, cornerRadius: 0.01, cylindricalCurve: 0, rimRadius: 0.007, bossRadius: 0.06, bossHeight: 0, fittingSpacing: 0.15 }),
-  shapedShieldPreset("pavise", "Pavise", { width: 0.65, height: 0.95, thickness: 0.02, edgeSegments: 32, topShape: "rounded", bottomShape: "flat", topDepth: 0.10, bottomDepth: 0, topRoundness: 0.85, bottomRoundness: 0.4, sideTaper: 0.05, cornerRadius: 0.025, cylindricalCurve: 0.06, centerCurve: 0.02, centerWidth: 0.22, centerHeight: 0.70, rimRadius: 0.009, bossRadius: 0.075, bossHeight: 0, gripLength: 0.18, fittingSpacing: 0.20 }),
+  shapedShieldPreset("pavise", "Pavise", { width: 0.48, height: 0.95, thickness: 0.012, edgeSegments: 32, topShape: "rounded", bottomShape: "flat", topDepth: 0.10, bottomDepth: 0, topRoundness: 0.85, bottomRoundness: 0.4, sideTaper: 0.05, cornerRadius: 0.025, cylindricalCurve: 0.06, centerCurve: 0.05, centerWidth: 0.18, centerHeight: 1.0, rimRadius: 0.009, bossRadius: 0.075, bossHeight: 0, gripLength: 0.18, fittingSpacing: 0.20 }),
   shapedShieldPreset("kite-shield", "Kite shield", { width: 0.55, height: 0.72, thickness: 0.018, edgeSegments: 20, topShape: "rounded", bottomShape: "point", topDepth: 0.08, bottomDepth: 0.26, topRoundness: 0.9, bottomRoundness: 0.3, sideTaper: 0.5, cornerRadius: 0.015, cylindricalCurve: 0.04, rimRadius: 0.008, bossRadius: 0.08, bossHeight: 0.035, fittingSpacing: 0.17 }),
   shapedShieldPreset("roman-tower-shield", "Roman tower shield", { width: 0.65, height: 1.05, thickness: 0.02, edgeSegments: 24, topShape: "flat", bottomShape: "flat", topDepth: 0, bottomDepth: 0, topRoundness: 0, bottomRoundness: 0, sideTaper: 0, cornerRadius: 0.055, cylindricalCurve: 0.11, rimRadius: 0.009, bossRadius: 0.09, bossHeight: 0.045, fittingMode: "grip", fittingAngle: 90, mirrored: false, gripLength: 0.18, fittingSpacing: 0.20 }),
 );
+
+// Rotational furniture varies independently while retaining a fitted grip seat.
+for (const preset of PRESETS) {
+  const components = preset.definition.components;
+  const p = components.findIndex((part) => part.id === "pommel" && part.kind === "pommel" && !part.rotation);
+  if (p >= 0) {
+    components[p].widthScale = 1; components[p].lengthScale = 1;
+    preset.controls.push(c("Pommel breadth", `components.${p}.widthScale`, 0.65, 1.4, 0.05), c("Pommel length", `components.${p}.lengthScale`, 0.75, 1.5, 0.05));
+    const sphere = Array.from({ length: 17 }, (_, i) => { const t = i / 16; return [0.055 * t, 0.006 + 0.018 * Math.sin(Math.PI * t)]; });
+    preset.choiceControls = [...(preset.choiceControls ?? []), { label: "Pommel form", path: `components.${p}.profile`, options: [
+      { label: "Authored profile", value: structuredClone(components[p].profile) },
+      { label: "Rounded bulb", value: sphere },
+      { label: "Pear", value: [[0, 0.008], [0.006, 0.017], [0.018, 0.023], [0.03, 0.024], [0.045, 0.019], [0.06, 0.012], [0.066, 0.01]] },
+      { label: "Scent stopper", value: [[0, 0.013], [0.004, 0.021], [0.013, 0.023], [0.041, 0.019], [0.055, 0.011]] },
+    ] }];
+  }
+  for (let index = 0; index < components.length; index++) if (components[index].kind === "guard") {
+    Object.assign(components[index], { tipScale: 0.7, terminalSwell: 0.45, symmetricSweep: 0 });
+    preset.controls.push(c("Quillon tip taper", `components.${index}.tipScale`, 0.45, 1.5, 0.05), c("Quillon terminal swell", `components.${index}.terminalSwell`, 0, 1, 0.05), c("Symmetric quillon sweep", `components.${index}.symmetricSweep`, 0, 1, 1));
+  }
+}
+const shieldContexts = {
+  buckler: ["Hand shield � early 16th-century context", "Compact hand shield for sword fencing. Steel bowl and hollow boss; dimensions are authoring choices, not a museum reconstruction."],
+  pavise: ["Pavise � older retained equipment", "Wooden shield with a raised center rib, informed by surviving late-fifteenth-century German pavises. Useful as older equipment in 1544."],
+  targe: ["Round shield � generator study", "Generic strapped round shield. This is not a reconstruction of a German tournament targe."],
+  "round-shield": ["Round shield � generator study", "Broad round shield for construction experiments; not a curated 1544 German infantry type."],
+  "heater-shield": ["Heater shield � older form", "Older shield silhouette, retained for authoring studies rather than a typical 1544 German infantry baseline."],
+  "kite-shield": ["Kite shield � historical study", "Earlier medieval silhouette outside the 1544 German baseline."],
+  "roman-tower-shield": ["Roman shield � historical study", "Ancient shield construction study outside the 1544 setting."],
+};
+for (const [id, [family, description]] of Object.entries(shieldContexts)) Object.assign(PRESETS.find((preset) => preset.id === id), { family, description });
 
 export const HAFT_MODULES = [
   {

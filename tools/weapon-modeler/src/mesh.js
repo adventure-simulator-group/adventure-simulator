@@ -1,3 +1,5 @@
+import { detailSamples, detailError, roundSegments, withDetail } from "./detail.js";
+import { indexTriangles, triangleVertices } from "./topology.js";
 import { cross, dot, length, normalize, subtract } from "./math.js";
 import { projectedFit } from "./renderer.js";
 import { effectiveGripRadius, MAX_ROUND_GRIP_RADIUS_M, MAX_SWORD_GRIP_THICKNESS_M, MAX_SWORD_GRIP_WIDTH_M } from "./anatomy.js";
@@ -106,8 +108,9 @@ function makeBuilder(materialName, label) {
   const material = MATERIALS[materialName] ?? MATERIALS.steel;
   const positions = [],
     normals = [],
-    colors = [];
-  function triangle(a, b, c) {
+    colors = [], groups = [];
+  function triangle(a, b, c, surface = 0) {
+    groups.push(surface);
     const normal = normalize(cross(subtract(b, a), subtract(c, a)));
     for (const point of [a, b, c]) {
       positions.push(...point);
@@ -115,7 +118,7 @@ function makeBuilder(materialName, label) {
       colors.push(...material.color);
     }
   }
-  return { positions, normals, colors, triangle, material, label };
+  return { positions, normals, colors, groups, triangle, material, label };
 }
 
 function finish(builder) {
@@ -126,21 +129,18 @@ function finish(builder) {
     material: builder.material,
     label: builder.label,
   };
-  if (signedVolume(mesh) < -1e-10) {
+  if (signedVolume({ ...mesh, indices: Array.from({ length: mesh.positions.length / 3 }, (_, i) => i) }) < -1e-10) {
     for (let index = 0; index < mesh.positions.length; index += 9) {
       for (const values of [mesh.positions, mesh.normals, mesh.colors]) for (let axis = 0; axis < 3; axis += 1) [values[index + 3 + axis], values[index + 6 + axis]] = [values[index + 6 + axis], values[index + 3 + axis]];
       for (let normalIndex = index; normalIndex < index + 9; normalIndex += 1) mesh.normals[normalIndex] *= -1;
     }
   }
-  return mesh;
+  return { ...mesh, ...indexTriangles(mesh, builder.groups) };
 }
 
 export function signedVolume(mesh) {
   let volume = 0;
-  for (let index = 0; index < mesh.positions.length; index += 9) {
-    const a = mesh.positions.slice(index, index + 3),
-      b = mesh.positions.slice(index + 3, index + 6),
-      c = mesh.positions.slice(index + 6, index + 9);
+  for (const [a, b, c] of triangleVertices(mesh)) {
     volume += (a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0])) / 6;
   }
   return volume;
@@ -173,9 +173,9 @@ const KIND_KEYS = Object.fromEntries(
     blade: "length width thickness curvature taper singleEdge tipWidth belly",
     sectionBlade: "length width thickness taper section",
     diamondBlade: "length width thickness taper",
-    axe: "width height thickness beard curvature side rootWidth upperShoulder lowerShoulder flare toe heel beardDrop",
+    axe: "width height thickness beard curvature side rootWidth upperShoulder lowerShoulder flare toe heel beardDrop upperCusp lowerCusp",
     spear: "length width thickness shoulder rootWidth bellyPosition acuteness",
-    guard: "width height thickness sweep controlWidth",
+    guard: "width height thickness sweep controlWidth tipScale terminalSwell symmetricSweep",
     knuckleBow: "width length bar thickness side bulge samples radialSegments",
     ringGuard: "radius bar arcStart arcEnd samples radialSegments",
     tube: "points radius radialSegments",
@@ -191,7 +191,7 @@ const KIND_KEYS = Object.fromEntries(
     beak: "length radius direction curvature thickness rootSection tipSection bendPosition droop",
     hammer: "length face neck thickness direction crown neckRatio faceFlare crownLength faceThickness",
     socket: "profile segments fitShaft wall",
-    pommel: "profile segments",
+    pommel: "profile segments widthScale lengthScale",
     collar: "width radius segments",
     sleeve: "length radius topRadius segments fitShaft wall",
     mace: "length rootRadius shoulderRadius cuspRadius cuspHeight concavity crownLength flanges flangeThickness profileSamples segments waist flangeDepth",
@@ -311,6 +311,11 @@ export function resolveDefinition(input) {
     frames.set("shaft.bottom", [0, 0, 0]);
     frames.set("shaft.top", [0, definition.shaft.length, 0]);
   }
+  const axe = definition.components.find((part) => part.kind === "axe" && part.mount === "shaft-top");
+  if (axe) for (const rear of definition.components.filter((part) => ["beak", "facetedBeak", "hammer"].includes(part.kind) && part.mount === "shaft-top")) {
+    rear.direction = -(axe.side ?? 1);
+    if (rear.offset) rear.offset[0] = Math.abs(rear.offset[0]) * rear.direction;
+  }
   for (let index = 0; index < definition.components.length; index += 1) {
     const component = definition.components[index],
       id = component.id ?? component.label ?? `component-${index}`;
@@ -332,6 +337,7 @@ export function resolveDefinition(input) {
         component.topRadius = outer;
       }
     }
+    if (component.kind === "pommel") component.profile = component.profile.map(([y, radius]) => [y * (component.lengthScale ?? 1), radius * (component.widthScale ?? 1)]);
     const range = componentRange(component);
     if (component.mount === "component-end" && !component.attach) component.attach = { to: `${component.anchor}.top`, at: "center" };
     if (component.mount?.startsWith("shaft-top")) {
@@ -485,9 +491,14 @@ export function prism(points2d, thickness, material = "steel", offset = [0, 0, 0
 
 export function lathe(profile, segments = 14, material = "wood", offset = [0, 0, 0], label = "lathe", radialScale = 1, exactSegments = false) {
   const largestRadius = Math.max(...profile.map((point) => point[1]));
-  if (!exactSegments) segments = Math.max(segments, Math.ceil((Math.PI * 2 * largestRadius) / 0.012));
+  if (!(exactSegments && segments <= 8)) segments = roundSegments(largestRadius, segments);
   const builder = makeBuilder(material, label);
+  let band = 1;
   for (let ring = 0; ring < profile.length - 1; ring += 1) {
+    if (ring > 0) {
+      const slope = (i) => Math.atan2(profile[i + 1][1] - profile[i][1], profile[i + 1][0] - profile[i][0]);
+      if (Math.abs(slope(ring) - slope(ring - 1)) > Math.PI / 3) band++;
+    }
     for (let segment = 0; segment < segments; segment += 1) {
       const a0 = (segment / segments) * Math.PI * 2;
       const a1 = ((segment + 1) / segments) * Math.PI * 2;
@@ -497,8 +508,8 @@ export function lathe(profile, segments = 14, material = "wood", offset = [0, 0,
       const b = move([Math.cos(a1) * r0, y0, Math.sin(a1) * r0 * radialScale], offset);
       const c = move([Math.cos(a1) * r1, y1, Math.sin(a1) * r1 * radialScale], offset);
       const d = move([Math.cos(a0) * r1, y1, Math.sin(a0) * r1 * radialScale], offset);
-      builder.triangle(a, c, b);
-      builder.triangle(a, d, c);
+      builder.triangle(a, c, b, exactSegments && segments <= 8 ? 0 : `lathe:${band}`);
+      builder.triangle(a, d, c, exactSegments && segments <= 8 ? 0 : `lathe:${band}`);
     }
   }
   const cap = (profileIndex, reverse) => {
@@ -533,7 +544,61 @@ export function box(size, material, offset, label = "box") {
   );
 }
 
+function hollowSocket(profile, innerRadius, material, label) {
+  const builder = makeBuilder(material, label), segments = roundSegments(Math.max(...profile.map((p) => p[1])));
+  const point = (row, segment, inner) => [Math.cos(segment / segments * Math.PI * 2) * (inner ? innerRadius : profile[row][1]), profile[row][0], Math.sin(segment / segments * Math.PI * 2) * (inner ? innerRadius : profile[row][1])];
+  for (const inner of [false, true]) for (let row = 0; row < profile.length - 1; row++) for (let segment = 0; segment < segments; segment++) {
+    const next = (segment + 1) % segments, a = point(row, segment, inner), b = point(row, next, inner), c = point(row + 1, next, inner), d = point(row + 1, segment, inner);
+    const group = inner ? "bore" : "socket";
+    inner ? (builder.triangle(a, b, c, group), builder.triangle(a, c, d, group)) : (builder.triangle(a, c, b, group), builder.triangle(a, d, c, group));
+  }
+  for (const row of [0, profile.length - 1]) for (let segment = 0; segment < segments; segment++) {
+    const next = (segment + 1) % segments, a = point(row, segment, false), b = point(row, next, false), c = point(row, next, true), d = point(row, segment, true);
+    row === 0 ? (builder.triangle(a, b, c), builder.triangle(a, c, d)) : (builder.triangle(a, c, b), builder.triangle(a, d, c));
+  }
+  return finish(builder);
+}
+
+function shapedPlate(points, thicknessAt, material, offset, label) {
+  const base = prism(points, 1, material, offset, label), builder = makeBuilder(material, label);
+  for (let index = 0; index < base.indices.length; index += 3) {
+    const ids = base.indices.slice(index, index + 3), normal = base.normals.slice(ids[0] * 3, ids[0] * 3 + 3);
+    const vertices = ids.map((id) => {
+      const point = base.positions.slice(id * 3, id * 3 + 3);
+      point[2] = offset[2] + (point[2] - offset[2]) * thicknessAt(point[0] - offset[0], point[1] - offset[1]);
+      return point;
+    });
+    builder.triangle(...vertices, Math.abs(normal[2]) > 0.9 ? `plate:${Math.sign(normal[2])}` : 0);
+  }
+  return finish(builder);
+}
+
+function roundedPlate(outline, thickness, material, offset, label) {
+  const { points, triangles } = triangulatePolygon(outline), builder = makeBuilder(material, label);
+  const center = [0, (Math.min(...points.map((p) => p[1])) + Math.max(...points.map((p) => p[1]))) / 2];
+  const vertex = (index, side, inset) => move([center[0] + (points[index][0] - center[0]) * (inset ? 0.86 : 1), center[1] + (points[index][1] - center[1]) * (inset ? 0.86 : 1), side * thickness * (inset ? 0.5 : 0.28)], offset);
+  for (const side of [-1, 1]) {
+    for (const [a, b, c] of triangles) {
+      const vertices = [a, b, c].map((index) => vertex(index, side, true));
+      if (side < 0) vertices.reverse();
+      builder.triangle(...vertices);
+    }
+    for (let i = 0; i < points.length; i++) {
+      const j = (i + 1) % points.length, a = vertex(i, side, false), b = vertex(j, side, false), c = vertex(j, side, true), d = vertex(i, side, true);
+      side > 0 ? (builder.triangle(a, b, c, "bevel-front"), builder.triangle(a, c, d, "bevel-front")) : (builder.triangle(a, c, b, "bevel-back"), builder.triangle(a, d, c, "bevel-back"));
+    }
+  }
+  for (let i = 0; i < points.length; i++) {
+    const j = (i + 1) % points.length, a = vertex(i, -1, false), b = vertex(j, -1, false), c = vertex(j, 1, false), d = vertex(i, 1, false);
+    builder.triangle(a, b, c, "perimeter"); builder.triangle(a, c, d, "perimeter");
+  }
+  return finish(builder);
+}
+
 export function sampleAdaptiveCurve(evaluate, { minimumSegments = 8, maxChord = Infinity, maxDeviation = Infinity, maxDepth = 8 } = {}) {
+  minimumSegments = detailSamples(minimumSegments, 2);
+  maxChord = detailError(maxChord);
+  maxDeviation = detailError(maxDeviation);
   const samples = [];
   const refine = (t0, p0, t1, p1, depth) => {
     const midpointT = (t0 + t1) / 2,
@@ -611,7 +676,7 @@ export function curvedBeakOutline(parameters) {
   const edge = (sign) => (t) => {
     const x = direction * beakLength * t;
     const bendExponent = Math.log(0.5) / Math.log(Math.max(0.15, Math.min(0.85, bendPosition)));
-    const bend = Math.sin(Math.PI * Math.pow(t, bendExponent));
+    const bend = Math.pow(t, bendExponent);
     const y = curvature * bend + droop * t,
       half = (rootSection * (1 - t) + tipSection * t) / 2;
     return [x, y + sign * half];
@@ -674,7 +739,13 @@ export function curvedBladeOutline(parameters) {
 }
 
 export function axeHead(parameters, offset = [0, 0, 0], label = "axe head") {
-  return prism(axeHeadOutline(parameters), parameters.thickness, "steel", offset, label);
+  const side = parameters.side ?? 1, root = parameters.rootWidth ?? parameters.width * 0.18;
+  return shapedPlate(axeHeadOutline(parameters), (x, y) => {
+    const t = Math.max(0, Math.min(1, (0.42 - y / parameters.height) / 0.9));
+    const edgeX = parameters.width * (0.82 + (parameters.flare ?? 0) * (t - 0.5) + (parameters.curvature ?? 0.12) * Math.sin(Math.PI * t));
+    const remaining = 1 - Math.max(0, Math.min(1, (side * x + root) / (edgeX + root)));
+    return 0.0006 + (parameters.thickness - 0.0006) * remaining;
+  }, "steel", offset, label);
 }
 
 export function axeHeadOutline(parameters) {
@@ -698,13 +769,13 @@ export function axeHeadOutline(parameters) {
       maxDeviation: width / 220,
     },
   );
-  const points = [[-socket * s, height * upperShoulder], [width * (0.68 + flare * 0.12) * s, height * (0.48 + toe)], ...edge, [width * beard * s, -height * (0.34 + beardDrop + heel)], [-socket * s, -height * lowerShoulder]];
+  const points = [[-socket * s, height * upperShoulder], [width * 0.3 * s, height * (upperShoulder - (parameters.upperCusp ?? 0))], [width * (0.68 + flare * 0.12) * s, height * (0.48 + toe)], ...edge, [width * beard * s, -height * (0.34 + beardDrop + heel)], [width * 0.18 * s, -height * (lowerShoulder - (parameters.lowerCusp ?? 0))], [-socket * s, -height * lowerShoulder]];
   return s < 0 ? points.reverse() : points;
 }
 
 export function diamondBlade(parameters, offset = [0, 0, 0], label = "diamond blade") {
   const builder = makeBuilder(parameters.material ?? "steel", label),
-    samples = 14;
+    samples = detailSamples(14);
   for (let index = 0; index < samples; index += 1) {
     const t0 = index / samples,
       t1 = (index + 1) / samples;
@@ -753,7 +824,7 @@ export function fanPommel(parameters, offset = [0, 0, 0], label = "fan pommel") 
     points.push([width * (0.18 + 0.32 * Math.sin((t * Math.PI) / 2)), height * (0.04 + 0.36 * t)]);
   }
   points.push([width * 0.18, 0]);
-  return prism(points, thickness, parameters.material ?? "steel", offset, label);
+  return roundedPlate(points.map(([x, y]) => [x, height - y]).reverse(), thickness, parameters.material ?? "steel", offset, label);
 }
 
 export function facetedBeak(parameters, offset = [0, 0, 0], label = "faceted beak") {
@@ -905,24 +976,25 @@ export function maceFlangeMesh(component, material = "steel", label = "mace flan
 
 export function spearHead(parameters, offset = [0, 0, 0], label = "spear head") {
   const { length: headLength, width, thickness, shoulder = 0.18 } = parameters;
-  const rootWidth = parameters.rootWidth ?? width * 0.4,
-    bellyPosition = parameters.bellyPosition ?? shoulder,
-    acuteness = parameters.acuteness ?? 1;
-  const halfWidths = [],
-    samples = 8;
-  for (let index = 0; index <= samples; index += 1) {
-    const t = index / samples;
-    const half = t <= bellyPosition ? rootWidth / 2 + ((width - rootWidth) / 2) * Math.pow(t / bellyPosition, 0.8) : (width / 2) * Math.pow((1 - t) / (1 - bellyPosition), acuteness);
-    halfWidths.push([half, t * headLength]);
+  const rootWidth = parameters.rootWidth ?? width * 0.4, belly = parameters.bellyPosition ?? shoulder, acuteness = parameters.acuteness ?? 1;
+  const samples = detailSamples(12), stops = [...new Set([0, belly, ...Array.from({ length: samples }, (_, index) => index / samples)])].sort((a, b) => a - b);
+  const builder = makeBuilder("steel", label);
+  const ring = (t) => {
+    const half = (t <= belly ? rootWidth + (width - rootWidth) * Math.pow(t / belly, 0.8) : width * Math.pow((1 - t) / (1 - belly), acuteness)) / 2;
+    const depth = thickness / 2 * (1 - t * 0.9);
+    return [[-half, t * headLength, 0], [0, t * headLength, depth], [half, t * headLength, 0], [0, t * headLength, -depth]].map((point) => move(point, offset));
+  };
+  for (let row = 0; row < stops.length; row++) for (let side = 0; side < 4; side++) {
+    const a = ring(stops[row]), next = (side + 1) % 4;
+    if (row === stops.length - 1) builder.triangle(a[side], move([0, headLength, 0], offset), a[next], `facet:${side}`);
+    else {
+      const b = ring(stops[row + 1]);
+      builder.triangle(a[side], b[next], a[next], `facet:${side}`); builder.triangle(a[side], b[side], b[next], `facet:${side}`);
+    }
   }
-  const points = halfWidths.map(([half, y]) => [-half, y]);
-  points.push(
-    ...halfWidths
-      .slice(0, -1)
-      .reverse()
-      .map(([half, y]) => [half, y]),
-  );
-  return prism(points, thickness, "steel", offset, label);
+  const base = ring(0);
+  for (let side = 0; side < 4; side++) builder.triangle(offset, base[side], base[(side + 1) % 4]);
+  return finish(builder);
 }
 
 export function guard(parameters, offset = [0, 0, 0], label = "guard") {
@@ -931,7 +1003,7 @@ export function guard(parameters, offset = [0, 0, 0], label = "guard") {
     (t) => {
       const x = width * (t - 0.5),
         normalized = t * 2 - 1;
-      return [x, sweep * normalized * normalized * normalized];
+      return [x, sweep * normalized * normalized * (parameters.symmetricSweep ?? 0 ? 1 : normalized)];
     },
     {
       minimumSegments: 20,
@@ -939,8 +1011,13 @@ export function guard(parameters, offset = [0, 0, 0], label = "guard") {
       maxDeviation: Math.max(height / 80, Math.abs(sweep) / 120),
     },
   );
-  const rod = tubePath(points, height * 0.16, "steel", offset, label, 8);
-  const block = box([height * 0.9, height * 0.45, thickness * 0.75], "darkSteel", offset, `${label} block`);
+  const radii = points.map(([x]) => {
+    const t = Math.abs(x / (width / 2));
+    return height * 0.22 * (1 + ((parameters.tipScale ?? 0.65) - 1) * t) * (1 + (parameters.terminalSwell ?? 0.35) * Math.max(0, (t - 0.72) / 0.28) ** 2);
+  });
+  const rod = tubePath(points, Math.max(...radii), "steel", offset, label, 16, false, false, radii);
+  const blockWidth = Math.max(height * 1.2, parameters._gripWidth ?? 0);
+  const block = roundedPlate([[-blockWidth / 2, -height * 0.28], [blockWidth / 2, -height * 0.28], [blockWidth * 0.58, height * 0.28], [-blockWidth * 0.58, height * 0.28]], thickness, "steel", offset, `${label} block`);
   return mergeMeshes([rod, block]);
 }
 
@@ -1006,7 +1083,7 @@ export function tubeCenterlineErrors(points, radius, closed = false, label = "tu
   return errors;
 }
 
-export function tubePath(points, radius, material = "steel", offset = [0, 0, 0], label = "tube", radialSegments = 8, closed = false, allowCrossing = false) {
+export function tubePath(points, radius, material = "steel", offset = [0, 0, 0], label = "tube", radialSegments = 8, closed = false, allowCrossing = false, radii = null) {
   if (!allowCrossing) {
     const errors = tubeCenterlineErrors(points, radius, closed, label);
     if (errors.length) throw new Error(errors.join("; "));
@@ -1023,7 +1100,8 @@ export function tubePath(points, radius, material = "steel", offset = [0, 0, 0],
     const nx = -dy / tangentLength,
       ny = dx / tangentLength,
       angle = (segment / radialSegments) * Math.PI * 2;
-    return move([points[index][0] + nx * Math.cos(angle) * radius, points[index][1] + ny * Math.cos(angle) * radius, Math.sin(angle) * radius], offset);
+    const ringRadius = radii?.[index] ?? radius;
+    return move([points[index][0] + nx * Math.cos(angle) * ringRadius, points[index][1] + ny * Math.cos(angle) * ringRadius, Math.sin(angle) * ringRadius], offset);
   };
   const span = closed ? count - 1 : count - 1;
   for (let index = 0; index < span; index += 1)
@@ -1033,8 +1111,8 @@ export function tubePath(points, radius, material = "steel", offset = [0, 0, 0],
         b = ringPoint(index, nextSegment),
         c = ringPoint(index + 1, nextSegment),
         d = ringPoint(index + 1, segment);
-      builder.triangle(a, b, c);
-      builder.triangle(a, c, d);
+      builder.triangle(a, b, c, "tube");
+      builder.triangle(a, c, d, "tube");
     }
   if (!closed)
     for (const [index, reverse] of [
@@ -1054,7 +1132,7 @@ export function tubePath(points, radius, material = "steel", offset = [0, 0, 0],
 export function tubeRadialSegments(radius, requested = 0, { maxChord = 0.006, maxSagitta = 0.0003 } = {}) {
   const chordSegments = maxChord >= radius * 2 ? 3 : Math.ceil(Math.PI / Math.asin(maxChord / (radius * 2)));
   const sagittaSegments = maxSagitta >= radius ? 3 : Math.ceil(Math.PI / Math.acos(1 - maxSagitta / radius));
-  return Math.max(12, requested, chordSegments, sagittaSegments);
+  return Math.max(roundSegments(radius, requested), Math.ceil(chordSegments / detailError(1)), Math.ceil(sagittaSegments / Math.sqrt(detailError(1))));
 }
 
 export function ringGuard(parameters, offset = [0, 0, 0], label = "side ring") {
@@ -1095,7 +1173,7 @@ export function figureEightGuard(parameters, offset = [0, 0, 0], label = "figure
 
 export function sectionBlade(parameters, offset = [0, 0, 0], label = "sectioned blade") {
   const builder = makeBuilder(parameters.material ?? "steel", label),
-    samples = 18;
+    samples = detailSamples(18);
   const style = parameters.section ?? "diamond";
   const ring = (t) => {
     const halfWidth = parameters.width * 0.5 * (0.025 + 0.975 * Math.pow(1 - t, parameters.taper ?? 0.8));
@@ -1313,8 +1391,16 @@ function endingProfile(shape, u, depth, roundness) {
   return depth * smooth;
 }
 
+function shieldResolution(component) {
+  const error = detailError(0.001);
+  const broad = Math.sqrt(component.cylindricalCurve / error);
+  const rib = component.width / component.centerWidth * Math.sqrt(component.centerCurve / error);
+  const count = Math.max(detailSamples(component.edgeSegments, 6), Math.ceil(broad), Math.ceil(rib));
+  return count + count % 2;
+}
+
 function shapedShieldSections(component) {
-  const count = component.edgeSegments,
+  const count = shieldResolution(component),
     halfWidth = component.width / 2,
     halfHeight = component.height / 2,
     cornerFraction = Math.min(0.45, component.cornerRadius / halfWidth),
@@ -1347,7 +1433,7 @@ export function shapedShieldOutline(component) {
 function shapedShieldShell(component, label) {
   const builder = makeBuilder(component.material ?? "wood", label),
     { top, bottom } = shapedShieldSections(component),
-    verticalSegments = Math.max(4, Math.ceil(component.edgeSegments / 2)),
+    verticalSegments = Math.max(4, Math.ceil(shieldResolution(component) / 2)),
     planarPoint = (column, row) => {
       const t = row / verticalSegments;
       return [bottom[column][0] + (top[column][0] - bottom[column][0]) * t, bottom[column][1] + (top[column][1] - bottom[column][1]) * t];
@@ -1360,10 +1446,10 @@ function shapedShieldShell(component, label) {
     for (let row = 0; row < verticalSegments; row += 1) {
       const frontA = vertex(column, row, true), frontB = vertex(column + 1, row, true), frontC = vertex(column + 1, row + 1, true), frontD = vertex(column, row + 1, true),
         backA = vertex(column, row, false), backB = vertex(column + 1, row, false), backC = vertex(column + 1, row + 1, false), backD = vertex(column, row + 1, false);
-      builder.triangle(frontA, frontB, frontC);
-      builder.triangle(frontA, frontC, frontD);
-      builder.triangle(backA, backC, backB);
-      builder.triangle(backA, backD, backC);
+      builder.triangle(frontA, frontB, frontC, "front");
+      builder.triangle(frontA, frontC, frontD, "front");
+      builder.triangle(backA, backC, backB, "back");
+      builder.triangle(backA, backD, backC, "back");
     }
   for (const row of [0, verticalSegments])
     for (let column = 0; column < top.length - 1; column += 1) {
@@ -1378,34 +1464,40 @@ function shapedShieldShell(component, label) {
   return finish(builder);
 }
 
+export function shieldHandAperture(component) {
+  return component.kind === "roundShield" && component.fittingMode === "grip" && component.bossHeight > 0
+    ? Math.min(component.bossRadius * 0.72, component.gripLength * 0.4) : 0;
+}
+
 export function roundShieldShell(component, label = "round shield body") {
   const builder = makeBuilder(component.material ?? "wood", label),
-    segments = component.radialSegments,
-    rings = component.rings,
+    segments = roundSegments(component.radius, component.radialSegments),
+    rings = detailSamples(component.rings, 3),
+    aperture = shieldHandAperture(component),
     point = (ring, segment, front) => {
-      if (ring === 0) return [0, 0, shieldSurfaceZ(component, 0, 0, front)];
-      const radius = component.radius * (ring / rings),
+      if (ring === 0 && aperture === 0) return [0, 0, shieldSurfaceZ(component, 0, 0, front)];
+      const radius = aperture + (component.radius - aperture) * (ring / rings),
         angle = (segment / segments) * Math.PI * 2,
         x = Math.cos(angle) * radius,
         y = Math.sin(angle) * radius;
       return [x, y, shieldSurfaceZ(component, x, y, front)];
     };
   for (const front of [true, false]) {
-    for (let segment = 0; segment < segments; segment += 1) {
+    if (aperture === 0) for (let segment = 0; segment < segments; segment += 1) {
       const next = (segment + 1) % segments,
         center = point(0, 0, front),
         a = point(1, segment, front),
         b = point(1, next, front);
-      front ? builder.triangle(center, a, b) : builder.triangle(center, b, a);
+      front ? builder.triangle(center, a, b, "front") : builder.triangle(center, b, a, "back");
     }
-    for (let ring = 1; ring < rings; ring += 1)
+    for (let ring = aperture > 0 ? 0 : 1; ring < rings; ring += 1)
       for (let segment = 0; segment < segments; segment += 1) {
         const next = (segment + 1) % segments,
           a = point(ring, segment, front),
           b = point(ring + 1, segment, front),
           c = point(ring + 1, next, front),
           d = point(ring, next, front);
-        front ? (builder.triangle(a, b, c), builder.triangle(a, c, d)) : (builder.triangle(a, c, b), builder.triangle(a, d, c));
+        front ? (builder.triangle(a, b, c, "front"), builder.triangle(a, c, d, "front")) : (builder.triangle(a, c, b, "back"), builder.triangle(a, d, c, "back"));
       }
   }
   for (let segment = 0; segment < segments; segment += 1) {
@@ -1417,17 +1509,25 @@ export function roundShieldShell(component, label = "round shield body") {
     builder.triangle(a, c, b);
     builder.triangle(a, d, c);
   }
+  if (aperture > 0) for (let segment = 0; segment < segments; segment++) {
+    const next = (segment + 1) % segments;
+    const a = point(0, segment, true), b = point(0, next, true), c = point(0, next, false), d = point(0, segment, false);
+    builder.triangle(a, b, c); builder.triangle(a, c, d);
+  }
   return finish(builder);
 }
 
 function sweptTube3d(points, radius, material, label, radialSegments = 12, closed = false) {
+  radialSegments = roundSegments(radius, radialSegments);
+  const firstDirection = normalize(subtract(points[1], points[0]));
+  const plane = points.slice(2).map((point) => cross(firstDirection, subtract(point, points[0]))).find((normal) => length(normal) > 1e-8);
+  const reference = plane ? normalize(plane) : (Math.abs(firstDirection[2]) < 0.9 ? [0, 0, 1] : [0, 1, 0]);
   const builder = makeBuilder(material, label),
     count = points.length,
     ringPoint = (index, segment) => {
       const previous = points[index === 0 ? (closed ? count - 2 : 0) : index - 1],
         next = points[index === count - 1 ? (closed ? 1 : count - 1) : index + 1],
         tangent = normalize(subtract(next, previous)),
-        reference = Math.abs(tangent[2]) > 0.92 ? [0, 1, 0] : [0, 0, 1],
         normal = normalize(cross(tangent, reference)),
         binormal = normalize(cross(tangent, normal)),
         angle = (segment / radialSegments) * Math.PI * 2;
@@ -1440,8 +1540,8 @@ function sweptTube3d(points, radius, material, label, radialSegments = 12, close
         b = ringPoint(index, nextSegment),
         c = ringPoint(index + 1, nextSegment),
         d = ringPoint(index + 1, segment);
-      builder.triangle(a, b, c);
-      builder.triangle(a, c, d);
+      builder.triangle(a, b, c, "tube");
+      builder.triangle(a, c, d, "tube");
     }
   if (!closed)
     for (const [index, reverse] of [[0, true], [count - 1, false]])
@@ -1456,8 +1556,9 @@ function sweptTube3d(points, radius, material, label, radialSegments = 12, close
 function shieldOutline(component) {
   if (component.kind === "shapedShield") return shapedShieldOutline(component);
   const points = [];
-  for (let index = 0; index < component.radialSegments; index += 1) {
-    const angle = (index / component.radialSegments) * Math.PI * 2;
+  const segments = roundSegments(component.radius, component.radialSegments);
+  for (let index = 0; index < segments; index += 1) {
+    const angle = (index / segments) * Math.PI * 2;
     points.push([Math.cos(angle) * component.radius, Math.sin(angle) * component.radius]);
   }
   return points;
@@ -1493,6 +1594,14 @@ function shieldFittingMeshes(component) {
       [...gripEnds[1], backs[1] - component.gripRadius * 0.65],
     ],
     grip = sweptTube3d(path, component.gripRadius, component.gripMaterial ?? "wood", "shield handle", 12);
+  const penetration = Math.min(0.0003, component.thickness * 0.15);
+  for (let index = 0; index < grip.positions.length; index += 3) {
+    const x = grip.positions[index], y = grip.positions[index + 1];
+    grip.positions[index + 2] = Math.min(grip.positions[index + 2], shieldSurfaceZ(component, x, y, false) + penetration);
+  }
+  const fitted = makeBuilder(component.gripMaterial ?? "wood", "shield handle");
+  for (const triangle of triangleVertices(grip)) fitted.triangle(...triangle, "handle");
+  Object.assign(grip, finish(fitted));
   grip.shieldRole = "fitting";
   const meshes = [grip];
   if (component.fittingMode === "grip-and-strap") {
@@ -1522,35 +1631,28 @@ function shieldFittingMeshes(component) {
 }
 
 function shieldBossMesh(component) {
-  const segments = Math.max(16, component.radialSegments ?? component.edgeSegments),
-    builder = makeBuilder(component.bossMaterial ?? "steel", "shield boss"),
-    profileSegments = Math.max(6, Math.ceil(segments / 6)),
-    rings = Array.from({ length: profileSegments }, (_, index) => {
-      const angle = (index / profileSegments) * Math.PI / 2;
-      return [component.bossRadius * Math.cos(angle), component.bossHeight * Math.sin(angle)];
-    }),
-    point = (ring, segment) => {
-      const angle = (segment / segments) * Math.PI * 2,
-        x = Math.cos(angle) * rings[ring][0],
-        y = Math.sin(angle) * rings[ring][0];
-      return [x, y, shieldSurfaceZ(component, x, y, true) + rings[ring][1] - 0.001];
-    };
-  for (let ring = 0; ring < rings.length - 1; ring += 1)
-    for (let segment = 0; segment < segments; segment += 1) {
-      const next = (segment + 1) % segments,
-        a = point(ring, segment),
-        b = point(ring, next),
-        c = point(ring + 1, next),
-        d = point(ring + 1, segment);
-      builder.triangle(a, b, c);
-      builder.triangle(a, c, d);
+  const segments = roundSegments(component.bossRadius, 32), rows = detailSamples(12, 6);
+  const builder = makeBuilder(component.bossMaterial ?? "steel", "shield boss");
+  const wall = Math.min(0.0015, component.bossHeight * 0.25);
+  const point = (row, segment, inner) => {
+    const latitude = row / rows * Math.PI / 2, angle = segment / segments * Math.PI * 2;
+    const radius = component.bossRadius * Math.cos(latitude);
+    const x = radius * Math.cos(angle), y = radius * Math.sin(angle);
+    return [x, y, shieldSurfaceZ(component, x, y, true) + component.bossHeight * Math.sin(latitude) - 0.0005 - (inner ? wall : 0)];
+  };
+  for (const inner of [false, true]) {
+    const surface = inner ? "boss-inner" : "boss-outer";
+    for (let row = 0; row < rows; row++) for (let segment = 0; segment < segments; segment++) {
+      const next = (segment + 1) % segments;
+      const a = point(row, segment, inner), b = point(row, next, inner), c = point(row + 1, next, inner), d = point(row + 1, segment, inner);
+      inner ? builder.triangle(a, c, b, surface) : builder.triangle(a, b, c, surface);
+      if (row < rows - 1) inner ? builder.triangle(a, d, c, surface) : builder.triangle(a, c, d, surface);
     }
-  const apex = [0, 0, shieldSurfaceZ(component, 0, 0, true) + component.bossHeight - 0.001],
-    capCenter = [0, 0, Math.min(...Array.from({ length: segments }, (_, segment) => point(0, segment)[2])) - 0.001];
-  for (let segment = 0; segment < segments; segment += 1) {
+  }
+  for (let segment = 0; segment < segments; segment++) {
     const next = (segment + 1) % segments;
-    builder.triangle(point(rings.length - 1, segment), point(rings.length - 1, next), apex);
-    builder.triangle(point(0, next), point(0, segment), capCenter);
+    const a = point(0, segment, false), b = point(0, next, false), c = point(0, next, true), d = point(0, segment, true);
+    builder.triangle(a, c, b); builder.triangle(a, d, c);
   }
   return finish(builder);
 }
@@ -1578,8 +1680,10 @@ export function shieldMeshes(component) {
 }
 
 export function mergeMeshes(parts) {
-  const merged = { positions: [], normals: [], colors: [], parts, stats: {} };
+  const merged = { positions: [], normals: [], colors: [], indices: [], parts, stats: {} };
   for (const part of parts) {
+    const base = merged.positions.length / 3;
+    merged.indices.push(...part.indices.map((index) => base + index));
     merged.positions.push(...part.positions);
     merged.normals.push(...part.normals);
     merged.colors.push(...part.colors);
@@ -1595,8 +1699,7 @@ function tetrahedralMassIntegrals(mesh, density, controlPoint) {
   let mass = 0;
   const firstMoment = [0, 0, 0];
   let transverseMoment = 0;
-  for (let index = 0; index < mesh.positions.length; index += 9) {
-    const vertices = [mesh.positions.slice(index, index + 3), mesh.positions.slice(index + 3, index + 6), mesh.positions.slice(index + 6, index + 9)];
+  for (const vertices of triangleVertices(mesh)) {
     const [a, b, c] = vertices;
     const signedVolume = (a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0])) / 6;
     const tetraMass = density * signedVolume;
@@ -1650,10 +1753,7 @@ export function measureMesh(mesh, parts = []) {
     }
   }
   let volume = 0;
-  for (let index = 0; index < mesh.positions.length; index += 9) {
-    const a = mesh.positions.slice(index, index + 3),
-      b = mesh.positions.slice(index + 3, index + 6),
-      c = mesh.positions.slice(index + 6, index + 9);
+  for (const [a, b, c] of triangleVertices(mesh)) {
     volume += (a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0])) / 6;
   }
   const dimensions = bounds.min.map((value, axis) => bounds.max[axis] - value);
@@ -1661,7 +1761,7 @@ export function measureMesh(mesh, parts = []) {
     bounds,
     dimensions,
     radius: length(dimensions) / 2,
-    triangles: mesh.positions.length / 9,
+    triangles: mesh.indices.length / 3,
     vertices: mesh.positions.length / 3,
     volume: Math.abs(volume),
     partCount: parts.length,
@@ -1727,8 +1827,8 @@ export function closedManifoldErrors(mesh, label = "component") {
       .slice(offset, offset + 3)
       .map((value) => Math.round(value * precision))
       .join(",");
-  for (let index = 0; index < mesh.positions.length; index += 9) {
-    const vertices = [key(index), key(index + 3), key(index + 6)];
+  for (let index = 0; index < mesh.indices.length; index += 3) {
+    const vertices = mesh.indices.slice(index, index + 3).map((vertex) => key(vertex * 3));
     for (const [from, to] of [
       [vertices[0], vertices[1]],
       [vertices[1], vertices[2]],
@@ -1745,7 +1845,7 @@ export function closedManifoldErrors(mesh, label = "component") {
   return invalid ? [`${label}: ${invalid} boundary/non-manifold edges`] : [];
 }
 
-function validateWeaponUnchecked(definition, controls = []) {
+function validateWeaponUnchecked(definition, controls = [], options = {}) {
   const errors = schemaErrors(definition);
   if (errors.length) return { valid: false, errors, resolved: null, mesh: null };
   let resolved;
@@ -1779,6 +1879,12 @@ function validateWeaponUnchecked(definition, controls = []) {
     for (const value of component.offset ?? []) if (!Number.isFinite(value)) errors.push(`${component.id}: offset is not finite`);
     for (const key of ["length", "radius", "width", "height", "thickness", "rootWidth", "baseWidth", "tineWidth", "rootSection", "tipSection", "face", "neck", "faceThickness", "flangeThickness"]) if (component[key] !== undefined) finitePositive(component[key], `${component.id}.${key}`);
     if (component.kind === "grip" && effectiveGripRadius(component) > MAX_ROUND_GRIP_RADIUS_M + 1e-9) errors.push(`${component.id}: effective grip radius exceeds anatomical maximum ${MAX_ROUND_GRIP_RADIUS_M} m`);
+    if (component.kind === "pommel") for (const key of ["widthScale", "lengthScale"]) if (component[key] !== undefined && (component[key] < 0.5 || component[key] > 2)) errors.push(`${component.id}.${key} must be between 0.5 and 2`);
+    if (component.kind === "guard") {
+      if (component.tipScale !== undefined && (component.tipScale < 0.45 || component.tipScale > 1.5)) errors.push(`${component.id}.tipScale must be between 0.45 and 1.5`);
+      if (component.terminalSwell !== undefined && (component.terminalSwell < 0 || component.terminalSwell > 1)) errors.push(`${component.id}.terminalSwell must be between 0 and 1`);
+      if (component.symmetricSweep !== undefined && ![0, 1].includes(component.symmetricSweep)) errors.push(`${component.id}.symmetricSweep must be 0 or 1`);
+    }
     if (component.kind === "ovalGrip") {
       const scale = Math.max(component.bottomScale ?? 1, component.topScale ?? 1);
       if (component.width * scale > MAX_SWORD_GRIP_WIDTH_M + 1e-9) errors.push(`${component.id}: grip width exceeds anatomical maximum ${MAX_SWORD_GRIP_WIDTH_M} m`);
@@ -1786,14 +1892,13 @@ function validateWeaponUnchecked(definition, controls = []) {
       if (component.width <= component.thickness) errors.push(`${component.id}: oval grip width must exceed thickness`);
     }
     if (["roundShield", "shapedShield"].includes(component.kind)) {
+      if (component.thickness < (component.material === "steel" || component.material === "darkSteel" ? 0.001 : 0.006)) errors.push(`${component.id}: body thickness is below the material construction minimum`);
       for (const key of ["thickness", "gripLength", "gripRadius", "fittingClearance", "strapWidth", "strapThickness"]) finitePositive(component[key], `${component.id}.${key}`);
       for (const key of ["rimRadius", "bossRadius", "bossHeight"])
         if (component[key] !== undefined) finitePositive(component[key], `${component.id}.${key}`, true);
       if (!(component.fittingAngle >= 0 && component.fittingAngle <= 90)) errors.push(`${component.id}.fittingAngle must be within 0–90 degrees`);
       if (component.fittingMode === "grip-and-strap") finitePositive(component.fittingSpacing, `${component.id}.fittingSpacing`);
-      if (component.gripRadius * 0.3 >= component.thickness) errors.push(`${component.id}: handle attachment would clip through the shield face`);
-      if (component.strapThickness >= component.thickness) errors.push(`${component.id}: strap attachment would clip through the shield face`);
-      if ((component.rimRadius ?? 0) > component.thickness * 1.5) errors.push(`${component.id}: rim radius is too large for the shield edge`);
+      if ((component.rimRadius ?? 0) > Math.max(0.006, component.thickness * 1.5)) errors.push(`${component.id}: rim radius is too large for the shield edge`);
       const fittingParts = shieldFittingMeshes(component);
       for (const part of fittingParts) {
         let touchesBack = false;
@@ -1942,22 +2047,24 @@ function validateWeaponUnchecked(definition, controls = []) {
   }
   if (errors.length) return { valid: false, errors, resolved, mesh: null };
   try {
-    const mesh = buildWeapon(definition);
+    const mesh = buildWeapon(definition, options);
     if (!mesh.positions.length || !mesh.positions.every(Number.isFinite) || !mesh.normals.every(Number.isFinite)) errors.push("generated geometry is empty or non-finite");
     if (mesh.stats.dimensions.some((value) => !Number.isFinite(value) || value <= 0)) errors.push("generated bounds are inverted or empty");
     if (!(signedVolume(mesh) > 0)) errors.push("generated orientation has non-positive signed volume");
     for (const part of mesh.parts) {
-      if (!part.positions.length || part.positions.length % 9 !== 0) {
+      if (!part.positions.length || part.indices.length % 3 !== 0) {
         errors.push(`${part.label}: part is empty or has incomplete triangles`);
         continue;
       }
       if (Math.abs(signedVolume(part)) <= 1e-12) errors.push(`${part.label}: part has near-zero enclosed volume`);
       if (signedVolume(part) < -1e-9) errors.push(`${part.label}: inward orientation`);
       errors.push(...closedManifoldErrors(part, part.label));
-      for (let index = 0; index < part.positions.length; index += 9) {
-        const geometric = normalize(cross(subtract(part.positions.slice(index + 3, index + 6), part.positions.slice(index, index + 3)), subtract(part.positions.slice(index + 6, index + 9), part.positions.slice(index, index + 3))));
-        if (dot(geometric, part.normals.slice(index, index + 3)) < 0.99) {
-          errors.push(`${part.label}: stored normal disagrees with triangle winding`);
+      for (let index = 0; index < part.indices.length; index += 3) {
+        const vertices = part.indices.slice(index, index + 3);
+        const [a, b, c] = vertices.map((vertex) => part.positions.slice(vertex * 3, vertex * 3 + 3));
+        const geometric = normalize(cross(subtract(b, a), subtract(c, a)));
+        if (vertices.some((vertex) => dot(geometric, part.normals.slice(vertex * 3, vertex * 3 + 3)) <= 0)) {
+          errors.push(`${part.label}: stored normal opposes triangle winding`);
           break;
         }
       }
@@ -1981,9 +2088,9 @@ function validateWeaponUnchecked(definition, controls = []) {
   }
 }
 
-export function validateWeapon(definition, controls = []) {
+export function validateWeapon(definition, controls = [], options = {}) {
   try {
-    return validateWeaponUnchecked(definition, controls);
+    return withDetail(options.lod ?? "medium", () => validateWeaponUnchecked(definition, controls, options));
   } catch (error) {
     return {
       valid: false,
@@ -1994,7 +2101,11 @@ export function validateWeapon(definition, controls = []) {
   }
 }
 
-export function buildWeapon(input) {
+export function buildWeapon(input, { lod = "medium" } = {}) {
+  return withDetail(lod, () => buildWeaponAtDetail(input));
+}
+
+function buildWeaponAtDetail(input) {
   const definition = resolveDefinition(input);
   const parts = [];
   const shaft = definition.shaft;
@@ -2033,7 +2144,7 @@ export function buildWeapon(input) {
     if (component.kind === "diamondBlade") add(diamondBlade(component, [0, 0, 0], component.label), component, offset);
     if (component.kind === "axe") add(axeHead(component, [0, 0, 0], component.label), component, offset);
     if (component.kind === "spear") add(spearHead(component, [0, 0, 0], component.label), component, offset);
-    if (component.kind === "guard") add(guard(component, [0, 0, 0], component.label), component, offset);
+    if (component.kind === "guard") add(guard({ ...component, _gripWidth: definition.components.find((part) => part.id === "grip")?.width }, [0, 0, 0], component.label), component, offset);
     if (component.kind === "knuckleBow") add(knuckleBow(component, [0, 0, 0], component.label), component, offset);
     if (component.kind === "ringGuard") add(ringGuard(component, [0, 0, 0], component.label), component, offset);
     if (component.kind === "tube") add(tubePath(component.points, component.radius, component.material ?? "steel", [0, 0, 0], component.label, component.radialSegments ?? 8), component, offset);
@@ -2064,7 +2175,7 @@ export function buildWeapon(input) {
     if (component.kind === "pick") add(coneX(component.length, component.radius, component.direction ?? -1, component.material ?? "steel", [0, 0, 0], component.label), component, offset);
     if (component.kind === "beak") add(curvedBeak(component, [0, 0, 0], component.label), component, offset);
     if (component.kind === "hammer") add(hammerPoll(component, [0, 0, 0], component.label), component, offset);
-    if (component.kind === "socket") add(lathe(component.profile, component.segments ?? 14, component.material ?? "steel", [0, 0, 0], component.label), component, offset);
+    if (component.kind === "socket") add(component._shaftContactRadius ? hollowSocket(component.profile, component._shaftContactRadius, component.material ?? "steel", component.label) : lathe(component.profile, component.segments ?? 14, component.material ?? "steel", [0, 0, 0], component.label), component, offset);
     if (component.kind === "pommel") add(lathe(component.profile, component.segments ?? 14, component.material ?? "steel", [0, 0, 0], component.label), component, offset);
     if (component.kind === "collar")
       add(
@@ -2083,21 +2194,10 @@ export function buildWeapon(input) {
         component,
         offset,
       );
-    if (component.kind === "sleeve")
-      add(
-        lathe(
-          [
-            [0, component.radius],
-            [component.length, component.topRadius ?? component.radius * 0.88],
-          ],
-          component.segments ?? 16,
-          component.material ?? "darkSteel",
-          [0, 0, 0],
-          component.label,
-        ),
-        component,
-        offset,
-      );
+    if (component.kind === "sleeve") {
+      const profile = [[0, component.radius], [component.length, component.topRadius ?? component.radius * 0.88]];
+      add(component._shaftContactRadius ? hollowSocket(profile, component._shaftContactRadius, component.material ?? "darkSteel", component.label) : lathe(profile, component.segments ?? 16, component.material ?? "darkSteel", [0, 0, 0], component.label), component, offset);
+    }
     if (component.kind === "mace") {
       const half = component.length / 2;
       const rootRadius = component.rootRadius ?? component.radius * (component.waist ?? 0.36);
@@ -2161,10 +2261,21 @@ export function buildWeapon(input) {
       }
     }
     if (component.kind === "ovalGrip") {
+      const parent = definition.components.find((part) => `${part.id}.top` === component.attach?.to);
+      const baseRadius = component.width * (component.bottomScale ?? 1) / 2;
+      let seatRadius = baseRadius;
+      if (parent?.kind === "pommel" && !parent.rotation && !component.rotation) {
+        const y = offset[1] - parent.offset[1];
+        const interval = parent.profile.findIndex((point) => point[0] >= y);
+        const upper = parent.profile[Math.max(0, interval)], lower = parent.profile[Math.max(0, interval - 1)];
+        const t = upper[0] === lower[0] ? 0 : Math.max(0, Math.min(1, (y - lower[0]) / (upper[0] - lower[0])));
+        seatRadius = Math.min(baseRadius, lower[1] + (upper[1] - lower[1]) * t);
+      } else if (parent?.kind === "fanPommel") seatRadius = Math.min(baseRadius, parent.width * 0.18, parent.thickness * 0.48 * component.width / component.thickness);
       add(
         lathe(
           [
-            [0, (component.width * (component.bottomScale ?? 1)) / 2],
+            [0, seatRadius],
+            [Math.min(0.016, component.length * 0.15), baseRadius],
             [component.length, (component.width * (component.topScale ?? 1)) / 2],
           ],
           component.segments ?? 16,

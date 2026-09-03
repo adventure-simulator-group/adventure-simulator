@@ -5,6 +5,8 @@ import { WeaponRenderer } from "./renderer.js";
 
 const elements = Object.fromEntries(["preset", "reset", "family", "name", "description", "controls", "stats", "status", "definition", "apply-definition", "definition-error", "dirty-state", "viewport"].map((id) => [id, document.getElementById(id)]));
 const renderer = new WeaponRenderer(elements.viewport);
+const lod = document.getElementById("lod");
+lod.addEventListener("change", () => rebuild(true));
 let active;
 let currentValidation;
 const composer = { haft: document.getElementById("composer-haft"), head: document.getElementById("composer-head"), build: document.getElementById("compose-weapon"), status: document.getElementById("composer-status") };
@@ -23,7 +25,7 @@ function updateDefinitionText() { elements.definition.value = JSON.stringify(act
 
 function rebuild(dirty = false) {
   try {
-    const validation = validateWeapon(active.definition, active.controls);
+    const validation = validateWeapon(active.definition, active.controls, { lod: lod.value });
     if (!validation.valid) throw new Error(validation.errors.join(" · "));
     currentValidation = validation;
     const mesh = validation.mesh;
@@ -62,13 +64,14 @@ function renderControls() {
     const row = document.createElement("div"); row.className = "control-row";
     const label = document.createElement("label"); label.textContent = control.label;
     const input = document.createElement("select");
+    input.id = `control-${elements.controls.children.length}`; label.htmlFor = input.id;
     for (const option of control.options) {
       const element = document.createElement("option"); element.textContent = option.label; element.value = JSON.stringify(option.value); input.append(element);
     }
     input.value = JSON.stringify(getControlValue(active.definition, control));
     input.addEventListener("change", () => {
       const candidate = JSON.parse(JSON.stringify(active.definition)); setControlValue(candidate, control, JSON.parse(input.value));
-      const validation = validateWeapon(candidate, active.controls);
+      const validation = validateWeapon(candidate, active.controls, { lod: lod.value });
       if (!validation.valid) { input.value = JSON.stringify(getControlValue(active.definition, control)); elements["definition-error"].textContent = `Rejected ${control.label}: ${validation.errors.join(" · ")}`; return; }
       active.definition = candidate; rebuild(true);
     });
@@ -77,12 +80,12 @@ function renderControls() {
   for (const control of active.controls) {
     const row = document.createElement("div"); row.className = "control-row";
     const label = document.createElement("label"); label.textContent = control.label;
-    const input = document.createElement("input"); input.type = "range"; input.min = control.min; input.max = control.max; input.step = control.step; input.value = getControlValue(active.definition, control);
+    const input = document.createElement("input"); input.id = `control-${elements.controls.children.length}`; label.htmlFor = input.id; input.type = "range"; input.min = control.min; input.max = control.max; input.step = control.step; input.value = getControlValue(active.definition, control);
     const output = document.createElement("output");
     const show = () => { output.value = `${Number(input.value).toFixed(Math.max(0, String(control.step).split(".")[1]?.length ?? 0))}${control.unit ? ` ${control.unit}` : ""}`; };
     input.addEventListener("input", () => {
       const candidate = JSON.parse(JSON.stringify(active.definition)); setControlValue(candidate, control, Number(input.value));
-      const validation = validateWeapon(candidate, active.controls);
+      const validation = validateWeapon(candidate, active.controls, { lod: lod.value });
       if (!validation.valid) { input.value = getControlValue(active.definition, control); show(); elements["definition-error"].textContent = `Rejected ${control.label}: ${validation.errors.join(" · ")}`; return; }
       active.definition = candidate; show(); rebuild(true);
     });
@@ -132,12 +135,12 @@ exporter.button.addEventListener("click", async () => {
 elements.preset.addEventListener("change", () => select(elements.preset.value));
 elements.reset.addEventListener("click", () => select(active.id));
 elements["apply-definition"].addEventListener("click", () => {
-  try { const candidate = JSON.parse(elements.definition.value); const validation = validateWeapon(candidate, active.controls); if (!validation.valid) throw new Error(validation.errors.join(" · ")); active.definition = candidate; renderControls(); rebuild(true); }
+  try { const candidate = JSON.parse(elements.definition.value); const validation = validateWeapon(candidate, active.controls, { lod: lod.value }); if (!validation.valid) throw new Error(validation.errors.join(" · ")); active.definition = candidate; renderControls(); rebuild(true); }
   catch (error) { elements["definition-error"].textContent = error.message; }
 });
 
 composer.build.addEventListener("click", () => {
-  const definition = composeWeapon(composer.haft.value, composer.head.value), controls = compositionControls(definition), validation = validateWeapon(definition, controls);
+  const definition = composeWeapon(composer.haft.value, composer.head.value), controls = compositionControls(definition), validation = validateWeapon(definition, controls, { lod: lod.value });
   if (!validation.valid) { composer.status.textContent = `Composition rejected: ${validation.errors.join(" · ")}`; return; }
   active = { id: "composed", name: `${composer.haft.selectedOptions[0].textContent} + ${composer.head.selectedOptions[0].textContent}`, family: "Composed preview", description: "A validated modular assembly built from independent haft and head modules.", definition, controls };
   elements.family.textContent = active.family; elements.name.textContent = active.name; elements.description.textContent = active.description; renderControls(); rebuild(true); composer.status.textContent = "Composition valid: attachments, winding, manifold topology, and camera fit passed.";
