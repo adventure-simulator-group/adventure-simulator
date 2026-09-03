@@ -656,7 +656,7 @@ ceiling = 676
 
 [[files]]
 path = "crates/adventuresim-tactical-client/src/ui.rs"
-ceiling = 1092
+ceiling = 862
 
 [[files]]
 path = "crates/adventuresim-tactical-core/src/animation/evaluation.rs"
@@ -2762,7 +2762,7 @@ ceiling = 158
 [[functions]]
 path = "crates/adventuresim-tactical-client/src/ui.rs"
 item = "setup_ui"
-ceiling = 284
+ceiling = 185
 
 [[functions]]
 path = "crates/adventuresim-tactical-core/src/combat_config.rs"
@@ -2807,7 +2807,7 @@ ceiling = 239
 [[functions]]
 path = "crates/adventuresim-tactical-server/src/combat/ranged.rs"
 item = "resolve_ranged_attack"
-ceiling = 213
+ceiling = 204
 
 [[functions]]
 path = "crates/adventuresim-tactical-server/src/equipment.rs"

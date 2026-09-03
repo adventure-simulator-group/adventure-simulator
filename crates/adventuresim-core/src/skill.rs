@@ -1157,8 +1157,7 @@ pub trait PlayerSkills {
                 equipment.armor_penalty(BodyPart::LOWER_BODY)
             };
             check *= armor_penalty;
-            check *= equipment.encumbrance_penalty_by_parts(attr, body);
-            check *= essentials.fatigue_penalty_by_parts(attr, body);
+            check *= essentials.physical_skill_condition_by_parts(attr, body, equipment);
         }
 
         check

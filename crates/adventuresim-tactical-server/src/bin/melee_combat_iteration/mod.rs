@@ -243,7 +243,7 @@ struct AutoresolveCombatantCausal {
     full_energy_intended_contacts_inside_ten_centimetres: u64,
     mean_attack_interval_seconds: f64,
     mean_attack_power_multiplier: f64,
-    minimum_attack_fatigue_performance: f64,
+    minimum_attack_incapacitation_performance: f64,
     final_pain_incapacitation: f64,
     final_blood_loss_fraction: f64,
     final_acute_trauma: f64,

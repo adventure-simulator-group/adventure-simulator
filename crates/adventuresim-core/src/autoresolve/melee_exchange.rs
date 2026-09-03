@@ -21,7 +21,7 @@ pub(super) fn melee_exchange_at_contact(
     defense_alignment_sample: f32,
     contact_at_time: MeleeContactAtTime,
 ) -> MeleeExchangeOutcome {
-    let performance = attacker.fatigue_performance();
+    let performance = attacker.incapacitation_performance();
     let attacker_equipment = attacker.equipment.for_melee();
     let attacker_view = attacker.view_with_equipment(&attacker_equipment);
     let defender_view = defender.view_with_equipment(&defender.equipment);
@@ -108,7 +108,7 @@ pub(super) fn autoresolve_melee_contact_location(
     precision: f32,
     contact_sample: f32,
 ) -> MeleeContactLocation {
-    let performance = attacker.fatigue_performance();
+    let performance = attacker.incapacitation_performance();
     let attacker_equipment = attacker.equipment.for_melee();
     attacker
         .view_with_equipment(&attacker_equipment)
@@ -192,7 +192,7 @@ mod tests {
                 set_style(&mut attacker, style);
                 for fatigue in [0.0, 0.55] {
                     attacker.fatigue = fatigue;
-                    let performance = attacker.fatigue_performance();
+                    let performance = attacker.incapacitation_performance();
                     for dodge_hours in [0.0, 2_000.0] {
                         for inventory_weight in [5.0, 45.0] {
                             let mut defender = opponents[0].combatant.clone();

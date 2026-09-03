@@ -1,4 +1,4 @@
-schema_version: 6
+schema_version: 7
 
 resolution:
   fatigue:
@@ -146,6 +146,9 @@ targeting:
     - { body_part: RightLeg, center_metres: [0.16, -0.40, 0.0], half_extents_metres: [0.15, 0.50, 0.15] }
 
 presentation:
+  incapacitation_forecast:
+    horizon_seconds: 2.0
+    trend_response_seconds: 1.0
   dodge_seconds: 0.3125
   body_turn_seconds_per_half_turn: 0.25
   downed_turn_radians_per_second: 1.5707964

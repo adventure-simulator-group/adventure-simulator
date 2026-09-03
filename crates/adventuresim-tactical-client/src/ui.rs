@@ -24,7 +24,9 @@ use bevy_flair::prelude::*;
 
 mod combat_state;
 
-use combat_state::{combat_state_label, incapacitation_wheel_segments};
+#[cfg(test)]
+use combat_state::incapacitation_wheel_segments;
+use combat_state::{combat_state_label, forecast_wheel_segments};
 
 #[cfg(feature = "debug")]
 use crate::animation::TerrainIkEnabled;
@@ -90,9 +92,7 @@ impl Plugin for UiPlugin {
                 (
                     update_stats_ui.run_if(any_with_component::<ClientPlayer>),
                     update_connection_ui,
-                    update_skills_ui.run_if(any_with_component::<ClientPlayer>),
                     update_limbs_ui.run_if(any_with_component::<ClientPlayer>),
-                    update_incapacitation_ui.run_if(any_with_component::<ClientPlayer>),
                     update_combat_state_ui.run_if(any_with_component::<ClientPlayer>),
                     update_items_ui.run_if(any_with_component::<ClientPlayer>),
                     update_attack_timer_ui.run_if(any_with_component::<ClientPlayer>),
@@ -246,7 +246,7 @@ fn paint_incapacitation_wheel(
 
     let mut cursor = -std::f32::consts::FRAC_PI_2;
     let mut remaining = 1.0_f32;
-    for (raw_amount, color) in incapacitation_wheel_segments(sources) {
+    for (raw_amount, color) in forecast_wheel_segments(sources, state.projected_increase) {
         let Some(amount) = visible_incapacitation_wheel_amount(raw_amount, remaining) else {
             continue;
         };
@@ -286,9 +286,6 @@ struct ClientInfoSpan;
 struct ClientStatusSpan;
 
 #[derive(Component)]
-struct SkillSpan(Skill);
-
-#[derive(Component)]
 struct LeftArmSpan;
 
 #[derive(Component)]
@@ -308,23 +305,6 @@ struct StomachSpan;
 
 #[derive(Component)]
 struct HeadSpan;
-
-/// Which incapacitation factor a meter-bar fill node visualizes.
-#[derive(Clone, Copy)]
-enum IncapacitationFactor {
-    Pain,
-    BloodLoss,
-    Imbalance,
-}
-
-#[derive(Component)]
-struct IncapacitationBarFill(IncapacitationFactor);
-
-#[derive(Component)]
-struct IncapacitationTotalSpan;
-
-#[derive(Component)]
-struct IncapacitationStatusSpan;
 
 #[derive(Component)]
 struct AttackTimerSpan;
@@ -464,63 +444,6 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                 Node::default(),
                 children![
                     (
-                        Name::new("skills"),
-                        Node::default(),
-                        children![
-                            Text::new("Skills"),
-                            (
-                                Name::new("sword"),
-                                Text::new("Sword hours:\n"),
-                                children![(SkillSpan(Skill::Sword), TextSpan::default())]
-                            ),
-                            (
-                                Name::new("dodge"),
-                                Text::new("Dodge hours:\n"),
-                                children![(SkillSpan(Skill::Dodge), TextSpan::default())]
-                            ),
-                            (
-                                Name::new("block"),
-                                Text::new("Block hours:\n"),
-                                children![(SkillSpan(Skill::Block), TextSpan::default())]
-                            ),
-                            (
-                                Name::new("bow"),
-                                Text::new("Bow hours:\n"),
-                                children![(SkillSpan(Skill::Bow), TextSpan::default())]
-                            ),
-                            (
-                                Name::new("will"),
-                                Text::new("Will hours:\n"),
-                                children![(SkillSpan(Skill::Will), TextSpan::default())]
-                            ),
-                            (
-                                Name::new("command"),
-                                Text::new("Command hours:\n"),
-                                children![(SkillSpan(Skill::Command), TextSpan::default())]
-                            ),
-                            (
-                                Name::new("physiology"),
-                                Text::new("Physiology hours:\n"),
-                                children![(SkillSpan(Skill::Physiology), TextSpan::default())]
-                            ),
-                            (
-                                Name::new("religion"),
-                                Text::new("Religion hours:\n"),
-                                children![(SkillSpan(Skill::Religion), TextSpan::default())]
-                            ),
-                            (
-                                Name::new("stealth"),
-                                Text::new("Stealth hours:\n"),
-                                children![(SkillSpan(Skill::Stealth), TextSpan::default())]
-                            ),
-                            (
-                                Name::new("balance"),
-                                Text::new("Balance hours:\n"),
-                                children![(SkillSpan(Skill::Balance), TextSpan::default())]
-                            ),
-                        ]
-                    ),
-                    (
                         Name::new("limbs"),
                         Node::default(),
                         children![
@@ -559,48 +482,6 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                                 Name::new("right-leg"),
                                 Text::new("Right Leg: "),
                                 children![(RightLegSpan, TextSpan::default())]
-                            ),
-                        ]
-                    ),
-                    (
-                        Name::new("incapacitation"),
-                        Node::default(),
-                        children![
-                            Text::new("Incapacitation"),
-                            (
-                                Name::new("incap-meter"),
-                                Node::default(),
-                                children![
-                                    (
-                                        IncapacitationBarFill(IncapacitationFactor::Pain),
-                                        ClassList::new("incap-pain"),
-                                        Node::default()
-                                    ),
-                                    (
-                                        IncapacitationBarFill(IncapacitationFactor::BloodLoss),
-                                        ClassList::new("incap-blood"),
-                                        Node::default()
-                                    ),
-                                    (
-                                        IncapacitationBarFill(IncapacitationFactor::Imbalance),
-                                        ClassList::new("incap-imbalance"),
-                                        Node::default()
-                                    ),
-                                ]
-                            ),
-                            (
-                                Name::new("incap-total"),
-                                Text::new("Total: "),
-                                children![(IncapacitationTotalSpan, TextSpan::default())]
-                            ),
-                            (
-                                Name::new("incap-status"),
-                                Text::new("Status: "),
-                                children![(
-                                    IncapacitationStatusSpan,
-                                    ClassList::default(),
-                                    TextSpan::default()
-                                )]
                             ),
                         ]
                     ),
@@ -807,55 +688,6 @@ fn update_stats_ui(
 
 #[expect(
     clippy::type_complexity,
-    reason = "the Bevy query updates skills only for the changed local-player snapshot"
-)]
-fn update_skills_ui(
-    player: Single<(&Skills, &CharacterId), (With<ClientPlayer>, Changed<Skills>)>,
-    mut spans: Query<(&mut TextSpan, &SkillSpan)>,
-) {
-    let (skills, _player_id) = player.into_inner();
-
-    for (mut text, skill_span) in &mut spans {
-        text.0 = match skill_span.0 {
-            Skill::Polearm => format!("{:.2}", skills.polearm_hours),
-            Skill::Axe => format!("{:.2}", skills.axe_hours),
-            Skill::Bludgeon => format!("{:.2}", skills.bludgeon_hours),
-            Skill::Sword => format!("{:.2}", skills.sword_hours),
-            Skill::Knife => format!("{:.2}", skills.knife_hours),
-            Skill::Dodge => format!("{:.2}", skills.dodge_hours),
-            Skill::Block => format!("{:.2}", skills.block_hours),
-            Skill::Bow => format!("{:.2}", skills.bow_hours),
-            Skill::Crossbow => format!("{:.2}", skills.crossbow_hours),
-            Skill::Firearm => format!("{:.2}", skills.firearm_hours),
-            Skill::Throw => format!("{:.2}", skills.throw_hours),
-            Skill::Will => format!("{:.2}", skills.will_hours),
-            Skill::Insight => format!("{:.2}", skills.insight_hours),
-            Skill::Charm => format!("{:.2}", skills.charm_hours),
-            Skill::Command => format!("{:.2}", skills.command_hours),
-            Skill::Deception => format!("{:.2}", skills.deception_hours),
-            Skill::Physiology => format!("{:.2}", skills.physiology_hours),
-            // Cooking is strategic-only and is not carried in tactical snapshots.
-            Skill::Cooking => "0.00".to_owned(),
-            Skill::Herbalism => "0.00".to_owned(),
-            Skill::Religion => format!("{:.2}", skills.religion_hours),
-            Skill::Bestiary => "0.00".to_string(),
-            Skill::Surgery => format!("{:.2}", skills.surgery_hours),
-            Skill::Stealth => format!("{:.2}", skills.stealth_hours),
-            Skill::Balance => format!("{:.2}", skills.balance_hours),
-            Skill::TerrainPlains
-            | Skill::TerrainForest
-            | Skill::TerrainHills
-            | Skill::TerrainWetlands
-            | Skill::TerrainUrban
-            | Skill::TerrainSnow => "0.00".into(),
-            Skill::Tailoring => format!("{:.2}", skills.tailoring_hours),
-            Skill::Smithing => format!("{:.2}", skills.smithing_hours),
-        };
-    }
-}
-
-#[expect(
-    clippy::type_complexity,
     reason = "the Bevy ParamSet borrows each independently addressed limb HUD span"
 )]
 fn update_limbs_ui(
@@ -879,56 +711,6 @@ fn update_limbs_ui(
     spans.p4().0 = format!("{:.0}%", limbs.right_arm * 100.0);
     spans.p5().0 = format!("{:.0}%", limbs.left_leg * 100.0);
     spans.p6().0 = format!("{:.0}%", limbs.right_leg * 100.0);
-}
-
-/// Mirrors the "wheel" incapacitation meter from `wiki/tactical/combat.md` as
-/// a segmented bar (pain/blood loss/imbalance) plus a total/status readout,
-/// since the current HUD has no radial-gauge rendering path.
-#[expect(
-    clippy::type_complexity,
-    reason = "the Bevy queries bind the changed local combat snapshot to its segmented HUD outputs"
-)]
-fn update_incapacitation_ui(
-    player: Single<
-        (Entity, &TacticalCombatState, &Limbs, &CharacterId),
-        (With<ClientPlayer>, Changed<TacticalCombatState>),
-    >,
-    viewer: TacticalPlayerViewer,
-    mut bars: Query<(&IncapacitationBarFill, &mut Node)>,
-    mut spans: ParamSet<(
-        Single<&mut TextSpan, With<IncapacitationTotalSpan>>,
-        Single<(&mut TextSpan, &mut ClassList), With<IncapacitationStatusSpan>>,
-    )>,
-) -> Result {
-    let (entity, state, limbs, _player_id) = player.into_inner();
-    let view = viewer.get(entity)?;
-    let will = view.skill_check(Skill::Will, LimbWeights::all_equal());
-    let sources = state.incapacitation_sources(limbs.total_damage(), will);
-
-    for (fill, mut node) in &mut bars {
-        let value = match fill.0 {
-            IncapacitationFactor::Pain => sources.pain,
-            IncapacitationFactor::BloodLoss => sources.blood_loss,
-            IncapacitationFactor::Imbalance => sources.imbalance,
-        };
-        node.width = Val::Percent((value * 100.0).clamp(0.0, 100.0));
-    }
-
-    spans.p0().0 = format!("{:.0}%", state.incapacitation * 100.0);
-
-    let (status_text, status_class) = match state.incapacitation_status() {
-        IncapacitationStatus::Ready => ("Ready", "success"),
-        IncapacitationStatus::Staggered => ("Staggered", "primary"),
-        IncapacitationStatus::Incapacitated => ("Incapacitated", "error"),
-    };
-    let mut status_span = spans.p1();
-    if status_span.0.0 != status_text {
-        status_span.0.0 = status_text.to_string();
-    }
-    if !status_span.1.contains(status_class) {
-        *status_span.1 = ClassList::new(status_class);
-    }
-    Ok(())
 }
 
 fn item_display_name(item: &ItemQueryItem) -> String {
@@ -1208,11 +990,12 @@ mod tests {
             thirst: 0.6,
             thermal: 0.7,
             imbalance: 0.9,
+            encumbrance: 0.1,
         });
 
         assert_eq!(
             segments.map(|(amount, _)| amount),
-            [0.15, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.9]
+            [0.15, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.9, 0.1]
         );
         assert_eq!(segments[0].1, Color32::from_rgb(0xd9, 0x73, 0xa2));
         assert_eq!(segments[1].1, Color32::from_rgb(0xc8, 0x47, 0x47));

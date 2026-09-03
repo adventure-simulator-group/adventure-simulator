@@ -1,5 +1,7 @@
 use super::*;
 
+mod forecast;
+
 type CombatStateQuery<'world, 'state> = Query<
     'world,
     'state,
@@ -27,7 +29,9 @@ pub(crate) fn update_tactical_combat_state(
     metadata: Query<(&TacticalCombatSide, &CharacterId)>,
     mut consequences: Option<ResMut<TacticalConsequenceAccumulator>>,
     mut states: CombatStateQuery<'_, '_>,
+    mut trends: Local<HashMap<Entity, forecast::ConditionTrend>>,
 ) {
+    trends.retain(|entity, _| states.contains(*entity));
     for (entity, mut state, mut input, mut movement_intent, pace, skeleton, wounds) in &mut states {
         let Ok(view) = viewer.get(entity) else {
             continue;
@@ -60,6 +64,7 @@ pub(crate) fn update_tactical_combat_state(
             continue;
         };
         let will = view.skill_check(Skill::Will, LimbWeights::all_equal());
+        state.encumbrance = combat_encumbrance_incapacitation(&view, &view, &view);
         state.incapacitation = combat_incapacitation(
             state.starting_incapacitation,
             state.starting_blood_fraction,
@@ -68,7 +73,20 @@ pub(crate) fn update_tactical_combat_state(
             will,
             state.imbalance,
         ) + state.acute_trauma
-            + state.fatigue;
+            + state.fatigue
+            + state.encumbrance;
+        let sources = state.incapacitation_sources(limbs.total_damage(), will);
+        state.projected_increase = trends.entry(entity).or_default().update(
+            sources,
+            time.delta_secs(),
+            config.presentation.incapacitation_forecast,
+        );
+        forecast::project_bleeding(
+            &mut state,
+            sources,
+            wounds,
+            config.presentation.incapacitation_forecast,
+        );
         if state.is_incapacitated() {
             if let Some(input) = input.as_deref_mut() {
                 input.last_movement = None;

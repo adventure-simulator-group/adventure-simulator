@@ -86,7 +86,7 @@ fn committed_attack_response(
     let timing = (1.0 - response_delay / parameters.melee_reflex_window_seconds).clamp(0.0, 1.0);
     let engagement = (timing
         * ((skill + defender.attributes.instinct) / 10.0).clamp(0.0, 1.0)
-        * defender.fatigue_performance())
+        * defender.incapacitation_performance())
     .clamp(0.0, 1.0);
     let committed = choose_committed_threat_response(CommittedThreatFacts {
         own_contact_after_incoming_seconds: defender_attack.contact_at_seconds

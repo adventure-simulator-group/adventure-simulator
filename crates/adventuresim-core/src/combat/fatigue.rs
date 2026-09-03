@@ -97,21 +97,13 @@ pub fn recover_combat_fatigue(
     *fatigue = (*fatigue - recovered).clamp(0.0, 1.0);
 }
 
-/// The black wheel fraction is exactly the fraction of fatigue performance lost.
-#[must_use]
-pub fn combat_fatigue_performance(fatigue: f32) -> f32 {
-    1.0 - fatigue.clamp(0.0, 1.0)
-}
-
-#[must_use]
-pub fn fatigue_adjusted_recovery_seconds(base_recovery_seconds: f32, performance: f32) -> f32 {
-    base_recovery_seconds.max(0.0) / performance.clamp(f32::EPSILON, 1.0)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::combat::EMBEDDED_COMBAT_RESOLUTION_PARAMETERS;
+    use crate::combat::{
+        EMBEDDED_COMBAT_RESOLUTION_PARAMETERS, combat_incapacitation_performance,
+        incapacitation_adjusted_recovery_seconds,
+    };
     const PARAMETERS: CombatFatigueParameters = EMBEDDED_COMBAT_RESOLUTION_PARAMETERS.fatigue;
 
     #[test]
@@ -143,13 +135,18 @@ mod tests {
             let mut fatigue = 0.2;
             apply_combat_workload(&mut fatigue, workload, 3.0, PARAMETERS);
             assert!(fatigue > 0.2);
-            assert_eq!(combat_fatigue_performance(fatigue), 1.0 - fatigue);
+            assert_eq!(combat_incapacitation_performance(fatigue), 1.0 - fatigue);
             let before_rest = fatigue;
             recover_combat_fatigue(&mut fatigue, 2.0, 3.0, PARAMETERS);
             assert!(fatigue < before_rest);
             assert!(
-                fatigue_adjusted_recovery_seconds(0.45, combat_fatigue_performance(before_rest))
-                    > fatigue_adjusted_recovery_seconds(0.45, combat_fatigue_performance(fatigue))
+                incapacitation_adjusted_recovery_seconds(
+                    0.45,
+                    combat_incapacitation_performance(before_rest)
+                ) > incapacitation_adjusted_recovery_seconds(
+                    0.45,
+                    combat_incapacitation_performance(fatigue)
+                )
             );
         }
     }
@@ -194,7 +191,7 @@ mod tests {
             3.0,
             PARAMETERS,
         );
-        assert!(fatigue > 0.0 && combat_fatigue_performance(fatigue) < 1.0);
+        assert!(fatigue > 0.0 && combat_incapacitation_performance(fatigue) < 1.0);
         apply_combat_workload(
             &mut fatigue,
             CombatActionWorkload {
@@ -204,7 +201,7 @@ mod tests {
             PARAMETERS,
         );
         assert_eq!(fatigue, 1.0);
-        assert_eq!(combat_fatigue_performance(fatigue), 0.0);
+        assert_eq!(combat_incapacitation_performance(fatigue), 0.0);
         recover_combat_fatigue(&mut fatigue, 10000.0, 3.0, PARAMETERS);
         assert_eq!(fatigue, 0.0);
     }

@@ -45,7 +45,7 @@ pub(super) fn resolve_melee_turn(
         exchange,
         result,
         part,
-        attacker_fatigue_performance,
+        attacker_incapacitation_performance,
         attack_duration,
     } = prepared;
     attackers[attacker_index].charge_action_work(CombatActionWork::Attack, attack_duration);
@@ -73,7 +73,7 @@ pub(super) fn resolve_melee_turn(
         contact_at_time,
         defense_commitment,
         attack_power_multiplier,
-        attacker_fatigue_performance,
+        attacker_incapacitation_performance,
         attack_duration,
         attack_timing,
         contact_batch,
@@ -144,7 +144,7 @@ fn record_melee_result(
             defender_attack_commitment: commitment.kind.as_str(),
             defender_retained_attack_power: commitment.retained_power,
             attack_power_multiplier: power,
-            attacker_fatigue_performance: performance,
+            attacker_incapacitation_performance: performance,
             attack_interval_seconds: duration / performance,
         }),
     );
@@ -335,7 +335,7 @@ struct PreparedMeleeExchange {
     exchange: MeleeExchangeOutcome,
     result: AttackResult,
     part: BodyPart,
-    attacker_fatigue_performance: f32,
+    attacker_incapacitation_performance: f32,
     attack_duration: f32,
 }
 
@@ -397,7 +397,7 @@ fn prepare_melee_exchange(
     let response = shield_aligned_response(
         decision
             .response
-            .scaled_for_performance(defender.fatigue_performance()),
+            .scaled_for_performance(defender.incapacitation_performance()),
         defender.equipment.shield_holding_side(),
         contact,
     );
@@ -420,7 +420,7 @@ fn prepare_melee_exchange(
         defender_decision: decision,
         response,
         part: exchange.contact.body_part,
-        attacker_fatigue_performance: attacker.fatigue_performance(),
+        attacker_incapacitation_performance: attacker.incapacitation_performance(),
         attack_duration: attacker
             .equipment
             .melee_weapon
