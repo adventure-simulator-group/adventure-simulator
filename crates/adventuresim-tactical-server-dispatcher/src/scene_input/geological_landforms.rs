@@ -106,6 +106,9 @@ fn kind_for_lithology(lithology: SurfaceLithology) -> Option<TerrainLandformKind
         SurfaceLithology::Igneous(IgneousRock::Granite | IgneousRock::Granitoid) => {
             Some(TerrainLandformKind::GraniteJointRockfall)
         }
+        SurfaceLithology::Igneous(IgneousRock::Basalt) => {
+            Some(TerrainLandformKind::BasaltCoolingColumns)
+        }
         _ => None,
     }
 }
@@ -278,11 +281,24 @@ mod tests {
     }
 
     #[test]
-    fn coarse_source_steps_retain_an_overhang_after_production_repair() {
+    fn only_classified_basalt_selects_cooling_columns() {
+        assert_eq!(
+            kind_for_lithology(SurfaceLithology::Igneous(IgneousRock::Basalt)),
+            Some(TerrainLandformKind::BasaltCoolingColumns)
+        );
+        assert_eq!(
+            kind_for_lithology(SurfaceLithology::Igneous(IgneousRock::OtherVolcanic)),
+            None
+        );
+    }
+
+    #[test]
+    fn coarse_source_steps_retain_landforms_after_production_repair() {
         for lithology in [
             SurfaceLithology::Sedimentary(SedimentaryRock::Sandstone),
             SurfaceLithology::Sedimentary(SedimentaryRock::Limestone),
             SurfaceLithology::Igneous(IgneousRock::Granite),
+            SurfaceLithology::Igneous(IgneousRock::Basalt),
         ] {
             assert_coarse_source_landform(lithology);
         }
@@ -308,7 +324,11 @@ mod tests {
         input.landform = Some(recipe);
         let generated = input.generate().unwrap();
         let mesh = generated.terrain_patch.unwrap();
-        assert!(mesh.normals.iter().any(|normal| normal[1] < -0.2));
+        if recipe.kind == TerrainLandformKind::BasaltCoolingColumns {
+            assert!(mesh.normals.iter().any(|normal| normal[1].abs() < 0.025));
+        } else {
+            assert!(mesh.normals.iter().any(|normal| normal[1] < -0.2));
+        }
         let half_width =
             (f32::from(input.playable.width) - 1.0) * input.playable.spacing_metres * 0.5;
         for index in 0..101 {

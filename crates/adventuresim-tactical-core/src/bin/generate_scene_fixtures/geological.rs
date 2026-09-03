@@ -24,6 +24,14 @@ pub(super) fn granite() -> Fixture {
     )
 }
 
+pub(super) fn basalt() -> Fixture {
+    fixture(
+        "basalt-cooling-columns",
+        TerrainLandformKind::BasaltCoolingColumns,
+        47_118,
+    )
+}
+
 fn fixture(name: &'static str, kind: TerrainLandformKind, seed: u64) -> Fixture {
     Fixture {
         name,

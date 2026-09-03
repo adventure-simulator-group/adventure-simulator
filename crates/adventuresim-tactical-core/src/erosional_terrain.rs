@@ -9,6 +9,7 @@ use crate::{
     volumetric_terrain::{SceneTerrainPatch, TerrainLandformKind, TerrainLandformRecipe},
 };
 
+mod basalt;
 mod carbonate;
 mod granite;
 
@@ -112,6 +113,9 @@ fn field(terrain: &SceneTerrain, recipe: TerrainLandformRecipe, point: Vec3) -> 
             granite::front(local.x, depth_fraction, relief, recipe.seed),
             TALUS_RELIEF_FRACTION,
         ),
+        TerrainLandformKind::BasaltCoolingColumns => {
+            (basalt::front(local.x, recipe.seed), TALUS_RELIEF_FRACTION)
+        }
         TerrainLandformKind::FaultScarp => unreachable!("faults use the displacement field"),
     };
     let talus = (1.0 - ((local.y - TALUS_CENTRE_METRES) / TALUS_HALF_WIDTH_METRES).abs()).max(0.0)
@@ -254,6 +258,11 @@ mod tests {
         assert_sound_mesh(TerrainLandformKind::GraniteJointRockfall);
     }
 
+    #[test]
+    fn basalt_has_consistent_winding_and_vertical_faces_at_both_resolutions() {
+        assert_sound_mesh(TerrainLandformKind::BasaltCoolingColumns);
+    }
+
     fn assert_sound_mesh(kind: TerrainLandformKind) {
         for lod in [TerrainLandformLod::Detail, TerrainLandformLod::Fringe] {
             assert_sound_mesh_lod(kind, lod);
@@ -312,7 +321,24 @@ mod tests {
                 );
             }
         }
-        if kind != TerrainLandformKind::FaultScarp {
+        if kind == TerrainLandformKind::BasaltCoolingColumns {
+            let vertical_area: f32 = mesh
+                .indices
+                .as_chunks::<3>()
+                .0
+                .iter()
+                .map(|triangle| {
+                    let [a, b, c] = triangle.map(|i| Vec3::from_array(mesh.positions[i as usize]));
+                    let cross = (b - a).cross(c - a);
+                    if cross.normalize().y.abs() < 0.025 {
+                        cross.length() * 0.5
+                    } else {
+                        0.0
+                    }
+                })
+                .sum();
+            assert!(vertical_area > 5.0, "vertical area {vertical_area}");
+        } else if kind != TerrainLandformKind::FaultScarp {
             assert!(mesh.normals.iter().any(|normal| normal[1] < -0.2));
         }
         assert!(mesh.triangle_count() < 150000);

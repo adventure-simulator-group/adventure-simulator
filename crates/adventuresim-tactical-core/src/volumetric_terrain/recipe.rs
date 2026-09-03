@@ -7,6 +7,7 @@ pub enum TerrainLandformKind {
     SandstoneAlcove,
     CarbonateDissolution,
     GraniteJointRockfall,
+    BasaltCoolingColumns,
 }
 
 #[derive(Component, Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
