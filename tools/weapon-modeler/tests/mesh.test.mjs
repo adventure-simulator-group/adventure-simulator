@@ -190,9 +190,12 @@ test("figure-eight guard has two recognizable apertures", () => {
 test("Reitschwert has compound rings, an open bow, and a sectioned straight blade", () => {
   const preset = PRESETS.find((candidate) => candidate.id === "reitschwert-1540");
   assert.ok(preset);
-  assert.equal(preset.definition.components.filter((component) => component.kind === "ringGuard").length, 1);
-  assert.ok(preset.definition.components.some((component) => component.kind === "knuckleBow"));
-  assert.ok(preset.definition.components.filter((component) => component.label?.includes("boss")).length >= 4);
+  const graph = preset.definition.components.find((component) => component.kind === "guardAssembly");
+  assert.ok(graph);
+  assert.ok(graph.members.some((member) => member.label === "side ring"));
+  assert.ok(graph.members.some((member) => member.label === "knuckle bow"));
+  assert.ok(graph.members.some((member) => member.label === "finger loop"));
+  assert.equal(graph.anchorNode, "root");
   assert.equal(preset.definition.components.at(-1).kind, "sectionBlade");
 });
 

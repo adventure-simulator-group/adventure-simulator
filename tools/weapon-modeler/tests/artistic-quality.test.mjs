@@ -88,10 +88,10 @@ test("center-gripped bucklers open into their hollow boss and strapped shields k
 });
 
 test("authored furniture choices remain valid with small pommels and all detail levels", () => {
-  for (const source of PRESETS.filter((preset) => preset.choiceControls?.some((choice) => choice.label === "Pommel form"))) {
-    const choice = source.choiceControls.find((control) => control.label === "Pommel form");
+  for (const source of PRESETS.filter((preset) => preset.choiceControls?.some((choice) => choice.label === "Lathed pommel profile"))) {
+    const choice = source.choiceControls.find((control) => control.label === "Lathed pommel profile");
     for (const option of choice.options) for (const lod of ["low", "high"]) {
-      const preset = copyPreset(source); setControlValue(preset.definition, choice, structuredClone(option.value));
+      const preset = copyPreset(source); preset.definition.components.find((part) => part.id === "pommel").construction = "lathed"; setControlValue(preset.definition, choice, structuredClone(option.value));
       preset.definition.components.find((part) => part.id === "pommel").widthScale = 0.65;
       const result = validateWeapon(preset.definition, preset.controls, { lod });
       assert.equal(result.valid, true, `${source.id}/${option.label}/${lod}: ${result.errors.join(" | ")}`);

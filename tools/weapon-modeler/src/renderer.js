@@ -113,7 +113,7 @@ export class WeaponRenderer {
     });
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(mesh.indices), gl.STATIC_DRAW);
-    this.setView("front", "whole");
+    this.draw();
   }
 
   focusBounds() {
@@ -122,9 +122,23 @@ export class WeaponRenderer {
     const whole = mesh.stats.bounds;
     const hasShaft = mesh.parts.some((part) => part.label === "shaft");
     const shaftTop = mesh.resolvedDefinition?.shaft?.length ?? whole.max[1];
+    const frames = mesh.resolvedDefinition?._frames ?? {}, pommelTop = frames["pommel.top"]?.[1] ?? whole.min[1], guardCenter = frames["guard.center"]?.[1] ?? whole.max[1];
     const selected = [];
     for (const part of mesh.parts) {
       const component = mesh.resolvedDefinition?.components.find((candidate) => candidate.id === part.componentId);
+      if (!hasShaft && this.focus === "pommel") {
+        if (component?.id === "pommel") for (let index = 0; index < part.positions.length; index += 3) selected.push(part.positions.slice(index, index + 3));
+        if (component?.id === "grip") for (let index = 0; index < part.positions.length; index += 3) if (part.positions[index + 1] <= pommelTop + 0.025) selected.push(part.positions.slice(index, index + 3));
+        continue;
+      }
+      if (!hasShaft && this.focus === "guard") {
+        const furniture = ["guard", "guardAssembly", "ringGuard", "figureEight", "knuckleBow", "tube"].includes(component?.kind) && component?.id !== "pommel";
+        for (let index = 0; index < part.positions.length; index += 3) {
+          const y = part.positions[index + 1];
+          if (furniture || (component?.id === "grip" && y >= guardCenter - 0.035) || (["blade", "sectionBlade", "diamondBlade"].includes(component?.kind) && y <= guardCenter + 0.08)) selected.push(part.positions.slice(index, index + 3));
+        }
+        continue;
+      }
       if (part.label === "shaft" || (!hasShaft && ["blade", "sectionBlade", "diamondBlade"].includes(component?.kind))) continue;
       if (hasShaft && !part.positions.some((value, index) => index % 3 === 1 && value >= shaftTop - 0.6)) continue;
       for (let index = 0; index < part.positions.length; index += 3) selected.push(part.positions.slice(index, index + 3));

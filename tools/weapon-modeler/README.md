@@ -132,10 +132,30 @@ and planar faces do not receive unnecessary length subdivisions. Select **Mesh
 detail** in the editor, or pass `--lod low|medium|high` to `cli.mjs`.
 
 Sword grips taper into small pommel necks without an overhanging bottom cap.
-Rotational furniture offers authored, bulb, pear and scent-stopper profiles,
-with separate breadth and length controls. Crossguards expose tip taper,
-terminal swelling and symmetric/opposed sweep. Flattened fan caps have rounded
-perimeters and beveled faces. Axe plates thin from their reinforced root toward
+The unified pommel component offers lathed bulb/pear/scent-stopper profiles,
+wheel plates with beveled rims, intentional faceted buns, spirally fluted fig
+forms, fan/fish-tail outlines, and composite bases with named ornament sockets.
+The crown, escutcheon and indexed authored-relief examples demonstrate reusable
+ornament modules; faces and animals can be supplied as authored indexed meshes.
+Controls appear only for the selected construction. Representative defaults
+show the wheel on the estoc, a fish-tail on the Messer, a writhen fig on the
+two-handed sword, and a faceted bun on the riding sword.
+
+Crossguards sweep round, oval, diamond, flat or triangular sections along
+symmetric, opposed or independent left/right arms. Each independent arm has
+length, sweep and out-of-plane set. Section roll produces twisted members;
+parallel-transport frames avoid orientation flips on 3D paths. Ball, disk,
+pyramidal, scroll, fish-tail and vase terminals remain independent of the
+quillon section. The riding sword uses a connected named-node graph for its
+side ring, finger loop and knuckle bow. The lower bow follows the grip-base
+frame, and its middle node derives from the moving endpoints. An optional
+later-style shell study demonstrates a dished, rolled-rim plate with a true
+cutout; it is not part of the c.1540 default. The shell primitive currently
+supports one matched outline/cutout loop, with rounded control polygons.
+
+See [the hilt construction schema](review/hilt-construction.md) for JSON
+authoring, ornament sockets, graph bindings and the bounded cutout contract.
+Axe plates thin from their reinforced root toward
 the cutting edge, expose independent shoulder cusps, and carry an opposing
 fluke/poll when mirrored. Spear points use a diamond section with distal taper.
 
@@ -149,5 +169,9 @@ contexts, older retained equipment and studies outside the 1544 setting.
 Open **Review gallery** for default and seeded specimens. The repeatable
 [capture and independent-review workflow](review/iteration.md) records exact
 inputs and supports fixed-fixture replay and adversarial joint/LOD cases.
+The **Pommel** and **Guard** focus buttons frame furniture with its immediate
+connection context. Capture views such as `front-pommel`, `oblique-pommel`,
+`rear-pommel`, and `oblique-guard` use the same semantic bounds at every LOD.
 [Artistic criteria and museum references](review/artistic-criteria.md) include
-the independent reviewer�s findings and acceptance decision for this iteration.
+the first iteration’s findings. The [hilt review record](review/hilt-artistic-criteria.md)
+records the independent reviewer’s construction and LOD acceptance decision.

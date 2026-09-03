@@ -1,6 +1,6 @@
 import { measureMassProperties, validateWeapon } from "./mesh.js";
 import { automaticGripPoint, buildSkinnedWeaponGlb } from "./glb-export.js";
-import { HAFT_MODULES, HEAD_ASSEMBLIES, PRESETS, composeWeapon, compositionControls, copyPreset, getControlValue, setControlValue } from "./presets.js";
+import { HAFT_MODULES, HEAD_ASSEMBLIES, PRESETS, composeWeapon, compositionControls, copyPreset, controlVisible, getControlValue, setControlValue } from "./presets.js";
 import { WeaponRenderer } from "./renderer.js";
 
 const elements = Object.fromEntries(["preset", "reset", "family", "name", "description", "controls", "stats", "status", "definition", "apply-definition", "definition-error", "dirty-state", "viewport"].map((id) => [id, document.getElementById(id)]));
@@ -60,7 +60,8 @@ function rebuild(dirty = false) {
 
 function renderControls() {
   elements.controls.replaceChildren();
-  for (const control of active.choiceControls ?? []) {
+  const visible = (control) => controlVisible(active.definition, control);
+  for (const control of (active.choiceControls ?? []).filter(visible)) {
     const row = document.createElement("div"); row.className = "control-row";
     const label = document.createElement("label"); label.textContent = control.label;
     const input = document.createElement("select");
@@ -73,11 +74,11 @@ function renderControls() {
       const candidate = JSON.parse(JSON.stringify(active.definition)); setControlValue(candidate, control, JSON.parse(input.value));
       const validation = validateWeapon(candidate, active.controls, { lod: lod.value });
       if (!validation.valid) { input.value = JSON.stringify(getControlValue(active.definition, control)); elements["definition-error"].textContent = `Rejected ${control.label}: ${validation.errors.join(" · ")}`; return; }
-      active.definition = candidate; rebuild(true);
+      active.definition = candidate; renderControls(); rebuild(true);
     });
     row.append(label, input); elements.controls.append(row);
   }
-  for (const control of active.controls) {
+  for (const control of active.controls.filter(visible)) {
     const row = document.createElement("div"); row.className = "control-row";
     const label = document.createElement("label"); label.textContent = control.label;
     const input = document.createElement("input"); input.id = `control-${elements.controls.children.length}`; label.htmlFor = input.id; input.type = "range"; input.min = control.min; input.max = control.max; input.step = control.step; input.value = getControlValue(active.definition, control);
