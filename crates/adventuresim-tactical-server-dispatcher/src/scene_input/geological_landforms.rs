@@ -8,7 +8,7 @@
 //! corridor exclude additional landforms before any geometry is generated.
 
 use super::*;
-use adventuresim_world_schema::{SedimentaryRock, SurfaceLithology};
+use adventuresim_world_schema::{IgneousRock, SedimentaryRock, SurfaceLithology};
 use proj4rs::{proj::Proj, transform::transform};
 
 const MIN_SOURCE_GRADE: f32 = 0.20;
@@ -102,6 +102,9 @@ fn kind_for_lithology(lithology: SurfaceLithology) -> Option<TerrainLandformKind
         }
         SurfaceLithology::Sedimentary(SedimentaryRock::Limestone | SedimentaryRock::Dolostone) => {
             Some(TerrainLandformKind::CarbonateDissolution)
+        }
+        SurfaceLithology::Igneous(IgneousRock::Granite | IgneousRock::Granitoid) => {
+            Some(TerrainLandformKind::GraniteJointRockfall)
         }
         _ => None,
     }
@@ -251,8 +254,46 @@ mod tests {
     }
 
     #[test]
+    fn mapped_granitoids_select_joint_faces_but_unclassified_plutonic_rock_does_not() {
+        let (center, grid, mut features) = context();
+        for rock in [
+            IgneousRock::Granite,
+            IgneousRock::Granitoid,
+            IgneousRock::OtherPlutonic,
+        ] {
+            let TerrainFeature::MappedGeology(window) = &mut features[0] else {
+                unreachable!()
+            };
+            window.lithology = SurfaceLithology::Igneous(rock);
+            let selected = select(&features, center, &grid, 42);
+            if rock == IgneousRock::OtherPlutonic {
+                assert!(selected.is_none());
+            } else {
+                assert_eq!(
+                    selected.unwrap().kind,
+                    TerrainLandformKind::GraniteJointRockfall
+                );
+            }
+        }
+    }
+
+    #[test]
     fn coarse_source_steps_retain_an_overhang_after_production_repair() {
-        let (center, mut grid, features) = context();
+        for lithology in [
+            SurfaceLithology::Sedimentary(SedimentaryRock::Sandstone),
+            SurfaceLithology::Sedimentary(SedimentaryRock::Limestone),
+            SurfaceLithology::Igneous(IgneousRock::Granite),
+        ] {
+            assert_coarse_source_landform(lithology);
+        }
+    }
+
+    fn assert_coarse_source_landform(lithology: SurfaceLithology) {
+        let (center, mut grid, mut features) = context();
+        let TerrainFeature::MappedGeology(window) = &mut features[0] else {
+            unreachable!()
+        };
+        window.lithology = lithology;
         for (index, height) in grid.heights_metres.iter_mut().enumerate() {
             let north = (index / 101) as f32 - 50.0;
             *height = -(north / 30.0).floor() * 9.0;
@@ -274,7 +315,9 @@ mod tests {
             let point = Vec2::new(index as f32 - half_width, 0.0);
             assert!(!recipe.transition_collar().contains(point));
         }
-        if let Some(output) = std::env::var_os("GEOLOGY_REVIEW_STEPPED_INPUT") {
+        if recipe.kind == TerrainLandformKind::SandstoneAlcove
+            && let Some(output) = std::env::var_os("GEOLOGY_REVIEW_STEPPED_INPUT")
+        {
             fs::write(output, serde_json::to_vec_pretty(&input).unwrap()).unwrap();
         }
     }

@@ -16,6 +16,14 @@ pub(super) fn carbonate() -> Fixture {
     )
 }
 
+pub(super) fn granite() -> Fixture {
+    fixture(
+        "granite-joint-rockfall",
+        TerrainLandformKind::GraniteJointRockfall,
+        47_117,
+    )
+}
+
 fn fixture(name: &'static str, kind: TerrainLandformKind, seed: u64) -> Fixture {
     Fixture {
         name,

@@ -10,6 +10,7 @@ use crate::{
 };
 
 mod carbonate;
+mod granite;
 
 const SAMPLE_MARGIN_CELLS: f32 = 2.0;
 const MAX_GRID_SIDE: usize = 195;
@@ -107,12 +108,21 @@ fn field(terrain: &SceneTerrain, recipe: TerrainLandformRecipe, point: Vec3) -> 
             carbonate::front(local.x, depth_fraction, relief, recipe.seed),
             CARBONATE_RESIDUAL_RELIEF_FRACTION,
         ),
+        TerrainLandformKind::GraniteJointRockfall => (
+            granite::front(local.x, depth_fraction, relief, recipe.seed),
+            TALUS_RELIEF_FRACTION,
+        ),
         TerrainLandformKind::FaultScarp => unreachable!("faults use the displacement field"),
     };
     let talus = (1.0 - ((local.y - TALUS_CENTRE_METRES) / TALUS_HALF_WIDTH_METRES).abs()).max(0.0)
         * relief
         * debris_fraction;
-    let floor = foot + talus;
+    let fragments = if recipe.kind == TerrainLandformKind::GraniteJointRockfall {
+        granite::fragments(local.x, local.y, relief)
+    } else {
+        0.0
+    };
+    let floor = foot + talus + fragments;
     let cut = (local.y - front).min(point.y - floor);
     base.lerp(base.max(cut), weight)
 }
@@ -237,6 +247,11 @@ mod tests {
     #[test]
     fn fault_mesh_retains_consistent_winding_at_both_resolutions() {
         assert_sound_mesh(TerrainLandformKind::FaultScarp);
+    }
+
+    #[test]
+    fn granite_has_consistent_winding_and_overhangs_at_both_resolutions() {
+        assert_sound_mesh(TerrainLandformKind::GraniteJointRockfall);
     }
 
     fn assert_sound_mesh(kind: TerrainLandformKind) {
