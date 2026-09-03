@@ -12,6 +12,7 @@ use crate::{
 mod basalt;
 mod carbonate;
 mod granite;
+mod slump;
 
 const SAMPLE_MARGIN_CELLS: f32 = 2.0;
 const MAX_GRID_SIDE: usize = 195;
@@ -116,17 +117,20 @@ fn field(terrain: &SceneTerrain, recipe: TerrainLandformRecipe, point: Vec3) -> 
         TerrainLandformKind::BasaltCoolingColumns => {
             (basalt::front(local.x, recipe.seed), TALUS_RELIEF_FRACTION)
         }
+        TerrainLandformKind::CohesiveSlumpHeadscarp => {
+            (slump::front(local.x, depth_fraction, relief), 0.0)
+        }
         TerrainLandformKind::FaultScarp => unreachable!("faults use the displacement field"),
     };
     let talus = (1.0 - ((local.y - TALUS_CENTRE_METRES) / TALUS_HALF_WIDTH_METRES).abs()).max(0.0)
         * relief
         * debris_fraction;
-    let fragments = if recipe.kind == TerrainLandformKind::GraniteJointRockfall {
-        granite::fragments(local.x, local.y, relief)
-    } else {
-        0.0
+    let retained_material = match recipe.kind {
+        TerrainLandformKind::GraniteJointRockfall => granite::fragments(local.x, local.y, relief),
+        TerrainLandformKind::CohesiveSlumpHeadscarp => slump::bench(local.x, local.y),
+        _ => 0.0,
     };
-    let floor = foot + talus + fragments;
+    let floor = foot + talus + retained_material;
     let cut = (local.y - front).min(point.y - floor);
     base.lerp(base.max(cut), weight)
 }
@@ -263,6 +267,11 @@ mod tests {
         assert_sound_mesh(TerrainLandformKind::BasaltCoolingColumns);
     }
 
+    #[test]
+    fn slump_has_consistent_winding_and_steep_head_at_both_resolutions() {
+        assert_sound_mesh(TerrainLandformKind::CohesiveSlumpHeadscarp);
+    }
+
     fn assert_sound_mesh(kind: TerrainLandformKind) {
         for lod in [TerrainLandformLod::Detail, TerrainLandformLod::Fringe] {
             assert_sound_mesh_lod(kind, lod);
@@ -321,7 +330,10 @@ mod tests {
                 );
             }
         }
-        if kind == TerrainLandformKind::BasaltCoolingColumns {
+        if matches!(
+            kind,
+            TerrainLandformKind::BasaltCoolingColumns | TerrainLandformKind::CohesiveSlumpHeadscarp
+        ) {
             let vertical_area: f32 = mesh
                 .indices
                 .as_chunks::<3>()

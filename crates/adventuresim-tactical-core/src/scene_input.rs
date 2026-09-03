@@ -36,8 +36,8 @@ pub use buildings::{
     SceneWindow, TacticalBuildingPlacement,
 };
 
-pub const TACTICAL_SCENE_SCHEMA_VERSION: u16 = 12;
-pub const TACTICAL_SCENE_GENERATION_VERSION: u16 = 28;
+pub const TACTICAL_SCENE_SCHEMA_VERSION: u16 = 13;
+pub const TACTICAL_SCENE_GENERATION_VERSION: u16 = 29;
 pub const MAX_SCENE_INPUT_BYTES: u64 = 32 * 1024 * 1024;
 pub const TREE_TRUNK_RADIUS_METRES: f32 = 0.35;
 pub const TREE_TRUNK_HEIGHT_METRES: f32 = 5.0;

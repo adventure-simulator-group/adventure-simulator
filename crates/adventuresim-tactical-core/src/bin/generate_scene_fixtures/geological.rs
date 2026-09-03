@@ -32,6 +32,14 @@ pub(super) fn basalt() -> Fixture {
     )
 }
 
+pub(super) fn slump() -> Fixture {
+    fixture(
+        "cohesive-slump-headscarp",
+        TerrainLandformKind::CohesiveSlumpHeadscarp,
+        47_119,
+    )
+}
+
 fn fixture(name: &'static str, kind: TerrainLandformKind, seed: u64) -> Fixture {
     Fixture {
         name,

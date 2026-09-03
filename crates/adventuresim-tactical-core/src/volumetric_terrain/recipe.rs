@@ -8,6 +8,7 @@ pub enum TerrainLandformKind {
     CarbonateDissolution,
     GraniteJointRockfall,
     BasaltCoolingColumns,
+    CohesiveSlumpHeadscarp,
 }
 
 #[derive(Component, Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]

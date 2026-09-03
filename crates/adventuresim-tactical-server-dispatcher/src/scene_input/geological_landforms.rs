@@ -8,7 +8,9 @@
 //! corridor exclude additional landforms before any geometry is generated.
 
 use super::*;
-use adventuresim_world_schema::{IgneousRock, SedimentaryRock, SurfaceLithology};
+use adventuresim_world_schema::{
+    IgneousRock, SedimentaryRock, SurfaceLithology, UnconsolidatedDeposit,
+};
 use proj4rs::{proj::Proj, transform::transform};
 
 const MIN_SOURCE_GRADE: f32 = 0.20;
@@ -108,6 +110,9 @@ fn kind_for_lithology(lithology: SurfaceLithology) -> Option<TerrainLandformKind
         }
         SurfaceLithology::Igneous(IgneousRock::Basalt) => {
             Some(TerrainLandformKind::BasaltCoolingColumns)
+        }
+        SurfaceLithology::Unconsolidated(UnconsolidatedDeposit::Clay) => {
+            Some(TerrainLandformKind::CohesiveSlumpHeadscarp)
         }
         _ => None,
     }
@@ -293,12 +298,33 @@ mod tests {
     }
 
     #[test]
+    fn only_cohesive_clay_selects_slump_headscarps() {
+        assert_eq!(
+            kind_for_lithology(SurfaceLithology::Unconsolidated(
+                UnconsolidatedDeposit::Clay
+            )),
+            Some(TerrainLandformKind::CohesiveSlumpHeadscarp)
+        );
+        for deposit in [
+            UnconsolidatedDeposit::Sand,
+            UnconsolidatedDeposit::Gravel,
+            UnconsolidatedDeposit::Alluvium,
+        ] {
+            assert_eq!(
+                kind_for_lithology(SurfaceLithology::Unconsolidated(deposit)),
+                None
+            );
+        }
+    }
+
+    #[test]
     fn coarse_source_steps_retain_landforms_after_production_repair() {
         for lithology in [
             SurfaceLithology::Sedimentary(SedimentaryRock::Sandstone),
             SurfaceLithology::Sedimentary(SedimentaryRock::Limestone),
             SurfaceLithology::Igneous(IgneousRock::Granite),
             SurfaceLithology::Igneous(IgneousRock::Basalt),
+            SurfaceLithology::Unconsolidated(UnconsolidatedDeposit::Clay),
         ] {
             assert_coarse_source_landform(lithology);
         }
@@ -324,7 +350,10 @@ mod tests {
         input.landform = Some(recipe);
         let generated = input.generate().unwrap();
         let mesh = generated.terrain_patch.unwrap();
-        if recipe.kind == TerrainLandformKind::BasaltCoolingColumns {
+        if matches!(
+            recipe.kind,
+            TerrainLandformKind::BasaltCoolingColumns | TerrainLandformKind::CohesiveSlumpHeadscarp
+        ) {
             assert!(mesh.normals.iter().any(|normal| normal[1].abs() < 0.025));
         } else {
             assert!(mesh.normals.iter().any(|normal| normal[1] < -0.2));
