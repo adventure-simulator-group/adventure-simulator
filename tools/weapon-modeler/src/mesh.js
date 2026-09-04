@@ -11,6 +11,22 @@ export const MATERIALS = {
   leather: { color: [0.24, 0.11, 0.055], density: 920 },
   darkLeather: { color: [0.055, 0.045, 0.038], density: 920 },
   brass: { color: [0.58, 0.43, 0.18], density: 8500 },
+  horn: { color: [0.17, 0.13, 0.09], density: 1250 },
+  cord: { color: [0.12, 0.095, 0.065], density: 1200 },
+  feather: { color: [0.72, 0.67, 0.53], density: 350 },
+  sinew: { color: [0.62, 0.48, 0.30], density: 1250 },
+  darkFeather: { color: [0.20, 0.17, 0.14], density: 350 },
+  lead: { color: [0.25, 0.27, 0.29], density: 11340 },
+  cherry: { color: [0.38, 0.16, 0.08], density: 620 },
+  walnut: { color: [0.24, 0.13, 0.06], density: 720 },
+  redBeech: { color: [0.45, 0.25, 0.13], density: 720 },
+  gold: { color: [0.82, 0.61, 0.16], density: 19300 },
+  latten: { color: [0.64, 0.49, 0.18], density: 8500 },
+  bone: { color: [0.79, 0.75, 0.61], density: 1850 },
+  staghorn: { color: [0.61, 0.53, 0.39], density: 1250 },
+  motherOfPearl: { color: [0.78, 0.82, 0.78], density: 2700 },
+  pyrite: { color: [0.66, 0.54, 0.17], density: 5000 },
+  matchCord: { color: [0.18, 0.13, 0.08], density: 900 },
 };
 
 function signedArea(points) {
@@ -151,6 +167,10 @@ function move(point, offset) {
 }
 
 function componentRange(component) {
+  if (["crossbow", "crossbowBolt", "boltQuiver", "firearm", "ballPouch"].includes(component.kind)) return [0, component.length ?? component.height];
+  if (component.kind === "leadBall") return [-component.radius, component.radius];
+  if (component.kind === "archeryBow") return [-component.length * (1 - component.upperRatio), component.length * component.upperRatio];
+  if (component.kind === "arrow" || component.kind === "arrowQuiver") return [0, component.length];
   if (component.kind === "roundShield") return [-component.radius, component.radius];
   if (component.kind === "shapedShield") return [-component.height / 2 - (component.bottomDepth ?? 0), component.height / 2 + (component.topDepth ?? 0)];
   if (["grip", "ovalGrip", "slabGrip", "blade", "sectionBlade", "diamondBlade", "spear", "fork", "partisan", "glaive", "bill", "sleeve"].includes(component.kind)) return [0, component.length ?? 0];
@@ -173,11 +193,20 @@ function componentRange(component) {
   return [0, 0];
 }
 
-const COMPONENT_KINDS = new Set(["blade", "sectionBlade", "diamondBlade", "axe", "spear", "guard", "guardAssembly", "knuckleBow", "ringGuard", "tube", "figureEight", "fork", "partisan", "glaive", "facetedBeak", "bill", "box", "pick", "beak", "hammer", "socket", "pommel", "collar", "sleeve", "mace", "grip", "ovalGrip", "slabGrip", "roundShield", "shapedShield"]);
+const COMPONENT_KINDS = new Set(["firearm", "leadBall", "ballPouch", "crossbow", "crossbowBolt", "boltQuiver", "archeryBow", "arrow", "arrowQuiver", "blade", "sectionBlade", "diamondBlade", "axe", "spear", "guard", "guardAssembly", "knuckleBow", "ringGuard", "tube", "figureEight", "fork", "partisan", "glaive", "facetedBeak", "bill", "box", "pick", "beak", "hammer", "socket", "pommel", "collar", "sleeve", "mace", "grip", "ovalGrip", "slabGrip", "roundShield", "shapedShield"]);
 const MOUNT_MODES = new Set(["shaft-top", "shaft-top-centered", "shaft-top-sleeve", "component-end"]);
 const COMMON_COMPONENT_KEYS = new Set("kind id label offset rotation material mount attach stretchBetween anchor insertion".split(" "));
 const KIND_KEYS = Object.fromEntries(
   Object.entries({
+    firearm: "length firearmFamily stockStyle lockType barrelCount barrelLength secondaryBarrelLength bore barrelWall barrelSeparation octagonalRatio muzzleStyle muzzleFlare buttWidth waistWidth foreWidth stockDepth buttDrop lockPosition lockWheelRadius panWidth triggerLength guardWidth ramrodRadius bandCount sightStyle facingStyle facingThickness samples radialSegments barrelMaterial lockMaterial facingMaterial furnitureMaterial inlayMaterial",
+    leadBall: "radius segments",
+    ballPouch: "width height depth wall flapLength flapOverlap flapAngle beltLoopWidth beltLoopGap closureStyle hardwareMaterial",
+    crossbow: "length buttWidth waistWidth noseWidth stockThickness stockStyle buttDrop lockTableHeight foreEndRise facingStyle facingThickness prodConstruction prodPosition prodSpan prodDepth prodThickness prodSweep prodTipScale hornThickness sinewThickness stringRadius servingWidth tipLoopClearance bridleSpacing bridleRadius nutPosition nutRadius nutWidth nutThickness railHeight triggerLength grooveWidth stirrupWidth stirrupLength stirrupBar spanningMode spanningBar sightStyle samples radialSegments stringMaterial bindingMaterial coreMaterial hornMaterial backMaterial",
+    crossbowBolt: "length shaftRadius headLength headWidth headThickness headStyle boltUse fletchingLength fletchingHeight fletchingCount buttLength buttWidth buttHeight segments headMaterial fletchingMaterial buttMaterial",
+    boltQuiver: "carrierStyle length bottomWidth mouthWidth depth wall lining hideCover strapWidth strapThickness strapDrop rimMaterial strapMaterial",
+    archeryBow: "construction limbSection length gripLength limbWidth limbDepth gripWidth gripDepth tipScale reflex recurve upperRatio braceHeight stringRadius loopRadius loopGap backingThickness hornThickness samples radialSegments stringMaterial nockMaterial coreMaterial hornMaterial backMaterial",
+    arrow: "length shaftRadius headLength headWidth headThickness headStyle fletchingLength fletchingHeight fletchingCount nockLength nockSlotWidth maximumStringRadius nockClearance nockStyle segments headMaterial fletchingMaterial nockMaterial",
+    arrowQuiver: "carrierStyle length mouthRadius bottomScale wall rimRadius strapWidth strapThickness strapDrop segments rimMaterial strapMaterial",
     blade: "length width thickness curvature taper singleEdge tipWidth belly",
     sectionBlade: "length width thickness taper section",
     diamondBlade: "length width thickness taper",
@@ -211,9 +240,18 @@ const KIND_KEYS = Object.fromEntries(
   }).map(([kind, keys]) => [kind, new Set(keys.split(" "))]),
 );
 const SHAFT_KEYS = new Set(["length", "radius", "topScale", "bottomScale", "segments", "material"]);
-const INTEGER_FIELDS = new Set(["segments", "radialSegments", "samples", "profileSamples", "flanges", "wraps", "rings", "edgeSegments"]);
-const NON_NUMERIC_FIELDS = new Set(["kind", "id", "label", "material", "mount", "attach", "stretchBetween", "anchor", "anchorNode", "nodeBindings", "offset", "rotation", "profile", "size", "points", "section", "construction", "baseConstruction", "sockets", "ornaments", "outlineStyle", "mirrorMode", "terminal", "leftTerminal", "rightTerminal", "nodes", "members", "plates", "fitShaft", "fitShaftSide", "controlWidth", "topShape", "bottomShape", "fittingMode", "mirrored", "rimMaterial", "bossMaterial", "gripMaterial", "strapMaterial"]);
+const INTEGER_FIELDS = new Set(["segments", "radialSegments", "samples", "profileSamples", "flanges", "wraps", "rings", "edgeSegments", "fletchingCount", "barrelCount", "bandCount"]);
+const NON_NUMERIC_FIELDS = new Set(["kind", "id", "label", "material", "mount", "attach", "stretchBetween", "anchor", "anchorNode", "nodeBindings", "offset", "rotation", "profile", "size", "points", "section", "construction", "firearmFamily", "lockType", "muzzleStyle", "closureStyle", "prodConstruction", "stockStyle", "spanningMode", "sightStyle", "facingStyle", "boltUse", "limbSection", "headStyle", "nockStyle", "carrierStyle", "baseConstruction", "sockets", "ornaments", "outlineStyle", "mirrorMode", "terminal", "leftTerminal", "rightTerminal", "nodes", "members", "plates", "fitShaft", "fitShaftSide", "controlWidth", "topShape", "bottomShape", "fittingMode", "mirrored", "rimMaterial", "bossMaterial", "gripMaterial", "strapMaterial", "stringMaterial", "bindingMaterial", "buttMaterial", "nockMaterial", "headMaterial", "fletchingMaterial", "coreMaterial", "hornMaterial", "backMaterial", "barrelMaterial", "lockMaterial", "facingMaterial", "hardwareMaterial", "furnitureMaterial", "inlayMaterial"]);
 const REQUIRED_FIELDS = {
+  firearm: ["length", "barrelLength", "bore", "barrelWall", "barrelCount", "octagonalRatio", "buttWidth", "waistWidth", "foreWidth", "stockDepth", "buttDrop", "lockPosition", "lockWheelRadius", "panWidth", "triggerLength", "guardWidth", "ramrodRadius", "bandCount", "facingThickness"],
+  leadBall: ["radius"],
+  ballPouch: ["width", "height", "depth", "wall", "flapLength", "flapOverlap", "flapAngle", "beltLoopWidth", "beltLoopGap"],
+  crossbow: ["length", "buttWidth", "waistWidth", "noseWidth", "stockThickness", "buttDrop", "lockTableHeight", "foreEndRise", "facingThickness", "prodPosition", "prodSpan", "prodDepth", "prodThickness", "prodSweep", "prodTipScale", "stringRadius", "servingWidth", "tipLoopClearance", "bridleSpacing", "bridleRadius", "nutPosition", "nutRadius", "nutWidth", "nutThickness", "railHeight", "triggerLength", "grooveWidth", "stirrupWidth", "stirrupLength", "stirrupBar", "spanningBar"],
+  crossbowBolt: ["length", "shaftRadius", "headLength", "headWidth", "headThickness", "fletchingLength", "fletchingHeight", "fletchingCount", "buttLength", "buttWidth", "buttHeight"],
+  boltQuiver: ["length", "bottomWidth", "mouthWidth", "depth", "wall", "lining", "hideCover", "strapWidth", "strapThickness", "strapDrop"],
+  archeryBow: ["length", "gripLength", "limbWidth", "limbDepth", "gripWidth", "gripDepth", "tipScale", "reflex", "recurve", "upperRatio", "braceHeight", "stringRadius", "loopRadius", "loopGap"],
+  arrow: ["length", "shaftRadius", "headLength", "headWidth", "headThickness", "fletchingLength", "fletchingHeight", "fletchingCount", "nockLength", "nockSlotWidth", "maximumStringRadius", "nockClearance"],
+  arrowQuiver: ["length", "mouthRadius", "bottomScale", "wall", "rimRadius", "strapWidth", "strapThickness", "strapDrop"],
   blade: ["length", "width", "thickness"],
   sectionBlade: ["length", "width", "thickness"],
   diamondBlade: ["length", "width", "thickness"],
@@ -270,9 +308,31 @@ function schemaErrors(input) {
     if (!COMPONENT_KINDS.has(component.kind)) errors.push(`${prefix}: unknown component kind ${String(component.kind)}`);
     if (component.mount !== undefined && !MOUNT_MODES.has(component.mount)) errors.push(`${prefix}: unknown mount mode ${component.mount}`);
     if (component.material !== undefined && !Object.hasOwn(MATERIALS, component.material)) errors.push(`${prefix}: unknown material ${component.material}`);
+    for (const key of ["stringMaterial", "bindingMaterial", "buttMaterial", "nockMaterial", "headMaterial", "fletchingMaterial", "rimMaterial", "strapMaterial", "coreMaterial", "hornMaterial", "backMaterial", "barrelMaterial", "lockMaterial", "facingMaterial", "hardwareMaterial", "furnitureMaterial", "inlayMaterial"])
+      if (component[key] !== undefined && !Object.hasOwn(MATERIALS, component[key])) errors.push(`${prefix}: unknown ${key} ${component[key]}`);
+    if (component.kind === "archeryBow" && !new Set(["self", "composite"]).has(component.construction)) errors.push(`${prefix}.construction must be self or composite`);
+    if (component.kind === "archeryBow" && !new Set(["dShape", "oval", "flat"]).has(component.limbSection ?? "dShape")) errors.push(`${prefix}.limbSection is not supported`);
+    if (component.kind === "arrow" && !new Set(["broadhead", "bodkin"]).has(component.headStyle ?? "broadhead")) errors.push(`${prefix}.headStyle is not supported`);
+    if (component.kind === "arrow" && !new Set(["self", "reinforced"]).has(component.nockStyle ?? "reinforced")) errors.push(`${prefix}.nockStyle is not supported`);
+    if (component.kind === "arrowQuiver" && !new Set(["rigid", "bag"]).has(component.carrierStyle ?? "rigid")) errors.push(`${prefix}.carrierStyle is not supported`);
+    if (component.kind === "crossbow" && !new Set(["steel", "composite"]).has(component.prodConstruction)) errors.push(`${prefix}.prodConstruction must be steel or composite`);
+    if (component.kind === "crossbow" && !new Set(["straight", "hunting", "swollen"]).has(component.stockStyle)) errors.push(`${prefix}.stockStyle is not supported`);
+    if (component.kind === "crossbow" && !new Set(["cranequin", "goatsFoot", "beltHook"]).has(component.spanningMode)) errors.push(`${prefix}.spanningMode is not supported`);
+    if (component.kind === "crossbow" && !new Set(["none", "peep", "post"]).has(component.sightStyle)) errors.push(`${prefix}.sightStyle is not supported`);
+    if (component.kind === "crossbow" && !new Set(["none", "horn"]).has(component.facingStyle)) errors.push(`${prefix}.facingStyle is not supported`);
+    if (component.kind === "crossbowBolt" && !new Set(["bodkin", "broadhead", "hunting"]).has(component.headStyle)) errors.push(`${prefix}.headStyle is not supported`);
+    if (component.kind === "crossbowBolt" && !new Set(["war", "hunting"]).has(component.boltUse)) errors.push(`${prefix}.boltUse is not supported`);
+    if (component.kind === "boltQuiver" && component.carrierStyle !== "rigid") errors.push(`${prefix}.carrierStyle must be rigid`);
+    if (component.kind === "firearm" && !new Set(["pistol", "arquebus"]).has(component.firearmFamily)) errors.push(`${prefix}.firearmFamily is not supported`);
+    if (component.kind === "firearm" && !new Set(["pistol", "shoulder"]).has(component.stockStyle)) errors.push(`${prefix}.stockStyle is not supported`);
+    if (component.kind === "firearm" && !new Set(["wheellock", "matchlock"]).has(component.lockType)) errors.push(`${prefix}.lockType is not supported`);
+    if (component.kind === "firearm" && !new Set(["plain", "ringed"]).has(component.muzzleStyle)) errors.push(`${prefix}.muzzleStyle is not supported`);
+    if (component.kind === "firearm" && !new Set(["none", "bead", "notch"]).has(component.sightStyle)) errors.push(`${prefix}.sightStyle is not supported`);
+    if (component.kind === "firearm" && !new Set(["none", "horn"]).has(component.facingStyle)) errors.push(`${prefix}.facingStyle is not supported`);
+    if (component.kind === "ballPouch" && !new Set(["toggle", "buckle"]).has(component.closureStyle)) errors.push(`${prefix}.closureStyle is not supported`);
     for (const [key, value] of Object.entries(component)) if (!NON_NUMERIC_FIELDS.has(key) && value !== undefined && !Number.isFinite(value)) errors.push(`${prefix}.${key} must be finite`);
     for (const key of INTEGER_FIELDS) {
-      const minimum = key === "wraps" ? 0 : key === "samples" ? 4 : 3;
+      const minimum = key === "wraps" ? 0 : key === "samples" ? 4 : key === "fletchingCount" ? 2 : ["barrelCount", "bandCount"].includes(key) ? 1 : 3;
       if (component[key] !== undefined && (!Number.isInteger(component[key]) || component[key] < minimum)) errors.push(`${prefix}.${key} must be an integer of at least ${minimum}`);
     }
     if (component.fitShaft !== undefined && typeof component.fitShaft !== "boolean") errors.push(`${prefix}.fitShaft must be boolean`);
@@ -624,9 +684,12 @@ export function box(size, material, offset, label = "box") {
   );
 }
 
-function hollowSocket(profile, innerRadius, material, label) {
-  const builder = makeBuilder(material, label), segments = roundSegments(Math.max(...profile.map((p) => p[1])));
-  const point = (row, segment, inner) => [Math.cos(segment / segments * Math.PI * 2) * (inner ? innerRadius : profile[row][1]), profile[row][0], Math.sin(segment / segments * Math.PI * 2) * (inner ? innerRadius : profile[row][1])];
+function hollowSocket(profile, innerRadius, material, label, segmentsOverride = null) {
+  const builder = makeBuilder(material, label), segments = segmentsOverride ? detailSamples(segmentsOverride, 6) : roundSegments(Math.max(...profile.map((p) => p[1])));
+  const point = (row, segment, inner) => {
+    const innerAtRow = Array.isArray(innerRadius) ? innerRadius[row] : innerRadius;
+    return [Math.cos(segment / segments * Math.PI * 2) * (inner ? innerAtRow : profile[row][1]), profile[row][0], Math.sin(segment / segments * Math.PI * 2) * (inner ? innerAtRow : profile[row][1])];
+  };
   for (const inner of [false, true]) for (let row = 0; row < profile.length - 1; row++) for (let segment = 0; segment < segments; segment++) {
     const next = (segment + 1) % segments, a = point(row, segment, inner), b = point(row, next, inner), c = point(row + 1, next, inner), d = point(row + 1, segment, inner);
     const group = inner ? "bore" : "socket";
@@ -1515,7 +1578,7 @@ function shieldResolution(component) {
 const GUARD_SECTIONS = new Set(["round", "oval", "diamond", "flat", "triangular"]);
 const GUARD_TERMINALS = new Set(["none", "ball", "disk", "pyramidal", "scroll", "fishtail", "vase"]);
 
-function sectionOutline(section, width, depth, segments) {
+export function sectionOutline(section, width, depth, segments) {
   if (section === "round") depth = width;
   if (section === "round" || section === "oval") {
     const count = tubeRadialSegments(Math.max(width, depth) / 2, segments);
@@ -1525,6 +1588,13 @@ function sectionOutline(section, width, depth, segments) {
     });
   }
   if (section === "diamond") return [[width / 2, 0], [0, depth / 2], [-width / 2, 0], [0, -depth / 2]];
+  if (section === "dShape") {
+    const count = Math.max(8, tubeRadialSegments(Math.max(width, depth) / 2, segments));
+    return [[-width / 2, -depth / 2], ...Array.from({ length: count + 1 }, (_, index) => {
+      const angle = -Math.PI / 2 + index / count * Math.PI;
+      return [Math.cos(angle) * width / 2, Math.sin(angle) * depth / 2];
+    }), [-width / 2, depth / 2]];
+  }
   if (section === "triangular") return [[0, depth * 0.58], [-width / 2, -depth * 0.42], [width / 2, -depth * 0.42]];
   return [[-width / 2, -depth / 2], [width / 2, -depth / 2], [width / 2, depth / 2], [-width / 2, depth / 2]];
 }
@@ -1566,8 +1636,9 @@ export function sweptMember(points, parameters = {}, offset = [0, 0, 0], label =
   };
   for (let row = 0; row < points.length - 1; row++) for (let side = 0; side < outline.length; side++) {
     const next = (side + 1) % outline.length, group = smooth ? "sweep" : `section:${side}`;
-    builder.triangle(point(row, side), point(row, next), point(row + 1, next), group);
-    builder.triangle(point(row, side), point(row + 1, next), point(row + 1, side), group);
+    const surfaceGroup = section === "dShape" ? (side === outline.length - 1 ? "d-flat" : "d-curve") : group;
+    builder.triangle(point(row, side), point(row, next), point(row + 1, next), surfaceGroup);
+    builder.triangle(point(row, side), point(row + 1, next), point(row + 1, side), surfaceGroup);
   }
   if (!closed) for (const [row, reverse] of [[0, true], [points.length - 1, false]]) for (let side = 0; side < outline.length; side++) {
     const center = move(points[row], offset), a = point(row, side), b = point(row, (side + 1) % outline.length);
@@ -1937,6 +2008,454 @@ export function shieldMeshes(component) {
   return parts;
 }
 
+function bowLimbPoints(component, upper) {
+  const half = upper ? component.length * component.upperRatio : component.length * (1 - component.upperRatio),
+    gripHalf = component.gripLength / 2,
+    working = half - gripHalf,
+    samples = detailSamples(component.samples ?? 18, 10);
+  return Array.from({ length: samples + 1 }, (_, index) => {
+    const t = index / samples,
+      y = gripHalf + working * t,
+      x = component.reflex * Math.sin(Math.PI * t) + component.recurve * t ** 3;
+    return [x, upper ? y : -y, 0];
+  });
+}
+
+export function bowCompositeLayerLayout(component, progress) {
+  const scale = 1 + (component.tipScale - 1) * progress,
+    horn = component.hornThickness * scale,
+    back = component.backingThickness * scale,
+    depth = component.limbDepth * scale,
+    core = depth - horn - back;
+  return {
+    scale,
+    horn: { center: -depth / 2 + horn / 2, width: horn, interval: [-depth / 2, -depth / 2 + horn] },
+    core: { center: (horn - back) / 2, width: core, interval: [-depth / 2 + horn, depth / 2 - back] },
+    back: { center: depth / 2 - back / 2, width: back, interval: [depth / 2 - back, depth / 2] },
+  };
+}
+
+export function bowTipLoopLayout(component, upper) {
+  const limb = bowLimbPoints(component, upper), tip = limb.at(-1), previous = limb.at(-2),
+    tangent = normalize(subtract(tip, previous)),
+    normal = normalize(cross([0, 0, 1], tangent)),
+    binormal = normalize(cross(tangent, normal)),
+    radialAxis = component.limbDepth * component.tipScale * 0.54 + component.loopRadius,
+    widthAxis = component.limbWidth * component.tipScale * 0.54 + component.loopRadius,
+    samples = detailSamples(24, 20),
+    towardCenter = normalize([ -component.braceHeight - tip[0], -tip[1], 0 ]),
+    attachmentSign = dot(towardCenter, normal) >= 0 ? 1 : -1,
+    attachment = tip.map((value, axis) => value + normal[axis] * radialAxis * attachmentSign),
+    points = Array.from({ length: samples + 1 }, (_, index) => {
+      const angle = index / samples * Math.PI * 2;
+      return tip.map((value, axis) => value + normal[axis] * Math.cos(angle) * radialAxis + binormal[axis] * Math.sin(angle) * widthAxis);
+    });
+  return { tip, tangent, normal, binormal, radialAxis, widthAxis, attachment, points };
+}
+
+/** A strung bow is emitted as animation-addressable parts. The center is one
+ * continuous served string; closed end loops seat around the limb-tip nocks. */
+export function archeryBowMeshes(component) {
+  const upper = bowLimbPoints(component, true), lower = bowLimbPoints(component, false),
+    section = component.limbSection ?? (component.construction === "self" ? "dShape" : "flat"),
+    member = (points, label, width, material) => sweptMember(points, {
+      section, sectionWidth: width, sectionDepth: component.limbWidth,
+      tipScale: component.tipScale, material,
+    }, [0, 0, 0], label),
+    shifted = (points, layer) => points.map((point, index) => {
+      const layout = bowCompositeLayerLayout(component, index / (points.length - 1));
+      return [point[0] + layout[layer].center, point[1], point[2]];
+    }),
+    parts = [];
+  if (component.construction === "composite") {
+    for (const [name, points] of [["upper", upper], ["lower", lower]]) {
+      parts.push(member(shifted(points, "core"), `${name} wood core`, component.limbDepth - component.hornThickness - component.backingThickness, component.coreMaterial ?? "wood"));
+      parts.push(member(shifted(points, "horn"), `${name} horn belly`, component.hornThickness, component.hornMaterial ?? "horn"));
+      parts.push(member(shifted(points, "back"), `${name} sinew backing`, component.backingThickness, component.backMaterial ?? "sinew"));
+    }
+  } else {
+    parts.push(member(upper, "upper D-section bow limb", component.limbDepth, component.material ?? "wood"));
+    parts.push(member(lower, "lower D-section bow limb", component.limbDepth, component.material ?? "wood"));
+  }
+  const
+    grip = sweptMember([[0, -component.gripLength / 2 - 0.004, 0], [0, component.gripLength / 2 + 0.004, 0]], {
+      section: "oval", sectionWidth: component.gripDepth, sectionDepth: component.gripWidth,
+      material: "leather", radialSegments: 12,
+    }, [0, 0, 0], "bow grip");
+  parts.push(grip);
+
+  for (const [label, points] of [["upper horn nock overlay", upper], ["lower horn nock overlay", lower]]) {
+    const tip = points.at(-1), previous = points.at(-2), inset = previous.map((value, axis) => value + (tip[axis] - value) * 0.55);
+    parts.push(sweptMember([inset, tip], {
+      section: "flat", sectionWidth: component.limbDepth * component.tipScale * 1.08,
+      sectionDepth: component.limbWidth * component.tipScale * 1.08, material: component.nockMaterial ?? "horn",
+    }, [0, 0, 0], label));
+  }
+
+  const stringX = -component.braceHeight,
+    servingHalf = component.loopGap / 2,
+    upperLoop = bowTipLoopLayout(component, true), lowerLoop = bowTipLoopLayout(component, false),
+    stringMaterial = component.stringMaterial ?? "cord";
+  parts.push(tubePath([[upperLoop.attachment[0], upperLoop.attachment[1]], [stringX, servingHalf]], component.stringRadius, stringMaterial, [0, 0, 0], "upper bowstring control span", component.radialSegments ?? 8));
+  parts.push(tubePath([[lowerLoop.attachment[0], lowerLoop.attachment[1]], [stringX, -servingHalf]], component.stringRadius, stringMaterial, [0, 0, 0], "lower bowstring control span", component.radialSegments ?? 8));
+  parts.push(sweptMember(upperLoop.points, { section: "round", sectionWidth: component.stringRadius * 2, material: stringMaterial, radialSegments: component.radialSegments ?? 8 }, [0, 0, 0], "upper bowstring end loop"));
+  parts.push(sweptMember(lowerLoop.points, { section: "round", sectionWidth: component.stringRadius * 2, material: stringMaterial, radialSegments: component.radialSegments ?? 8 }, [0, 0, 0], "lower bowstring end loop"));
+  parts.push(tubePath([[stringX, -servingHalf], [stringX, servingHalf]], component.stringRadius * 1.3, stringMaterial, [0, 0, 0], "served nocking control span", component.radialSegments ?? 8));
+  return parts;
+}
+
+export function arrowMeshes(component) {
+  const shaft = lathe([[0, component.shaftRadius], [component.length, component.shaftRadius * 0.92]], component.segments ?? 12, component.material ?? "wood", [0, 0, 0], "arrow shaft", 1, true),
+    headWidth = component.headStyle === "bodkin" ? Math.max(component.shaftRadius * 2.4, component.headWidth * 0.52) : component.headWidth,
+    head = prism([[-headWidth / 2, 0], [-component.shaftRadius, component.headLength * 0.18], [0, component.headLength], [component.shaftRadius, component.headLength * 0.18], [headWidth / 2, 0]], component.headThickness, component.headMaterial ?? "steel", [0, component.length, 0], `${component.headStyle ?? "broadhead"} arrowhead`),
+    slot = component.nockSlotWidth,
+    nock = prism([[-component.shaftRadius, -component.nockLength], [-slot / 2, -component.nockLength], [-slot / 2, -component.nockLength * 0.32], [slot / 2, -component.nockLength * 0.32], [slot / 2, -component.nockLength], [component.shaftRadius, -component.nockLength], [component.shaftRadius, 0], [-component.shaftRadius, 0]], component.shaftRadius * 1.7, component.nockStyle === "self" ? (component.material ?? "wood") : (component.nockMaterial ?? "horn"), [0, 0, 0], "slotted arrow nock"),
+    parts = [shaft, head, nock],
+    featherBase = component.nockLength + 0.025;
+  for (let index = 0; index < component.fletchingCount; index += 1) {
+    const fin = prism([[0, 0], [component.fletchingHeight, component.fletchingLength * 0.18], [component.fletchingHeight * 0.78, component.fletchingLength], [0, component.fletchingLength]], component.shaftRadius * 0.36, component.fletchingMaterial ?? "feather", [component.shaftRadius * 0.9, featherBase, 0], `fletching ${index + 1}`);
+    parts.push(transformMesh(fin, [0, index * 360 / component.fletchingCount, 0]));
+  }
+  return parts;
+}
+
+export function arrowQuiverProfile(component) {
+  const bag = component.carrierStyle === "bag",
+    bottomRadius = component.mouthRadius * (bag ? Math.max(0.68, component.bottomScale) : component.bottomScale),
+    profile = bag ? [[0, bottomRadius], [component.length * 0.12, bottomRadius * 1.08], [component.length * 0.82, component.mouthRadius], [component.length, component.mouthRadius * 0.9]] : [[0, bottomRadius], [component.length * 0.08, bottomRadius * 1.05], [component.length, component.mouthRadius]];
+  return profile;
+}
+
+function profileRadiusAt(profile, y) {
+  const upperIndex = profile.findIndex((point) => point[0] >= y),
+    upper = profile[Math.max(0, upperIndex < 0 ? profile.length - 1 : upperIndex)],
+    lower = profile[Math.max(0, (upperIndex < 0 ? profile.length - 1 : upperIndex) - 1)],
+    t = upper[0] === lower[0] ? 0 : (y - lower[0]) / (upper[0] - lower[0]);
+  return lower[1] + (upper[1] - lower[1]) * t;
+}
+
+export function arrowQuiverStrapPath(component) {
+  const profile = arrowQuiverProfile(component), lowerY = component.length * 0.18, upperY = component.length * 0.82,
+    lowerRadius = profileRadiusAt(profile, lowerY), upperRadius = profileRadiusAt(profile, upperY),
+    overlap = component.strapThickness * 0.35,
+    outer = Math.max(lowerRadius, upperRadius) + component.strapDrop;
+  return [[lowerRadius - overlap, lowerY, 0], [outer, component.length * 0.52, 0], [upperRadius - overlap, upperY, 0]];
+}
+
+export function arrowQuiverMeshes(component) {
+  const bag = component.carrierStyle === "bag",
+    profile = arrowQuiverProfile(component),
+    bottomRadius = profile[0][1],
+    inner = profile.map(([, radius]) => radius - component.wall),
+    body = hollowSocket(profile, inner, component.material ?? "leather", "open arrow quiver body"),
+    bottomCap = lathe([[0, bottomRadius], [component.wall, bottomRadius]], component.segments ?? 16, component.material ?? "leather", [0, 0, 0], "sealed quiver bottom", 1, true),
+    rim = hollowSocket([[component.length - component.rimRadius, component.mouthRadius + component.rimRadius], [component.length + component.rimRadius, component.mouthRadius + component.rimRadius]], component.mouthRadius - component.wall, component.rimMaterial ?? "darkLeather", "quiver mouth binding"),
+    strap = sweptMember(arrowQuiverStrapPath(component), {
+      section: "flat", sectionWidth: component.strapThickness, sectionDepth: component.strapWidth,
+      material: component.strapMaterial ?? "darkLeather",
+    }, [0, 0, 0], "quiver shoulder strap");
+  return bag ? [body, bottomCap, strap] : [body, bottomCap, rim, strap];
+}
+
+function crossbowProdPoints(component) {
+  const half = component.prodSpan / 2, samples = detailSamples(component.samples ?? 18, 10);
+  return Array.from({ length: samples + 1 }, (_, index) => {
+    const u = index / samples * 2 - 1, distance = Math.abs(u);
+    return [u * half, component.prodPosition + component.prodSweep * distance ** 1.7, 0];
+  });
+}
+
+export function crossbowTipLoopLayout(component, right) {
+  const prod = crossbowProdPoints(component), tip = right ? prod.at(-1) : prod[0], adjacent = right ? prod.at(-2) : prod[1],
+    tangent = normalize(subtract(tip, adjacent)), normal = normalize(cross([0, 0, 1], tangent)), binormal = normalize(cross(tangent, normal)),
+    depthAxis = component.prodDepth * component.prodTipScale * 0.55 + component.tipLoopClearance,
+    thicknessAxis = component.prodThickness * component.prodTipScale * 0.55 + component.tipLoopClearance,
+    towardNut = normalize([-tip[0], component.nutPosition - tip[1], 0]), sign = dot(towardNut, normal) >= 0 ? 1 : -1,
+    attachment = tip.map((value, axis) => value + normal[axis] * depthAxis * sign), samples = detailSamples(24, 20),
+    points = Array.from({ length: samples + 1 }, (_, index) => { const angle = index / samples * Math.PI * 2; return tip.map((value, axis) => value + normal[axis] * Math.cos(angle) * depthAxis + binormal[axis] * Math.sin(angle) * thicknessAxis); });
+  return { tip, tangent, normal, binormal, depthAxis, thicknessAxis, attachment, points };
+}
+
+function tillerLoft(stations, material, label) {
+  const builder = makeBuilder(material, label), ring = ({ y, width, bottom, top }) => [
+    [-width / 2, y, bottom], [width / 2, y, bottom], [width / 2, y, top], [-width / 2, y, top],
+  ], rings = stations.map(ring);
+  for (let index = 0; index < rings.length - 1; index++) for (let side = 0; side < 4; side++) {
+    const next = (side + 1) % 4, a = rings[index][side], b = rings[index][next], c = rings[index + 1][next], d = rings[index + 1][side];
+    builder.triangle(a, c, b, "tiller side"); builder.triangle(a, d, c, "tiller side");
+  }
+  const first = rings[0], last = rings.at(-1);
+  builder.triangle(first[0], first[1], first[2], "tiller cap"); builder.triangle(first[0], first[2], first[3], "tiller cap");
+  builder.triangle(last[0], last[2], last[1], "tiller cap"); builder.triangle(last[0], last[3], last[2], "tiller cap");
+  return finish(builder);
+}
+
+export function crossbowStockLayout(component) {
+  const cavityClearance = 0.004, cavityStart = component.nutPosition - component.nutRadius - cavityClearance,
+    cavityEnd = component.nutPosition + component.nutRadius + cavityClearance,
+    gapWidth = component.nutWidth + cavityClearance * 2, lockWidth = Math.max(component.waistWidth, gapWidth + 0.012),
+    waistScale = component.stockStyle === "hunting" ? 0.90 : component.stockStyle === "swollen" ? 1.14 : 1,
+    cheekWidth = (lockWidth - gapWidth) / 2, runnerDatum = 0;
+  return {
+    runnerDatum, cavityStart, cavityEnd, gapWidth, lockWidth, cheekWidth,
+    rearStations: [
+      { y: 0, width: component.buttWidth, bottom: -component.stockThickness - component.buttDrop, top: -component.buttDrop },
+      { y: component.length * 0.30, width: component.waistWidth * waistScale, bottom: -component.stockThickness, top: runnerDatum },
+      { y: cavityStart, width: lockWidth, bottom: -component.lockTableHeight, top: runnerDatum },
+    ],
+    foreStations: [
+      { y: cavityEnd, width: lockWidth, bottom: -component.stockThickness, top: -component.railHeight },
+      { y: component.prodPosition, width: component.noseWidth * 1.06, bottom: -component.stockThickness + component.foreEndRise * 0.65, top: -component.railHeight },
+      { y: component.length, width: component.noseWidth, bottom: -component.stockThickness + component.foreEndRise, top: -component.railHeight },
+    ],
+  };
+}
+
+export function crossbowMeshes(component) {
+  const layout = crossbowStockLayout(component), table = component.lockTableHeight / 2,
+    rearStock = tillerLoft(layout.rearStations, component.material ?? "wood", "profiled rear crossbow tiller stock"),
+    foreStock = tillerLoft(layout.foreStations, component.material ?? "wood", "profiled fore-end crossbow tiller stock"),
+    cheekCenter = layout.gapWidth / 2 + layout.cheekWidth / 2,
+    leftCheek = box([layout.cheekWidth, layout.cavityEnd - layout.cavityStart, component.lockTableHeight], component.material ?? "wood", [-cheekCenter, (layout.cavityStart + layout.cavityEnd) / 2, -component.lockTableHeight / 2], "left open nut-cavity stock cheek"),
+    rightCheek = box([layout.cheekWidth, layout.cavityEnd - layout.cavityStart, component.lockTableHeight], component.material ?? "wood", [cheekCenter, (layout.cavityStart + layout.cavityEnd) / 2, -component.lockTableHeight / 2], "right open nut-cavity stock cheek"),
+    parts = [rearStock, foreStock, leftCheek, rightCheek],
+    prod = crossbowProdPoints(component), prodMember = (points, depth, material, label) => sweptMember(points, { section: "flat", sectionWidth: depth, sectionDepth: component.prodThickness, centeredTaper: true, tipScale: component.prodTipScale, material }, [0, 0, 0], label);
+  if (component.prodConstruction === "steel") parts.push(prodMember(prod, component.prodDepth, "darkSteel", "steel crossbow prod"));
+  else {
+    const core = component.prodDepth - component.hornThickness - component.sinewThickness;
+    parts.push(prodMember(prod.map((p) => [p[0], p[1] + (component.hornThickness - component.sinewThickness) / 2, p[2]]), core, component.coreMaterial ?? "wood", "composite prod wood core"));
+    parts.push(prodMember(prod.map((p) => [p[0], p[1] - component.prodDepth / 2 + component.hornThickness / 2, p[2]]), component.hornThickness, component.hornMaterial ?? "horn", "composite prod horn belly"));
+    parts.push(prodMember(prod.map((p) => [p[0], p[1] + component.prodDepth / 2 - component.sinewThickness / 2, p[2]]), component.sinewThickness, component.backMaterial ?? "sinew", "composite prod sinew back"));
+  }
+  const left = crossbowTipLoopLayout(component, false), right = crossbowTipLoopLayout(component, true), stringMaterial = component.stringMaterial ?? "cord", serve = component.servingWidth / 2,
+    stringZ = 0;
+  parts.push(tubePath([[left.attachment[0], left.attachment[1], left.attachment[2]], [-serve, component.nutPosition, stringZ]], component.stringRadius, stringMaterial, [0, 0, 0], "left crossbow string control span", component.radialSegments ?? 8));
+  parts.push(tubePath([[right.attachment[0], right.attachment[1], right.attachment[2]], [serve, component.nutPosition, stringZ]], component.stringRadius, stringMaterial, [0, 0, 0], "right crossbow string control span", component.radialSegments ?? 8));
+  parts.push(tubePath([[-serve, component.nutPosition, stringZ], [serve, component.nutPosition, stringZ]], component.stringRadius * 1.3, stringMaterial, [0, 0, 0], "served crossbow nocking span", component.radialSegments ?? 8));
+  for (const [label, loop] of [["left crossbow string end loop", left], ["right crossbow string end loop", right]]) parts.push(sweptMember(loop.points, { section: "round", sectionWidth: component.stringRadius * 2, material: stringMaterial, radialSegments: component.radialSegments ?? 8 }, [0, 0, 0], label));
+  for (const side of [-1, 1]) {
+    const centerX = side * component.bridleSpacing, samples = detailSamples(18, 12), loop = Array.from({ length: samples + 1 }, (_, i) => { const a = i / samples * Math.PI * 2; return [centerX, component.prodPosition + Math.cos(a) * (component.prodDepth / 2 + component.bridleRadius), Math.sin(a) * (component.stockThickness / 2 + component.bridleRadius)]; });
+    parts.push(sweptMember(loop, { section: "round", sectionWidth: component.bridleRadius * 2, material: component.bindingMaterial ?? "cord" }, [0, 0, 0], `${side < 0 ? "left" : "right"} prod bridle binding`));
+  }
+  const notchGap = Math.max(component.stringRadius * 3, 0.006), cheekWidth = (component.nutWidth - notchGap) / 2;
+  for (const side of [-1, 1]) parts.push(transformMesh(lathe([[-cheekWidth / 2, component.nutRadius], [cheekWidth / 2, component.nutRadius]], 14, "horn", [0, 0, 0], `${side < 0 ? "left" : "right"} rotating nut cheek`), [0, 0, 90], [side * (notchGap + cheekWidth) / 2, component.nutPosition, stringZ]));
+  parts.push(transformMesh(lathe([[-component.nutWidth * 0.62, 0.003], [component.nutWidth * 0.62, 0.003]], 10, "steel", [0, 0, 0], "nut axle and bearing"), [0, 0, 90], [0, component.nutPosition, stringZ]));
+  parts.push(box([notchGap, component.stringRadius * 3, component.nutThickness], "horn", [0, component.nutPosition, -component.nutThickness / 2 - component.stringRadius * 1.3], "nut string notch floor"));
+  parts.push(box([component.grooveWidth, 0.014, component.railHeight], "horn", [0, component.nutPosition + 0.012, -component.railHeight / 2], "bolt butt nut shelf"));
+  const railWidth = Math.max(0.003, (component.buttWidth - component.grooveWidth) / 4), railLength = component.prodPosition - component.nutPosition;
+  for (const side of [-1, 1]) parts.push(box([railWidth, railLength, component.railHeight], component.facingStyle === "horn" ? "horn" : "wood", [side * (component.grooveWidth + railWidth) / 2, component.nutPosition + railLength / 2, -component.railHeight / 2], `${side < 0 ? "left" : "right"} recessed bolt runner rail`));
+  const searZ = -component.nutRadius * 0.72;
+  parts.push(box([0.010, 0.020, 0.010], "darkSteel", [0, component.nutPosition - component.nutRadius * 0.72, searZ], "nut sear notch and tooth"));
+  parts.push(prism([[-0.007, 0], [0.007, 0], [0.012, -component.triggerLength], [-0.004, -component.triggerLength * 1.05]], 0.008, "darkSteel", [0, component.nutPosition - component.nutRadius * 0.72, searZ - 0.002], "long trigger to sear"));
+  if (component.facingStyle === "horn") parts.push(box([component.noseWidth * 0.78, component.prodPosition - layout.cavityEnd, component.facingThickness], "horn", [0, (layout.cavityEnd + component.prodPosition) / 2, -component.railHeight - component.facingThickness / 2], "staghorn fore-end facing and inlay"));
+  const stirrup = [[-component.noseWidth / 2, component.length, -component.railHeight], [-component.stirrupWidth / 2, component.length + component.stirrupLength, -component.railHeight], [component.stirrupWidth / 2, component.length + component.stirrupLength, -component.railHeight], [component.noseWidth / 2, component.length, -component.railHeight]];
+  parts.push(sweptMember(stirrup, { section: "round", sectionWidth: component.stirrupBar * 2, material: "darkSteel" }, [0, 0, 0], "spanning stirrup"));
+  if (component.spanningMode === "cranequin") {
+    parts.push(box([component.buttWidth * 1.18, 0.018, component.spanningBar], "darkSteel", [0, component.nutPosition - 0.12, -table], "cranequin stock rest peg"));
+    parts.push(box([component.spanningBar, 0.13, component.spanningBar], "darkSteel", [component.buttWidth * 0.46, component.nutPosition - 0.075, -table], "cranequin rack purchase rail"));
+  }
+  if (component.spanningMode === "goatsFoot") {
+    for (const side of [-1, 1]) parts.push(box([component.spanningBar, 0.038, 0.025], "steel", [side * component.buttWidth / 2, component.nutPosition + 0.075, 0], `${side < 0 ? "left" : "right"} goats-foot pivot lug`));
+    parts.push(transformMesh(lathe([[-component.buttWidth * 0.62, component.spanningBar / 2], [component.buttWidth * 0.62, component.spanningBar / 2]], 10, "steel", [0, 0, 0], "goats-foot pivot axle"), [0, 0, 90], [0, component.nutPosition + 0.075, 0]));
+  }
+  if (component.spanningMode === "beltHook") parts.push(box([component.buttWidth * 1.12, 0.030, component.spanningBar], "steel", [0, component.nutPosition + 0.11, -table], "belt-hook purchase bar"));
+  if (component.sightStyle !== "none") parts.push(component.sightStyle === "peep" ? ringGuard({ radius: 0.012, bar: 0.0025, samples: 18, material: "steel" }, [0, component.nutPosition - 0.055, component.stockThickness / 2 + 0.012], "folding peep sight") : lathe([[0, 0.004], [0.025, 0.002]], 10, "steel", [0, component.nutPosition - 0.045, component.stockThickness / 2], "sight post"));
+  return parts;
+}
+
+export function crossbowBoltMeshes(component) {
+  const shaft = lathe([[0, component.shaftRadius], [component.length, component.shaftRadius * 0.95]], component.segments ?? 12, component.material ?? "wood", [0, 0, 0], "bolt shaft", 1, true),
+    width = component.headStyle === "bodkin" ? component.headWidth * 0.5 : component.headWidth,
+    headOutline = component.headStyle === "hunting"
+      ? [[-width / 2, 0], [-width * 0.34, component.headLength * 0.30], [-component.shaftRadius, component.headLength * 0.22], [0, component.headLength], [component.shaftRadius, component.headLength * 0.22], [width * 0.34, component.headLength * 0.30], [width / 2, 0]]
+      : [[-width / 2, 0], [-component.shaftRadius, component.headLength * 0.2], [0, component.headLength], [component.shaftRadius, component.headLength * 0.2], [width / 2, 0]],
+    head = prism(headOutline, component.headThickness, component.headMaterial ?? "steel", [0, component.length, 0], `${component.headStyle} bolt head`),
+    butt = box([component.buttWidth, component.buttLength, component.buttHeight], component.buttMaterial ?? "horn", [0, component.buttLength / 2, 0], "flattened reinforced quarrel butt"),
+    bearing = box([component.buttWidth, 0.0025, component.buttHeight], component.buttMaterial ?? "horn", [0, 0, 0], "flat bolt butt bearing face"), parts = [shaft, head, butt, bearing],
+    count = component.boltUse === "hunting" ? 3 : 2, vaneMaterial = component.boltUse === "hunting" ? "feather" : (component.fletchingMaterial ?? "leather");
+  for (let index = 0; index < count; index++) {
+    const fin = prism([[0, 0], [component.fletchingHeight, component.fletchingLength * 0.18], [component.fletchingHeight * 0.72, component.fletchingLength], [0, component.fletchingLength]], component.boltUse === "war" ? component.shaftRadius * 0.6 : component.shaftRadius * 0.28, vaneMaterial, [component.shaftRadius, component.buttLength + 0.018, 0], `${component.boltUse} bolt vane ${index + 1}`);
+    parts.push(transformMesh(fin, [0, index * 360 / count + (component.boltUse === "war" ? 45 : 0), 0]));
+  }
+  return parts;
+}
+
+export function boltQuiverMeshes(component) {
+  const halfBottom = component.bottomWidth / 2, halfMouth = component.mouthWidth / 2, halfDepth = component.depth / 2,
+    outline = [[-halfBottom, 0], [-halfMouth, component.length], [halfMouth, component.length], [halfBottom, 0]],
+    front = prism(outline, component.wall, component.material ?? "wood", [0, 0, halfDepth - component.wall], "bolt quiver wood front shell"),
+    back = prism(outline, component.wall, component.material ?? "wood", [0, 0, -halfDepth], "bolt quiver wood back shell"),
+    leftSide = prism([[-halfBottom, 0], [-halfMouth, component.length], [-halfMouth + component.wall, component.length], [-halfBottom + component.wall, 0]], component.depth, component.material ?? "wood", [0, 0, -halfDepth], "bolt quiver left wood side"),
+    rightSide = prism([[halfBottom - component.wall, 0], [halfMouth - component.wall, component.length], [halfMouth, component.length], [halfBottom, 0]], component.depth, component.material ?? "wood", [0, 0, -halfDepth], "bolt quiver right wood side"),
+    bottom = box([component.bottomWidth, component.wall, component.depth], component.material ?? "wood", [0, component.wall / 2, 0], "sealed broad bolt quiver bottom"),
+    paper = prism(outline, component.lining, "feather", [0, 0, halfDepth - component.wall - component.lining], "paper lining layer"),
+    hide = prism(outline, component.hideCover, "leather", [0, 0, halfDepth], "hide outer cover layer"),
+    rim = sweptMember([[-halfMouth, component.length, -halfDepth], [halfMouth, component.length, -halfDepth], [halfMouth, component.length, halfDepth], [-halfMouth, component.length, halfDepth], [-halfMouth, component.length, -halfDepth]], { section: "round", sectionWidth: 0.006, material: component.rimMaterial ?? "leather" }, [0, 0, 0], "open bolt quiver leather mouth binding"),
+    lowerY = component.length * 0.18, upperY = component.length * 0.78, lowerX = halfBottom + component.strapThickness * 0.25,
+    upperX = halfBottom + (halfMouth - halfBottom) * 0.78 + component.strapThickness * 0.25,
+    strap = sweptMember([[lowerX, lowerY, 0], [Math.max(lowerX, upperX) + component.strapDrop, component.length * 0.5, 0], [upperX, upperY, 0]], { section: "flat", sectionWidth: component.strapThickness, sectionDepth: component.strapWidth, material: component.strapMaterial ?? "darkLeather" }, [0, 0, 0], "attached bolt quiver shoulder strap");
+  return [front, back, leftSide, rightSide, bottom, paper, hide, rim, strap];
+}
+
+export function firearmStockLayout(component) {
+  const barrelStart = component.length - component.barrelLength, pistol = component.stockStyle === "pistol";
+  return {
+    barrelStart,
+    stations: pistol ? [
+      { y: 0, width: component.buttWidth * 0.72, bottom: -component.stockDepth - component.buttDrop, top: -component.buttDrop * 0.90 },
+      { y: barrelStart * 0.12, width: component.buttWidth, bottom: -component.stockDepth * 0.96 - component.buttDrop * 0.72, top: -component.buttDrop * 0.65 },
+      { y: barrelStart * 0.32, width: component.buttWidth * 0.92, bottom: -component.stockDepth * 0.82 - component.buttDrop * 0.38, top: -component.buttDrop * 0.35 },
+      { y: barrelStart * 0.56, width: component.waistWidth * 1.10, bottom: -component.stockDepth * 0.69, top: -component.buttDrop * 0.12 },
+      { y: barrelStart * 0.78, width: component.waistWidth, bottom: -component.stockDepth * 0.60, top: -0.002 },
+      { y: barrelStart, width: component.waistWidth * 0.94, bottom: -component.stockDepth * 0.52, top: 0 },
+      { y: barrelStart + (component.length - barrelStart) * 0.48, width: component.foreWidth * 1.08, bottom: -component.stockDepth * 0.44, top: 0 },
+      { y: component.length - 0.025, width: component.foreWidth, bottom: -component.stockDepth * 0.38, top: 0 },
+    ] : [
+      { y: 0, width: component.buttWidth, bottom: -component.stockDepth - component.buttDrop, top: -component.buttDrop },
+      { y: barrelStart * 0.10, width: component.buttWidth * 1.05, bottom: -component.stockDepth * 1.02 - component.buttDrop * 0.78, top: -component.buttDrop * 0.92 },
+      { y: barrelStart * 0.28, width: component.buttWidth * 0.98, bottom: -component.stockDepth - component.buttDrop * 0.55, top: -component.buttDrop * 0.72 },
+      { y: barrelStart * 0.48, width: component.buttWidth * 0.88, bottom: -component.stockDepth * 0.96 - component.buttDrop * 0.22, top: -component.buttDrop * 0.45 },
+      { y: barrelStart * 0.68, width: component.buttWidth * 0.72, bottom: -component.stockDepth * 0.88, top: -component.buttDrop * 0.22 },
+      { y: barrelStart * 0.84, width: component.waistWidth * 1.25, bottom: -component.stockDepth * 0.78, top: -component.buttDrop * 0.08 },
+      { y: barrelStart, width: component.waistWidth, bottom: -component.stockDepth * 0.65, top: 0 },
+      { y: barrelStart + (component.length - barrelStart) * 0.52, width: component.foreWidth * 1.06, bottom: -component.stockDepth * 0.47, top: 0 },
+      { y: component.length - 0.045, width: component.foreWidth, bottom: -component.stockDepth * 0.40, top: 0 },
+    ],
+  };
+}
+
+function animationPart(mesh, pivot) {
+  mesh.animationPivot = [...pivot];
+  return mesh;
+}
+
+function openPanParts(prefix, component, center, pivot) {
+  const [x, y, z] = center, wall = 0.002, halfW = component.panWidth / 2, halfL = 0.014, material = component.lockMaterial ?? "steel";
+  return [
+    box([component.panWidth, halfL * 2, wall], material, [x, y, z], `${prefix} pan cavity bottom`),
+    box([wall, halfL * 2, 0.008], material, [x - halfW + wall / 2, y, z + 0.004], `${prefix} pan cavity inner wall`),
+    box([wall, halfL * 2, 0.008], material, [x + halfW - wall / 2, y, z + 0.004], `${prefix} pan cavity outer wall`),
+    box([component.panWidth, wall, 0.008], material, [x, y - halfL + wall / 2, z + 0.004], `${prefix} pan cavity rear wall`),
+    box([component.panWidth, wall, 0.008], material, [x, y + halfL - wall / 2, z + 0.004], `${prefix} pan cavity front wall`),
+    animationPart(box([component.panWidth, halfL * 2, 0.003], material, [x, y, z + 0.010], `${prefix} pan cover`), pivot),
+  ];
+}
+
+function touchholeChannel(label, component, panPoint, boreCenter) {
+  const target = [component.bore * 0.42, boreCenter[1], boreCenter[2]],
+    part = sweptMember([panPoint, target], { section: "round", sectionWidth: Math.min(0.003, component.bore * 0.16), material: component.lockMaterial ?? "steel" }, [0, 0, 0], label);
+  part.touchholeCenterline = [panPoint, target];
+  part.boreCenter = [...boreCenter];
+  part.boreRadius = component.bore / 2;
+  return part;
+}
+
+export function firearmMeshes(component) {
+  const layout = firearmStockLayout(component), outer = component.bore / 2 + component.barrelWall,
+    material = component.barrelMaterial ?? "darkSteel", furniture = component.furnitureMaterial ?? component.lockMaterial ?? "steel",
+    parts = [tillerLoft(layout.stations, component.material ?? "wood", "combined-profile firearm stock")],
+    barrelNames = component.barrelCount === 2 ? ["upper", "lower"] : ["barrel 1"],
+    barrelLengths = component.barrelCount === 2 ? [component.barrelLength, component.secondaryBarrelLength] : [component.barrelLength],
+    barrelCenters = component.barrelCount === 2 ? [outer * 3.15, outer * 1.05] : [outer], muzzleY = component.length;
+  if (component.stockStyle === "pistol") {
+    const pommelZ = -component.stockDepth - component.buttDrop;
+    parts.push(pommelMesh({ construction: "writhen", height: component.buttWidth * 1.12, diameter: component.buttWidth * 1.16, thickness: component.buttWidth * 0.5, fluteCount: 8, fluteDepth: 0.10, twist: 65, segments: component.radialSegments ?? 18, material: component.material ?? "cherry" }, [0, 0.002, pommelZ], "solid spiral-fluted bulb pommel"));
+  }
+  for (let index = 0; index < barrelNames.length; index++) {
+    const name = barrelNames[index], barrelLength = barrelLengths[index], breechY = component.length - component.barrelLength,
+      barrelEnd = breechY + barrelLength, breechLength = barrelLength * component.octagonalRatio, z = barrelCenters[index];
+    parts.push(transformMesh(hollowSocket([[breechY, outer * 1.10], [breechY + breechLength, outer]], component.bore / 2, material, `${name} barrel octagonal breech`, 8), [0, 0, 0], [0, 0, z]));
+    parts.push(transformMesh(hollowSocket([[breechY + breechLength, outer], [barrelEnd, outer + (component.muzzleStyle === "ringed" ? component.muzzleFlare : 0)]], component.bore / 2, material, `${name} barrel round fore-barrel`, component.radialSegments ?? 12), [0, 0, 0], [0, 0, z]));
+    parts.push(transformMesh(lathe([[breechY - component.barrelWall, outer * 1.1], [breechY, outer * 1.1]], 12, material, [0, 0, 0], `${name} barrel closed breech`, 1, true), [0, 0, 0], [0, 0, z]));
+    if (component.muzzleStyle === "ringed") parts.push(transformMesh(hollowSocket([[barrelEnd - 0.012, outer + component.muzzleFlare], [barrelEnd, outer + component.muzzleFlare]], component.bore / 2, material, `${name} barrel open muzzle ring`), [0, 0, 0], [0, 0, z]));
+  }
+  const sideX = Math.max(component.waistWidth, component.foreWidth) / 2 + 0.003, lockZ = -component.stockDepth * 0.22,
+    plateDepth = component.stockStyle === "pistol" ? component.stockDepth * 1.18 : component.stockDepth * 0.72;
+  parts.push(box([0.004, 0.145, plateDepth], component.lockMaterial ?? "steel", [sideX, component.lockPosition, lockZ], "combined firearm lock plate"));
+  const panY = layout.barrelStart + 0.012;
+  if (component.lockType === "wheellock") {
+    for (let index = 0; index < component.barrelCount; index++) {
+      const name = index === 0 ? "upper" : "lower", trainZ = lockZ + (index === 0 ? 0.018 : -0.025), panZ = barrelCenters[index] - outer * 0.45,
+        wheelPivot = [sideX + 0.005, component.lockPosition + (index === 0 ? 0.025 : -0.028), trainZ],
+        cockPivot = [sideX + 0.010, component.lockPosition + 0.055, trainZ], panPivot = [sideX + component.panWidth / 2, panY - 0.014, panZ + 0.010];
+      const wheel = transformMesh(lathe([[-0.004, component.lockWheelRadius], [0.004, component.lockWheelRadius]], 20, component.lockMaterial ?? "steel", [0, 0, 0], `wheellock ${name} wheel`), [0, 0, 90], wheelPivot);
+      parts.push(animationPart(wheel, wheelPivot));
+      parts.push(sweptMember([[sideX - 0.006, wheelPivot[1], wheelPivot[2]], [sideX + 0.014, wheelPivot[1], wheelPivot[2]]], { section: "round", sectionWidth: 0.006, material: component.lockMaterial ?? "steel" }, [0, 0, 0], `wheellock ${name} axle and bearing`));
+      parts.push(sweptMember([[sideX + 0.002, wheelPivot[1] - 0.045, trainZ - 0.010], [sideX + 0.002, wheelPivot[1], trainZ - component.lockWheelRadius], [sideX + 0.002, wheelPivot[1] + 0.030, trainZ - 0.010]], { section: "flat", sectionWidth: 0.005, sectionDepth: 0.010, material: component.lockMaterial ?? "steel" }, [0, 0, 0], `wheellock ${name} mainspring`));
+      parts.push(...openPanParts(`wheellock ${name}`, component, [sideX + component.panWidth / 2 - 0.003, panY, panZ], panPivot));
+      parts.push(touchholeChannel(`${name} touchhole channel to bore`, component, [sideX, panY, panZ + 0.003], [0, panY, barrelCenters[index]]));
+      const jawY = panY - 0.002, jawZ = panZ + 0.016;
+      parts.push(animationPart(sweptMember([cockPivot, [sideX + 0.010, jawY, jawZ]], { section: "flat", sectionWidth: 0.006, sectionDepth: 0.010, material: component.lockMaterial ?? "steel" }, [0, 0, 0], `wheellock ${name} cock arm`), cockPivot));
+      parts.push(animationPart(box([0.005, 0.016, 0.005], component.lockMaterial ?? "steel", [sideX + 0.010, jawY - 0.005, jawZ + 0.005], `wheellock ${name} cock upper jaw`), cockPivot));
+      parts.push(animationPart(box([0.005, 0.016, 0.005], component.lockMaterial ?? "steel", [sideX + 0.010, jawY - 0.005, jawZ - 0.005], `wheellock ${name} cock lower jaw`), cockPivot));
+      parts.push(animationPart(box([0.004, 0.009, 0.006], "pyrite", [sideX + 0.010, jawY + 0.002, jawZ], `wheellock ${name} visible pyrite`), cockPivot));
+    }
+    const safetyPivot = [sideX + 0.008, component.lockPosition - 0.055, lockZ + 0.012], triggerPivot = [0, component.lockPosition - 0.035, -component.stockDepth * 0.54];
+    parts.push(animationPart(sweptMember([safetyPivot, [sideX + 0.008, component.lockPosition - 0.020, lockZ + 0.012]], { section: "flat", sectionWidth: 0.005, sectionDepth: 0.010, material: component.lockMaterial ?? "steel" }, [0, 0, 0], "wheellock safety lever"), safetyPivot));
+    parts.push(animationPart(sweptMember([triggerPivot, [0, triggerPivot[1] - component.triggerLength * 0.58, triggerPivot[2] - 0.018]], { section: "flat", sectionWidth: 0.006, sectionDepth: 0.010, material: furniture }, [0, 0, 0], "firearm trigger blade"), triggerPivot));
+    parts.push(animationPart(sweptMember([[sideX, triggerPivot[1], triggerPivot[2]], [sideX, component.lockPosition - 0.010, lockZ - 0.010], [sideX, component.lockPosition + 0.020, lockZ]], { section: "round", sectionWidth: 0.004, material: component.lockMaterial ?? "steel" }, [0, 0, 0], "wheellock sear linkage"), triggerPivot));
+  } else {
+    const panZ = barrelCenters[0] - outer * 0.45, panPivot = [sideX + component.panWidth / 2, panY - 0.014, panZ + 0.010],
+      serpentinePivot = [sideX + 0.010, component.lockPosition, lockZ - 0.018], triggerPivot = [0, component.lockPosition - 0.040, -component.stockDepth * 0.54];
+    parts.push(...openPanParts("matchlock", component, [sideX + component.panWidth / 2 - 0.003, panY, panZ], panPivot));
+    parts.push(touchholeChannel("matchlock touchhole channel to bore", component, [sideX, panY, panZ + 0.003], [0, panY, barrelCenters[0]]));
+    const jawY = panY, jawZ = panZ + 0.016;
+    parts.push(animationPart(sweptMember([serpentinePivot, [sideX + 0.010, jawY, jawZ]], { section: "round", sectionWidth: 0.009, material: component.lockMaterial ?? "steel" }, [0, 0, 0], "matchlock serpentine arm"), serpentinePivot));
+    parts.push(animationPart(box([0.005, 0.018, 0.005], component.lockMaterial ?? "steel", [sideX + 0.010, jawY - 0.004, jawZ + 0.005], "matchlock serpentine upper jaw"), serpentinePivot));
+    parts.push(animationPart(box([0.005, 0.018, 0.005], component.lockMaterial ?? "steel", [sideX + 0.010, jawY - 0.004, jawZ - 0.005], "matchlock serpentine lower jaw"), serpentinePivot));
+    parts.push(animationPart(sweptMember([[sideX + 0.010, jawY - 0.010, jawZ], [sideX + 0.010, jawY + 0.018, jawZ]], { section: "round", sectionWidth: 0.0044, material: "matchCord" }, [0, 0, 0], "visible match cord"), serpentinePivot));
+    parts.push(animationPart(sweptMember([triggerPivot, [0, triggerPivot[1] - component.triggerLength * 0.62, triggerPivot[2] - 0.020]], { section: "flat", sectionWidth: 0.006, sectionDepth: 0.010, material: furniture }, [0, 0, 0], "firearm trigger blade"), triggerPivot));
+    parts.push(animationPart(sweptMember([[sideX, triggerPivot[1], triggerPivot[2]], [sideX, component.lockPosition - 0.025, lockZ - 0.030], serpentinePivot], { section: "flat", sectionWidth: 0.005, sectionDepth: 0.008, material: component.lockMaterial ?? "steel" }, [0, 0, 0], "matchlock trigger linkage"), triggerPivot));
+  }
+  const guardFrontY = component.lockPosition - 0.018, guardRearY = component.lockPosition - component.triggerLength * 1.05,
+    guardTopZ = -component.stockDepth * 0.48, guardBottomZ = -component.stockDepth * 0.92;
+  parts.push(sweptMember([[0, guardFrontY, guardTopZ], [0, guardFrontY - 0.008, guardBottomZ], [0, guardRearY, guardBottomZ], [0, guardRearY - 0.008, guardTopZ]], { section: "round", sectionWidth: 0.007, material: furniture }, [0, 0, 0], "trigger guard in side elevation"));
+  parts.push(tubePath([[0, layout.barrelStart + 0.02], [0, muzzleY - 0.035]], component.ramrodRadius, component.stockStyle === "shoulder" ? "redBeech" : "cherry", [0, 0, -component.stockDepth * 0.43], "ramrod"));
+  for (let index = 0; index < component.bandCount; index++) {
+    const y = layout.barrelStart + component.barrelLength * (0.20 + index * 0.62 / Math.max(1, component.bandCount - 1)), halfW = component.foreWidth * 0.58,
+      bottom = -component.stockDepth * 0.44, top = Math.max(...barrelCenters) + outer * 1.18;
+    parts.push(sweptMember([[-halfW, y, bottom], [-halfW, y, top], [halfW, y, top], [halfW, y, bottom], [-halfW, y, bottom]], { section: "round", sectionWidth: 0.003, material: furniture }, [0, 0, 0], `barrel band ${index + 1} XZ enclosure`));
+  }
+  if (component.sightStyle !== "none") parts.push(component.sightStyle === "bead" ? lathe([[0, 0.003], [0.012, 0.001]], 8, "steel", [0, muzzleY - 0.045, Math.max(...barrelCenters) + outer], "front bead sight") : prism([[-0.008, 0], [-0.003, 0.010], [0, 0.006], [0.003, 0.010], [0.008, 0]], 0.003, "steel", [0, layout.barrelStart + 0.06, Math.max(...barrelCenters) + outer], "rear notch sight"));
+  if (component.facingStyle === "horn") {
+    const plaque = prism([[-0.030, -0.018], [0.028, -0.012], [0.034, 0.010], [-0.020, 0.016]], component.facingThickness, component.facingMaterial ?? "horn", [0, 0, 0], "shaped stock facing plaque");
+    for (const side of [-1, 1]) parts.push(transformMesh(plaque, [0, side * 90, 0], [side * (component.waistWidth / 2 + component.facingThickness / 2), layout.barrelStart * 0.62, -component.stockDepth * 0.35]));
+    for (let index = 0; index < 3; index++) parts.push(transformMesh(lathe([[-0.001, 0.005], [0.001, 0.005]], 12, component.inlayMaterial ?? "motherOfPearl", [0, 0, 0], `stock inlay rosette ${index + 1}`), [0, 0, 90], [sideX + component.facingThickness, layout.barrelStart * (0.35 + index * 0.14), -component.stockDepth * 0.30]));
+  }
+  return parts;
+}
+
+export function leadBallMeshes(component) {
+  const builder = makeBuilder(component.material ?? "lead", "lead round ball"), longitude = detailSamples(component.segments ?? 16, 15), latitude = Math.max(8, Math.floor(longitude / 2)),
+    point = (ring, segment) => { const phi = Math.PI * ring / latitude, theta = Math.PI * 2 * segment / longitude; return [component.radius * Math.sin(phi) * Math.cos(theta), component.radius * (1 + Math.cos(phi)), component.radius * Math.sin(phi) * Math.sin(theta)]; };
+  const north = [0, component.radius * 2, 0], south = [0, 0, 0];
+  for (let segment = 0; segment < longitude; segment++) { const next = (segment + 1) % longitude; builder.triangle(north, point(1, next), point(1, segment)); }
+  for (let ring = 1; ring < latitude - 1; ring++) for (let segment = 0; segment < longitude; segment++) { const next = (segment + 1) % longitude, a = point(ring, segment), b = point(ring, next), c = point(ring + 1, next), d = point(ring + 1, segment); builder.triangle(a, b, c); builder.triangle(a, c, d); }
+  for (let segment = 0; segment < longitude; segment++) { const next = (segment + 1) % longitude; builder.triangle(point(latitude - 1, segment), point(latitude - 1, next), south); }
+  return [finish(builder)];
+}
+
+export function ballPouchMeshes(component) {
+  const halfW = component.width / 2, halfD = component.depth / 2, hingePivot = [0, component.height, -halfD],
+    localFlap = mergeMeshes([
+      box([component.width, component.wall, component.depth], component.material ?? "leather", [0, -component.wall / 2, halfD], "flap mouth bridge"),
+      prism([[-halfW, 0], [-halfW * 0.92, -component.flapLength], [0, -component.flapLength - component.flapOverlap], [halfW * 0.92, -component.flapLength], [halfW, 0]], component.wall, component.material ?? "leather", [0, 0, component.depth], "flap front drop"),
+    ]),
+    flap = animationPart(transformMesh(localFlap, [component.flapAngle, 0, 0], hingePivot), hingePivot), parts = [
+    box([component.width, component.height, component.wall], component.material ?? "leather", [0, component.height / 2, halfD - component.wall / 2], "ball pouch front"),
+    box([component.width, component.height, component.wall], component.material ?? "leather", [0, component.height / 2, -halfD + component.wall / 2], "ball pouch back"),
+    box([component.wall, component.height, component.depth], component.material ?? "leather", [-halfW + component.wall / 2, component.height / 2, 0], "ball pouch left gusset"),
+    box([component.wall, component.height, component.depth], component.material ?? "leather", [halfW - component.wall / 2, component.height / 2, 0], "ball pouch right gusset"),
+    box([component.width, component.wall, component.depth], component.material ?? "leather", [0, component.wall / 2, 0], "sealed ball pouch bottom"),
+    flap,
+    tubePath([[-halfW * 0.85, component.height], [halfW * 0.85, component.height]], component.wall * 0.8, component.material ?? "leather", [0, 0, -halfD], "pouch flap hinge"),
+  ];
+  flap.label = "ball pouch hinged flap";
+  for (const side of [-1, 1]) parts.push(sweptMember([[side * component.beltLoopGap / 2 - component.beltLoopWidth / 2, component.height * 0.72, -halfD], [side * component.beltLoopGap / 2, component.height + 0.045, -halfD - 0.012], [side * component.beltLoopGap / 2 + component.beltLoopWidth / 2, component.height * 0.72, -halfD]], { section: "flat", sectionWidth: component.wall, sectionDepth: component.beltLoopWidth, material: component.material ?? "leather" }, [0, 0, 0], `belt attachment loop ${side < 0 ? "left" : "right"}`));
+  parts.push(component.closureStyle === "toggle" ? lathe([[0, 0.004], [0.024, 0.004]], 8, component.hardwareMaterial ?? "horn", [0, component.height * 0.58, halfD], "horn pouch toggle") : box([0.026, 0.018, 0.004], component.hardwareMaterial ?? "horn", [0, component.height * 0.58, halfD], "pouch buckle tongue"));
+  return parts;
+}
+
 export function mergeMeshes(parts) {
   const merged = { positions: [], normals: [], colors: [], indices: [], parts, stats: {} };
   for (const part of parts) {
@@ -2037,6 +2556,15 @@ function controlValue(definition, control) {
 
 function localComponentFootprint(component) {
   if (!component) return [0, 0];
+  if (component.kind === "firearm") return [Math.max(component.buttWidth / 2, component.barrelSeparation / 2 + component.bore / 2 + component.barrelWall), component.stockDepth + component.buttDrop];
+  if (component.kind === "leadBall") return [component.radius, component.radius];
+  if (component.kind === "ballPouch") return [component.width / 2 + component.beltLoopGap / 2, component.depth / 2 + 0.02];
+  if (component.kind === "crossbow") return [component.prodSpan / 2 + component.tipLoopClearance, Math.max(component.stockThickness / 2, component.stirrupBar)];
+  if (component.kind === "crossbowBolt") return [Math.max(component.headWidth / 2, component.fletchingHeight), Math.max(component.headThickness / 2, component.fletchingHeight)];
+  if (component.kind === "boltQuiver") return [component.bottomWidth / 2 + component.strapDrop, component.depth / 2 + component.hideCover];
+  if (component.kind === "archeryBow") return [Math.max(component.braceHeight, Math.abs(component.reflex) + Math.abs(component.recurve)) + component.limbDepth, component.limbWidth / 2];
+  if (component.kind === "arrow") return [Math.max(component.headWidth / 2, component.fletchingHeight), Math.max(component.headThickness / 2, component.fletchingHeight)];
+  if (component.kind === "arrowQuiver") return [component.mouthRadius + component.strapDrop, component.mouthRadius];
   if (component.kind === "roundShield") return [component.radius, Math.max(component.thickness / 2 + component.outerCurve + component.centerCurve + (component.bossHeight ?? 0), component.fittingClearance + component.gripRadius)];
   if (component.kind === "shapedShield") return [component.width / 2, Math.max(component.thickness / 2 + component.cylindricalCurve + component.centerCurve + (component.bossHeight ?? 0), component.fittingClearance + component.gripRadius)];
   if (component.kind === "guard") return [component.width / 2, component.thickness / 2];
@@ -2152,6 +2680,60 @@ function validateWeaponUnchecked(definition, controls = [], options = {}) {
       if (component.width * scale > MAX_SWORD_GRIP_WIDTH_M + 1e-9) errors.push(`${component.id}: grip width exceeds anatomical maximum ${MAX_SWORD_GRIP_WIDTH_M} m`);
       if (component.thickness * scale > MAX_SWORD_GRIP_THICKNESS_M + 1e-9) errors.push(`${component.id}: grip thickness exceeds anatomical maximum ${MAX_SWORD_GRIP_THICKNESS_M} m`);
       if (component.width <= component.thickness) errors.push(`${component.id}: oval grip width must exceed thickness`);
+    }
+    if (component.kind === "archeryBow") {
+      if (!(component.gripLength < component.length * 0.35)) errors.push(`${component.id}: grip must leave working limb on both sides`);
+      if (!(component.upperRatio >= 0.45 && component.upperRatio <= 0.57)) errors.push(`${component.id}.upperRatio must remain within 0.45–0.57`);
+      if (!(component.tipScale > 0.2 && component.tipScale <= 0.7)) errors.push(`${component.id}.tipScale must remain within 0.2–0.7`);
+      if (!(component.braceHeight > component.loopRadius * 3)) errors.push(`${component.id}: brace height must clear the nocking loops`);
+      if (!(component.loopGap > component.stringRadius * 4)) errors.push(`${component.id}: nocking-loop spacing must clear the string thickness`);
+      if (component.loopRadius < component.stringRadius * 2) errors.push(`${component.id}: tip string loops are too tight for the string thickness`);
+      if (component.construction === "composite" && component.hornThickness + component.backingThickness >= component.limbDepth * 0.75) errors.push(`${component.id}: composite facings leave no plausible wood core`);
+    }
+    if (component.kind === "crossbow") {
+      if (!(component.nutPosition > component.length * 0.25 && component.nutPosition < component.prodPosition - 0.08)) errors.push(`${component.id}: nut must lie behind the prod with a usable draw`);
+      if (!(component.prodPosition < component.length && component.prodSpan > component.noseWidth * 4)) errors.push(`${component.id}: prod placement/span is implausible`);
+      if (!(component.grooveWidth > component.stringRadius * 2 && component.grooveWidth < component.noseWidth * 0.7)) errors.push(`${component.id}: bolt groove must clear the string and fit the tiller`);
+      if (component.prodConstruction === "composite" && component.hornThickness + component.sinewThickness >= component.prodDepth * 0.75) errors.push(`${component.id}: composite prod facings leave no core`);
+      if (!(component.nutWidth < component.buttWidth && component.nutThickness < component.nutRadius * 1.5)) errors.push(`${component.id}: nut must fit its lock well`);
+      if (!(component.railHeight < component.lockTableHeight * 0.4)) errors.push(`${component.id}: runner rails stand too high above the lock table`);
+    }
+    if (component.kind === "firearm") {
+      const barrelStart = component.length - component.barrelLength;
+      const minimumBreechStock = component.firearmFamily === "arquebus" ? 0.12 : 0.075;
+      if (!(barrelStart > minimumBreechStock && component.lockPosition > 0.07 && component.lockPosition < component.length - 0.08)) errors.push(`${component.id}: lock and barrel must fit the stock`);
+      if (!(component.bore > 0.008 && component.barrelWall >= component.bore * 0.15)) errors.push(`${component.id}: bore and barrel wall are implausible`);
+      if (![1, 2].includes(component.barrelCount)) errors.push(`${component.id}: small arms support one or two barrels`);
+      if (component.barrelCount === 2 && !(component.firearmFamily === "pistol" && component.lockType === "wheellock")) errors.push(`${component.id}: double barrels are constrained to the wheellock pistol family`);
+      if (component.barrelCount === 2 && !(component.secondaryBarrelLength > 0 && component.secondaryBarrelLength < component.barrelLength)) errors.push(`${component.id}: lower barrel must be shorter than the upper barrel`);
+      if ((component.lockType === "matchlock") !== (component.firearmFamily === "arquebus")) errors.push(`${component.id}: lock type is incoherent with the selected historical family`);
+      if (component.foreWidth >= component.waistWidth || component.waistWidth >= component.buttWidth) errors.push(`${component.id}: stock plan must taper butt to fore-end`);
+    }
+    if (component.kind === "ballPouch") {
+      if (!(component.wall < Math.min(component.width, component.depth) * 0.15)) errors.push(`${component.id}: pouch wall is too thick`);
+      if (!(component.flapOverlap < component.flapLength && component.beltLoopGap < component.width)) errors.push(`${component.id}: flap or belt attachment does not fit the pouch`);
+      if (!(component.flapAngle >= 0 && component.flapAngle <= 120)) errors.push(`${component.id}: flap angle must stay between closed and fully open`);
+    }
+    if (component.kind === "crossbowBolt") {
+      if (!(component.buttWidth >= component.shaftRadius * 1.3 && component.buttHeight <= component.shaftRadius * 1.5)) errors.push(`${component.id}: reinforced butt must be flattened around the shaft`);
+      if (component.fletchingLength + component.buttLength >= component.length * 0.5) errors.push(`${component.id}: fletching/butt occupy too much shaft`);
+    }
+    if (component.kind === "boltQuiver") {
+      if (!(component.bottomWidth > component.mouthWidth && component.wall + component.lining + component.hideCover < component.depth * 0.12)) errors.push(`${component.id}: layered carrier proportions are implausible`);
+      if (!(component.strapDrop > component.strapWidth)) errors.push(`${component.id}: strap drop must exceed its width`);
+    }
+    if (component.kind === "arrow") {
+      if (component.fletchingLength + component.nockLength >= component.length * 0.45) errors.push(`${component.id}: fletching occupies too much of the shaft`);
+      if (component.headWidth <= component.shaftRadius * 2) errors.push(`${component.id}: arrowhead must span the shaft`);
+      if (!(component.nockSlotWidth > 0 && component.nockSlotWidth < component.shaftRadius * 1.5)) errors.push(`${component.id}: nock slot must fit inside the shaft while remaining open`);
+      if (!(component.maximumStringRadius > 0) || !(component.nockClearance > 0) || component.nockSlotWidth + 1e-9 < component.maximumStringRadius * 2 + component.nockClearance) errors.push(`${component.id}: nock slot does not clear its declared maximum string radius`);
+      if (!Number.isInteger(component.fletchingCount) || component.fletchingCount < 2 || component.fletchingCount > 6) errors.push(`${component.id}.fletchingCount must be an integer within 2–6`);
+    }
+    if (component.kind === "arrowQuiver") {
+      const bottomRadius = component.mouthRadius * component.bottomScale;
+      if (!(component.wall < bottomRadius * 0.45)) errors.push(`${component.id}: wall is too thick for the tapered quiver base`);
+      if (!(component.rimRadius < component.mouthRadius * 0.3)) errors.push(`${component.id}: mouth binding is too large for the quiver`);
+      if (!(component.strapDrop > component.strapWidth)) errors.push(`${component.id}: shoulder strap drop must exceed its width`);
     }
     if (["roundShield", "shapedShield"].includes(component.kind)) {
       if (component.thickness < (component.material === "steel" || component.material === "darkSteel" ? 0.001 : 0.006)) errors.push(`${component.id}: body thickness is below the material construction minimum`);
@@ -2394,6 +2976,15 @@ function buildWeaponAtDetail(input) {
   };
   for (const component of definition.components) {
     const offset = component.offset ?? [0, 0, 0];
+    if (component.kind === "firearm") for (const part of firearmMeshes(component)) add(part, component, offset);
+    if (component.kind === "leadBall") for (const part of leadBallMeshes(component)) add(part, component, offset);
+    if (component.kind === "ballPouch") for (const part of ballPouchMeshes(component)) add(part, component, offset);
+    if (component.kind === "crossbow") for (const part of crossbowMeshes(component)) add(part, component, offset);
+    if (component.kind === "crossbowBolt") for (const part of crossbowBoltMeshes(component)) add(part, component, offset);
+    if (component.kind === "boltQuiver") for (const part of boltQuiverMeshes(component)) add(part, component, offset);
+    if (component.kind === "archeryBow") for (const part of archeryBowMeshes(component)) add(part, component, offset);
+    if (component.kind === "arrow") for (const part of arrowMeshes(component)) add(part, component, offset);
+    if (component.kind === "arrowQuiver") for (const part of arrowQuiverMeshes(component)) add(part, component, offset);
     if (["roundShield", "shapedShield"].includes(component.kind)) {
       for (const shieldPart of shieldMeshes(component)) {
         const transformed = transformMesh(shieldPart, component.rotation, offset);

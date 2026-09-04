@@ -1,4 +1,7 @@
 import { maximumAuthoredGripRadius, MAX_ROUND_GRIP_RADIUS_M, MAX_SWORD_GRIP_THICKNESS_M, MAX_SWORD_GRIP_WIDTH_M } from "./anatomy.js";
+import { BOW_PRESETS } from "./bow-presets.js";
+import { CROSSBOW_PRESETS } from "./crossbow-presets.js";
+import { FIREARM_PRESETS } from "./firearm-presets.js";
 
 const deepCopy = (value) => JSON.parse(JSON.stringify(value));
 const OCTAGONAL_SHAFTS = new Set(["halberd-1540", "lucerne-hammer", "pollaxe", "hooked-bill"]);
@@ -528,6 +531,9 @@ const flangedMacePreset = (id, name, family, description, values) => ({
 });
 
 export const PRESETS = [
+  ...BOW_PRESETS,
+  ...CROSSBOW_PRESETS,
+  ...FIREARM_PRESETS,
   polearm(
     "halberd-1540",
     "German halberd",
