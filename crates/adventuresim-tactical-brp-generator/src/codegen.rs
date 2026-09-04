@@ -1,6 +1,6 @@
 //! Renders a [`Resolver`]'s discovered classes as Python source, matching
-//! the exact layout `scripts/adventuresim_brp_lib.py` needs (see
-//! `just generate-brp-types` and wiki/reference/tactical-testing.md).
+//! the exact layout `scripts/adventuresim_brp_lib.py` needs. See
+//! `just generate-brp-types`.
 
 use crate::resolve::{Body, ClassDef, Resolver, StructKind};
 

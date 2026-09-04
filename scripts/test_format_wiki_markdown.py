@@ -3,10 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from scripts.format_wiki_markdown import (
     _fenced_code_lines,
     _line_exceeds_width,
+    check_changed_lines,
     format_markdown,
 )
 
@@ -76,6 +78,17 @@ class FormatWikiMarkdownTests(unittest.TestCase):
             rendered,
         )
 
+    def test_preserves_page_metadata_front_matter(self) -> None:
+        source = (
+            "---\n"
+            "status: draft\n"
+            "scope: A deliberately long metadata value that remains authored\n"
+            "content_type: reference\n"
+            "---\n\n"
+            "Short prose.\n"
+        )
+        self.assertEqual(source, format_markdown(source, width=30))
+
     def test_line_policy_allows_long_link_atom(self) -> None:
         line = "Read [reference](https://example.com/" + ("long/" * 20) + ")"
         self.assertFalse(_line_exceeds_width(line, 80))
@@ -91,6 +104,17 @@ class FormatWikiMarkdownTests(unittest.TestCase):
                 encoding="utf-8",
             )
             self.assertEqual({2, 3, 4}, _fenced_code_lines(path))
+
+    def test_changed_line_check_ignores_archive_evidence(self) -> None:
+        repository = Path(__file__).resolve().parent.parent
+        archive_page = (
+            repository / "research" / "archive" / "wiki" / "archived.md"
+        )
+        with patch(
+            "scripts.format_wiki_markdown._changed_added_lines",
+            return_value=[(archive_page, 1, "ordinary " * 12)],
+        ):
+            self.assertTrue(check_changed_lines("base"))
 
 
 if __name__ == "__main__":

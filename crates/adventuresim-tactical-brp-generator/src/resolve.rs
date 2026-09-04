@@ -2,9 +2,8 @@
 //! a BRP-queryable Component/Resource, both a Python type annotation and
 //! the exact `to_brp()`/`from_brp()` wire encoding for it.
 //!
-//! The reflected *shape* of a type is not always its wire *encoding* - see
-//! wiki/reference/tactical-testing.md's "to_brp()/from_brp()" section for
-//! the full behavioral spec this implements:
+//! The reflected *shape* of a type is not always its wire *encoding*. The
+//! behavior implemented here is:
 //!
 //! - A single-field tuple struct (`CharacterId(u64)`) is transparent on the
 //!   wire: as a *field* of some other type it inlines directly (no wrapper

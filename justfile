@@ -581,7 +581,8 @@ wiki-summary:
 
 wiki-check:
     @npm run check:wiki-tooling-format
-    @{{ python_bin }} -B -m unittest scripts.test_format_wiki_markdown scripts.test_update_wiki_summary -v
+    @{{ python_bin }} -B -m unittest scripts.test_check_wiki_structure scripts.test_format_wiki_markdown scripts.test_mdbook_page_metadata scripts.test_update_wiki_summary -v
+    @{{ python_bin }} scripts/check_wiki_structure.py
     @{{ python_bin }} scripts/update_wiki_summary.py --check
     @mdbook build
 

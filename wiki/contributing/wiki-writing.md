@@ -1,10 +1,11 @@
-# Wiki writing
+---
+status: canonical guidance
+author: Bruno Segovia
+scope: Wiki-wide writing guidelines
+content_type: explanation
+---
 
-> **Status:** Canonical guidance
->
-> **Author:** Bruno Segovia
->
-> **Scope:** Wiki-wide writing guidelines
+# Wiki writing
 
 This page outlines the writing guidelines for the *Fabelgeist* Wiki. Read it
 before contributing to the wiki!
@@ -150,9 +151,12 @@ reign. Thus, against Google's advice, we will make liberal use of relative
 links, since mdBook strongly encourages them. Also, unlike Google, we use
 `<!-- toc -->` rather than `[TOC]`.
 
-The repository provides tools to enforce some of our source-formatting
-conventions. If you are working from a local checkout, run
-`just wiki-format path/to/page.md` on the
+<!-- code-anchor: scripts/format_wiki_markdown.py :: def format_markdown -->
+
+The repository provides a
+[source-formatting tool](https://github.com/adventure-simulator-group/fabelgeist/blob/main/scripts/format_wiki_markdown.py)
+to enforce some of our source-formatting conventions. If you are working from a
+local checkout, run `just wiki-format path/to/page.md` on the
 [command line](https://en.wikipedia.org/wiki/Command-line_interface) to wrap
 its prose at 80 columns, per Google's recommendation, and `just wiki-check` to
 test the tooling, verify generated navigation and documentation (e.g.

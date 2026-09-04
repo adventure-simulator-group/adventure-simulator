@@ -4,9 +4,10 @@ These rules apply only to the in-world strategic interface: settlements, camps,
 quest locations, travel, party views, and their controls. They do not apply to
 character creation, character selection, or the tactical interface.
 
-Before changing this interface or its art, read
-`../../wiki/contributing/strategic-interface-style.md`; it is the canonical
-source for the project's pattern vocabulary, asset anatomy, and art direction.
+Before changing this interface or its art, inspect the existing templates,
+styles, assets, and tests, then follow `../../AGENTS.md` and
+`../../wiki/contributing/wiki-writing.md`. Do not infer current requirements
+from archived wiki material.
 
 - Make controls feel like physical parts of the game world rather than generic
   application chrome. A Place Facade depicts the place itself; its separate icon

@@ -147,6 +147,7 @@ NASA endorsement: <https://www.nasa.gov/nasa-brand-center/images-and-media/>.
 ### HYDE 3.5
 
 Generated strategic map tiles and terrain packs include a cultivated-land
-classification derived from HYDE 3.5 c9 historical cropland-area data. See
-`wiki/engineering/world-data/historical-land-use.md` and the source release metadata for provenance
+classification derived from HYDE 3.5 c9 historical cropland-area data. See the
+HYDE source contract in `scripts/world_source_init.py`,
+`MAP_DATA_LICENSE.md`, and the generated source release metadata for provenance
 and applicable terms.

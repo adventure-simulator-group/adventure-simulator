@@ -38,6 +38,10 @@
 
 - `README.md` provides repository orientation; `wiki/index.md` owns the game
   vision and product boundaries.
+- Treat `research/archive/` as non-authoritative evidence, not current
+  documentation. Do not use it to infer current behavior; inspect the code and
+  tests instead. A claim may return to the live wiki only through the
+  greenfield reference-audit process.
 - Keep documented behavior, architecture, and developer workflow synchronized
   with implementation changes.
 - For wiki prose, first follow

@@ -5,6 +5,9 @@ src = "wiki"
 [build]
 create-missing = false
 
+[preprocessor.page-metadata]
+command = "python3 scripts/mdbook_page_metadata.py"
+
 [preprocessor.toc]
 command = "mdbook-toc"
 renderer = ["html"]

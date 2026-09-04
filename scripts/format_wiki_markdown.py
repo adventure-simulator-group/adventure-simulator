@@ -90,6 +90,16 @@ def _wrap_list_item(prefix: str, body: str, width: int) -> list[str]:
 
 def format_markdown(text: str, *, width: int = 80) -> str:
     source_lines = text.splitlines()
+    front_matter_end: int | None = None
+    if source_lines and source_lines[0].strip() == "---":
+        front_matter_end = next(
+            (
+                index
+                for index, line in enumerate(source_lines[1:], start=1)
+                if line.strip() == "---"
+            ),
+            None,
+        )
     output: list[str] = []
     paragraph: list[str] = []
     fence: str | None = None
@@ -101,8 +111,13 @@ def format_markdown(text: str, *, width: int = 80) -> str:
             output.extend(_wrap_paragraph(paragraph, width))
             paragraph = []
 
-    for line in source_lines:
+    for index, line in enumerate(source_lines):
         stripped = line.lstrip()
+
+        if front_matter_end is not None and index <= front_matter_end:
+            flush()
+            output.append(line)
+            continue
 
         if in_comment:
             flush()
@@ -223,6 +238,7 @@ def check_changed_lines(reference: str, *, width: int = 80) -> bool:
         (path, line_number, line)
         for path, line_number, line in _changed_added_lines(reference)
         if path.name != "SUMMARY.md"
+        and not path.is_relative_to(REPOSITORY / "research" / "archive")
         and "generated" not in path.parts
         and line_number
         not in fenced_by_path.setdefault(path, _fenced_code_lines(path))

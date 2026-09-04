@@ -1,35 +1,35 @@
 # Minimum Viable Product
 These features demonstrate everything needed for the basic gameplay loop. It won't necessarily be a very fun game at this point, but gives an idea of the potential once each of these barebones systems are fleshed out more.
 
-1. A dude can fight another dude in standing melee [combat](../../wiki/tactical/combat.md)
-2. Prone/supine [controls](../../wiki/client/controls.md), can be knocked down and get back up
+1. A dude can fight another dude in standing melee [combat](../archive/wiki/tactical/combat.md)
+2. Prone/supine [controls](../archive/wiki/client/controls.md), can be knocked down and get back up
 3. Can pick up and fight with different types of melee weapons
 4. Ranged combat (server authoritative, no rollback)
 5. Advanced movement (climbing, sliding on sloped surfaces, navigating hazardous terrain like fording a river)
-6. [Stats](../../wiki/shared/stats.md) system (attributes, skills, track damage to different body parts)
-7. [Slot](../../wiki/client/slots.md) system
+6. [Stats](../archive/wiki/shared/stats.md) system (attributes, skills, track damage to different body parts)
+7. [Slot](../archive/wiki/client/slots.md) system
 8. Empty world from 1500s geological data
 9. Populate world with settlements extrapolated from population data (settlements are just a coordinate, name, and population level for now)
 10. Generic humanoid enemy types like orcs, goblins, and bandits
-11. [Travel](../../wiki/strategic/travel.md) system with random hostile encounters
-12. Randomly generated [quests](../../wiki/strategic/quests.md) (see: Battle Brothers for good templates)
-13. Rest system for [health](../../wiki/shared/health.md) recovery
+11. [Travel](../archive/wiki/strategic/travel.md) system with random hostile encounters
+12. Randomly generated [quests](../archive/wiki/strategic/quests.md) (see: Battle Brothers for good templates)
+13. Rest system for [health](../archive/wiki/shared/health.md) recovery
 14. Inventory management (loot/buy/sell items)
 15. Food/water/sleep system
 	1. Food and water strategic needs and automatic travel provisioning are implemented; sleep remains.
 # Polished Product
 With these features, the game becomes something that we can imagine players actually wanting to pay for. A fun, unique product rather than a mere tech demo.
 
-1. [Procedural modeling plugin](../../wiki/client/models.md)
+1. [Procedural modeling plugin](../archive/wiki/client/models.md)
 2. In-game editor for procedural models - design your own clothes or equipment
 3. Urban levels (houses, castles, etc and quests that involve them like thievery or assassination)
-4. Improved [stealth](../../wiki/tactical/stealth.md) detection AI (investigate noises, raise alarms, patrol routes?)
+4. Improved [stealth](../archive/wiki/tactical/stealth.md) detection AI (investigate noises, raise alarms, patrol routes?)
 5. Level editor - design your own house
 6. PVP
 7. More humanoid enemy types: beastmen, undead, ogres, and trolls
 8. Non-humanoid enemy types like wolves or giant spiders
-9. More detailed [downtime](../../wiki/strategic/time.md) (pick a job to earn a wage at)
-10. Elves and the immortal [character](../../wiki/strategic/character.md) system
+9. More detailed [downtime](../archive/wiki/strategic/time.md) (pick a job to earn a wage at)
+10. Elves and the immortal [character](../archive/wiki/strategic/character.md) system
 	1. Also need to make settlements and assets for them
 	2. Character creator
 # Simulation
@@ -44,7 +44,7 @@ Not required for the basic gameplay loop or polish, but increase the verisimilit
 # Not in roadmap but could be
 These are all neat but aren't required for the game to feel complete. However, if someone on the team is very passionate about one of them then we can prioritize it.
 
-1. [Magic](../../wiki/shared/magic.md) system, implement on a per-element basis in order of whatever is easiest
+1. [Magic](../archive/wiki/shared/magic.md) system, implement on a per-element basis in order of whatever is easiest
 	1. Wind magic is probably the easiest, just force fields in Avian that also cause unbalance. Will look much cooler with dust/leaf particles.
 	2. Light seems fairly easy, as long as its just for illumination and some kind of blinding effect
 	3. Shadow would be invisibility, especially in darkness
