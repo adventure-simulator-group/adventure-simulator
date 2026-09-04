@@ -332,6 +332,7 @@ dependencies = [
  "clap",
  "fabelgeist-determinism",
  "flate2",
+ "proj4rs",
  "rand 0.9.5",
  "serde_json",
  "sha2",

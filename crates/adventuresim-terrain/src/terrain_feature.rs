@@ -19,6 +19,9 @@ pub(crate) fn validate(features: &[TerrainFeature], bounds: [f64; 4]) -> Result<
         .map(|feature| feature.geometry().len())
         .sum::<usize>();
     let invalid_geometry = features.iter().any(|feature| {
+        if let TerrainFeature::MappedGeology(window) = feature {
+            return !window.is_valid();
+        }
         feature.id().is_empty()
             || feature.id().len() > 256
             || feature.geometry().len() < 2
@@ -31,7 +34,12 @@ pub(crate) fn validate(features: &[TerrainFeature], bounds: [f64; 4]) -> Result<
                     || point.latitude() > north
             })
     });
-    if point_count > MAX_FAULT_GEOMETRY_POINTS
+    if features
+        .iter()
+        .filter(|f| matches!(f, TerrainFeature::MappedGeology(_)))
+        .count()
+        > adventuresim_world_schema::MAX_GEOLOGIC_WINDOWS
+        || point_count > MAX_FAULT_GEOMETRY_POINTS
         || features.windows(2).any(|pair| pair[0].id() >= pair[1].id())
         || invalid_geometry
     {

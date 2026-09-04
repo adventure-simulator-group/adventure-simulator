@@ -2,12 +2,12 @@ use super::*;
 
 pub(super) fn collider(
     terrain: &SceneTerrain,
-    recipe: Option<&FaultScarpRecipe>,
+    recipe: Option<&TerrainLandformRecipe>,
 ) -> Result<Collider> {
     recipe.map_or_else(
         || Ok(terrain.collider()),
         |recipe| {
-            fault_scarp_patch(terrain, *recipe)
+            terrain_landform_patch(terrain, *recipe)
                 .map(|patch| patch.collider_with_terrain(terrain))
                 .map_err(|reason| BevyError::from(reason.to_owned()))
         },
@@ -21,7 +21,7 @@ pub(super) fn spawn_scene(
     ground: SceneGround,
     environment: SceneEnvironment,
     terrain_patch: Option<&SceneTerrainPatch>,
-    fault_scarp: Option<FaultScarpRecipe>,
+    landform: Option<TerrainLandformRecipe>,
 ) {
     let terrain_collider = terrain_patch.map_or_else(
         || terrain.collider(),
@@ -38,7 +38,7 @@ pub(super) fn spawn_scene(
         Transform::default(),
     ));
     scene.insert(environment);
-    if let Some(recipe) = fault_scarp {
+    if let Some(recipe) = landform {
         scene.insert(recipe);
     }
 }

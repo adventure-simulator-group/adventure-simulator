@@ -42,6 +42,7 @@ pub(super) enum CapturePose {
     TerrainGrazing,
     FaultScarp,
     FaultScarpSeam,
+    LandformUnderside,
     GrassSeam,
     Debris,
     GroundCover,
@@ -72,6 +73,11 @@ impl CapturePose {
             Self::FaultScarpSeam => Some((
                 Vec3::new(24.0, 5.0, 18.0),
                 Vec3::new(16.5, 1.8, 7.0),
+                Vec3::Y,
+            )),
+            Self::LandformUnderside => Some((
+                Vec3::new(1.0, -1.5, 7.0),
+                Vec3::new(0.0, -1.5, -1.0),
                 Vec3::Y,
             )),
             _ => None,

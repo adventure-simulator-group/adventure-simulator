@@ -21,11 +21,11 @@ use std::{
 
 mod terrain_feature;
 
-pub const SCHEMA: u32 = 7;
+pub const SCHEMA: u32 = 8;
 pub const CHUNK_SIDE: u16 = 256;
 pub const MAX_ENTRIES: usize = 20_000;
 pub const MAX_PACK_BYTES: usize = 2 * 1024 * 1024 * 1024;
-pub const MAX_MANIFEST_BYTES: u64 = 8 * 1024 * 1024;
+pub const MAX_MANIFEST_BYTES: u64 = 32 * 1024 * 1024;
 const CELL_BYTES: usize = 5;
 pub const MAX_DECODED_CHUNK_BYTES: usize = 256 * 256 * CELL_BYTES;
 pub const CACHE_BYTES: usize = 32 * 1024 * 1024;

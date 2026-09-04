@@ -255,7 +255,7 @@ mod tests {
                 heights_metres: vec![0.0; 101 * 101],
                 environment: vec![EnvironmentalSample::default(); 101 * 101],
             },
-            fault_scarp: None,
+            landform: None,
             streets: place_settlement_buildings(&settlement("dense", 40_000), 50.0)
                 .unwrap()
                 .streets,

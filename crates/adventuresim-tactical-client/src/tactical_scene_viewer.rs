@@ -28,6 +28,7 @@ use serde::Serialize;
 
 mod buildings;
 mod capture_state;
+mod capture_visibility;
 mod city_capture;
 mod interior_capture;
 mod manifest;
@@ -85,11 +86,11 @@ const PERFORMANCE_TARGET_FPS: f64 = 60.0;
 const PERFORMANCE_FRAME_BUDGET_MS: f64 = 1_000.0 / PERFORMANCE_TARGET_FPS;
 const SQUARE_METRES_PER_SQUARE_KILOMETRE: f64 = 1_000_000.0;
 const STANDING_EYE_HEIGHT_METRES: f32 = 1.65;
-const CAPTURE_PROFILE_VERSION: u16 = 23;
+const CAPTURE_PROFILE_VERSION: u16 = 24;
 const BEECH_LEAF_MOTION_PROFILE: &str = "beech-leaf-motion";
 const INTERIOR_REVIEW_PROFILE: &str = "interior-review";
 const CITY_REVIEW_PROFILE: &str = "city-review";
-const CAMERA_VERSION: u16 = 16;
+const CAMERA_VERSION: u16 = 18;
 const CAPTURE_CLOCK_PHASE_SECONDS: f32 = 2.0;
 const PLASTER_GRAZING_REVIEW_LUMENS: f32 = 50_000.0;
 
@@ -1422,7 +1423,7 @@ mod capture_lighting_tests {
     #[test]
     fn environment_profile_has_deterministic_grazing_debris_target() {
         let views = selected_capture_views("environment-review", &[]).unwrap();
-        assert_eq!(views.len(), 14);
+        assert_eq!(views.len(), 15);
         assert!(
             views
                 .iter()
@@ -1711,8 +1712,9 @@ fn setup_scene(
     let mut rock_focus = None;
     let mut tree_focus_entity = None;
 
-    let building_interior_cameras = interior_capture::capture_cameras(&buildings);
-    let city_exterior_cameras = city_capture::capture_cameras(&buildings, &input.distant_buildings);
+    let building_interior_cameras = interior_capture::capture_cameras(&buildings, &profile);
+    let city_exterior_cameras =
+        city_capture::capture_cameras(&buildings, &input.distant_buildings, &profile);
     spawn_tactical_buildings(&mut commands, buildings);
     commands.spawn((
         Name::new("Neutral plaster grazing review light"),
@@ -3187,13 +3189,7 @@ fn capture_views(
             (Entity, Option<&GroundScatterLayer>),
             With<MeshMaterial3d<TacticalTreeLeafCardMaterial>>,
         >,
-        Query<
-            Entity,
-            Or<(
-                With<TreeLeafRepresentation>,
-                With<MeshMaterial3d<TacticalTreeLeafCardMaterial>>,
-            )>,
-        >,
+        Query<Entity, capture_visibility::ProductionLeaves>,
         Query<
             (Entity, &GroundScatterLayer, &GlobalTransform, &Name),
             (Without<Camera3d>, Without<TacticalGameplayCamera>),
@@ -3945,7 +3941,9 @@ fn camera_for_view(pose: CapturePose, state: &SceneCaptureState) -> (Transform, 
                 Vec3::Y,
             )
         }
-        CapturePose::FaultScarp | CapturePose::FaultScarpSeam => pose.fault_camera().unwrap(),
+        CapturePose::FaultScarp | CapturePose::FaultScarpSeam | CapturePose::LandformUnderside => {
+            pose.fault_camera().unwrap()
+        }
         CapturePose::GrassSeam => {
             let target = state.obstacle_focus - Vec3::Y * 1.30;
             (target + Vec3::new(-3.4, 1.25, 3.4), target, Vec3::Y)

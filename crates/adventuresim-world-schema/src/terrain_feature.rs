@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::TravelGeometryPoint;
+use crate::{MappedGeologicWindow, TravelGeometryPoint};
 
 pub const MAX_FAULT_GEOMETRY_POINTS: usize = 100_000;
 pub const MAX_FAULT_LINE_POINTS: usize = 4_096;
@@ -9,18 +9,21 @@ pub const MAX_FAULT_LINE_POINTS: usize = 4_096;
 #[serde(deny_unknown_fields)]
 pub enum TerrainFeature {
     MappedFault(MappedFault),
+    MappedGeology(MappedGeologicWindow),
 }
 
 impl TerrainFeature {
     pub fn id(&self) -> &str {
         match self {
             Self::MappedFault(fault) => &fault.id,
+            Self::MappedGeology(window) => &window.id,
         }
     }
 
     pub fn geometry(&self) -> &[TravelGeometryPoint] {
         match self {
             Self::MappedFault(fault) => &fault.trace,
+            Self::MappedGeology(_) => &[],
         }
     }
 }

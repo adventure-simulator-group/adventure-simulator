@@ -23,7 +23,7 @@ pub(super) fn spawn(
         terrain,
         Transform::default(),
     ));
-    if let Some(fault_scarp) = input.fault_scarp {
-        terrain_entity.insert(fault_scarp);
+    if let Some(landform) = input.landform {
+        terrain_entity.insert(landform);
     }
 }

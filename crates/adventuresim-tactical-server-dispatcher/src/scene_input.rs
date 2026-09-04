@@ -17,6 +17,8 @@ use crate::settlement_buildings::{
     SettlementBuildingLayout, SettlementSceneProfile, place_settlement_buildings,
 };
 
+mod geological_landforms;
+
 const PLAYABLE_SIDE: u16 = 101;
 const PLAYABLE_SPACING_METRES: f32 = 1.0;
 const PERCENT_PER_WHOLE: u16 = 100;
@@ -153,6 +155,14 @@ pub fn build_imported_scene(
     let city_elevation_metres = f32::from(center.elevation_m);
     let building_layout =
         settlement_building_layout(settlement, city_elevation_metres, &mut vista)?;
+    let landform = nearest_fault_scarp(pack.terrain_features(), coordinates, seed).or_else(|| {
+        settlement
+            .is_none()
+            .then(|| {
+                geological_landforms::select(pack.terrain_features(), coordinates, &playable, seed)
+            })
+            .flatten()
+    });
     let input = TacticalSceneInput {
         schema_version: TACTICAL_SCENE_SCHEMA_VERSION,
         generation_version: TACTICAL_SCENE_GENERATION_VERSION,
@@ -165,7 +175,7 @@ pub fn build_imported_scene(
         lunar_phase_minute,
         absolute_elevation_metres: center.elevation_m,
         playable,
-        fault_scarp: nearest_fault_scarp(pack.terrain_features(), coordinates, seed),
+        landform,
         streets: building_layout.streets,
         yards: building_layout.yards,
         buildings: building_layout.playable,
@@ -205,16 +215,18 @@ fn nearest_fault_scarp(
     terrain_features: &[TerrainFeature],
     center: Wgs84CoordinateE7,
     seed: u64,
-) -> Option<FaultScarpRecipe> {
+) -> Option<TerrainLandformRecipe> {
     let latitude = center.latitude().degrees();
     let longitude = center.longitude().degrees();
     let longitude_scale =
         (METRES_PER_LATITUDE_DEGREE * latitude.to_radians().cos()).max(MIN_LONGITUDE_SCALE);
     let playable_half_extent =
         f64::from(PLAYABLE_SIDE - 1) * f64::from(PLAYABLE_SPACING_METRES) * 0.5;
-    let mut nearest: Option<(f64, [f64; 2], [i32; 2], FaultScarpLod)> = None;
+    let mut nearest: Option<(f64, [f64; 2], [i32; 2], TerrainLandformLod)> = None;
     for feature in terrain_features {
-        let TerrainFeature::MappedFault(fault) = feature;
+        let TerrainFeature::MappedFault(fault) = feature else {
+            continue;
+        };
         for segment in fault.trace.windows(2) {
             let a = [
                 (segment[0].longitude() - longitude) * longitude_scale,
@@ -247,7 +259,8 @@ fn nearest_fault_scarp(
     }
     let (_, tangent, origin_cm, lod) = nearest?;
     let length = (tangent[0] * tangent[0] + tangent[1] * tangent[1]).sqrt();
-    Some(FaultScarpRecipe {
+    Some(TerrainLandformRecipe {
+        kind: TerrainLandformKind::FaultScarp,
         seed,
         // The closest point is the canonical mapped trace projected into the
         // scene's east/north frame. LOD changes sampling resolution only; the
@@ -257,7 +270,7 @@ fn nearest_fault_scarp(
             (tangent[0] / length * 10_000.0).round() as i16,
             (tangent[1] / length * 10_000.0).round() as i16,
         ],
-        throw_cm: SCARP_DEFAULT_THROW_CM,
+        relief_cm: SCARP_DEFAULT_THROW_CM,
         half_length_cm: SCARP_DEFAULT_HALF_LENGTH_CM,
         half_width_cm: SCARP_DEFAULT_HALF_WIDTH_CM,
         collar_cm: SCARP_DEFAULT_COLLAR_CM,
@@ -269,12 +282,12 @@ fn scarp_lod(
     origin_metres: [f64; 2],
     tangent: [f64; 2],
     playable_half_extent: f64,
-) -> Option<FaultScarpLod> {
+) -> Option<TerrainLandformLod> {
     if origin_metres
         .into_iter()
         .all(|coordinate| coordinate.abs() <= playable_half_extent)
     {
-        return Some(FaultScarpLod::Detail);
+        return Some(TerrainLandformLod::Detail);
     }
     let length = (tangent[0] * tangent[0] + tangent[1] * tangent[1]).sqrt();
     let unit = [tangent[0] / length, tangent[1] / length];
@@ -290,7 +303,7 @@ fn scarp_lod(
         .all(|(coordinate, footprint_extent)| {
             coordinate.abs() <= playable_half_extent + footprint_extent
         })
-        .then_some(FaultScarpLod::Fringe)
+        .then_some(TerrainLandformLod::Fringe)
 }
 
 fn level_distant_city_vista(
@@ -525,10 +538,10 @@ mod tests {
         assert_eq!(input.vista.lods[0].width, 41);
         assert_eq!(input.vista.lods[2].spacing_metres, 1_000.0);
         assert_eq!(input.vista.lods[2].width, 51);
-        let fault_scarp = input
-            .fault_scarp
+        let landform = input
+            .landform
             .expect("terrain-pack feature should produce a scarp");
-        assert!((1_050..=1_180).contains(&fault_scarp.origin_cm[1]));
+        assert!((1_050..=1_180).contains(&landform.origin_cm[1]));
         assert!(
             input
                 .playable
@@ -571,10 +584,10 @@ mod tests {
         assert!(recipe.tangent_permyriad[1].abs() < 100);
         assert_eq!(recipe.origin_cm[0], 0);
         assert!((1_050..=1_180).contains(&recipe.origin_cm[1]));
-        assert_eq!(recipe.throw_cm, 800);
+        assert_eq!(recipe.relief_cm, 800);
         assert_eq!(recipe.half_length_cm, SCARP_DEFAULT_HALF_LENGTH_CM);
         assert_eq!(recipe.half_width_cm, SCARP_DEFAULT_HALF_WIDTH_CM);
-        assert_eq!(recipe.lod, FaultScarpLod::Detail);
+        assert_eq!(recipe.lod, TerrainLandformLod::Detail);
     }
 
     #[test]
@@ -598,7 +611,7 @@ mod tests {
         assert!((5_950..=6_050).contains(&recipe.origin_cm[1]));
         assert_eq!(recipe.half_length_cm, SCARP_DEFAULT_HALF_LENGTH_CM);
         assert_eq!(recipe.half_width_cm, SCARP_DEFAULT_HALF_WIDTH_CM);
-        assert_eq!(recipe.lod, FaultScarpLod::Fringe);
+        assert_eq!(recipe.lod, TerrainLandformLod::Fringe);
     }
 
     fn constant_final_pack() -> (TerrainPack, PathBuf) {

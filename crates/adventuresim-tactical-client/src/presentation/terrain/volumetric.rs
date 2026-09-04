@@ -1,5 +1,19 @@
 use super::*;
 
+pub(super) type PendingScenes<'w, 's> = Query<
+    'w,
+    's,
+    (
+        Entity,
+        &'static SceneId,
+        &'static SceneTerrain,
+        &'static SceneEnvironment,
+        Option<&'static SceneGround>,
+        Option<&'static TerrainLandformRecipe>,
+    ),
+    With<PendingTerrainPresentation>,
+>;
+
 #[expect(
     clippy::too_many_arguments,
     reason = "presentation state is independently borrowed"
@@ -63,10 +77,10 @@ pub(super) fn spawn_base_and_fault(
     id: &SceneId,
     terrain: &SceneTerrain,
     material: TacticalTerrainMaterial,
-    fault_scarp: Option<&FaultScarpRecipe>,
+    landform: Option<&TerrainLandformRecipe>,
     transition_collar: Option<TerrainTransitionCollar>,
 ) {
-    let fault_patch = fault_scarp.and_then(|recipe| fault_scarp_patch(terrain, *recipe).ok());
+    let fault_patch = landform.and_then(|recipe| terrain_landform_patch(terrain, *recipe).ok());
     let fault_material = fault_patch.as_ref().map(|_| {
         let mut fault_material = material.clone();
         // The patch owns its zero-offset rim, so it uses refined-terrain

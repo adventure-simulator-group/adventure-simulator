@@ -21,7 +21,7 @@ use thiserror::Error;
 use crate::{
     city_layout::{CityStreetPatch, CityYardPatch, MAX_CITY_STREET_PATCHES, MAX_CITY_YARD_PATCHES},
     scene::{GroundCover, GroundSubstrate, GroundSurface, SceneGround, SceneTerrain},
-    volumetric_terrain::{FaultScarpRecipe, SceneTerrainPatch},
+    volumetric_terrain::{SceneTerrainPatch, TerrainLandformRecipe},
 };
 
 use crate::scene_ground::build_scene_ground;
@@ -36,8 +36,8 @@ pub use buildings::{
     SceneWindow, TacticalBuildingPlacement,
 };
 
-pub const TACTICAL_SCENE_SCHEMA_VERSION: u16 = 8;
-pub const TACTICAL_SCENE_GENERATION_VERSION: u16 = 24;
+pub const TACTICAL_SCENE_SCHEMA_VERSION: u16 = 13;
+pub const TACTICAL_SCENE_GENERATION_VERSION: u16 = 29;
 pub const MAX_SCENE_INPUT_BYTES: u64 = 32 * 1024 * 1024;
 pub const TREE_TRUNK_RADIUS_METRES: f32 = 0.35;
 pub const TREE_TRUNK_HEIGHT_METRES: f32 = 5.0;
@@ -144,7 +144,7 @@ pub struct TacticalSceneInput {
     pub lunar_phase_minute: u64,
     pub absolute_elevation_metres: i16,
     pub playable: TerrainSampleGrid,
-    pub fault_scarp: Option<FaultScarpRecipe>,
+    pub landform: Option<TerrainLandformRecipe>,
     pub streets: Vec<CityStreetPatch>,
     pub yards: Vec<CityYardPatch>,
     pub buildings: Vec<TacticalBuildingPlacement>,
@@ -353,7 +353,7 @@ impl TacticalSceneInput {
             return invalid("geographic origin is out of bounds");
         }
         validate_grid(&self.playable, MAX_PLAYABLE_SIDE, "playable")?;
-        crate::scene_fault::validate(self.fault_scarp, &self.playable)?;
+        crate::scene_fault::validate(self.landform, &self.playable)?;
         if self.streets.len() > MAX_CITY_STREET_PATCHES
             || self.streets.iter().any(|street| !street.is_valid())
         {
@@ -1250,7 +1250,7 @@ mod tests {
                 heights_metres: vec![0.0, 0.1, 0.0, 0.1, 0.2, 0.1, 0.0, 0.1, 0.0],
                 environment,
             },
-            fault_scarp: None,
+            landform: None,
             streets: Vec::new(),
             yards: Vec::new(),
             buildings: Vec::new(),

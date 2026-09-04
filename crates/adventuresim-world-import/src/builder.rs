@@ -132,6 +132,7 @@ impl WorldBuilder {
             fault_geopackage,
             self.bounds.unwrap_or(PLAYABLE_BOUNDS),
         )?;
+        let world = geology::windows::enrich(world, geology)?;
         let world = if let Some(terrain) = base_terrain {
             road_inference::enrich(world, terrain)?
         } else {

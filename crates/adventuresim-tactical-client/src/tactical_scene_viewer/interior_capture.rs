@@ -15,7 +15,13 @@ const REVIEW_ARCHETYPES: [BuildingArchetype; 4] = [
     BuildingArchetype::FachwerkMerchantHouse,
 ];
 
-pub(super) fn capture_cameras(buildings: &[GeneratedBuilding]) -> Vec<BuildingReviewCamera> {
+pub(super) fn capture_cameras(
+    buildings: &[GeneratedBuilding],
+    profile: &str,
+) -> Vec<BuildingReviewCamera> {
+    if profile != super::INTERIOR_REVIEW_PROFILE {
+        return Vec::new();
+    }
     let mut cameras = REVIEW_ARCHETYPES
         .into_iter()
         .flat_map(|archetype| {
@@ -221,7 +227,10 @@ mod tests {
                 }
             })
             .collect::<Vec<_>>();
-        let cameras = capture_cameras(&buildings);
+        let cameras = capture_cameras(
+            &buildings,
+            crate::tactical_scene_viewer::INTERIOR_REVIEW_PROFILE,
+        );
 
         assert_eq!(cameras.len(), REVIEW_ARCHETYPES.len() * 2 + 2);
         assert!(cameras.iter().all(|camera| {
