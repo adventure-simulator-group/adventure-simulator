@@ -149,7 +149,7 @@ export function buildSkinnedWeaponGlb(baseGlb, mesh, options = {}) {
   if (!mesh?.positions?.length || mesh.positions.length !== mesh.normals?.length || mesh.positions.length !== mesh.colors?.length) {
     throw new Error("Weapon mesh positions, normals, and colors must have matching non-zero lengths");
   }
-  if (mesh.positions.length % 9 !== 0) throw new Error("Weapon mesh must contain complete triangles");
+  if (!mesh.indices?.length || mesh.indices.length % 3 !== 0 || mesh.indices.some((index) => !Number.isInteger(index) || index < 0 || index >= mesh.positions.length / 3)) throw new Error("Weapon mesh must contain complete triangles");
 
   const parsed = parseGlb(baseGlb);
   const document = JSON.parse(JSON.stringify(parsed.document));
@@ -186,12 +186,12 @@ export function buildSkinnedWeaponGlb(baseGlb, mesh, options = {}) {
   const joint = appendAccessor(document, appendView(document, chunks, ushortBytes(joints), 34_962), 5_123, vertexCount, "VEC4");
   const weight = appendAccessor(document, appendView(document, chunks, floatBytes(weights), 34_962), 5_126, vertexCount, "VEC4");
   const indexComponentType = vertexCount <= 65_536 ? 5_123 : 5_125;
-  const indexValues = Array.from({ length: vertexCount }, (_, index) => index);
+  const indexValues = mesh.indices;
   const indices = appendAccessor(
     document,
     appendView(document, chunks, indexComponentType === 5_123 ? ushortBytes(indexValues) : uintBytes(indexValues), 34_963),
     indexComponentType,
-    vertexCount,
+    indexValues.length,
     "SCALAR",
   );
 

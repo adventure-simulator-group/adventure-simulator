@@ -13,18 +13,19 @@ const defaultRigs = [
 ];
 
 function usage() {
-  return "usage: node cli.mjs --preset <id> --skinned <output.glb> [--joint r_weapon|l_weapon] [--rig <base.glb>] [--name <mesh-name>]";
+  return "usage: node cli.mjs --preset <id> --skinned <output.glb> [--joint r_weapon|l_weapon] [--rig <base.glb>] [--name <mesh-name>] [--lod low|medium|high]";
 }
 
 export function parseArguments(values) {
   const options = {};
   for (let index = 0; index < values.length; index += 1) {
     const flag = values[index];
-    if (!["--preset", "--skinned", "--joint", "--rig", "--name"].includes(flag)) throw new Error(`unknown argument ${flag}\n${usage()}`);
+    if (!["--preset", "--skinned", "--joint", "--rig", "--name", "--lod"].includes(flag)) throw new Error(`unknown argument ${flag}\n${usage()}`);
     const value = values[++index];
     if (!value || value.startsWith("--")) throw new Error(`${flag} requires a value\n${usage()}`);
     const key = flag.slice(2); options[key] = value;
   }
+  if (options.lod !== undefined && !["low", "medium", "high"].includes(options.lod)) throw new Error("--lod must be low, medium, or high");
   if (!options.preset || !options.skinned) throw new Error(usage());
   if (options.joint !== undefined && !new Set(["r_weapon", "l_weapon"]).has(options.joint)) throw new Error("--joint must be r_weapon or l_weapon");
   if (extname(options.skinned).toLowerCase() !== ".glb") throw new Error("--skinned output must end in .glb");
@@ -42,7 +43,7 @@ export async function exportSkinnedPreset(options) {
   const preset = PRESETS.find((candidate) => candidate.id === options.preset);
   if (!preset) throw new Error(`unknown weapon preset ${options.preset}`);
   const active = copyPreset(preset);
-  const validation = validateWeapon(active.definition, active.controls);
+  const validation = validateWeapon(active.definition, active.controls, { lod: options.lod ?? "medium" });
   if (!validation.valid) throw new Error(`preset ${options.preset} is invalid: ${validation.errors.join(" · ")}`);
 
   const rigPath = options.rig ? resolve(options.rig) : await firstExisting(defaultRigs);

@@ -79,6 +79,7 @@ export class WeaponRenderer {
       mvp: this.gl.getUniformLocation(this.program, "mvp"),
     };
     this.buffers = [this.gl.createBuffer(), this.gl.createBuffer(), this.gl.createBuffer()];
+    this.indexBuffer = this.gl.createBuffer();
     this.yaw = 0; this.pitch = 0; this.zoom = 1; this.focus = "whole"; this.drag = null;
     this.bindInteraction();
     new ResizeObserver(() => this.draw()).observe(canvas);
@@ -98,7 +99,7 @@ export class WeaponRenderer {
   }
 
   setView(pose = "front", focus = this.focus) {
-    const poses = { front: [0, 0], back: [Math.PI, 0], left: [-Math.PI / 2, 0], right: [Math.PI / 2, 0], oblique: [0.68, 0.18] };
+    const poses = { front: [0, 0], back: [Math.PI, 0], rear: [Math.PI - 0.68, 0.18], left: [-Math.PI / 2, 0], right: [Math.PI / 2, 0], oblique: [0.68, 0.18] };
     [this.yaw, this.pitch] = poses[pose] ?? poses.front;
     this.focus = focus; this.zoom = 1; this.draw();
   }
@@ -110,18 +111,37 @@ export class WeaponRenderer {
       gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers[index]);
       gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
     });
-    this.setView("front", "whole");
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(mesh.indices), gl.STATIC_DRAW);
+    this.draw();
   }
 
   focusBounds() {
-    if (this.focus === "whole") return this.mesh.stats.bounds;
-    const whole = this.mesh.stats.bounds, height = whole.max[1] - whole.min[1];
-    const hasShaft = this.mesh.parts.some((part) => part.label === "shaft");
-    const limit = hasShaft ? whole.max[1] - Math.min(0.72, height * 0.34) : whole.min[1] + Math.min(0.48, height * 0.4);
+    const mesh = this.framingMesh ?? this.mesh;
+    if (this.focus === "whole" || mesh.parts.some((part) => part.shieldRole)) return mesh.stats.bounds;
+    const whole = mesh.stats.bounds;
+    const hasShaft = mesh.parts.some((part) => part.label === "shaft");
+    const shaftTop = mesh.resolvedDefinition?.shaft?.length ?? whole.max[1];
+    const frames = mesh.resolvedDefinition?._frames ?? {}, pommelTop = frames["pommel.top"]?.[1] ?? whole.min[1], guardCenter = frames["guard.center"]?.[1] ?? whole.max[1];
     const selected = [];
-    for (let index = 0; index < this.mesh.positions.length; index += 3) {
-      const point = this.mesh.positions.slice(index, index + 3);
-      if ((hasShaft && point[1] >= limit) || (!hasShaft && point[1] <= limit)) selected.push(point);
+    for (const part of mesh.parts) {
+      const component = mesh.resolvedDefinition?.components.find((candidate) => candidate.id === part.componentId);
+      if (!hasShaft && this.focus === "pommel") {
+        if (component?.id === "pommel") for (let index = 0; index < part.positions.length; index += 3) selected.push(part.positions.slice(index, index + 3));
+        if (component?.id === "grip") for (let index = 0; index < part.positions.length; index += 3) if (part.positions[index + 1] <= pommelTop + 0.025) selected.push(part.positions.slice(index, index + 3));
+        continue;
+      }
+      if (!hasShaft && this.focus === "guard") {
+        const furniture = ["guard", "guardAssembly", "ringGuard", "figureEight", "knuckleBow", "tube"].includes(component?.kind) && component?.id !== "pommel";
+        for (let index = 0; index < part.positions.length; index += 3) {
+          const y = part.positions[index + 1];
+          if (furniture || (component?.id === "grip" && y >= guardCenter - 0.035) || (["blade", "sectionBlade", "diamondBlade"].includes(component?.kind) && y <= guardCenter + 0.08)) selected.push(part.positions.slice(index, index + 3));
+        }
+        continue;
+      }
+      if (part.label === "shaft" || (!hasShaft && ["blade", "sectionBlade", "diamondBlade"].includes(component?.kind))) continue;
+      if (hasShaft && !part.positions.some((value, index) => index % 3 === 1 && value >= shaftTop - 0.6)) continue;
+      for (let index = 0; index < part.positions.length; index += 3) selected.push(part.positions.slice(index, index + 3));
     }
     if (!selected.length) return whole;
     return { min: [0, 1, 2].map((axis) => Math.min(...selected.map((point) => point[axis]))), max: [0, 1, 2].map((axis) => Math.max(...selected.map((point) => point[axis]))) };
@@ -140,8 +160,8 @@ export class WeaponRenderer {
     const focusBounds = this.focusBounds();
     const center = focusBounds.min.map((value, axis) => (value + focusBounds.max[axis]) / 2);
     const radius = Math.max(0.3, this.mesh.stats.radius);
-    const focusPositions = [];
-    for (let index = 0; index < this.mesh.positions.length; index += 3) if ([0, 1, 2].every((axis) => this.mesh.positions[index + axis] >= focusBounds.min[axis] - 1e-8 && this.mesh.positions[index + axis] <= focusBounds.max[axis] + 1e-8)) focusPositions.push(...this.mesh.positions.slice(index, index + 3));
+    const focusPositions = [], framingPositions = (this.framingMesh ?? this.mesh).positions;
+    for (let index = 0; index < framingPositions.length; index += 3) if ([0, 1, 2].every((axis) => framingPositions[index + axis] >= focusBounds.min[axis] - 1e-8 && framingPositions[index + axis] <= focusBounds.max[axis] + 1e-8)) focusPositions.push(...framingPositions.slice(index, index + 3));
     const distance = projectedFit(focusPositions, focusBounds, width / height, this.yaw, this.pitch).distance * this.zoom;
     const eye = [center[0] + Math.sin(this.yaw) * Math.cos(this.pitch) * distance, center[1] + Math.sin(this.pitch) * distance, center[2] + Math.cos(this.yaw) * Math.cos(this.pitch) * distance];
     const projection = perspective(35 * Math.PI / 180, width / height, radius * 0.02, radius * 12);
@@ -150,6 +170,7 @@ export class WeaponRenderer {
     [this.locations.position, this.locations.normal, this.locations.color].forEach((location, index) => {
       gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers[index]); gl.enableVertexAttribArray(location); gl.vertexAttribPointer(location, 3, gl.FLOAT, false, 0, 0);
     });
-    gl.drawArrays(gl.TRIANGLES, 0, this.mesh.positions.length / 3);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
+    gl.drawElements(gl.TRIANGLES, this.mesh.indices.length, gl.UNSIGNED_INT, 0);
   }
 }

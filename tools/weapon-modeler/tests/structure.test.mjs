@@ -264,7 +264,7 @@ test("shield fittings mirror, rotate, remain attached, and never cross the face"
       }
   const clipped = structuredClone(source.definition);
   clipped.components[0].thickness = 0.001;
-  assert.ok(validateWeapon(clipped, []).errors.some((error) => error.includes("clip through the shield face")));
+  assert.ok(validateWeapon(clipped, []).errors.some((error) => error.includes("material construction minimum")));
   const detached = structuredClone(source.definition);
   detached.components[0].fittingSpacing = 2;
   assert.ok(validateWeapon(detached, []).errors.some((error) => error.includes("do not fit inside")));

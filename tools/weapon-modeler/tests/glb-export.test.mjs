@@ -3,6 +3,8 @@ import test from "node:test";
 
 import { parseArguments } from "../cli.mjs";
 import { automaticGripPoint, buildSkinnedWeaponGlb, encodeGlb, parseGlb } from "../src/glb-export.js";
+import { buildWeapon } from "../src/mesh.js";
+import { PRESETS } from "../src/presets.js";
 
 function baseRig() {
   return encodeGlb({
@@ -22,6 +24,7 @@ function baseRig() {
 
 function triangle() {
   return {
+    indices: [0, 1, 2],
     positions: [0, 0.5, 0, 1, 0.5, 0, 0, 1.5, 0],
     normals: [0, 0, 1, 0, 0, 1, 0, 0, 1],
     colors: [0.5, 0.6, 0.7, 0.5, 0.6, 0.7, 0.5, 0.6, 0.7],
@@ -58,6 +61,19 @@ test("exports the weapon as a skin bound entirely to the selected character join
 
 test("rejects a rig that does not contain the requested attachment", () => {
   assert.throws(() => buildSkinnedWeaponGlb(baseRig(), triangle(), { attachment: "l_weapon" }), /missing l_weapon/);
+});
+
+test("GLB preserves shared vertex indices and smooth normals at every LOD", () => {
+  for (const lod of ["low", "medium", "high"]) {
+    const mesh = buildWeapon(PRESETS.find((preset) => preset.id === "buckler").definition, { lod });
+    const parsed = parseGlb(buildSkinnedWeaponGlb(baseRig(), mesh, { attachment: "r_weapon" }));
+    const primitive = parsed.document.meshes[0].primitives[0];
+    assert.deepEqual(accessorValues(parsed, primitive.indices), mesh.indices);
+    assert.equal(parsed.document.accessors[primitive.attributes.POSITION].count, mesh.positions.length / 3);
+    assert.ok(mesh.indices.length > mesh.positions.length / 3 * 2);
+    const normals = accessorValues(parsed, primitive.attributes.NORMAL);
+    for (let i = 0; i < normals.length; i++) assert.ok(Math.abs(normals[i] - mesh.normals[i]) < 1e-6);
+  }
 });
 
 test("chooses the modeled grip center and a bounded polearm handhold", () => {

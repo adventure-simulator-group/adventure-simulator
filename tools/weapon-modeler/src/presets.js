@@ -29,12 +29,12 @@ const socket = (length = 0.2, radius = 0.034) =>
   });
 const langets = (length = 0.42, spacing = 0.023) => [
   mounted("box", "left langet", [-spacing, -length * 0.72, 0], {
-    size: [0.013, length, 0.008],
+    size: [0.003, length, 0.013],
     fitShaftSide: true,
     material: "darkSteel",
   }),
   mounted("box", "right langet", [spacing, -length * 0.72, 0], {
-    size: [0.013, length, 0.008],
+    size: [0.003, length, 0.013],
     fitShaftSide: true,
     material: "darkSteel",
   }),
@@ -73,6 +73,7 @@ const polearm = (id, name, family, description, shaftValue, components, controls
       ...components,
       {
         kind: "pommel",
+  construction: "lathed",
         label: "butt cap",
         attach: { to: "weapon.root", at: "top", overlap: 0.005 },
         profile: [
@@ -87,6 +88,7 @@ const polearm = (id, name, family, description, shaftValue, components, controls
 });
 const pommel = (profile, material = "steel") => ({
   kind: "pommel",
+  construction: "lathed",
   label: "pommel",
   offset: [0, 0, 0],
   profile,
@@ -210,8 +212,8 @@ const sword = ({ id, name, family, description, pommel: p, grip: g, guards, blad
           {
             label: "Blade length",
             path: `components.${bi}.length`,
-            min: 0.28,
-            max: 1.55,
+            min: Number((Math.ceil(b.length * 0.7 * 100) / 100).toFixed(2)),
+            max: Number((Math.floor(b.length * 1.3 * 100) / 100).toFixed(2)),
             step: 0.01,
             unit: "m",
           },
@@ -246,8 +248,8 @@ const sword = ({ id, name, family, description, pommel: p, grip: g, guards, blad
                 {
                   label: "Section depth",
                   path: `components.${bi}.thickness`,
-                  min: 0.006,
-                  max: 0.022,
+                  min: 0.004,
+                  max: 0.018,
                   step: 0.001,
                   unit: "m",
                 },
@@ -263,8 +265,8 @@ const sword = ({ id, name, family, description, pommel: p, grip: g, guards, blad
           {
             label: "Grip length",
             path: "components.1.length",
-            min: 0.09,
-            max: 0.48,
+            min: g.length > 0.25 ? 0.20 : 0.09,
+            max: g.length > 0.25 ? 0.48 : Math.max(Number((Math.ceil(g.length * 1.3 / 0.005) * 0.005).toFixed(3)), 0.18),
             step: 0.005,
             unit: "m",
           },
@@ -910,7 +912,7 @@ export const PRESETS = [
     ]),
     grip: ovalGrip(0.12, 0.3, 0.033, 0.024),
     guards: [cross(0.425, 0.31, 0.018)],
-    blade: sectionBlade(0.425, 1.02, 0.065, 0.012, "fullered"),
+    blade: sectionBlade(0.425, 1.02, 0.058, 0.008, "fullered"),
   }),
   sword({
     id: "zweihander",
@@ -933,10 +935,12 @@ export const PRESETS = [
     family: "Landsknecht sidearm · c. 1500–1550",
     description: "Short broad fullered blade with a compact c.14 cm figure-eight guard and joined fan cap.",
     pommel: {
-      kind: "fanPommel",
+      kind: "pommel",
+      construction: "outline",
+      outlineStyle: "fan",
       label: "compact fan cap",
       offset: [0, 0, 0],
-      width: 0.055,
+      diameter: 0.055,
       height: 0.045,
       thickness: 0.019,
     },
@@ -951,7 +955,7 @@ export const PRESETS = [
         bar: 0.0065,
       },
     ],
-    blade: sectionBlade(0.205, 0.66, 0.07, 0.011, "fullered", { taper: 0.5 }),
+    blade: sectionBlade(0.205, 0.68, 0.06, 0.008, "fullered", { taper: 0.5 }),
     guardControl: { label: "Figure-eight span", min: 0.12, max: 0.17 },
   }),
   sword({
@@ -992,6 +996,7 @@ export const PRESETS = [
       },
       {
         kind: "pommel",
+  construction: "lathed",
         label: "Nagel terminal",
         offset: [0, 0.265, -0.072],
         profile: [
@@ -1072,6 +1077,7 @@ export const PRESETS = [
     guards: [
       {
         kind: "pommel",
+  construction: "lathed",
         label: "upper rondel",
         offset: [0, 0.148, 0],
         profile: [
@@ -1319,8 +1325,11 @@ for (const [id, index] of [
     toe: 0,
     heel: 0,
     beardDrop: Number(Math.max(0.04, head.beard * 0.45).toFixed(2)),
+    thickness: id === "halberd-1540" ? 0.008 : 0.012,
+    upperCusp: id === "halberd-1540" ? 0.08 : 0,
+    lowerCusp: id === "halberd-1540" ? 0.05 : 0,
   });
-  addControls(id, [c("Axe height", `components.${index}.height`, id === "pollaxe" ? 0.14 : 0.16, id === "halberd-1540" ? 0.33 : 0.26, 0.01, "m"), c("Axe plate thickness", `components.${index}.thickness`, 0.014, 0.032, 0.001, "m"), c("Eye / root width", `components.${index}.rootWidth`, 0.018, 0.042, 0.001, "m"), c("Edge flare", `components.${index}.flare`, -0.08, 0.08, 0.01), c("Toe rise", `components.${index}.toe`, -0.04, 0.06, 0.01), c("Heel drop", `components.${index}.heel`, -0.02, 0.08, 0.01), c("Beard drop ratio", `components.${index}.beardDrop`, 0.04, 0.3, 0.01), c("Upper shoulder blend", `components.${index}.upperShoulder`, 0.35, 0.46, 0.01), c("Lower shoulder blend", `components.${index}.lowerShoulder`, 0.18, 0.32, 0.01), c("Axe side", `components.${index}.side`, -1, 1, 2)]);
+  addControls(id, [c("Axe height", `components.${index}.height`, id === "pollaxe" ? 0.14 : 0.16, id === "halberd-1540" ? 0.33 : 0.26, 0.01, "m"), c("Axe root thickness", `components.${index}.thickness`, 0.006, 0.018, 0.001, "m"), c("Eye / root width", `components.${index}.rootWidth`, 0.018, 0.042, 0.001, "m"), c("Edge flare", `components.${index}.flare`, -0.08, 0.08, 0.01), c("Toe rise", `components.${index}.toe`, -0.04, 0.06, 0.01), c("Heel drop", `components.${index}.heel`, -0.02, 0.08, 0.01), c("Beard drop ratio", `components.${index}.beardDrop`, 0.04, 0.3, 0.01), c("Upper shoulder blend", `components.${index}.upperShoulder`, 0.35, 0.46, 0.01), c("Lower shoulder blend", `components.${index}.lowerShoulder`, 0.18, 0.32, 0.01), c("Axe side", `components.${index}.side`, -1, 1, 2), c("Upper shoulder cusp", `components.${index}.upperCusp`, 0, 0.16, 0.01), c("Lower shoulder cusp", `components.${index}.lowerCusp`, 0, 0.12, 0.01)]);
 }
 
 for (const [id, index] of [
@@ -1336,8 +1345,9 @@ for (const [id, index] of [
     rootWidth: Number((head.width * 0.4).toFixed(3)),
     bellyPosition: head.shoulder,
     acuteness: 1,
+    thickness: Math.min(head.thickness, 0.014),
   });
-  addControls(id, [c("Spear maximum width", `components.${index}.width`, minimumWidth, head.width + 0.035, 0.001, "m"), c("Spear root width", `components.${index}.rootWidth`, 0.01, Math.floor(minimumWidth * 750) / 1000, 0.001, "m"), c("Spear belly position", `components.${index}.bellyPosition`, 0.08, 0.46, 0.01), c("Point acuteness", `components.${index}.acuteness`, 0.55, 2.05, 0.05), c("Spear section depth", `components.${index}.thickness`, 0.012, 0.03, 0.001, "m")]);
+  addControls(id, [c("Spear maximum width", `components.${index}.width`, minimumWidth, head.width + 0.035, 0.001, "m"), c("Spear root width", `components.${index}.rootWidth`, 0.01, Math.floor(minimumWidth * 750) / 1000, 0.001, "m"), c("Spear belly position", `components.${index}.bellyPosition`, 0.08, 0.46, 0.01), c("Point acuteness", `components.${index}.acuteness`, 0.55, 2.05, 0.05), c("Spear section depth", `components.${index}.thickness`, 0.006, 0.022, 0.001, "m")]);
 }
 
 for (const [id, index] of [
@@ -1422,7 +1432,7 @@ for (const id of ["halberd-1540", "lucerne-hammer", "pollaxe", "kriegsspiess", "
         paths: langetIndices.map((index) => `components.${index}.size.1`),
       },
       {
-        ...c("Langet width", `components.${langetIndices[0]}.size.0`, 0.008, 0.02, 0.001, "m"),
+        ...c("Langet thickness", `components.${langetIndices[0]}.size.0`, 0.002, 0.006, 0.001, "m"),
         paths: langetIndices.map((index) => `components.${index}.size.0`),
       },
     ]);
@@ -1431,40 +1441,43 @@ for (const id of ["halberd-1540", "lucerne-hammer", "pollaxe", "kriegsspiess", "
 // Curated close-detail assemblies are normalized here so their component
 // indices remain stable for the shared sword control contract.
 const reitschwert = PRESETS.find((preset) => preset.id === "reitschwert-1540");
-reitschwert.description = "Simplified c.1540 German riding-sword hilt with one side ring, one knuckle bow, a forged cross, and explicit endpoint bosses in separate depth planes.";
 const reitschBlade = reitschwert.definition.components.find((component) => component.kind === "sectionBlade");
 const reitschCross = reitschwert.definition.components.find((component) => component.label === "crossguard");
-const reitschSideRing = {
-  ...reitschwert.definition.components.find((component) => component.label === "attached side-ring arc"),
-};
-const reitschBow = {
-  ...reitschwert.definition.components.find((component) => component.label === "knuckle bow"),
-};
-const boss = (label, x, y) => ({
-  kind: "pommel",
-  label,
-  attach: {
-    to: label.startsWith("lower") ? "grip.base" : "guard.center",
-    at: "base",
-    offset: [x, 0, label.includes("side-ring") ? 0.012 : 0],
+
+// One connected node graph represents the compound forged branches and a
+// pierced shell. Shared node names guarantee branch contacts as proportions
+// and LOD change instead of relying on visually coincident independent arcs.
+const complexGuard = {
+  kind: "guardAssembly", id: "compound-hilt", label: "connected compound hilt", anchorNode: "root",
+  attach: { to: "guard.center", at: "center", offset: [0, 0, 0.010] }, material: "darkSteel",
+  nodes: {
+    root: [0, 0, 0], left: [-0.055, 0, 0], right: [0.055, 0, 0], ringLeft: [-0.07, 0.055, 0], ringTop: [0, 0.09, 0], ringRight: [0.07, 0.055, 0],
+    bowLower: [0.008, -0.17, 0], bowMid: [0.085, -0.085, 0.012], bowUpper: [0.05, 0, 0], fingerLeft: [-0.038, 0.052, -0.018], fingerTop: [0, 0.082, -0.025], fingerRight: [0.038, 0.052, -0.018],
+    shell0: [-0.052, 0.01, 0.008], shell1: [-0.04, 0.068, 0.008], shell2: [0.04, 0.068, 0.008], shell3: [0.052, 0.01, 0.008],
+    hole0: [-0.03, 0.02, 0.008], hole1: [-0.023, 0.052, 0.008], hole2: [0.023, 0.052, 0.008], hole3: [0.03, 0.02, 0.008],
   },
-  profile: [
-    [0, 0.012],
-    [0.048, 0.012],
+  nodeBindings: { bowLower: { frame: "grip.base", offset: [0.008, 0.002, 0] }, bowMid: { between: ["bowLower", "right"], t: 0.5, offset: [0.055, 0, 0.012] } },
+  members: [
+    { label: "side ring", path: ["left", "ringLeft", "ringTop", "ringRight", "right"], section: "diamond", sectionWidth: 0.009, sectionDepth: 0.006 },
+    { label: "knuckle bow", path: ["bowLower", "bowMid", "right"], section: "oval", sectionWidth: 0.011, sectionDepth: 0.007, sectionTwist: 35 },
+    { label: "finger loop", path: ["left", "fingerLeft", "fingerTop", "fingerRight", "right"], section: "round", sectionWidth: 0.007, sectionDepth: 0.007 },
+    { label: "junction", path: ["root", "ringTop"], section: "flat", sectionWidth: 0.011, sectionDepth: 0.005 },
   ],
-  material: "darkSteel",
-  rotation: [90, 0, 0],
-});
-reitschwert.definition.components = [reitschwert.definition.components[0], reitschwert.definition.components[1], reitschCross, reitschSideRing, reitschBow, boss("left side-ring boss", -0.055, 0.255), boss("right side-ring boss", 0.055, 0.255), boss("upper knuckle boss", 0, 0.255), boss("lower knuckle boss", 0, 0.085), reitschBlade];
-for (const control of reitschwert.controls)
+  plates: [{ outline: ["shell0", "shell1", "shell2", "shell3"], cutout: ["hole0", "hole1", "hole2", "hole3"], thickness: 0.003, dishDepth: 0.006, rimRadius: 0.002 }],
+};
+reitschwert.description = "Connected c.1540 German riding-sword hilt with diamond-section side ring, oval knuckle bow, and finger loop built from one named-node assembly. A pierced-shell construction study is available as an optional later-style stress case.";
+reitschwert.definition.components = [reitschwert.definition.components[0], reitschwert.definition.components[1], reitschCross, complexGuard, reitschBlade];
+const piercedShellStudy = structuredClone(complexGuard.plates);
+reitschwert.definition.components[3].plates = [];
+for (const control of reitschwert.controls) {
   if ((control.label.startsWith("Blade") || control.label.startsWith("Section")) && control.path?.startsWith("components.3.")) {
-    control.path = control.path.replace("components.3.", "components.9.");
-    if (control.paths) control.paths = control.paths.map((path) => path.replace("components.3.", "components.9."));
+    control.path = control.path.replace("components.3.", "components.4.");
+    if (control.paths) control.paths = control.paths.map((path) => path.replace("components.3.", "components.4."));
   }
-reitschwert.controls = reitschwert.controls.filter((control) => control.label !== "Finger-loop radius");
-const reitschBowControl = reitschwert.controls.find((control) => control.label === "Knuckle-bow reach");
-reitschBowControl.path = "components.4.width";
-reitschBowControl.paths = ["components.4.width"];
+}
+reitschwert.controls = reitschwert.controls.filter((control) => !["Knuckle-bow reach", "Side-ring radius", "Finger-loop radius"].includes(control.label));
+reitschwert.controls.push(c("Side-ring height", "components.3.nodes.ringTop.1", 0.075, 0.105, 0.005, "m"), c("Knuckle-bow reach", "components.3.nodeBindings.bowMid.offset.0", 0.035, 0.075, 0.005, "m"));
+reitschwert.choiceControls = [{ label: "Compound-hilt shell study", path: "components.3.plates", options: [{ label: "Open c.1540 branches", value: [] }, { label: "Later pierced plate study", value: piercedShellStudy }] }];
 
 const messer = PRESETS.find((preset) => preset.id === "grosse-messer");
 const nagelIndex = messer.definition.components.findIndex((component) => component.label === "projecting Nagel");
@@ -1483,6 +1496,7 @@ messer.definition.components[nagelIndex] = {
 };
 messer.definition.components[nagelIndex + 1] = {
   kind: "pommel",
+  construction: "lathed",
   id: "nagel-button",
   label: "rounded 15 mm Nagel button",
   attach: { to: "nagel-stem.top", at: "base" },
@@ -1495,7 +1509,8 @@ messer.definition.components[nagelIndex + 1] = {
   rotation: [90, 0, 0],
 };
 
-PRESETS.find((preset) => preset.id === "katzbalger").definition.components[0].thickness = 0.014;
+PRESETS.find((preset) => preset.id === "katzbalger").definition.components[0].thickness = 0.018;
+PRESETS.find((preset) => preset.id === "katzbalger").definition.components[1].length = 0.115;
 const reiterPoll = PRESETS.find((preset) => preset.id === "reiter-war-hammer").definition.components[1];
 reiterPoll.crown = 0.06;
 reiterPoll.neck = 0.026;
@@ -1525,7 +1540,7 @@ const commonShield = (values) => ({
   strapWidth: 0.035,
   strapThickness: 0.004,
   material: "wood",
-  rimMaterial: "darkSteel",
+  rimMaterial: "darkLeather",
   bossMaterial: "steel",
   gripMaterial: "wood",
   strapMaterial: "darkLeather",
@@ -1539,13 +1554,13 @@ const roundShieldPreset = (id, name, values) => ({
   definition: { components: [{ kind: "roundShield", id: "shield", label: name, attach: { to: "weapon.root", at: "center" }, ...commonShield(values) }] },
   controls: [
     shieldControl("Radius", "radius", 0.18, 0.42, 0.01, "m"),
-    shieldControl("Body thickness", "thickness", 0.008, 0.028, 0.002, "m"),
+    shieldControl("Body thickness", "thickness", id === "buckler" ? 0.002 : 0.008, id === "buckler" ? 0.006 : 0.028, id === "buckler" ? 0.001 : 0.002, "m"),
     shieldControl("Radial resolution", "radialSegments", 12, 64, 4),
     shieldControl("Concentric resolution", "rings", 3, 16, 1),
     shieldControl("Outer curvature", "outerCurve", 0, 0.055, 0.005, "m"),
     shieldControl("Center curvature", "centerCurve", 0, 0.05, 0.005, "m"),
     shieldControl("Center radius", "centerRadius", 0.05, 0.14, 0.01, "m"),
-    shieldControl("Rim radius", "rimRadius", 0, 0.012, 0.001, "m"),
+    shieldControl("Rim radius", "rimRadius", 0, id === "buckler" ? 0.006 : 0.012, 0.001, "m"),
     shieldControl("Boss radius", "bossRadius", 0.04, 0.14, 0.005, "m"),
     shieldControl("Boss height", "bossHeight", 0, 0.07, 0.005, "m"),
     shieldControl("Fitting angle", "fittingAngle", 0, 90, 5, "deg"),
@@ -1567,7 +1582,7 @@ const shapedShieldPreset = (id, name, values) => ({
   controls: [
     shieldControl("Width", "width", 0.42, 0.78, 0.01, "m"),
     shieldControl("Body height", "height", 0.48, 1.15, 0.01, "m"),
-    shieldControl("Body thickness", "thickness", 0.008, 0.028, 0.002, "m"),
+    shieldControl("Body thickness", "thickness", id === "buckler" ? 0.002 : 0.008, id === "buckler" ? 0.006 : 0.028, id === "buckler" ? 0.001 : 0.002, "m"),
     shieldControl("Outline resolution", "edgeSegments", 6, 32, 2),
     shieldControl("Top depth", "topDepth", 0, 0.18, 0.01, "m"),
     shieldControl("Top roundness", "topRoundness", 0, 1, 0.05),
@@ -1579,7 +1594,7 @@ const shapedShieldPreset = (id, name, values) => ({
     shieldControl("Center bump depth", "centerCurve", 0, 0.06, 0.005, "m"),
     shieldControl("Center bump width", "centerWidth", 0.08, 0.40, 0.01, "m"),
     shieldControl("Center bump height", "centerHeight", 0.15, 1.00, 0.05, "m"),
-    shieldControl("Rim radius", "rimRadius", 0, 0.012, 0.001, "m"),
+    shieldControl("Rim radius", "rimRadius", 0, id === "buckler" ? 0.006 : 0.012, 0.001, "m"),
     shieldControl("Boss radius", "bossRadius", 0.04, 0.14, 0.005, "m"),
     shieldControl("Boss height", "bossHeight", 0, 0.07, 0.005, "m"),
     shieldControl("Fitting angle", "fittingAngle", 0, 90, 5, "deg"),
@@ -1594,14 +1609,76 @@ const shapedShieldPreset = (id, name, values) => ({
 });
 
 PRESETS.push(
-  roundShieldPreset("buckler", "Buckler", { radius: 0.18, thickness: 0.008, rings: 10, radialSegments: 40, outerCurve: 0.005, centerCurve: 0.01, centerRadius: 0.08, rimRadius: 0.006, bossRadius: 0.085, bossHeight: 0.045, fittingMode: "grip", fittingAngle: 90, mirrored: false, gripLength: 0.13, fittingSpacing: 0.12, material: "steel" }),
+  roundShieldPreset("buckler", "Buckler", { radius: 0.18, thickness: 0.002, rings: 10, radialSegments: 40, outerCurve: 0.005, centerCurve: 0.01, centerRadius: 0.08, rimRadius: 0.003, rimMaterial: "steel", bossRadius: 0.085, bossHeight: 0.045, fittingMode: "grip", fittingAngle: 90, mirrored: false, gripLength: 0.13, fittingSpacing: 0.12, material: "steel" }),
   roundShieldPreset("targe", "Targe", { radius: 0.25, rings: 10, radialSegments: 40, outerCurve: 0.02, centerCurve: 0.015, centerRadius: 0.11, rimRadius: 0.008, bossRadius: 0.065, bossHeight: 0.025 }),
   roundShieldPreset("round-shield", "Round shield", { radius: 0.31, thickness: 0.018, rings: 12, radialSegments: 48, outerCurve: 0.03, centerCurve: 0.015, centerRadius: 0.13, rimRadius: 0.009, bossRadius: 0.09, bossHeight: 0.035, fittingSpacing: 0.18 }),
   shapedShieldPreset("heater-shield", "Heater shield", { width: 0.48, height: 0.50, edgeSegments: 16, topShape: "flat", bottomShape: "point", topDepth: 0, bottomDepth: 0.15, topRoundness: 0.25, bottomRoundness: 0.2, sideTaper: 0.1, cornerRadius: 0.01, cylindricalCurve: 0, rimRadius: 0.007, bossRadius: 0.06, bossHeight: 0, fittingSpacing: 0.15 }),
-  shapedShieldPreset("pavise", "Pavise", { width: 0.65, height: 0.95, thickness: 0.02, edgeSegments: 32, topShape: "rounded", bottomShape: "flat", topDepth: 0.10, bottomDepth: 0, topRoundness: 0.85, bottomRoundness: 0.4, sideTaper: 0.05, cornerRadius: 0.025, cylindricalCurve: 0.06, centerCurve: 0.02, centerWidth: 0.22, centerHeight: 0.70, rimRadius: 0.009, bossRadius: 0.075, bossHeight: 0, gripLength: 0.18, fittingSpacing: 0.20 }),
+  shapedShieldPreset("pavise", "Pavise", { width: 0.48, height: 0.95, thickness: 0.012, edgeSegments: 32, topShape: "rounded", bottomShape: "flat", topDepth: 0.10, bottomDepth: 0, topRoundness: 0.85, bottomRoundness: 0.4, sideTaper: 0.05, cornerRadius: 0.025, cylindricalCurve: 0.06, centerCurve: 0.05, centerWidth: 0.18, centerHeight: 1.0, rimRadius: 0.009, bossRadius: 0.075, bossHeight: 0, gripLength: 0.18, fittingSpacing: 0.20 }),
   shapedShieldPreset("kite-shield", "Kite shield", { width: 0.55, height: 0.72, thickness: 0.018, edgeSegments: 20, topShape: "rounded", bottomShape: "point", topDepth: 0.08, bottomDepth: 0.26, topRoundness: 0.9, bottomRoundness: 0.3, sideTaper: 0.5, cornerRadius: 0.015, cylindricalCurve: 0.04, rimRadius: 0.008, bossRadius: 0.08, bossHeight: 0.035, fittingSpacing: 0.17 }),
   shapedShieldPreset("roman-tower-shield", "Roman tower shield", { width: 0.65, height: 1.05, thickness: 0.02, edgeSegments: 24, topShape: "flat", bottomShape: "flat", topDepth: 0, bottomDepth: 0, topRoundness: 0, bottomRoundness: 0, sideTaper: 0, cornerRadius: 0.055, cylindricalCurve: 0.11, rimRadius: 0.009, bossRadius: 0.09, bossHeight: 0.045, fittingMode: "grip", fittingAngle: 90, mirrored: false, gripLength: 0.18, fittingSpacing: 0.20 }),
 );
+
+// Rotational furniture varies independently while retaining a fitted grip seat.
+for (const preset of PRESETS) {
+  const components = preset.definition.components;
+  const p = components.findIndex((part) => part.id === "pommel" && part.kind === "pommel" && !part.rotation);
+  if (p >= 0) {
+    Object.assign(components[p], { construction: components[p].construction, baseConstruction: "faceted", widthScale: 1, lengthScale: 1, diameter: components[p].diameter ?? 0.06, height: components[p].height ?? 0.06, thickness: components[p].thickness ?? 0.018, faceConvexity: 0.15, rimBevel: 0.15, facets: 8, fluteCount: 8, fluteDepth: 0.12, twist: 80, outlineStyle: components[p].outlineStyle ?? "fishtail", notchDepth: 0.2, lobeSpread: 0.9, shoulderWidth: 0.42, sockets: { distal: [0, 0.004, 0], front: [0, (components[p].height ?? 0.06) * 0.45, (components[p].thickness ?? 0.018) * 0.54] }, ornaments: [] });
+    components[p].profile ??= [[0, 0.01], [components[p].height / 2, 0.024], [components[p].height, 0.01]];
+    preset.controls.push(c("Pommel breadth", `components.${p}.widthScale`, 0.65, 1.4, 0.05), c("Pommel length", `components.${p}.lengthScale`, 0.75, 1.5, 0.05));
+    const sphere = Array.from({ length: 17 }, (_, i) => { const t = i / 16; return [0.055 * t, 0.006 + 0.018 * Math.sin(Math.PI * t)]; });
+    preset.choiceControls = [...(preset.choiceControls ?? []), { label: "Lathed pommel profile", path: `components.${p}.profile`, when: { path: `components.${p}.construction`, equals: "lathed" }, options: [
+      { label: "Authored profile", value: structuredClone(components[p].profile) },
+      { label: "Rounded bulb", value: sphere },
+      { label: "Pear", value: [[0, 0.008], [0.006, 0.017], [0.018, 0.023], [0.03, 0.024], [0.045, 0.019], [0.06, 0.012], [0.066, 0.01]] },
+      { label: "Scent stopper", value: [[0, 0.013], [0.004, 0.021], [0.013, 0.023], [0.041, 0.019], [0.055, 0.011]] },
+    ] }];
+    preset.choiceControls.push({ label: "Pommel construction", path: `components.${p}.construction`, options: ["lathed", "plate", "faceted", "writhen", "outline", "composite"].map((value, index) => ({ label: ["Lathed", "Wheel plate", "Faceted bun", "Writhen fig", "Fish-tail outline", "Ornamented composite"][index], value })) });
+    preset.choiceControls.push({ label: "Composite base", path: `components.${p}.baseConstruction`, when: { path: `components.${p}.construction`, equals: "composite" }, options: ["faceted", "plate", "writhen", "outline"].map((value) => ({ label: value[0].toUpperCase() + value.slice(1), value })) });
+    preset.choiceControls.push({ label: "Pommel ornament", path: `components.${p}.ornaments`, when: { path: `components.${p}.construction`, equals: "composite" }, options: [
+      { label: "Unornamented", value: [] },
+      { label: "Crowned", value: [{ style: "crown", socket: "distal", scale: 0.018, rotation: [180, 0, 0] }] },
+      { label: "Escutcheon", value: [{ style: "escutcheon", socket: "front", scale: 0.022, rotation: [0, 0, 0] }] },
+      { label: "Authored lozenge", value: [{ style: "authored", socket: "front", scale: 0.012, rotation: [0, 0, 0], smooth: false, positions: [0, 1, 0, -1, 0, 0, 0, -1, 0, 1, 0, 0, 0, 0, 0.4, 0, 0, -0.4], indices: [0, 1, 4, 1, 2, 4, 2, 3, 4, 3, 0, 4, 1, 0, 5, 2, 1, 5, 3, 2, 5, 0, 3, 5] }] },
+    ] });
+    const constructionWhen = (forms) => ({ any: [{ path: `components.${p}.construction`, in: forms }, { all: [{ path: `components.${p}.construction`, equals: "composite" }, { path: `components.${p}.baseConstruction`, in: forms }] }] });
+    preset.choiceControls.push({ label: "Pommel outline", path: `components.${p}.outlineStyle`, when: constructionWhen(["outline"]), options: [{ label: "Fish-tail", value: "fishtail" }, { label: "Fan cap", value: "fan" }] });
+    const conditional = (label, key, min, max, step, forms, unit = "") => ({ ...c(label, `components.${p}.${key}`, min, max, step, unit), when: ["notchDepth", "lobeSpread"].includes(key) ? { all: [constructionWhen(forms), { path: `components.${p}.outlineStyle`, equals: "fishtail" }] } : constructionWhen(forms) });
+    preset.controls.push(conditional("Wheel diameter", "diameter", 0.04, 0.085, 0.005, ["plate", "outline"], "m"), conditional("Pommel plate thickness", "thickness", 0.01, 0.028, 0.002, ["plate", "outline"], "m"), conditional("Wheel face convexity", "faceConvexity", 0, 0.3, 0.05, ["plate"]), conditional("Wheel rim bevel", "rimBevel", 0.05, 0.3, 0.05, ["plate"]), conditional("Facet count", "facets", 6, 8, 1, ["faceted"]), conditional("Flute count", "fluteCount", 5, 12, 1, ["writhen"]), conditional("Flute depth", "fluteDepth", 0.04, 0.2, 0.02, ["writhen"]), conditional("Flute twist", "twist", -140, 140, 10, ["writhen"], "deg"), conditional("Fish-tail notch", "notchDepth", 0.1, 0.4, 0.05, ["outline"]), conditional("Fish-tail lobe spread", "lobeSpread", 0.65, 1, 0.05, ["outline"]));
+  }
+  for (let index = 0; index < components.length; index++) if (components[index].kind === "guard") {
+    Object.assign(components[index], { tipScale: 0.7, terminalSwell: 0.45, mirrorMode: "opposed", section: "round", sectionWidth: Math.round(Math.min(0.024, Math.max(0.006, components[index].height * 0.44)) * 1000) / 1000, sectionDepth: components[index].thickness, sectionTwist: 0, terminal: "none", terminalSize: Math.round(Math.min(0.025, Math.max(0.006, components[index].height * 0.3)) * 1000) / 1000, leftLength: components[index].width / 2, rightLength: components[index].width / 2, leftSweep: Math.round((components[index].sweep ?? 0) / 0.005) * 0.005, rightSweep: Math.round((components[index].sweep ?? 0) / 0.005) * 0.005, leftSet: 0, rightSet: 0 });
+    preset.controls.push(c("Quillon tip taper", `components.${index}.tipScale`, 0.45, 1.5, 0.05), c("Quillon terminal swell", `components.${index}.terminalSwell`, 0, 1, 0.05));
+    for (const [label, key, values] of [["Quillon section", "section", ["round", "oval", "diamond", "flat", "triangular"]], ["Quillon layout", "mirrorMode", ["opposed", "symmetric", "independent"]], ["Quillon terminals", "terminal", ["none", "ball", "disk", "pyramidal", "scroll", "fishtail", "vase"]]]) preset.choiceControls.push({ label, path: `components.${index}.${key}`, options: values.map((value) => ({ label: value[0].toUpperCase() + value.slice(1), value })) });
+    for (const side of ["left", "right"]) {
+      components[index][`${side}Terminal`] = "shared";
+      preset.choiceControls.push({ label: `${side} terminal`, path: `components.${index}.${side}Terminal`, when: { path: `components.${index}.mirrorMode`, equals: "independent" }, options: ["shared", "none", "ball", "disk", "pyramidal", "scroll", "fishtail", "vase"].map((value) => ({ label: value === "shared" ? "Use shared terminal" : value[0].toUpperCase() + value.slice(1), value })) });
+    }
+    preset.controls.push(c("Quillon section width", `components.${index}.sectionWidth`, 0.006, 0.024, 0.001, "m"), c("Quillon section depth", `components.${index}.sectionDepth`, 0.004, 0.026, 0.001, "m"), c("Section twist", `components.${index}.sectionTwist`, -180, 180, 10, "deg"), c("Terminal size", `components.${index}.terminalSize`, 0.006, 0.025, 0.001, "m"));
+    for (const control of preset.controls.filter((control) => [`components.${index}.sectionDepth`, `components.${index}.sectionTwist`].includes(control.path))) control.when = { path: `components.${index}.section`, in: ["oval", "diamond", "flat", "triangular"] };
+    for (const control of preset.controls.filter((control) => [`components.${index}.width`, `components.${index}.sweep`].includes(control.path))) control.when = { path: `components.${index}.mirrorMode`, in: ["opposed", "symmetric"] };
+    for (const side of ["left", "right"]) for (const [key, min, max, step] of [["Length", 0.06, 0.25, 0.005], ["Sweep", -0.07, 0.07, 0.005], ["Set", -0.03, 0.03, 0.005]]) preset.controls.push({ ...c(`${side} quillon ${key.toLowerCase()}`, `components.${index}.${side}${key}`, min, max, step, "m"), when: { path: `components.${index}.mirrorMode`, in: ["independent"] } });
+  }
+}
+// Representative defaults make each construction family visible in the
+// gallery while every sword retains the complete authoring choices.
+PRESETS.find((preset) => preset.id === "zweihander").definition.components[0].construction = "writhen";
+PRESETS.find((preset) => preset.id === "grosse-messer").definition.components[0].construction = "outline";
+PRESETS.find((preset) => preset.id === "estoc").definition.components[0].construction = "plate";
+PRESETS.find((preset) => preset.id === "reitschwert-1540").definition.components[0].construction = "faceted";
+Object.assign(PRESETS.find((preset) => preset.id === "zweihander").definition.components[2], { section: "diamond", terminal: "pyramidal", sectionTwist: 0 });
+Object.assign(PRESETS.find((preset) => preset.id === "grosse-messer").definition.components[2], { section: "flat", terminal: "disk" });
+Object.assign(PRESETS.find((preset) => preset.id === "reitschwert-1540").definition.components[2], { section: "diamond", terminal: "vase" });
+const shieldContexts = {
+  buckler: ["Hand shield – early 16th-century context", "Compact hand shield for sword fencing. Steel bowl and hollow boss; dimensions are authoring choices, not a museum reconstruction."],
+  pavise: ["Pavise – older retained equipment", "Wooden shield with a raised center rib, informed by surviving late-fifteenth-century German pavises. Useful as older equipment in 1544."],
+  targe: ["Round shield – generator study", "Generic strapped round shield. This is not a reconstruction of a German tournament targe."],
+  "round-shield": ["Round shield – generator study", "Broad round shield for construction experiments; not a curated 1544 German infantry type."],
+  "heater-shield": ["Heater shield – older form", "Older shield silhouette, retained for authoring studies rather than a typical 1544 German infantry baseline."],
+  "kite-shield": ["Kite shield – historical study", "Earlier medieval silhouette outside the 1544 German baseline."],
+  "roman-tower-shield": ["Roman shield – historical study", "Ancient shield construction study outside the 1544 setting."],
+};
+for (const [id, [family, description]] of Object.entries(shieldContexts)) Object.assign(PRESETS.find((preset) => preset.id === id), { family, description });
 
 export const HAFT_MODULES = [
   {
@@ -1618,6 +1695,7 @@ export const HAFT_MODULES = [
     components: [
       {
         kind: "pommel",
+  construction: "lathed",
         id: "butt-cap",
         label: "butt cap",
         attach: { to: "weapon.root", at: "top", overlap: 0.005 },
@@ -1822,6 +1900,16 @@ export function copyPreset(preset) {
 }
 export function getPath(object, path) {
   return path.split(".").reduce((current, part) => current[part], object);
+}
+export function controlVisible(definition, control) {
+  const evaluate = (condition) => {
+    if (!condition) return true;
+    if (condition.all) return condition.all.every(evaluate);
+    if (condition.any) return condition.any.some(evaluate);
+    const value = getPath(definition, condition.path);
+    return condition.equals !== undefined ? value === condition.equals : condition.in.includes(value);
+  };
+  return evaluate(control.when);
 }
 export function setPath(object, path, value) {
   const parts = path.split(".");

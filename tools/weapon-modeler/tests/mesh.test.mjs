@@ -1,3 +1,4 @@
+import { triangleVertices } from "../src/topology.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { billHeadCurveSpans, billHeadOutline, buildWeapon, figureEightGuard, glaiveOutline, glaiveSpineCurveSpans, knuckleBow, maceFlangeOutline, measureMassProperties, sampleAdaptiveCurve, sampleCubicBezier, signedVolume, triangulatePolygon, tubePath, tubeRadialSegments, validateWeapon } from "../src/mesh.js";
@@ -148,8 +149,8 @@ test("swept knuckle bow leaves a real aperture", () => {
   const mesh = knuckleBow({ width: 0.12, length: 0.18, bar: 0.015, thickness: 0.012, side: 1 });
   const point = [0.025, 0.09];
   let coveringTriangles = 0;
-  for (let index = 0; index < mesh.positions.length; index += 9) {
-    const triangle = [mesh.positions.slice(index, index + 2), mesh.positions.slice(index + 3, index + 5), mesh.positions.slice(index + 6, index + 8)];
+  for (const vertices of triangleVertices(mesh)) {
+    const triangle = vertices.map((point) => point.slice(0, 2));
     if (contains2d(point, ...triangle)) coveringTriangles += 1;
   }
   assert.equal(coveringTriangles, 0);
@@ -181,7 +182,7 @@ test("figure-eight guard has two recognizable apertures", () => {
   const mesh = figureEightGuard({ width: 0.22, height: 0.055, bar: 0.009 });
   for (const point of [[-0.055, 0], [0.055, 0]]) {
     let covering = 0;
-    for (let index = 0; index < mesh.positions.length; index += 9) if (contains2d(point, mesh.positions.slice(index, index + 2), mesh.positions.slice(index + 3, index + 5), mesh.positions.slice(index + 6, index + 8))) covering += 1;
+    for (const vertices of triangleVertices(mesh)) if (contains2d(point, ...vertices.map((vertex) => vertex.slice(0, 2)))) covering += 1;
     assert.equal(covering, 0);
   }
 });
@@ -189,9 +190,12 @@ test("figure-eight guard has two recognizable apertures", () => {
 test("Reitschwert has compound rings, an open bow, and a sectioned straight blade", () => {
   const preset = PRESETS.find((candidate) => candidate.id === "reitschwert-1540");
   assert.ok(preset);
-  assert.equal(preset.definition.components.filter((component) => component.kind === "ringGuard").length, 1);
-  assert.ok(preset.definition.components.some((component) => component.kind === "knuckleBow"));
-  assert.ok(preset.definition.components.filter((component) => component.label?.includes("boss")).length >= 4);
+  const graph = preset.definition.components.find((component) => component.kind === "guardAssembly");
+  assert.ok(graph);
+  assert.ok(graph.members.some((member) => member.label === "side ring"));
+  assert.ok(graph.members.some((member) => member.label === "knuckle bow"));
+  assert.ok(graph.members.some((member) => member.label === "finger loop"));
+  assert.equal(graph.anchorNode, "root");
   assert.equal(preset.definition.components.at(-1).kind, "sectionBlade");
 });
 
@@ -266,12 +270,13 @@ test("every generated preset part has consistent positive winding", () => {
     const mesh = buildWeapon(preset.definition);
     for (const part of mesh.parts) {
       assert.ok(signedVolume(part) >= -1e-9, `${preset.id}: ${part.label} (${signedVolume(part)})`);
-      for (let index = 0; index < part.positions.length; index += 9) {
-        const a = part.positions.slice(index, index + 3), b = part.positions.slice(index + 3, index + 6), c = part.positions.slice(index + 6, index + 9), stored = part.normals.slice(index, index + 3);
+      for (let index = 0; index < part.indices.length; index += 3) {
+        const [a, b, c] = part.indices.slice(index, index + 3).map((vertex) => part.positions.slice(vertex * 3, vertex * 3 + 3));
+        const stored = part.normals.slice(part.indices[index] * 3, part.indices[index] * 3 + 3);
         const ab = b.map((value, axis) => value - a[axis]), ac = c.map((value, axis) => value - a[axis]);
         const geometric = [ab[1] * ac[2] - ab[2] * ac[1], ab[2] * ac[0] - ab[0] * ac[2], ab[0] * ac[1] - ab[1] * ac[0]];
         const magnitude = Math.hypot(...geometric);
-        if (magnitude > 1e-10) assert.ok(geometric.reduce((sum, value, axis) => sum + value / magnitude * stored[axis], 0) > 0.99, `${preset.id}: ${part.label} normal`);
+        if (magnitude > 1e-10) assert.ok(geometric.reduce((sum, value, axis) => sum + value / magnitude * stored[axis], 0) > 0, `${preset.id}: ${part.label} normal`);
       }
     }
     assert.ok(signedVolume(mesh) > 0, preset.id);
@@ -282,8 +287,8 @@ function assertClosedTriangleMesh(mesh, context) {
   const precision = 1e7;
   const vertexKey = (values, offset) => values.slice(offset, offset + 3).map((value) => Math.round(value * precision)).join(",");
   const edges = new Map();
-  for (let index = 0; index < mesh.positions.length; index += 9) {
-    const vertices = [vertexKey(mesh.positions, index), vertexKey(mesh.positions, index + 3), vertexKey(mesh.positions, index + 6)];
+  for (let index = 0; index < mesh.indices.length; index += 3) {
+    const vertices = mesh.indices.slice(index, index + 3).map((vertex) => vertexKey(mesh.positions, vertex * 3));
     for (const [from, to] of [[vertices[0], vertices[1]], [vertices[1], vertices[2]], [vertices[2], vertices[0]]]) {
       const key = from < to ? `${from}|${to}` : `${to}|${from}`;
       const incidence = edges.get(key) ?? { forward: 0, reverse: 0 };
@@ -421,6 +426,6 @@ test("round swept bars satisfy physical cross-section chord and sagitta budgets"
     assert.ok(chord <= 0.006 + 1e-12, `${radius}/${requested}: chord ${chord}`);
     assert.ok(sagitta <= 0.0003 + 1e-12, `${radius}/${requested}: sagitta ${sagitta}`);
     const mesh = tubePath([[0, 0], [0, 0.1]], radius, "steel", [0, 0, 0], "test bar", requested);
-    assert.equal(mesh.positions.length / 9, segments * 4);
+    assert.equal(mesh.indices.length / 3, segments * 4);
   }
 });
