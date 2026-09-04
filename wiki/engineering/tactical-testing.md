@@ -6,6 +6,98 @@ the interactive workflows in [Development workflow](developing.md) -
 `tactical-play`, `tactical-isolated`, `tactical`/`client` - which remain the
 right tool for anything a human needs to watch happen.
 
+## Melee combat iteration
+
+`melee-combat-iteration` runs deterministic, melee-only duels without a client,
+SpacetimeDB, networking, or wall-clock pacing. The tactical half advances a
+minimal real server `App` at a fixed timestep. The autoresolve half runs its
+discrete-event simulation over many more seeds. Both use the canonical John
+Fabelgeist build against the same five deliberately different opponents: a
+shield militiaman, demi-lancer, polearm veteran, hammer brute, and knife novice.
+
+Run the default 32 tactical and 1,000 autoresolve seeds per matchup with:
+
+```bash
+just melee-combat-iteration
+```
+
+Use smaller batches while changing a mechanic, and keep each iteration's
+evidence in a separate output directory:
+
+```bash
+just melee-combat-iteration \
+  output=target/melee-combat-iteration-v17 \
+  tactical_seeds=8 \
+  autoresolve_seeds=128
+```
+
+The root `summary.json` compares tactical and autoresolve win rates, timeouts,
+throughput, and causal counts. `acceptance-audit.json` rejects broken invariants
+such as lost simultaneous contacts, ghost contacts from canceled attacks,
+contacts before their committed windups finish, impossible movement, energy
+creation, disagreement with the shared hit equation, or a polearm retaining
+full head energy when the opponent is too close for its striking head.
+Each matchup directory contains every tactical and autoresolve trace as
+newline-delimited JSON, representative pretty-printed traces, its aggregate
+summary, and a `reviewer-packet.json`.
+
+The windup audit compares each contact with the contact tick recorded when
+that attack began. Entering reach during movement must not rewrite that
+commitment. Movement traces also record the authored speed limit for each
+segment. The distance check uses that limit and elapsed time, not the larger
+endpoint velocity: reaching a separation boundary can stop a fighter after
+they have already moved during the segment.
+
+Tactical condition traces distinguish `blood_loss_fraction`, the cumulative
+fraction of blood volume lost, from `blood_loss_incapacitation`, its derived
+disabling effect. Wound events record `blood_fraction_per_second`. Compare
+those rates with changes in the raw fraction when checking integration; do not
+compare them with the incapacitation contribution. A production-duel regression
+checks that each raw increment equals the active wound flows multiplied by the
+fixed timestep.
+
+The reviewer packet explains the physically based balance goal, the practical
+zero-to-five attribute and skill scale, and each combatant's ordinary equipment
+and training. It points to the traces without disclosing implementation-only
+coverage percentages or outcome probabilities. Give that packet and its linked
+evidence to an independent reviewer before deciding whether an implausible
+outcome warrants a mechanic change. A tactical/autoresolve win-rate difference
+is diagnostic evidence, not by itself proof that either side is correct.
+
+Treat a green audit as a prerequisite for review, not as a balance verdict.
+Current polearm and hammer matchups still show substantial tactical/autoresolve
+disagreement. In particular, a polearm can start a swing from useful measure
+but contact with its haft after the opponent closes during the windup. The
+review must distinguish correct accounting for that contact from poor attack
+selection; changing damage to compensate would obscure the original cause.
+
+## Incapacitation visibility checks
+
+The melee iteration traces report one `fatigue` fraction, matching the black
+incapacitation-wheel segment. Attack, defense, and dodge work must increase
+that visible value; there are no separate local-muscle or oxygen-debt trace
+fields. Recovery may reduce the same value, including fatigue brought into
+combat.
+
+Regression tests check that charging an action updates fatigue and
+authoritative incapacitation together, that heavier work costs more, and that
+neither calorie history nor encumbrance imposes a second hidden combat-skill
+penalty. Equal total incapacitation must produce equal condition-based combat
+performance even when its sources differ. Autoresolve movement speed must not
+change with fatigue alone.
+
+The tactical traces include encumbrance separately. Client tests check its
+translucent-grey segment, black fatigue, and yellow forecasts for every source.
+Forecasts use only unfilled wheel space and never count toward incapacitation.
+The server projects known wound flow immediately and smooths other source
+changes over recent simulation time, not wall-clock performance. The forecast
+horizon and trend response are authored under
+`presentation.incapacitation_forecast` in `content/tactical/combat.yaml`.
+
+Run the core and tactical library tests and the client binary's UI tests, then
+use `just melee-combat-iteration` for seeded server/autoresolver comparisons.
+Passing these checks does not establish overall combat balance.
+
 ## Bevy Remote Protocol (BRP)
 
 Both `adventuresim-tactical-server` and `adventuresim-tactical-client` can
@@ -144,7 +236,8 @@ than assume the naive translation:
     class to work with, but `to_brp()` returns the bare `int`, not `{"value":
     ...}`.
 - `Option<T>` is `None` or a bare `T`, not `{"Some": ...}`.
-- A small set of `glam` types (`Vec2`/`Vec3`/`Vec3A`/`Vec4`/`Quat`/`IVec*`/
+- A small set of `glam` types
+  (`Vec2`/`Vec3`/`Vec3A`/`Vec4`/`Quat`/`IVec*`/
   `UVec*`) have a custom `Serialize` impl the reflected shape can't see at
   all - hardcoded to their known `list[float]`/`list[int]` wire shape rather
   than resolved generically.

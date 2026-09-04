@@ -251,6 +251,16 @@ a separate direct-hours layer. The brighter foreground remains the
 aptitude- and injury-limited effective check.
 
 ## Formula
+
+In tactical combat and autoresolve, fatigue comes from the live
+[black incapacitation-wheel segment](../tactical/combat.md#fatigue-black).
+Combat skill inputs do not also receive the calorie-history fatigue or direct
+encumbrance penalties shown below. Live fatigue and burden contribute to total
+combat incapacitation, which the resolver applies to attack and defense
+performance.
+Limb-injury penalties remain separate. The formulas below describe strategic
+skill checks.
+
 ```rs
 # TODO: pain_penalty, morale_penalty
 
