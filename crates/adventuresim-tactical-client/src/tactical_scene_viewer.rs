@@ -58,7 +58,7 @@ use view_specs::TREE_BILLBOARD_TRANSITION_SCALES;
 use view_specs::{
     ANIMATION_PLAY_VIEWS, BEECH_LEAF_MOTION_VIEWS, CAPTURE_VIEWS, CITY_REVIEW_VIEWS, CapturePose,
     CaptureViewSpec, DetailRequirement, ENVIRONMENT_REVIEW_VIEWS, INTERIOR_REVIEW_VIEWS,
-    TREE_COLD_TRAVERSAL_VIEWS, TreeLightingModeId,
+    LANDFORM_REVIEW_VIEWS, TREE_COLD_TRAVERSAL_VIEWS, TreeLightingModeId,
 };
 
 use crate::camera::CameraRigConfig;
@@ -86,10 +86,11 @@ const PERFORMANCE_TARGET_FPS: f64 = 60.0;
 const PERFORMANCE_FRAME_BUDGET_MS: f64 = 1_000.0 / PERFORMANCE_TARGET_FPS;
 const SQUARE_METRES_PER_SQUARE_KILOMETRE: f64 = 1_000_000.0;
 const STANDING_EYE_HEIGHT_METRES: f32 = 1.65;
-const CAPTURE_PROFILE_VERSION: u16 = 24;
+const CAPTURE_PROFILE_VERSION: u16 = 25;
 const BEECH_LEAF_MOTION_PROFILE: &str = "beech-leaf-motion";
 const INTERIOR_REVIEW_PROFILE: &str = "interior-review";
 const CITY_REVIEW_PROFILE: &str = "city-review";
+pub(crate) const LANDFORM_REVIEW_PROFILE: &str = "landform-review";
 const CAMERA_VERSION: u16 = 18;
 const CAPTURE_CLOCK_PHASE_SECONDS: f32 = 2.0;
 const PLASTER_GRAZING_REVIEW_LUMENS: f32 = 50_000.0;
@@ -1097,6 +1098,7 @@ fn selected_capture_views(
     let profile_views = match profile {
         "semantic" => CAPTURE_VIEWS.as_slice(),
         "environment-review" => ENVIRONMENT_REVIEW_VIEWS.as_slice(),
+        LANDFORM_REVIEW_PROFILE => LANDFORM_REVIEW_VIEWS.as_slice(),
         INTERIOR_REVIEW_PROFILE => INTERIOR_REVIEW_VIEWS.as_slice(),
         CITY_REVIEW_PROFILE => CITY_REVIEW_VIEWS.as_slice(),
         "animation-play" => ANIMATION_PLAY_VIEWS.as_slice(),
@@ -1321,6 +1323,7 @@ mod capture_lighting_tests {
         for profile in [
             "semantic",
             "environment-review",
+            "landform-review",
             "animation-play",
             "tree-cold-traversal",
             "beech-leaf-motion",
@@ -1330,6 +1333,46 @@ mod capture_lighting_tests {
             assert_eq!(views.iter().filter(|view| view.slug == "warmup").count(), 1);
             assert!(selected_capture_views(profile, &["warmup".into()]).is_err());
         }
+    }
+
+    #[test]
+    fn landform_profile_has_only_geological_review_views_and_stable_pairs() {
+        let views = selected_capture_views("landform-review", &[]).unwrap();
+        assert_eq!(
+            views.iter().map(|view| view.slug).collect::<Vec<_>>(),
+            vec![
+                "warmup",
+                "beauty-ground",
+                "beauty-overhead",
+                "terrain-grazing-detail",
+                "fault-scarp",
+                "fault-scarp-seam",
+                "landform-underside",
+                "vista-lod-oblique",
+            ]
+        );
+        assert!(views[0].warmup);
+        assert!(views[1..].iter().all(|view| {
+            view.verify_settled_readbacks
+                && view.detail_requirement == DetailRequirement::None
+                && view.understory_species.is_none()
+                && !view.debris_target
+        }));
+
+        let filtered = selected_capture_views(
+            "landform-review",
+            &["fault-scarp".into(), "landform-underside".into()],
+        )
+        .unwrap();
+        assert_eq!(
+            filtered.iter().map(|view| view.slug).collect::<Vec<_>>(),
+            vec!["warmup", "fault-scarp", "landform-underside"]
+        );
+        assert!(
+            selected_capture_views("landform-review", &["forest-floor-debris-detail".into()])
+                .is_err()
+        );
+        assert!(selected_capture_views("landform-review", &["tree-detail".into()]).is_err());
     }
 
     #[test]

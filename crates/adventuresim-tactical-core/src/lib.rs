@@ -111,8 +111,9 @@ pub mod prelude {
     };
     pub use crate::terrain_transition::TerrainTransitionCollar;
     pub use crate::volumetric_terrain::{
-        SceneTerrainPatch, TerrainLandformKind, TerrainLandformLod, TerrainLandformRecipe,
-        terrain_landform_patch,
+        SceneTerrainPatch, TerrainGeologicStructure, TerrainLandformKind, TerrainLandformLod,
+        TerrainLandformRecipe, TerrainSurfaceParameters, TerrainSurfacePreset,
+        TerrainSurfaceRecipe, TerrainSurfaceSource, terrain_landform_patch,
     };
     pub use adventuresim_core::item_catalog;
     pub use adventuresim_core::item_catalog::{EquipmentChannel, EquipmentLocation};

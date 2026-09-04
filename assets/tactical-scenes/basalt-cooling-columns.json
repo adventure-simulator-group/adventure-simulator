@@ -1,6 +1,6 @@
 {
-  "schema_version": 13,
-  "generation_version": 29,
+  "schema_version": 14,
+  "generation_version": 30,
   "seed": 47118,
   "scene_key": "basalt-cooling-columns",
   "source": {
@@ -833,6 +833,15 @@
   },
   "landform": {
     "kind": "basalt_cooling_columns",
+    "surface": {
+      "lithology": {
+        "Igneous": "Basalt"
+      },
+      "source": "authored_fixture",
+      "structure": {
+        "kind": "massive"
+      }
+    },
     "seed": 47118,
     "origin_cm": [
       0,

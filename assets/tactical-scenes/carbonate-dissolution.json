@@ -1,6 +1,6 @@
 {
-  "schema_version": 13,
-  "generation_version": 29,
+  "schema_version": 14,
+  "generation_version": 30,
   "seed": 47116,
   "scene_key": "carbonate-dissolution",
   "source": {
@@ -833,6 +833,24 @@
   },
   "landform": {
     "kind": "carbonate_dissolution",
+    "surface": {
+      "lithology": {
+        "Sedimentary": "Limestone"
+      },
+      "source": "authored_fixture",
+      "structure": {
+        "kind": "bedded",
+        "normal_permyriad": [
+          0,
+          2751,
+          9614
+        ],
+        "bed_thickness_cm": 156,
+        "thickness_variation_bps": 2384,
+        "warp_cm": 41,
+        "cross_bedding_bps": 0
+      }
+    },
     "seed": 47116,
     "origin_cm": [
       0,

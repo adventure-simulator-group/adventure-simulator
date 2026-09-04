@@ -24,6 +24,11 @@ struct TacticalTerrainMaterial {
     detail_patch: vec4<f32>,
     soil_detail: vec4<f32>,
     litter_detail: vec4<f32>,
+    cliff_palette_a: vec4<f32>,
+    cliff_palette_b: vec4<f32>,
+    cliff_surface: vec4<f32>,
+    cliff_structure_a: vec4<f32>,
+    cliff_structure_b: vec4<f32>,
 }
 
 @group(#{MATERIAL_BIND_GROUP}) @binding(100)
@@ -48,6 +53,73 @@ var litter_normal_sampler: sampler;
 var blood_mask: texture_2d<f32>;
 @group(#{MATERIAL_BIND_GROUP}) @binding(110)
 var blood_mask_sampler: sampler;
+@group(#{MATERIAL_BIND_GROUP}) @binding(111)
+var cliff_height: texture_2d<f32>;
+@group(#{MATERIAL_BIND_GROUP}) @binding(112)
+var cliff_height_sampler: sampler;
+@group(#{MATERIAL_BIND_GROUP}) @binding(113)
+var cliff_arm: texture_2d<f32>;
+@group(#{MATERIAL_BIND_GROUP}) @binding(114)
+var cliff_arm_sampler: sampler;
+
+fn cliff_triplanar_weights(normal: vec3<f32>) -> vec3<f32> {
+    let sharpened = pow(abs(normal), vec3<f32>(4.0));
+    return sharpened / max(dot(sharpened, vec3<f32>(1.0)), 0.00001);
+}
+
+fn cliff_axis_uvs(world_position: vec3<f32>) -> mat3x2<f32> {
+    return mat3x2<f32>(
+        world_position.zy * terrain.cliff_surface.x,
+        world_position.xz * terrain.cliff_surface.x,
+        world_position.xy * terrain.cliff_surface.x,
+    );
+}
+
+fn cliff_triplanar_height(uvs: mat3x2<f32>, weights: vec3<f32>) -> f32 {
+    return textureSample(cliff_height, cliff_height_sampler, uvs[0]).r * weights.x
+        + textureSample(cliff_height, cliff_height_sampler, uvs[1]).r * weights.y
+        + textureSample(cliff_height, cliff_height_sampler, uvs[2]).r * weights.z;
+}
+
+fn cliff_triplanar_arm(uvs: mat3x2<f32>, weights: vec3<f32>) -> vec3<f32> {
+    return textureSample(cliff_arm, cliff_arm_sampler, uvs[0]).rgb * weights.x
+        + textureSample(cliff_arm, cliff_arm_sampler, uvs[1]).rgb * weights.y
+        + textureSample(cliff_arm, cliff_arm_sampler, uvs[2]).rgb * weights.z;
+}
+
+// Bedding and foliation are evaluated once in continuous scene space. The
+// three axis UVs above contribute only non-structural grain and microrelief.
+fn geological_scalar(world_position: vec3<f32>) -> f32 {
+    let structural_normal = normalize(terrain.cliff_structure_a.xyz);
+    let broad_warp = (
+        sin(dot(world_position, vec3<f32>(0.071, 0.019, 0.043)))
+        + sin(dot(world_position, vec3<f32>(-0.037, 0.013, 0.061))) * 0.5
+    ) * terrain.cliff_structure_b.z;
+    let spacing_variation = 1.0 + terrain.cliff_structure_b.y
+        * sin(dot(world_position, vec3<f32>(0.017, 0.011, -0.023)));
+    return (dot(world_position, structural_normal) + broad_warp)
+        / max(terrain.cliff_structure_b.x * spacing_variation, 0.08);
+}
+
+fn geological_palette_selector(world_position: vec3<f32>) -> f32 {
+    let mode = terrain.cliff_structure_a.w;
+    if mode < 0.5 {
+        let massive = sin(dot(world_position, vec3<f32>(0.41, 0.29, 0.37)))
+            + 0.45 * sin(dot(world_position, vec3<f32>(0.13, -0.19, 0.17)));
+        return step(0.18, massive);
+    }
+    let scalar = geological_scalar(world_position);
+    let primary = fract(scalar);
+    let edge_width = max(fwidth(scalar) * 1.25, 0.012);
+    var layer = smoothstep(0.36 - edge_width, 0.36 + edge_width, primary)
+        * (1.0 - smoothstep(0.82 - edge_width, 0.82 + edge_width, primary));
+    if mode < 1.5 && terrain.cliff_structure_b.w > 0.0 {
+        let cross_scalar = dot(world_position, vec3<f32>(0.31, 0.91, -0.27))
+            / max(terrain.cliff_structure_b.x * 0.42, 0.08);
+        layer = mix(layer, step(0.54, fract(cross_scalar)), terrain.cliff_structure_b.w * 0.34);
+    }
+    return layer;
+}
 
 fn height_perturbed_normal(
     world_position: vec3<f32>,
@@ -205,6 +277,24 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     }
     if water >= 0.5 || substrate_kind == 5.0 { color = vec3<f32>(0.09, 0.18, 0.22); }
 
+    // The implicit patch alone enables this response. Steep faces and
+    // downward-facing overhangs keep geological identity, while horizontal
+    // top/collar regions return to the ordinary ground material at the rim.
+    let cliff_side = smoothstep(0.16, 0.58, 1.0 - abs(normal.y));
+    let cliff_underside = 1.0 - smoothstep(-0.62, -0.12, normal.y);
+    let cliff_response = terrain.cliff_palette_a.w * max(cliff_side, cliff_underside);
+    let cliff_weights = cliff_triplanar_weights(base_normal);
+    let cliff_uvs = cliff_axis_uvs(position);
+    let cliff_height_sample = cliff_triplanar_height(cliff_uvs, cliff_weights);
+    let cliff_arm_sample = cliff_triplanar_arm(cliff_uvs, cliff_weights);
+    let cliff_height_metres = (cliff_height_sample - 0.5) * terrain.cliff_surface.y;
+    let cliff_normal = height_perturbed_normal(position, base_normal, cliff_height_metres, 1.0);
+    let cliff_selector = geological_palette_selector(position);
+    let cliff_color = mix(terrain.cliff_palette_a.rgb, terrain.cliff_palette_b.rgb, cliff_selector);
+    color = mix(color, cliff_color, cliff_response);
+    pbr_input.N = normalize(mix(pbr_input.N, cliff_normal, cliff_response));
+    pbr_input.diffuse_occlusion *= mix(1.0, clamp(cliff_arm_sample.r, 0.48, 1.0), cliff_response);
+
     let shaded_soil = terrain.base_color.rgb * vec3<f32>(0.38, 0.40, 0.37);
     // Match the dark/medium/pale bands of the physical dry-oak cards. Stronger
     // separation from the soil and a narrow generated coverage rim keep these
@@ -241,7 +331,8 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         * terrain.far_sward.z
         * tall_grass
         * (1.0 - water)
-        * (1.0 - slope * 0.72);
+        * (1.0 - slope * 0.72)
+        * (1.0 - cliff_response);
     let sward_color = terrain.grass_color.rgb;
     // Retain low-amplitude world-space variation without hard-selecting one
     // flat terminal color. Continuous optical coverage avoids a visible ring
@@ -282,8 +373,14 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     // A continuous film darkens porous ground and narrows its highlights.
     // Snow remains a rough dielectric unless the underlying surface is water.
     let litter_roughness = litter_region * litter_sample.a * 0.055;
-    let base_roughness = dry_roughness + litter_roughness
+    let ground_roughness = dry_roughness + litter_roughness
         - wetness * 0.22 + snow_mask * 0.08 - water * 0.19;
+    let cliff_roughness = mix(
+        terrain.cliff_surface.z,
+        terrain.cliff_surface.w,
+        clamp(cliff_arm_sample.g, 0.0, 1.0),
+    ) - wetness * 0.16;
+    let base_roughness = mix(ground_roughness, cliff_roughness, cliff_response);
     pbr_input.material.perceptual_roughness = mix(
         clamp(base_roughness, 0.55, 1.0),
         0.86,

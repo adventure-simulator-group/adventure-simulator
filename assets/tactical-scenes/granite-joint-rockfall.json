@@ -1,6 +1,6 @@
 {
-  "schema_version": 13,
-  "generation_version": 29,
+  "schema_version": 14,
+  "generation_version": 30,
   "seed": 47117,
   "scene_key": "granite-joint-rockfall",
   "source": {
@@ -833,6 +833,15 @@
   },
   "landform": {
     "kind": "granite_joint_rockfall",
+    "surface": {
+      "lithology": {
+        "Igneous": "Granite"
+      },
+      "source": "authored_fixture",
+      "structure": {
+        "kind": "massive"
+      }
+    },
     "seed": 47117,
     "origin_cm": [
       0,

@@ -657,7 +657,9 @@ pub(super) const CAPTURE_VIEWS: [CaptureViewSpec; 40] = [
 ];
 
 mod environment;
+mod landform;
 pub(super) use environment::ENVIRONMENT_REVIEW_VIEWS;
+pub(super) use landform::LANDFORM_REVIEW_VIEWS;
 mod city;
 mod interiors;
 pub(super) use city::CITY_REVIEW_VIEWS;

@@ -31,13 +31,15 @@ fn resolve_scene_fixture(selector: &str) -> Result<PathBuf, String> {
 }
 
 #[cfg(not(target_family = "wasm"))]
-#[derive(Clone, Copy, Debug, Default, ValueEnum)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]
 enum CaptureProfile {
     /// Existing exhaustive semantic presentation suite (23 recorded views).
     #[default]
     Semantic,
     /// Compact environment-art review suite; intended for matrix review.
     EnvironmentReview,
+    /// Deterministic terrain and geological-landform material review suite.
+    LandformReview,
     /// Eye-height views inside each civilian city-building archetype.
     InteriorReview,
     /// Facade, street, neighbourhood, and whole-settlement city review.
@@ -142,6 +144,7 @@ fn main() {
         match args.profile {
             CaptureProfile::Semantic => "semantic",
             CaptureProfile::EnvironmentReview => "environment-review",
+            CaptureProfile::LandformReview => tactical_scene_viewer::LANDFORM_REVIEW_PROFILE,
             CaptureProfile::InteriorReview => "interior-review",
             CaptureProfile::CityReview => "city-review",
             CaptureProfile::AnimationPlay => "animation-play",
@@ -150,6 +153,25 @@ fn main() {
         },
         args.views,
     );
+}
+
+#[cfg(all(test, not(target_family = "wasm")))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn landform_review_profile_parses_as_a_typed_cli_value() {
+        let args = Args::try_parse_from([
+            "tactical-scene-viewer",
+            "--fixture",
+            "fault-scarp-cliff",
+            "--profile",
+            "landform-review",
+        ])
+        .unwrap();
+
+        assert_eq!(args.profile, CaptureProfile::LandformReview);
+    }
 }
 
 #[cfg(target_family = "wasm")]

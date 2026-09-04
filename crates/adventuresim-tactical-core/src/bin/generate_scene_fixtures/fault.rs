@@ -1,4 +1,5 @@
 use super::*;
+use adventuresim_world_schema::{MixedLithology, SurfaceLithology};
 
 pub(super) fn fixture() -> Fixture {
     Fixture {
@@ -12,6 +13,12 @@ pub(super) fn fixture() -> Fixture {
         buildings: BuildingFixture::Empty,
         landform: Some(TerrainLandformRecipe {
             kind: TerrainLandformKind::FaultScarp,
+            surface: TerrainSurfaceRecipe::new(
+                SurfaceLithology::Mixed(MixedLithology::Breccia),
+                TerrainSurfaceSource::AuthoredFixture,
+                47_114,
+                [10_000, 0],
+            ),
             seed: 47_114,
             origin_cm: [0, 0],
             tangent_permyriad: [10_000, 0],

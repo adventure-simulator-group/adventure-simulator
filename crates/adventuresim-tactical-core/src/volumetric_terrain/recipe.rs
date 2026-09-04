@@ -16,6 +16,7 @@ pub enum TerrainLandformKind {
 #[serde(deny_unknown_fields)]
 pub struct TerrainLandformRecipe {
     pub kind: TerrainLandformKind,
+    pub surface: TerrainSurfaceRecipe,
     pub seed: u64,
     pub origin_cm: [i32; 2],
     /// Unit tangent encoded in ten-thousandths.
@@ -45,6 +46,7 @@ impl TerrainLandformLod {
 
 impl TerrainLandformRecipe {
     pub fn validate(self, terrain: &SceneTerrain) -> Result<(), &'static str> {
+        self.surface.validate()?;
         let tangent = Vec2::new(
             f32::from(self.tangent_permyriad[0]),
             f32::from(self.tangent_permyriad[1]),

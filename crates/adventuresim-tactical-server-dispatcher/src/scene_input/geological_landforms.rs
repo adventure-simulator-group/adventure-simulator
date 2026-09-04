@@ -67,17 +67,34 @@ pub(super) fn select(
             if relief < MIN_SOURCE_RELIEF_METRES {
                 continue;
             }
-            let mut recipe = TerrainLandformRecipe {
-                kind: TerrainLandformKind::SandstoneAlcove,
+            let tangent_permyriad = [
+                (tangent.x * 10000.0).round() as i16,
+                (tangent.y * 10000.0).round() as i16,
+            ];
+            let Some((kind, lithology)) = mapped_profile(
+                features,
+                center,
+                point,
+                f64::from(HALF_LENGTH_CM.max(HALF_WIDTH_CM)) / 100.0,
+                &geographic,
+                &projected,
+            ) else {
+                continue;
+            };
+            let recipe = TerrainLandformRecipe {
+                kind,
+                surface: TerrainSurfaceRecipe::new(
+                    lithology,
+                    TerrainSurfaceSource::Mapped,
+                    seed,
+                    tangent_permyriad,
+                ),
                 seed,
                 origin_cm: [
                     (point.x * 100.0).round() as i32,
                     (point.y * 100.0).round() as i32,
                 ],
-                tangent_permyriad: [
-                    (tangent.x * 10000.0).round() as i16,
-                    (tangent.y * 10000.0).round() as i16,
-                ],
+                tangent_permyriad,
                 relief_cm: (relief * 100.0).round() as u16,
                 half_length_cm: HALF_LENGTH_CM,
                 half_width_cm: HALF_WIDTH_CM,
@@ -87,10 +104,6 @@ pub(super) fn select(
             if !safe_footprint(grid, &terrain, recipe) {
                 continue;
             }
-            let Some(kind) = mapped_kind(features, center, point, &geographic, &projected) else {
-                continue;
-            };
-            recipe.kind = kind;
             return Some(recipe);
         }
     }
@@ -156,18 +169,37 @@ fn safe_footprint(
     true
 }
 
-fn mapped_kind(
+fn mapped_profile(
     features: &[TerrainFeature],
     center: Wgs84CoordinateE7,
     point: Vec2,
+    footprint_radius_metres: f64,
     geographic: &Proj,
     projected: &Proj,
-) -> Option<TerrainLandformKind> {
+) -> Option<(TerrainLandformKind, SurfaceLithology)> {
+    let lithology = mapped_lithology(
+        features,
+        center,
+        point,
+        footprint_radius_metres,
+        geographic,
+        projected,
+    )?;
+    kind_for_lithology(lithology).map(|kind| (kind, lithology))
+}
+
+fn mapped_lithology(
+    features: &[TerrainFeature],
+    center: Wgs84CoordinateE7,
+    point: Vec2,
+    footprint_radius_metres: f64,
+    geographic: &Proj,
+    projected: &Proj,
+) -> Option<SurfaceLithology> {
     // The whole bounding square, not only the mission coordinate, must
     // lie inside one containment-verified source window. Margin absorbs
     // rounding and local east/north versus map-projection curvature.
-    let radius =
-        f64::from(HALF_LENGTH_CM.max(HALF_WIDTH_CM)) / 100.0 + GEOLOGIC_PROJECTION_MARGIN_METRES;
+    let radius = footprint_radius_metres + GEOLOGIC_PROJECTION_MARGIN_METRES;
     let corners = [-radius, 0.0, radius]
         .into_iter()
         .flat_map(|dx| [-radius, 0.0, radius].map(|dz| (dx, dz)))
@@ -193,7 +225,34 @@ fn mapped_kind(
             _ => None,
         })
         .find(|window| corners.iter().all(|&corner| window.contains(corner)))?;
-    kind_for_lithology(window.lithology)
+    Some(window.lithology)
+}
+
+pub(super) fn mapped_fault_surface(
+    features: &[TerrainFeature],
+    center: Wgs84CoordinateE7,
+    point: Vec2,
+    radius_metres: f64,
+    seed: u64,
+    tangent_permyriad: [i16; 2],
+) -> Option<TerrainSurfaceRecipe> {
+    let geographic =
+        Proj::from_proj_string("+proj=longlat +datum=WGS84 +ellps=WGS84 +no_defs").ok()?;
+    let projected = Proj::from_proj_string("+proj=lcc +lat_0=52 +lon_0=10 +lat_1=35 +lat_2=65 +x_0=4000000 +y_0=2800000 +ellps=GRS80 +units=m +no_defs").ok()?;
+    let lithology = mapped_lithology(
+        features,
+        center,
+        point,
+        radius_metres,
+        &geographic,
+        &projected,
+    )?;
+    Some(TerrainSurfaceRecipe::new(
+        lithology,
+        TerrainSurfaceSource::Mapped,
+        seed,
+        tangent_permyriad,
+    ))
 }
 
 #[cfg(test)]
@@ -259,6 +318,25 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn mapped_fault_surface_accepts_lithology_without_a_standalone_landform_kind() {
+        let (center, _grid, mut features) = context();
+        let TerrainFeature::MappedGeology(window) = &mut features[0] else {
+            unreachable!()
+        };
+        window.lithology = SurfaceLithology::Sedimentary(SedimentaryRock::Shale);
+
+        let surface = mapped_fault_surface(&features, center, Vec2::ZERO, 45.0, 42, [10_000, 0])
+            .expect("a containing mapped unit must drive every fault surface family");
+
+        assert_eq!(
+            surface.lithology,
+            SurfaceLithology::Sedimentary(SedimentaryRock::Shale)
+        );
+        assert_eq!(surface.source, TerrainSurfaceSource::Mapped);
+        assert_eq!(surface.preset(), TerrainSurfacePreset::Shale);
     }
 
     #[test]

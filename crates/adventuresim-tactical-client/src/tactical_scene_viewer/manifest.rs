@@ -653,6 +653,46 @@ mod tests {
     }
 
     #[test]
+    fn landform_settled_readback_gate_fails_closed() {
+        let views = [CaptureViewSpec::new(
+            "fault-scarp",
+            "Fault scarp",
+            CapturePose::FaultScarp,
+            45.0,
+            100,
+        )
+        .settled_readback_pair()];
+        let requested = vec!["fault-scarp".into()];
+        let mut captures = vec![capture("fault-scarp", 100, 0)];
+        let mut validation = passing_validation();
+
+        finalize_screenshot_validation(
+            "fault-scarp-cliff",
+            "landform-review",
+            &requested,
+            &mut validation,
+            &captures,
+            &views,
+        );
+        assert!(!validation.settled_readback_pairs_identical);
+        assert!(!validation.passed);
+
+        captures[0].settled_readback_hashes = vec!["abc".into(), "abc".into()];
+        captures[0].settled_readbacks_identical = Some(true);
+        let mut validation = passing_validation();
+        finalize_screenshot_validation(
+            "fault-scarp-cliff",
+            "landform-review",
+            &requested,
+            &mut validation,
+            &captures,
+            &views,
+        );
+        assert!(validation.settled_readback_pairs_identical);
+        assert!(validation.passed);
+    }
+
+    #[test]
     fn obstruction_capture_fails_closed_without_a_tree_hit() {
         let views = [CaptureViewSpec::new(
             "animation-play-obstruction-000",
