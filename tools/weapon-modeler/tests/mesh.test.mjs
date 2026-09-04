@@ -18,8 +18,11 @@ test("every preset produces finite nonempty geometry", () => {
     assert.ok(mesh.positions.every(Number.isFinite), preset.id);
     assert.ok(mesh.normals.every(Number.isFinite), preset.id);
     assert.ok(mesh.stats.triangles > 100, preset.id);
-    const isShield = preset.definition.components.some((component) => ["roundShield", "shapedShield"].includes(component.kind));
-    assert.ok(mesh.stats.dimensions[1] > (isShield ? 0.3 : 0.45), preset.id);
+    const isShield = preset.definition.components.some((component) => ["roundShield", "shapedShield"].includes(component.kind)),
+      isCarrier = preset.definition.components.some((component) => ["arrowQuiver", "boltQuiver"].includes(component.kind)),
+      isBall = preset.definition.components.some((component) => component.kind === "leadBall"),
+      isPouch = preset.definition.components.some((component) => component.kind === "ballPouch");
+    assert.ok(mesh.stats.dimensions[1] > (isBall ? 0.005 : isPouch ? 0.1 : isShield ? 0.3 : isCarrier ? 0.4 : 0.45), preset.id);
     assert.ok(mesh.stats.dimensions.every((value) => Number.isFinite(value) && value > 0), preset.id);
     assert.ok(mesh.stats.volume > 0, preset.id);
     for (const control of preset.controls) {
@@ -70,11 +73,12 @@ test("sword presets expose a hand-center clearance below the guard", () => {
 });
 
 test("preset parameters can be independently copied and changed", () => {
-  const copy = copyPreset(PRESETS[0]);
+  const source = PRESETS.find((preset) => preset.definition.shaft);
+  const copy = copyPreset(source);
   const original = getPath(copy.definition, "shaft.length");
   setPath(copy.definition, "shaft.length", original + 0.2);
   assert.equal(getPath(copy.definition, "shaft.length"), original + 0.2);
-  assert.equal(getPath(PRESETS[0].definition, "shaft.length"), original);
+  assert.equal(getPath(source.definition, "shaft.length"), original);
 });
 
 test("hafted weapons share a shaft-top mount and remain attached when resized", () => {
@@ -115,8 +119,8 @@ test("front camera fit contains every preset on portrait and landscape canvases"
   }
 });
 
-test("all twenty-eight presets fit the live 1280x720 viewer canvas with margin", () => {
-  assert.equal(PRESETS.length, 28);
+test("all curated presets fit the live 1280x720 viewer canvas with margin", () => {
+  assert.ok(PRESETS.length >= 30);
   const canvasAspect = (1280 - 350) / (720 - 88), fov = 35 * Math.PI / 180;
   for (const preset of PRESETS) {
     const bounds = buildWeapon(preset.definition).stats.bounds, distance = fitDistance(bounds, canvasAspect, fov);
