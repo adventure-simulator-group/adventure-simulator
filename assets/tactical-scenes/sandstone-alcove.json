@@ -1,6 +1,6 @@
 {
-  "schema_version": 13,
-  "generation_version": 29,
+  "schema_version": 14,
+  "generation_version": 30,
   "seed": 47115,
   "scene_key": "sandstone-alcove",
   "source": {
@@ -833,6 +833,24 @@
   },
   "landform": {
     "kind": "sandstone_alcove",
+    "surface": {
+      "lithology": {
+        "Sedimentary": "Sandstone"
+      },
+      "source": "authored_fixture",
+      "structure": {
+        "kind": "bedded",
+        "normal_permyriad": [
+          0,
+          681,
+          9977
+        ],
+        "bed_thickness_cm": 164,
+        "thickness_variation_bps": 1085,
+        "warp_cm": 61,
+        "cross_bedding_bps": 2098
+      }
+    },
     "seed": 47115,
     "origin_cm": [
       0,

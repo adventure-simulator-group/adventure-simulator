@@ -259,17 +259,27 @@ fn nearest_fault_scarp(
     }
     let (_, tangent, origin_cm, lod) = nearest?;
     let length = (tangent[0] * tangent[0] + tangent[1] * tangent[1]).sqrt();
+    let tangent_permyriad = [
+        (tangent[0] / length * 10_000.0).round() as i16,
+        (tangent[1] / length * 10_000.0).round() as i16,
+    ];
+    let surface = geological_landforms::mapped_fault_surface(
+        terrain_features,
+        center,
+        Vec2::new(origin_cm[0] as f32, origin_cm[1] as f32) / 100.0,
+        f64::from(SCARP_DEFAULT_HALF_LENGTH_CM.max(SCARP_DEFAULT_HALF_WIDTH_CM)) / 100.0,
+        seed,
+        tangent_permyriad,
+    )?;
     Some(TerrainLandformRecipe {
         kind: TerrainLandformKind::FaultScarp,
+        surface,
         seed,
         // The closest point is the canonical mapped trace projected into the
         // scene's east/north frame. LOD changes sampling resolution only; the
         // feature's position and physical dimensions remain canonical.
         origin_cm,
-        tangent_permyriad: [
-            (tangent[0] / length * 10_000.0).round() as i16,
-            (tangent[1] / length * 10_000.0).round() as i16,
-        ],
+        tangent_permyriad,
         relief_cm: SCARP_DEFAULT_THROW_CM,
         half_length_cm: SCARP_DEFAULT_HALF_LENGTH_CM,
         half_width_cm: SCARP_DEFAULT_HALF_WIDTH_CM,
@@ -482,7 +492,10 @@ fn deterministic_detail(seed: u64, x: u16, z: u16) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use adventuresim_world_schema::{MappedFault, TravelGeometryPoint};
+    use adventuresim_world_schema::{
+        GeologicUnitId, MappedFault, MappedGeologicWindow, SedimentaryRock, SurfaceLithology,
+        TravelGeometryPoint,
+    };
     use std::{io::Write, time::SystemTime};
 
     use adventuresim_terrain::{CHUNK_SIDE, Entry, Manifest, TerrainPurpose};
@@ -567,18 +580,21 @@ mod tests {
 
     #[test]
     fn nearby_fault_keeps_its_canonical_offset_and_source_orientation() {
-        let center = Wgs84CoordinateE7::new(510_000_000, 100_000_000).unwrap();
-        let faults = vec![TerrainFeature::MappedFault(MappedFault {
-            id: "DE:test".into(),
-            local_name: Some("fixture".into()),
-            classification: None,
-            mapped_active: false,
-            mapped_capable: false,
-            trace: vec![
-                TravelGeometryPoint::new(9.99, 51.0001).unwrap(),
-                TravelGeometryPoint::new(10.01, 51.0001).unwrap(),
-            ],
-        })];
+        let center = Wgs84CoordinateE7::new(520_000_000, 100_000_000).unwrap();
+        let faults = vec![
+            TerrainFeature::MappedFault(MappedFault {
+                id: "DE:test".into(),
+                local_name: Some("fixture".into()),
+                classification: None,
+                mapped_active: false,
+                mapped_capable: false,
+                trace: vec![
+                    TravelGeometryPoint::new(9.99, 52.0001).unwrap(),
+                    TravelGeometryPoint::new(10.01, 52.0001).unwrap(),
+                ],
+            }),
+            mapped_sandstone_window(),
+        ];
         let recipe = nearest_fault_scarp(&faults, center, 42).unwrap();
         assert!(recipe.tangent_permyriad[0] > 9_900);
         assert!(recipe.tangent_permyriad[1].abs() < 100);
@@ -588,23 +604,28 @@ mod tests {
         assert_eq!(recipe.half_length_cm, SCARP_DEFAULT_HALF_LENGTH_CM);
         assert_eq!(recipe.half_width_cm, SCARP_DEFAULT_HALF_WIDTH_CM);
         assert_eq!(recipe.lod, TerrainLandformLod::Detail);
+        assert_eq!(recipe.surface.source, TerrainSurfaceSource::Mapped);
+        assert_eq!(recipe.surface.preset(), TerrainSurfacePreset::Sandstone);
     }
 
     #[test]
     fn overlapping_fault_uses_coarser_lod_without_changing_its_extent() {
-        let center = Wgs84CoordinateE7::new(510_000_000, 100_000_000).unwrap();
+        let center = Wgs84CoordinateE7::new(520_000_000, 100_000_000).unwrap();
         let latitude_offset = 60.0 / METRES_PER_LATITUDE_DEGREE;
-        let faults = vec![TerrainFeature::MappedFault(MappedFault {
-            id: "DE:fringe".into(),
-            local_name: None,
-            classification: None,
-            mapped_active: false,
-            mapped_capable: false,
-            trace: vec![
-                TravelGeometryPoint::new(9.99, 51.0 + latitude_offset).unwrap(),
-                TravelGeometryPoint::new(10.01, 51.0 + latitude_offset).unwrap(),
-            ],
-        })];
+        let faults = vec![
+            TerrainFeature::MappedFault(MappedFault {
+                id: "DE:fringe".into(),
+                local_name: None,
+                classification: None,
+                mapped_active: false,
+                mapped_capable: false,
+                trace: vec![
+                    TravelGeometryPoint::new(9.99, 52.0 + latitude_offset).unwrap(),
+                    TravelGeometryPoint::new(10.01, 52.0 + latitude_offset).unwrap(),
+                ],
+            }),
+            mapped_sandstone_window(),
+        ];
 
         let recipe = nearest_fault_scarp(&faults, center, 42).unwrap();
 
@@ -612,6 +633,15 @@ mod tests {
         assert_eq!(recipe.half_length_cm, SCARP_DEFAULT_HALF_LENGTH_CM);
         assert_eq!(recipe.half_width_cm, SCARP_DEFAULT_HALF_WIDTH_CM);
         assert_eq!(recipe.lod, TerrainLandformLod::Fringe);
+    }
+
+    fn mapped_sandstone_window() -> TerrainFeature {
+        TerrainFeature::MappedGeology(MappedGeologicWindow {
+            id: "egdi-window:fault-test".into(),
+            unit: GeologicUnitId::new("fault-test").unwrap(),
+            lithology: SurfaceLithology::Sedimentary(SedimentaryRock::Sandstone),
+            bounds_metres: [3_999_000, 2_799_000, 4_001_000, 2_801_000],
+        })
     }
 
     fn constant_final_pack() -> (TerrainPack, PathBuf) {

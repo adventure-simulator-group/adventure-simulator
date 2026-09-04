@@ -1,11 +1,17 @@
 use super::*;
 use adventuresim_procedural_textures::{
     FOREST_LITTER_HEIGHT_RANGE_METRES, FOREST_LITTER_TILE_METRES, FOREST_SOIL_HEIGHT_RANGE_METRES,
-    FOREST_SOIL_TILE_METRES,
+    FOREST_SOIL_TILE_METRES, ROCK_HEIGHT_RANGE_METRES, ROCK_TILE_METRES,
 };
 use fabelgeist_determinism::splitmix64;
 
+mod cliff_surface;
 mod volumetric;
+
+use cliff_surface::enable_cliff_surface;
+pub(in crate::presentation) use cliff_surface::{
+    TacticalTerrainExtension, TacticalTerrainMaterial,
+};
 
 const DETAIL_PATCH_RADIUS_METRES: f32 = 12.0;
 const DETAIL_PATCH_MORPH_START_METRES: f32 = 8.0;
@@ -115,58 +121,6 @@ struct DetailRockInfluence {
 
 #[derive(Component)]
 pub(in crate::presentation) struct PendingTerrainPresentation;
-
-#[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
-pub(in crate::presentation) struct TacticalTerrainExtension {
-    #[uniform(100)]
-    base_color: Vec4,
-    #[uniform(100)]
-    grass_color: Vec4,
-    #[uniform(100)]
-    cover: Vec4,
-    #[uniform(100)]
-    weather: Vec4,
-    #[uniform(100)]
-    far_sward: Vec4,
-    #[uniform(100)]
-    lod_sward: Vec4,
-    #[uniform(100)]
-    playable_bounds: Vec4,
-    #[uniform(100)]
-    detail_patch: Vec4,
-    #[uniform(100)]
-    soil_detail: Vec4,
-    #[uniform(100)]
-    litter_detail: Vec4,
-    #[texture(101)]
-    #[sampler(102)]
-    ground_map: Handle<Image>,
-    #[texture(103)]
-    #[sampler(104)]
-    soil_height_ao: Handle<Image>,
-    #[texture(105)]
-    #[sampler(106)]
-    litter_surface: Handle<Image>,
-    #[texture(107)]
-    #[sampler(108)]
-    litter_normal: Handle<Image>,
-    #[texture(109)]
-    #[sampler(110)]
-    blood_mask: Handle<Image>,
-}
-
-impl MaterialExtension for TacticalTerrainExtension {
-    fn fragment_shader() -> ShaderRef {
-        TERRAIN_SHADER.into()
-    }
-
-    fn deferred_fragment_shader() -> ShaderRef {
-        TERRAIN_SHADER.into()
-    }
-}
-
-pub(in crate::presentation) type TacticalTerrainMaterial =
-    ExtendedMaterial<StandardMaterial, TacticalTerrainExtension>;
 
 pub(in crate::presentation) fn on_game_scene_added(
     event: On<Add, SceneId>,
@@ -840,6 +794,13 @@ pub(in crate::presentation) fn terrain_material(
                 0.72,
                 32.0,
             ),
+            // Cliff presentation is disabled on both ordinary terrain draws.
+            // The implicit patch clone enables it with its required recipe.
+            cliff_palette_a: Vec4::ZERO,
+            cliff_palette_b: Vec4::ZERO,
+            cliff_surface: Vec4::new(1.0 / ROCK_TILE_METRES, ROCK_HEIGHT_RANGE_METRES, 0.8, 0.9),
+            cliff_structure_a: Vec4::ZERO,
+            cliff_structure_b: Vec4::ZERO,
             ground_map: images.add(ground_map_image(
                 ground,
                 stable_text_seed(&environment.scene_digest),
@@ -848,6 +809,8 @@ pub(in crate::presentation) fn terrain_material(
             litter_surface: procedural_assets.forest_soil.litter_surface.clone(),
             litter_normal: procedural_assets.forest_soil.litter_normal.clone(),
             blood_mask: procedural_assets.terrain_blood_mask.clone(),
+            cliff_height: procedural_assets.rock.height.clone(),
+            cliff_arm: procedural_assets.rock.arm.clone(),
         },
     }
 }
@@ -1086,8 +1049,6 @@ pub(super) fn on_ground_added(event: On<Add, SceneGround>, mut commands: Command
         .insert(PendingTerrainPresentation);
 }
 
-const TERRAIN_SHADER: &str = "shaders/tactical_terrain.wgsl";
-
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
@@ -1143,7 +1104,9 @@ mod tests {
                 .count(),
             1
         );
-        assert!(shader.contains("pbr_input.material.base_color = vec4<f32>(color, 1.0)"));
+        assert!(shader.contains(
+            "pbr_input.material.base_color = vec4<f32>(mix(color, dried_blood, blood), 1.0)"
+        ));
         assert!(shader.contains("distance(position, view.lod_view_world_position.xyz)"));
         assert!(shader.contains("distance(position.xz, view.lod_view_world_position.xz)"));
         assert!(shader.contains("let soil_uv = position.xz * terrain.soil_detail.x"));
@@ -1179,6 +1142,26 @@ mod tests {
         ] {
             assert!(!shader.contains(forbidden), "found {forbidden}");
         }
+    }
+
+    #[test]
+    fn cliff_shader_keeps_structure_out_of_axis_projections() {
+        let shader = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/shaders/tactical_terrain.wgsl"
+        ))
+        .replace("\r\n", "\n");
+        let structural_start = shader.find("fn geological_scalar(world_position").unwrap();
+        let structural_end = shader[structural_start..].find("\n}\n").unwrap() + structural_start;
+        let structural = &shader[structural_start..structural_end];
+        assert!(structural.contains("dot(world_position, structural_normal)"));
+        assert!(!structural.contains("uvs"));
+        assert!(!structural.contains("textureSample"));
+        assert_eq!(shader.matches("textureSample(cliff_height,").count(), 3);
+        assert_eq!(shader.matches("textureSample(cliff_arm,").count(), 3);
+        assert!(shader.contains("let cliff_height_metres ="));
+        assert!(shader.contains("height_perturbed_normal(position, base_normal"));
+        assert!(shader.contains("let cliff_underside = 1.0 - smoothstep"));
     }
 
     #[test]

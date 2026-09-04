@@ -17,7 +17,12 @@ use crate::marching_tetrahedra::marching_tetrahedra;
 use crate::{scene::SceneTerrain, terrain_transition::TerrainTransitionCollar};
 
 mod recipe;
+mod surface_recipe;
 pub use recipe::{TerrainLandformKind, TerrainLandformLod, TerrainLandformRecipe};
+pub use surface_recipe::{
+    TerrainGeologicStructure, TerrainSurfaceParameters, TerrainSurfacePreset, TerrainSurfaceRecipe,
+    TerrainSurfaceSource,
+};
 
 #[derive(Component, Clone, Debug, PartialEq, Reflect, Serialize, Deserialize)]
 #[reflect(Component)]
@@ -372,13 +377,24 @@ fn smoothstep01(value: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use adventuresim_world_schema::{SedimentaryRock, SurfaceLithology};
     use std::collections::HashMap;
+
+    fn test_surface(seed: u64) -> TerrainSurfaceRecipe {
+        TerrainSurfaceRecipe::new(
+            SurfaceLithology::Sedimentary(SedimentaryRock::Sandstone),
+            TerrainSurfaceSource::AuthoredFixture,
+            seed,
+            [10_000, 0],
+        )
+    }
 
     #[test]
     fn fault_scarp_is_deterministic_and_has_a_vertical_face() {
         let terrain = SceneTerrain::new(40, 40, 1.0, |_| 0.0);
         let recipe = TerrainLandformRecipe {
             kind: TerrainLandformKind::FaultScarp,
+            surface: test_surface(17),
             seed: 17,
             origin_cm: [0, 0],
             tangent_permyriad: [10_000, 0],
@@ -445,6 +461,7 @@ mod tests {
         let terrain = SceneTerrain::new(100, 100, 1.0, |_| 0.0);
         let recipe = TerrainLandformRecipe {
             kind: TerrainLandformKind::FaultScarp,
+            surface: test_surface(29),
             seed: 29,
             origin_cm: [0, 6_000],
             tangent_permyriad: [10_000, 0],
@@ -467,6 +484,7 @@ mod tests {
         let terrain = SceneTerrain::new(40, 40, 1.0, |point| point.x * 0.02);
         let recipe = TerrainLandformRecipe {
             kind: TerrainLandformKind::FaultScarp,
+            surface: test_surface(17),
             seed: 17,
             origin_cm: [0, 0],
             tangent_permyriad: [10_000, 0],

@@ -86,6 +86,12 @@ pub(super) fn spawn_base_and_fault(
         // The patch owns its zero-offset rim, so it uses refined-terrain
         // presentation instead of the coarse heightfield discard path.
         fault_material.extension.detail_patch.x = 0.0;
+        enable_cliff_surface(
+            &mut fault_material,
+            landform
+                .expect("fault patch has a required surface recipe")
+                .surface,
+        );
         fault_material.base.depth_bias = 1.0;
         materials.add(fault_material)
     });
@@ -163,5 +169,84 @@ pub(super) fn append_detail_cell(
         {
             indices.extend_from_slice(&triangle);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use adventuresim_world_schema::{SedimentaryRock, SurfaceLithology};
+    use bevy::ecs::world::CommandQueue;
+
+    #[test]
+    fn implicit_patch_keeps_one_draw_and_only_its_material_enables_cliff_surface() {
+        let terrain = SceneTerrain::new(40, 40, 1.0, |_| 0.0);
+        let recipe = TerrainLandformRecipe {
+            kind: TerrainLandformKind::FaultScarp,
+            surface: TerrainSurfaceRecipe::new(
+                SurfaceLithology::Sedimentary(SedimentaryRock::Sandstone),
+                TerrainSurfaceSource::AuthoredFixture,
+                17,
+                [10_000, 0],
+            ),
+            seed: 17,
+            origin_cm: [0, 0],
+            tangent_permyriad: [10_000, 0],
+            relief_cm: 600,
+            half_length_cm: 1_200,
+            half_width_cm: 1_000,
+            collar_cm: 250,
+            lod: TerrainLandformLod::Detail,
+        };
+        let environment = SceneEnvironmentFixture::TemperateHills.snapshot("one-cliff-draw");
+        let graphics = TacticalGraphicsSettings::default();
+        let mut images = Assets::<Image>::default();
+        let procedural_assets = generate_procedural_textures(&mut images);
+        let material = terrain_material(
+            &terrain,
+            &environment,
+            None,
+            &procedural_assets,
+            &mut images,
+            &graphics.config.grass,
+        );
+        let mut world = World::new();
+        let scene = world.spawn_empty().id();
+        let mut queue = CommandQueue::default();
+        let mut meshes = Assets::<Mesh>::default();
+        let mut materials = Assets::<TacticalTerrainMaterial>::default();
+        {
+            let mut commands = Commands::new(&mut queue, &world);
+            spawn_base_and_fault(
+                &mut commands,
+                &mut meshes,
+                &mut materials,
+                scene,
+                &SceneId("one-cliff-draw".into()),
+                &terrain,
+                material,
+                Some(&recipe),
+                Some(recipe.transition_collar()),
+            );
+        }
+        queue.apply(&mut world);
+
+        let mut query = world.query::<&MeshMaterial3d<TacticalTerrainMaterial>>();
+        let handles = query
+            .iter(&world)
+            .map(|handle| &handle.0)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            handles.len(),
+            2,
+            "one base draw plus one implicit patch draw"
+        );
+        assert_eq!(
+            handles
+                .into_iter()
+                .filter(|handle| materials.get(*handle).unwrap().extension.cliff_palette_a.w > 0.5)
+                .count(),
+            1
+        );
     }
 }

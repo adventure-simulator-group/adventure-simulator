@@ -1,6 +1,6 @@
 {
-  "schema_version": 13,
-  "generation_version": 29,
+  "schema_version": 14,
+  "generation_version": 30,
   "seed": 47114,
   "scene_key": "fault-scarp",
   "source": {
@@ -833,6 +833,15 @@
   },
   "landform": {
     "kind": "fault_scarp",
+    "surface": {
+      "lithology": {
+        "Mixed": "Breccia"
+      },
+      "source": "authored_fixture",
+      "structure": {
+        "kind": "massive"
+      }
+    },
     "seed": 47114,
     "origin_cm": [
       0,

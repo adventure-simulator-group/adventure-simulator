@@ -138,12 +138,21 @@ fn field(terrain: &SceneTerrain, recipe: TerrainLandformRecipe, point: Vec3) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::volumetric_terrain::{TerrainLandformKind, TerrainLandformLod};
+    use crate::volumetric_terrain::{
+        TerrainLandformKind, TerrainLandformLod, TerrainSurfaceRecipe, TerrainSurfaceSource,
+    };
+    use adventuresim_world_schema::{SedimentaryRock, SurfaceLithology};
     use std::collections::HashMap;
 
     fn recipe() -> TerrainLandformRecipe {
         TerrainLandformRecipe {
             kind: TerrainLandformKind::SandstoneAlcove,
+            surface: TerrainSurfaceRecipe::new(
+                SurfaceLithology::Sedimentary(SedimentaryRock::Sandstone),
+                TerrainSurfaceSource::AuthoredFixture,
+                47115,
+                [10000, 0],
+            ),
             seed: 47115,
             origin_cm: [0, 0],
             tangent_permyriad: [10000, 0],

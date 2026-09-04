@@ -31,36 +31,6 @@ struct RockFieldSample {
     palette_index: usize,
 }
 
-fn rock_random(cell_x: i32, cell_y: i32, salt: u64) -> f32 {
-    unit_hash(splitmix64(
-        rock_cell_id(cell_x, cell_y) | salt.rotate_left(23),
-    ))
-}
-
-fn rock_cell_id(cell_x: i32, cell_y: i32) -> u64 {
-    let wrapped_x = cell_x.rem_euclid(ROCK_DOMAIN_COLUMNS) as u64;
-    let wrapped_y = cell_y.rem_euclid(ROCK_DOMAIN_ROWS) as u64;
-    wrapped_x | (wrapped_y << 8)
-}
-
-fn rock_edge_random(first: (i32, i32), second: (i32, i32), salt: u64) -> f32 {
-    let first = rock_cell_id(first.0, first.1);
-    let second = rock_cell_id(second.0, second.1);
-    let (lower, upper) = if first <= second {
-        (first, second)
-    } else {
-        (second, first)
-    };
-    unit_hash(splitmix64(lower | (upper << 16) | salt.rotate_left(37)))
-}
-
-fn cell_site(cell_x: i32, cell_y: i32) -> Vec2 {
-    Vec2::new(
-        cell_x as f32 + 0.18 + 0.64 * rock_random(cell_x, cell_y, 0x4b31),
-        cell_y as f32 + 0.18 + 0.64 * rock_random(cell_x, cell_y, 0xa927),
-    )
-}
-
 fn periodic_value_field(u: f32, v: f32, columns: i32, rows: i32, salt: u64) -> f32 {
     let x = u.rem_euclid(1.0) * columns as f32;
     let y = v.rem_euclid(1.0) * rows as f32;
@@ -82,52 +52,21 @@ fn periodic_value_field(u: f32, v: f32, columns: i32, rows: i32, salt: u64) -> f
 }
 
 fn rock_field(u: f32, v: f32) -> RockFieldSample {
-    let point = Vec2::new(
-        u.rem_euclid(1.0) * ROCK_DOMAIN_COLUMNS as f32,
-        v.rem_euclid(1.0) * ROCK_DOMAIN_ROWS as f32,
-    );
-    let origin_x = point.x.floor() as i32;
-    let origin_y = point.y.floor() as i32;
-    let mut nearest = [(f32::INFINITY, 0_i32, 0_i32); 2];
-    let mut weighted_structure = 0.0;
-    let mut weight_sum = 0.0;
-    for cell_y in (origin_y - 1)..=(origin_y + 1) {
-        for cell_x in (origin_x - 1)..=(origin_x + 1) {
-            let distance = point.distance(cell_site(cell_x, cell_y));
-            let weight = (-(distance / 0.72).powi(4)).exp() + 1.0e-5;
-            weighted_structure += weight * (rock_random(cell_x, cell_y, 0xd513) * 2.0 - 1.0);
-            weight_sum += weight;
-            if distance < nearest[0].0 {
-                nearest[1] = nearest[0];
-                nearest[0] = (distance, cell_x, cell_y);
-            } else if distance < nearest[1].0 {
-                nearest[1] = (distance, cell_x, cell_y);
-            }
-        }
-    }
-
-    let edge_distance = nearest[1].0 - nearest[0].0;
-    let structure = weighted_structure / weight_sum;
-    let tau = core::f32::consts::TAU;
-    let first_cell = (nearest[0].1, nearest[0].2);
-    let second_cell = (nearest[1].1, nearest[1].2);
-    let edge_phase = rock_edge_random(first_cell, second_cell, 0x832d);
-    let edge_enabled = rock_edge_random(first_cell, second_cell, 0x191f) > 0.68;
-    let interruption = smoothstep(-0.48, 0.18, (tau * (u * 3.0 + v * 5.0 + edge_phase)).sin());
-    let fracture = if edge_enabled {
-        (1.0 - smoothstep(0.025, 0.095, edge_distance)) * interruption
-    } else {
-        0.0
-    };
     let broad = periodic_value_field(u, v, 3, 3, 0x4ad3);
-    let aggregate = periodic_value_field(u, v, 23, 23, 0xb175);
+    let structure = periodic_value_field(u, v, ROCK_DOMAIN_COLUMNS, ROCK_DOMAIN_ROWS, 0xd513);
+    let aggregate = periodic_value_field(u, v, 19, 19, 0xb175);
+    let grain = periodic_value_field(u, v, 41, 41, 0x8c29);
+    // Smooth value-noise octaves make irregular pore/crystal grain without
+    // the connected Voronoi edge graph that read as repeated U/Y/L stamps
+    // once the tile was projected over broad cliff faces.
     let height =
-        (0.14 * broad + 0.28 * structure - 0.31 * fracture + 0.05 * aggregate).clamp(-0.5, 0.5);
-    let palette_index = if structure < -0.28 {
+        (0.13 * broad + 0.10 * structure + 0.055 * aggregate + 0.025 * grain).clamp(-0.5, 0.5);
+    let material = broad * 0.62 + structure * 0.38;
+    let palette_index = if material < -0.28 {
         0
-    } else if structure < -0.02 {
+    } else if material < -0.02 {
         1
-    } else if structure < 0.27 {
+    } else if material < 0.27 {
         2
     } else {
         3
@@ -392,6 +331,33 @@ mod tests {
                 .iter()
                 .all(|pixel| pixel[2] == 0 && pixel[3] == 255)
         );
+    }
+
+    #[test]
+    fn dense_microrelief_is_smooth_without_fracture_graph_jumps() {
+        let sample_count = 128;
+        let texel = 1.0 / sample_count as f32;
+        let mut minimum = f32::INFINITY;
+        let mut maximum = f32::NEG_INFINITY;
+        let mut maximum_jump = 0.0_f32;
+        for y in 0..sample_count {
+            for x in 0..sample_count {
+                let u = x as f32 * texel;
+                let v = y as f32 * texel;
+                let height = rock_field(u, v).height;
+                minimum = minimum.min(height);
+                maximum = maximum.max(height);
+                maximum_jump = maximum_jump
+                    .max((height - rock_field(u + texel, v).height).abs())
+                    .max((height - rock_field(u, v + texel).height).abs());
+            }
+        }
+        assert!(
+            maximum - minimum < 0.55,
+            "height span: {}",
+            maximum - minimum
+        );
+        assert!(maximum_jump < 0.08, "local height jump: {maximum_jump}");
     }
 
     #[test]

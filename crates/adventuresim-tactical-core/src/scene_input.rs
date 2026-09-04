@@ -36,8 +36,8 @@ pub use buildings::{
     SceneWindow, TacticalBuildingPlacement,
 };
 
-pub const TACTICAL_SCENE_SCHEMA_VERSION: u16 = 13;
-pub const TACTICAL_SCENE_GENERATION_VERSION: u16 = 29;
+pub const TACTICAL_SCENE_SCHEMA_VERSION: u16 = 14;
+pub const TACTICAL_SCENE_GENERATION_VERSION: u16 = 30;
 pub const MAX_SCENE_INPUT_BYTES: u64 = 32 * 1024 * 1024;
 pub const TREE_TRUNK_RADIUS_METRES: f32 = 0.35;
 pub const TREE_TRUNK_HEIGHT_METRES: f32 = 5.0;
@@ -1220,8 +1220,12 @@ fn invalid<T>(message: impl Into<String>) -> Result<T, SceneInputError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::volumetric_terrain::TerrainSurfaceSource;
     use adventuresim_building_generator::{BuildingArchetype, BuildingProgram};
     use adventuresim_core::weather::weather_at;
+    use adventuresim_world_schema::{
+        IgneousRock, MixedLithology, SedimentaryRock, SurfaceLithology, UnconsolidatedDeposit,
+    };
     use std::time::SystemTime;
 
     fn fixture() -> TacticalSceneInput {
@@ -1541,6 +1545,53 @@ mod tests {
                 50_000.0
             );
         }
+    }
+
+    #[test]
+    fn every_committed_landform_fixture_authors_its_surface_truth() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/tactical-scenes");
+        let expected = [
+            (
+                "fault-scarp-cliff",
+                SurfaceLithology::Mixed(MixedLithology::Breccia),
+            ),
+            (
+                "sandstone-alcove",
+                SurfaceLithology::Sedimentary(SedimentaryRock::Sandstone),
+            ),
+            (
+                "carbonate-dissolution",
+                SurfaceLithology::Sedimentary(SedimentaryRock::Limestone),
+            ),
+            (
+                "granite-joint-rockfall",
+                SurfaceLithology::Igneous(IgneousRock::Granite),
+            ),
+            (
+                "basalt-cooling-columns",
+                SurfaceLithology::Igneous(IgneousRock::Basalt),
+            ),
+            (
+                "cohesive-slump-headscarp",
+                SurfaceLithology::Unconsolidated(UnconsolidatedDeposit::Clay),
+            ),
+        ];
+        for (name, lithology) in expected {
+            let input = TacticalSceneInput::load(&root.join(format!("{name}.json"))).unwrap();
+            let recipe = input.landform.expect("landform fixture has a recipe");
+            assert_eq!(recipe.surface.lithology, lithology, "{name}");
+            assert_eq!(recipe.surface.source, TerrainSurfaceSource::AuthoredFixture);
+            recipe.surface.validate().unwrap();
+        }
+
+        let mut missing_surface: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(root.join("sandstone-alcove.json")).unwrap())
+                .unwrap();
+        missing_surface["landform"]
+            .as_object_mut()
+            .unwrap()
+            .remove("surface");
+        assert!(serde_json::from_value::<TacticalSceneInput>(missing_surface).is_err());
     }
 
     #[test]

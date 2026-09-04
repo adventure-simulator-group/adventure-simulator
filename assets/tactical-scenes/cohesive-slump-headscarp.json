@@ -1,6 +1,6 @@
 {
-  "schema_version": 13,
-  "generation_version": 29,
+  "schema_version": 14,
+  "generation_version": 30,
   "seed": 47119,
   "scene_key": "cohesive-slump-headscarp",
   "source": {
@@ -833,6 +833,24 @@
   },
   "landform": {
     "kind": "cohesive_slump_headscarp",
+    "surface": {
+      "lithology": {
+        "Unconsolidated": "Clay"
+      },
+      "source": "authored_fixture",
+      "structure": {
+        "kind": "bedded",
+        "normal_permyriad": [
+          0,
+          3447,
+          9387
+        ],
+        "bed_thickness_cm": 163,
+        "thickness_variation_bps": 2022,
+        "warp_cm": 9,
+        "cross_bedding_bps": 0
+      }
+    },
     "seed": 47119,
     "origin_cm": [
       0,
